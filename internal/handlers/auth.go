@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"log"
+	"media-viewer/internal/logging"
 	"net/http"
 	"strings"
 	"time"
@@ -64,7 +65,7 @@ func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 
 	// Create user
 	if err := h.db.CreateUser(req.Username, req.Password); err != nil {
-		log.Printf("[ERROR] Failed to create user: %v", err)
+		logging.Error("Failed to create user: %v", err)
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
@@ -97,7 +98,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Create session
 	session, err := h.db.CreateSession(user.ID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to create session: %v", err)
+		logging.Error("Failed to create session: %v", err)
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}

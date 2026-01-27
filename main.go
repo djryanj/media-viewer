@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +11,7 @@ import (
 	"media-viewer/internal/database"
 	"media-viewer/internal/handlers"
 	"media-viewer/internal/indexer"
+	"media-viewer/internal/logging"
 	"media-viewer/internal/middleware"
 	"media-viewer/internal/startup"
 	"media-viewer/internal/transcoder"
@@ -52,9 +52,13 @@ func main() {
 	// Initialize indexer
 	startup.LogIndexerInit(config.IndexInterval)
 	idx := indexer.New(db, config.MediaDir, config.IndexInterval)
-	if err := idx.Start(); err != nil {
-		startup.LogFatal("Failed to start indexer: %v", err)
-	}
+
+	// Start indexer in background (non-blocking)
+	go func() {
+		if err := idx.Start(); err != nil {
+			logging.Error("Failed to start indexer: %v", err)
+		}
+	}()
 	startup.LogIndexerStarted()
 
 	// Initialize handlers
@@ -70,7 +74,11 @@ func main() {
 	// Apply logging middleware
 	loggingConfig := middleware.DefaultLoggingConfig()
 	loggingConfig.LogStaticFiles = config.LogStaticFiles
-	handler := middleware.Logger(loggingConfig)(authedRouter)
+	loggedHandler := middleware.Logger(loggingConfig)(authedRouter)
+
+	// Apply compression middleware
+	compressionConfig := middleware.DefaultCompressionConfig()
+	handler := middleware.Compression(compressionConfig)(loggedHandler)
 
 	// Create server
 	srv := &http.Server{
@@ -93,6 +101,12 @@ func main() {
 
 func setupRouter(h *handlers.Handlers) *mux.Router {
 	r := mux.NewRouter()
+
+	// Health check routes (no auth required)
+	r.HandleFunc("/health", h.HealthCheck).Methods("GET")
+	r.HandleFunc("/healthz", h.HealthCheck).Methods("GET")
+	r.HandleFunc("/livez", h.LivenessCheck).Methods("GET")
+	r.HandleFunc("/readyz", h.ReadinessCheck).Methods("GET")
 
 	// Auth routes
 	auth := r.PathPrefix("/api/auth").Subrouter()
@@ -159,7 +173,7 @@ func handleShutdown(srv *http.Server, idx *indexer.Indexer, trans *transcoder.Tr
 
 	startup.LogShutdownStep("Shutting down HTTP server")
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("  [WARN] Server shutdown error: %v", err)
+		logging.Warn("Server shutdown error: %v", err)
 	} else {
 		startup.LogShutdownStepComplete("HTTP server stopped")
 	}

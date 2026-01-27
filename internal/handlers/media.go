@@ -3,22 +3,20 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"media-viewer/internal/database"
+	"media-viewer/internal/logging"
 
 	"github.com/gorilla/mux"
 )
 
 func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	log.Printf("[DEBUG] ListFiles called: %s", r.URL.String())
+	logging.Debug("ListFiles called: %s", r.URL.String())
 
 	opts := database.ListOptions{
 		Path:       r.URL.Query().Get("path"),
@@ -43,29 +41,44 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 		opts.SortOrder = database.SortAsc
 	}
 
-	log.Printf("[DEBUG] ListFiles options: path=%q, sort=%s, order=%s, page=%d, pageSize=%d",
+	logging.Debug("ListFiles options: path=%q, sort=%s, order=%s, page=%d, pageSize=%d",
 		opts.Path, opts.SortField, opts.SortOrder, opts.Page, opts.PageSize)
 
 	listing, err := h.db.ListDirectory(opts)
 	if err != nil {
-		log.Printf("[ERROR] ListFiles database error: %v", err)
+		logging.Error("ListFiles database error: %v", err)
 		http.Error(w, "Failed to list directory", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[DEBUG] ListFiles completed in %v, found %d items", time.Since(start), len(listing.Items))
+	logging.Debug("ListFiles completed, found %d items", len(listing.Items))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(listing)
 }
+
 func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
-	// Get media files in a specific directory (for lightbox navigation)
 	parentPath := r.URL.Query().Get("path")
 
-	files, err := h.db.GetMediaInDirectory(parentPath)
+	sortField := database.SortField(r.URL.Query().Get("sort"))
+	sortOrder := database.SortOrder(r.URL.Query().Get("order"))
+
+	if sortField == "" {
+		sortField = database.SortByName
+	}
+	if sortOrder == "" {
+		sortOrder = database.SortAsc
+	}
+
+	files, err := h.db.GetMediaInDirectory(parentPath, sortField, sortOrder)
 	if err != nil {
+		logging.Error("GetMediaFiles error: %v", err)
 		http.Error(w, "Failed to get media files", http.StatusInternalServerError)
 		return
+	}
+
+	if files == nil {
+		files = []database.MediaFile{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -78,7 +91,6 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 
 	fullPath := filepath.Join(h.mediaDir, filePath)
 
-	// Security check
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
@@ -92,74 +104,71 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
 
-	log.Printf("[DEBUG] Thumbnail requested: %s", filePath)
+	logging.Debug("Thumbnail requested: %s", filePath)
 
 	if filePath == "" {
-		log.Printf("[ERROR] Thumbnail: empty path")
+		logging.Error("Thumbnail: empty path")
 		http.Error(w, "Path is required", http.StatusBadRequest)
 		return
 	}
 
 	fullPath := filepath.Join(h.mediaDir, filePath)
 
-	// Security check
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil {
-		log.Printf("[ERROR] Thumbnail: failed to resolve path %s: %v", filePath, err)
+		logging.Error("Thumbnail: failed to resolve path %s: %v", filePath, err)
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
 	absMediaDir, _ := filepath.Abs(h.mediaDir)
 	if !strings.HasPrefix(absPath, absMediaDir) {
-		log.Printf("[ERROR] Thumbnail: path outside media dir: %s", filePath)
+		logging.Error("Thumbnail: path outside media dir: %s", filePath)
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
-	// Check if file exists
 	fileInfo, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("[WARN] Thumbnail: file not found: %s", fullPath)
+			logging.Warn("Thumbnail: file not found: %s", fullPath)
 			http.Error(w, "File not found", http.StatusNotFound)
 		} else {
-			log.Printf("[ERROR] Thumbnail: failed to stat file %s: %v", fullPath, err)
+			logging.Error("Thumbnail: failed to stat file %s: %v", fullPath, err)
 			http.Error(w, "Failed to access file", http.StatusInternalServerError)
 		}
 		return
 	}
 
 	if fileInfo.IsDir() {
-		log.Printf("[WARN] Thumbnail: path is a directory: %s", fullPath)
+		logging.Warn("Thumbnail: path is a directory: %s", fullPath)
 		http.Error(w, "Cannot generate thumbnail for directory", http.StatusBadRequest)
 		return
 	}
 
-	// Check if thumbnails are enabled
 	if !h.thumbGen.IsEnabled() {
-		log.Printf("[WARN] Thumbnail: thumbnails disabled, returning 503")
+		logging.Warn("Thumbnail: thumbnails disabled, returning 503")
 		http.Error(w, "Thumbnails disabled", http.StatusServiceUnavailable)
 		return
 	}
 
 	fileType := h.thumbGen.GetFileType(fullPath)
 	if fileType == database.FileTypeOther {
-		log.Printf("[WARN] Thumbnail: unsupported file type for %s", filePath)
+		logging.Warn("Thumbnail: unsupported file type for %s", filePath)
 		http.Error(w, "Unsupported file type", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("[DEBUG] Thumbnail: generating for %s (type: %s)", filePath, fileType)
+	logging.Debug("Thumbnail: generating for %s (type: %s)", filePath, fileType)
 
 	thumb, err := h.thumbGen.GetThumbnail(fullPath, fileType)
 	if err != nil {
-		log.Printf("[ERROR] Thumbnail: generation failed for %s: %v", filePath, err)
+		logging.Error("Thumbnail: generation failed for %s: %v", filePath, err)
 		http.Error(w, fmt.Sprintf("Failed to generate thumbnail: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[DEBUG] Thumbnail: success for %s (%d bytes)", filePath, len(thumb))
+	logging.Debug("Thumbnail: success for %s (%d bytes)", filePath, len(thumb))
 
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
@@ -172,7 +181,6 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 
 	fullPath := filepath.Join(h.mediaDir, filePath)
 
-	// Security check
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
@@ -184,26 +192,22 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get target width from query param
 	targetWidth := 0
 	if widthStr := r.URL.Query().Get("width"); widthStr != "" {
 		targetWidth, _ = strconv.Atoi(widthStr)
 	}
 
-	// Get video info
 	info, err := h.transcoder.GetVideoInfo(fullPath)
 	if err != nil {
 		http.Error(w, "Failed to get video info", http.StatusInternalServerError)
 		return
 	}
 
-	// If no transcoding needed, serve directly
 	if !info.NeedsTranscode && (targetWidth == 0 || targetWidth >= info.Width) {
 		http.ServeFile(w, r, fullPath)
 		return
 	}
 
-	// Stream with transcoding
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
@@ -216,7 +220,6 @@ func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 
 	fullPath := filepath.Join(h.mediaDir, filePath)
 
-	// Security check
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)

@@ -124,6 +124,7 @@ async checkAuth() {
             this.state.listing = await response.json();
             this.state.currentPath = path;
 
+            // Load media files with the same sort order
             await this.loadMediaFiles(path);
 
             if (pushState) {
@@ -147,7 +148,13 @@ async checkAuth() {
 
     async loadMediaFiles(path) {
         try {
-            const response = await fetch(`/api/media?path=${encodeURIComponent(path)}`);
+            const params = new URLSearchParams({
+                path: path,
+                sort: this.state.currentSort.field,
+                order: this.state.currentSort.order,
+            });
+
+            const response = await fetch(`/api/media?${params}`);
             if (response.status === 401) {
                 window.location.href = '/login.html';
                 return;

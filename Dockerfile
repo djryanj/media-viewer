@@ -17,7 +17,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -tags 'fts5' -a -o media-viewer .
 RUN CGO_ENABLED=1 GOOS=linux go build -tags 'fts5' -a -o resetpw ./cmd/resetpw
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.23
 
 RUN apk add --no-cache \
     ffmpeg \

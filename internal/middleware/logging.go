@@ -85,7 +85,7 @@ func (l *W3CLogger) writeHeader() {
 	fmt.Fprintf(os.Stdout, "#Version: 1.0\n")
 	fmt.Fprintf(os.Stdout, "#Software: %s\n", l.serviceName)
 	fmt.Fprintf(os.Stdout, "#Start-Date: %s\n", time.Now().UTC().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(os.Stdout, "#Fields: date time c-ip cs-method cs-uri-stem cs-uri-query sc-status sc-bytes time-taken cs(User-Agent) cs(Referer)\n")
+	fmt.Fprintf(os.Stdout, "#Fields: date time c-ip cs-method cs-uri-stem cs-uri-query sc-status sc-bytes time-taken cs(Content-Encoding) cs(User-Agent) cs(Referer)\n")
 }
 
 // Logger returns HTTP logging middleware using W3C Extended Log Format
@@ -129,6 +129,12 @@ func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration tim
 	bytesWritten := rw.bytesWritten
 	timeTaken := duration.Milliseconds() // W3C uses milliseconds
 
+	// Check for compression
+	contentEncoding := rw.Header().Get("Content-Encoding")
+	if contentEncoding == "" {
+		contentEncoding = "-"
+	}
+
 	userAgent := r.Header.Get("User-Agent")
 	if userAgent == "" {
 		userAgent = "-"
@@ -143,8 +149,8 @@ func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration tim
 	}
 
 	// W3C Extended Log Format
-	// date time c-ip cs-method cs-uri-stem cs-uri-query sc-status sc-bytes time-taken cs(User-Agent) cs(Referer)
-	logLine := fmt.Sprintf("%s %s %s %s %s %s %d %d %d %s %s",
+	// date time c-ip cs-method cs-uri-stem cs-uri-query sc-status sc-bytes time-taken cs(Content-Encoding) cs(User-Agent) cs(Referer)
+	logLine := fmt.Sprintf("%s %s %s %s %s %s %d %d %d %s %s %s",
 		now.Format("2006-01-02"),
 		now.Format("15:04:05"),
 		clientIP,
@@ -154,6 +160,7 @@ func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration tim
 		status,
 		bytesWritten,
 		timeTaken,
+		contentEncoding,
 		userAgent,
 		referer,
 	)

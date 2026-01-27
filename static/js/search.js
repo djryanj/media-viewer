@@ -51,33 +51,46 @@ const Search = {
             }, 150);
         });
 
-        // Handle Enter key to perform full search
+        // Handle keyboard navigation
         this.elements.input.addEventListener('keydown', (e) => {
             const suggestions = this.elements.dropdown.querySelectorAll('.search-dropdown-item');
 
             switch (e.key) {
                 case 'Enter':
                     e.preventDefault();
+                    
                     if (this.selectedSuggestionIndex >= 0 && suggestions[this.selectedSuggestionIndex]) {
-                        suggestions[this.selectedSuggestionIndex].click();
+                        // Get data from the selected suggestion and handle it directly
+                        const selected = suggestions[this.selectedSuggestionIndex];
+                        const path = selected.dataset.path;
+                        const type = selected.dataset.type;
+                        const name = selected.dataset.name;
+                        
+                        this.hideDropdown();
+                        this.handleSuggestionAction(path, type, name);
                     } else {
+                        // No suggestion selected, perform full search
                         this.performSearch(this.elements.input.value.trim());
                     }
                     break;
 
                 case 'ArrowDown':
                     e.preventDefault();
-                    this.selectedSuggestionIndex = Math.min(
-                        this.selectedSuggestionIndex + 1,
-                        suggestions.length - 1
-                    );
-                    this.highlightSuggestion(suggestions);
+                    if (!this.elements.dropdown.classList.contains('hidden')) {
+                        this.selectedSuggestionIndex = Math.min(
+                            this.selectedSuggestionIndex + 1,
+                            suggestions.length - 1
+                        );
+                        this.highlightSuggestion(suggestions);
+                    }
                     break;
 
                 case 'ArrowUp':
                     e.preventDefault();
-                    this.selectedSuggestionIndex = Math.max(this.selectedSuggestionIndex - 1, -1);
-                    this.highlightSuggestion(suggestions);
+                    if (!this.elements.dropdown.classList.contains('hidden')) {
+                        this.selectedSuggestionIndex = Math.max(this.selectedSuggestionIndex - 1, -1);
+                        this.highlightSuggestion(suggestions);
+                    }
                     break;
 
                 case 'Escape':
@@ -85,6 +98,12 @@ const Search = {
                     if (!this.elements.results.classList.contains('hidden')) {
                         this.hideResults();
                     }
+                    this.elements.input.blur();
+                    break;
+
+                case 'Tab':
+                    // Close dropdown on tab
+                    this.hideDropdown();
                     break;
             }
         });
@@ -95,6 +114,7 @@ const Search = {
             this.elements.clear.classList.add('hidden');
             this.hideDropdown();
             this.hideResults();
+            this.elements.input.focus();
         });
 
         // Close results
@@ -115,9 +135,15 @@ const Search = {
 
         // Keyboard shortcut to focus search
         document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey && e.key === 'k') || (e.key === '/' && !e.target.matches('input, textarea'))) {
+            // Skip if already in an input
+            if (e.target.matches('input, textarea')) {
+                return;
+            }
+            
+            if ((e.ctrlKey && e.key === 'k') || e.key === '/') {
                 e.preventDefault();
                 this.elements.input.focus();
+                this.elements.input.select();
             }
         });
     },
@@ -135,92 +161,136 @@ const Search = {
         }
     },
 
-renderSuggestions(suggestions, query) {
-    if (!suggestions || suggestions.length === 0) {
-        this.hideDropdown();
-        return;
-    }
+    renderSuggestions(suggestions, query) {
+        if (!suggestions || suggestions.length === 0) {
+            this.hideDropdown();
+            return;
+        }
 
-    this.selectedSuggestionIndex = -1;
+        this.selectedSuggestionIndex = -1;
 
-    let html = suggestions.map((item, index) => {
-        const isPinned = Favorites.isPinned(item.path);
-        const pinIndicator = isPinned ? '<span class="search-dropdown-item-pin">★</span>' : '';
-        
-        return `
-            <div class="search-dropdown-item" data-path="${item.path}" data-type="${item.type}" data-name="${item.name}" data-index="${index}">
-                <span class="search-dropdown-item-icon">${Gallery.getIcon(item.type)}</span>
-                <div class="search-dropdown-item-info">
-                    <div class="search-dropdown-item-name">${item.highlight}${pinIndicator}</div>
-                    <div class="search-dropdown-item-path">${item.path}</div>
+        let html = suggestions.map((item, index) => {
+            // Handle tag suggestions differently
+            if (item.type === 'tag') {
+                return `
+                    <div class="search-dropdown-item search-dropdown-tag" 
+                         data-path="${this.escapeAttr(item.path)}" 
+                         data-type="${this.escapeAttr(item.type)}" 
+                         data-name="${this.escapeAttr(item.name)}" 
+                         data-index="${index}">
+                        <span class="search-dropdown-item-icon">🏷</span>
+                        <div class="search-dropdown-item-info">
+                            <div class="search-dropdown-item-name">${item.highlight}</div>
+                            <div class="search-dropdown-item-path">Search by tag</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const isPinned = Favorites.isPinned(item.path);
+            const pinIndicator = isPinned ? '<span class="search-dropdown-item-pin">★</span>' : '';
+
+            return `
+                <div class="search-dropdown-item" 
+                     data-path="${this.escapeAttr(item.path)}" 
+                     data-type="${this.escapeAttr(item.type)}" 
+                     data-name="${this.escapeAttr(item.name)}" 
+                     data-index="${index}">
+                    <span class="search-dropdown-item-icon">${Gallery.getIcon(item.type)}</span>
+                    <div class="search-dropdown-item-info">
+                        <div class="search-dropdown-item-name">${item.highlight}${pinIndicator}</div>
+                        <div class="search-dropdown-item-path">${this.escapeHtml(item.path)}</div>
+                    </div>
                 </div>
+            `;
+        }).join('');
+
+        html += `
+            <div class="search-dropdown-footer">
+                Press Enter to view all results for "${this.escapeHtml(query)}"
             </div>
         `;
-    }).join('');
 
-    html += `
-        <div class="search-dropdown-footer" data-action="view-all">
-            Press Enter to view all results for "${query}"
-        </div>
-    `;
+        this.elements.dropdown.innerHTML = html;
+        this.elements.dropdown.classList.remove('hidden');
 
-    this.elements.dropdown.innerHTML = html;
-    this.elements.dropdown.classList.remove('hidden');
-
-    this.elements.dropdown.querySelectorAll('.search-dropdown-item').forEach(item => {
-        item.addEventListener('click', () => {
-            this.handleSuggestionClick(item.dataset.path, item.dataset.type, item.dataset.name);
+        // Bind click handlers to suggestion items
+        this.elements.dropdown.querySelectorAll('.search-dropdown-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const path = item.dataset.path;
+                const type = item.dataset.type;
+                const name = item.dataset.name;
+                
+                this.hideDropdown();
+                this.handleSuggestionAction(path, type, name);
+            });
         });
-    });
 
-    this.elements.dropdown.querySelector('.search-dropdown-footer').addEventListener('click', () => {
-        this.performSearch(query);
-    });
-},
-
-handleSuggestionClick(path, type, name) {
-    this.hideDropdown();
-
-    if (type === 'folder') {
-        this.hideResults();
-        this.elements.input.value = '';
-        this.elements.clear.classList.add('hidden');
-        App.navigateTo(path);
-    } else if (type === 'image' || type === 'video') {
-        this.openMediaItem(path, type);
-    } else if (type === 'playlist') {
-        const playlistName = name ? name.replace(/\.[^/.]+$/, '') : path.split('/').pop().replace(/\.[^/.]+$/, '');
-        Player.loadPlaylist(playlistName);
-    }
-},
-
+        // Bind click handler to footer
+        this.elements.dropdown.querySelector('.search-dropdown-footer').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.performSearch(query);
+        });
+    },
 
     highlightSuggestion(suggestions) {
         suggestions.forEach((item, index) => {
-            item.classList.toggle('highlighted', index === this.selectedSuggestionIndex);
             if (index === this.selectedSuggestionIndex) {
+                item.classList.add('highlighted');
                 item.style.background = 'var(--bg-tertiary)';
+                // Scroll into view if needed
+                item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
             } else {
+                item.classList.remove('highlighted');
                 item.style.background = '';
             }
         });
     },
 
-    handleSuggestionClick(path, type) {
-        this.hideDropdown();
-
-        if (type === 'folder') {
-            this.hideResults();
+    // Unified action handler for suggestions (both click and keyboard)
+    handleSuggestionAction(path, type, name) {
+        // Clear input for navigation actions
+        const clearInput = () => {
             this.elements.input.value = '';
             this.elements.clear.classList.add('hidden');
-            App.navigateTo(path);
-        } else if (type === 'image' || type === 'video') {
-            // Open in lightbox - need to load the item first
-            this.openMediaItem(path, type);
-        } else if (type === 'playlist') {
-            const playlistName = path.split('/').pop().replace(/\.[^/.]+$/, '');
-            Player.loadPlaylist(playlistName);
+        };
+
+        // Handle tag suggestions - perform tag search
+        if (type === 'tag') {
+            this.elements.input.value = path; // "tag:tagname"
+            this.elements.clear.classList.remove('hidden');
+            this.performSearch(path);
+            return;
         }
+
+        // Handle folder - navigate to it
+        if (type === 'folder') {
+            clearInput();
+            this.hideResults();
+            App.navigateTo(path);
+            return;
+        }
+
+        // Handle media files - open in lightbox
+        if (type === 'image' || type === 'video') {
+            this.openMediaItem(path, type);
+            return;
+        }
+
+        // Handle playlist
+        if (type === 'playlist') {
+            clearInput();
+            const playlistName = name ? name.replace(/\.[^/.]+$/, '') : path.split('/').pop().replace(/\.[^/.]+$/, '');
+            Player.loadPlaylist(playlistName);
+            return;
+        }
+
+        // Fallback - just navigate to parent and highlight? Or do nothing
+        console.warn('Unknown suggestion type:', type);
     },
 
     async openMediaItem(path, type) {
@@ -298,19 +368,21 @@ handleSuggestionClick(path, type, name) {
             this.elements.resultsGallery.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">🔍</div>
-                    <p>No results found for "${this.results.query}"</p>
+                    <p>No results found for "${this.escapeHtml(this.results.query)}"</p>
                 </div>
             `;
         } else {
             this.results.items.forEach(item => {
                 const element = Gallery.createGalleryItem(item);
-                element.onclick = () => this.handleResultClick(item);
                 this.elements.resultsGallery.appendChild(element);
             });
         }
 
         this.renderPagination();
         this.elements.results.classList.remove('hidden');
+        
+        // Blur the input so keyboard doesn't stay open on mobile
+        this.elements.input.blur();
     },
 
     hideResults() {
@@ -345,19 +417,22 @@ handleSuggestionClick(path, type, name) {
         }
     },
 
-    handleResultClick(item) {
-        if (item.type === 'folder') {
-            this.hideResults();
-            this.elements.input.value = '';
-            this.elements.clear.classList.add('hidden');
-            App.navigateTo(item.path);
-        } else if (item.type === 'image' || item.type === 'video') {
-            const mediaItems = this.results.items.filter(i => i.type === 'image' || i.type === 'video');
-            const index = mediaItems.findIndex(i => i.path === item.path);
-            Lightbox.openWithItems(mediaItems, index);
-        } else if (item.type === 'playlist') {
-            const playlistName = item.name.replace(/\.[^/.]+$/, '');
-            Player.loadPlaylist(playlistName);
-        }
+    // Utility: Escape HTML for display
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+
+    // Utility: Escape for HTML attributes
+    escapeAttr(text) {
+        if (!text) return '';
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     },
 };

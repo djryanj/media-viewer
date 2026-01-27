@@ -12,14 +12,22 @@
     <div id="app">
         <!-- Header -->
         <header class="header">
-            <h1>Media Viewer</h1>
+            <div class="header-top">
+                <h1>Media Viewer</h1>
+                <div class="user-controls">
+                    <span class="current-user" id="current-user"></span>
+                    <button class="btn-icon" id="logout-btn" title="Logout">⏻</button>
+                </div>
+            </div>
+
             <div class="search-container">
                 <div class="search-box">
-                    <input type="text" id="search-input" placeholder="Search files..." autocomplete="off">
-                    <button id="search-clear" class="search-clear hidden">&times;</button>
+                    <input type="text" id="search-input" placeholder="Search files... (Ctrl+K)" autocomplete="off">
+                    <button class="search-clear hidden" id="search-clear">×</button>
                 </div>
-                <div id="search-dropdown" class="search-dropdown hidden"></div>
+                <div class="search-dropdown hidden" id="search-dropdown"></div>
             </div>
+
             <div class="controls">
                 <div class="sort-controls">
                     <label for="sort-field">Sort:</label>
@@ -29,10 +37,11 @@
                         <option value="size">Size</option>
                         <option value="type">Type</option>
                     </select>
-                    <button id="sort-order" class="btn-icon" title="Toggle sort order">
+                    <button class="btn-icon" id="sort-order" title="Toggle sort order">
                         <span class="sort-icon">↑</span>
                     </button>
                 </div>
+
                 <div class="filter-controls">
                     <label for="filter-type">Show:</label>
                     <select id="filter-type">
@@ -42,12 +51,10 @@
                         <option value="playlist">Playlists</option>
                     </select>
                 </div>
-                <div class="user-controls">
-                    <span id="current-user" class="current-user"></span>
-                    <button id="logout-btn" class="btn-icon" title="Logout">⏻</button>
-                </div>
             </div>
         </header>
+
+
 
         <!-- Breadcrumb Navigation -->
         <nav class="breadcrumb" id="breadcrumb">

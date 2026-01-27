@@ -2,13 +2,14 @@ package startup
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"media-viewer/internal/logging"
 )
 
 const Version = "1.0.0"
@@ -36,9 +37,9 @@ func LoadConfig() (*Config, error) {
 	printBanner()
 	logSystemInfo()
 
-	log.Println("------------------------------------------------------------")
-	log.Println("CONFIGURATION")
-	log.Println("------------------------------------------------------------")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("CONFIGURATION")
+	logging.Info("------------------------------------------------------------")
 
 	mediaDir := getEnv("MEDIA_DIR", "/media")
 	cacheDir := getEnv("CACHE_DIR", "/cache")
@@ -46,39 +47,40 @@ func LoadConfig() (*Config, error) {
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
 	logStaticFiles := getEnv("LOG_STATIC_FILES", "false") == "true"
 
-	log.Printf("  MEDIA_DIR:        %s", mediaDir)
-	log.Printf("  CACHE_DIR:        %s", cacheDir)
-	log.Printf("  PORT:             %s", port)
-	log.Printf("  INDEX_INTERVAL:   %s", indexIntervalStr)
-	log.Printf("  LOG_STATIC_FILES: %v", logStaticFiles)
+	logging.Info("  MEDIA_DIR:        %s", mediaDir)
+	logging.Info("  CACHE_DIR:        %s", cacheDir)
+	logging.Info("  PORT:             %s", port)
+	logging.Info("  INDEX_INTERVAL:   %s", indexIntervalStr)
+	logging.Info("  LOG_STATIC_FILES: %v", logStaticFiles)
+	logging.Info("  LOG_LEVEL:        %s", logging.GetLevel())
 
 	indexInterval, err := time.ParseDuration(indexIntervalStr)
 	if err != nil {
-		log.Printf("  [WARN] Invalid INDEX_INTERVAL, using default: 30m")
+		logging.Warn("  Invalid INDEX_INTERVAL, using default: 30m")
 		indexInterval = 30 * time.Minute
 	}
 
 	// Resolve paths
-	log.Println("")
-	log.Println("------------------------------------------------------------")
-	log.Println("DIRECTORY SETUP")
-	log.Println("------------------------------------------------------------")
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("DIRECTORY SETUP")
+	logging.Info("------------------------------------------------------------")
 
 	mediaDir, err = filepath.Abs(mediaDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve media directory path: %w", err)
 	}
-	log.Printf("  Media directory (absolute): %s", mediaDir)
+	logging.Info("  Media directory (absolute): %s", mediaDir)
 
 	cacheDir, err = filepath.Abs(cacheDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve cache directory path: %w", err)
 	}
-	log.Printf("  Cache directory (absolute): %s", cacheDir)
+	logging.Info("  Cache directory (absolute): %s", cacheDir)
 
 	// Check/create media directory (warning only)
 	if err := ensureDirectory(mediaDir, "media"); err != nil {
-		log.Printf("  [WARN] Media directory issue: %v", err)
+		logging.Warn("  Media directory issue: %v", err)
 	}
 
 	// Check/create cache directory structure
@@ -99,11 +101,11 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// Test write access for database (required)
-	log.Printf("  Testing cache directory write access (required for database)...")
+	logging.Debug("  Testing cache directory write access...")
 	if err := testWriteAccess(cacheDir); err != nil {
 		return nil, fmt.Errorf("cache directory is not writable (required for database): %w", err)
 	}
-	log.Printf("  [OK] Cache directory is writable")
+	logging.Info("  [OK] Cache directory is writable")
 
 	// Setup thumbnail directory (optional)
 	config.ThumbnailsEnabled = setupOptionalDir(config.ThumbnailDir, "thumbnails")
@@ -112,35 +114,35 @@ func LoadConfig() (*Config, error) {
 	config.TranscodingEnabled = setupOptionalDir(config.TranscodeDir, "transcoding")
 
 	// Summary
-	log.Println("")
-	log.Println("  Feature availability:")
-	log.Printf("    Database:    ENABLED (required)")
-	log.Printf("    Thumbnails:  %s", enabledString(config.ThumbnailsEnabled))
-	log.Printf("    Transcoding: %s", enabledString(config.TranscodingEnabled))
+	logging.Info("")
+	logging.Info("  Feature availability:")
+	logging.Info("    Database:    ENABLED (required)")
+	logging.Info("    Thumbnails:  %s", enabledString(config.ThumbnailsEnabled))
+	logging.Info("    Transcoding: %s", enabledString(config.TranscodingEnabled))
 
 	return config, nil
 }
 
 func setupOptionalDir(path, name string) bool {
-	log.Printf("  Setting up %s directory: %s", name, path)
+	logging.Debug("  Setting up %s directory: %s", name, path)
 
 	// Try to create directory
 	if err := os.MkdirAll(path, 0755); err != nil {
-		log.Printf("    [WARN] Failed to create %s directory: %v", name, err)
-		log.Printf("    [WARN] %s will be disabled", name)
+		logging.Warn("    Failed to create %s directory: %v", name, err)
+		logging.Warn("    %s will be disabled", name)
 		return false
 	}
 
 	// Test write access
 	testFile := filepath.Join(path, ".write-test")
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
-		log.Printf("    [WARN] %s directory is not writable: %v", name, err)
-		log.Printf("    [WARN] %s will be disabled", name)
+		logging.Warn("    %s directory is not writable: %v", name, err)
+		logging.Warn("    %s will be disabled", name)
 		return false
 	}
 	os.Remove(testFile)
 
-	log.Printf("    [OK] %s directory ready", name)
+	logging.Debug("    [OK] %s directory ready", name)
 	return true
 }
 
@@ -153,126 +155,130 @@ func enabledString(enabled bool) string {
 
 // LogDatabaseInit logs database initialization
 func LogDatabaseInit(duration time.Duration) {
-	log.Println("")
-	log.Println("------------------------------------------------------------")
-	log.Println("DATABASE INITIALIZATION")
-	log.Println("------------------------------------------------------------")
-	log.Printf("  [OK] Database initialized in %v", duration)
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("DATABASE INITIALIZATION")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("  [OK] Database initialized in %v", duration)
 }
 
 // LogTranscoderInit logs transcoder initialization and checks FFmpeg
 func LogTranscoderInit(enabled bool) {
-	log.Println("")
-	log.Println("------------------------------------------------------------")
-	log.Println("TRANSCODER INITIALIZATION")
-	log.Println("------------------------------------------------------------")
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("TRANSCODER INITIALIZATION")
+	logging.Info("------------------------------------------------------------")
 
 	if !enabled {
-		log.Printf("  [WARN] Transcoding disabled (cache directory not writable)")
-		log.Printf("  [WARN] Videos requiring transcoding will not play")
+		logging.Warn("  Transcoding disabled (cache directory not writable)")
+		logging.Warn("  Videos requiring transcoding will not play")
 		return
 	}
 
 	if err := checkFFmpeg(); err != nil {
-		log.Printf("  [WARN] FFmpeg check failed: %v", err)
-		log.Printf("  [WARN] Video transcoding may not work correctly")
+		logging.Warn("  FFmpeg check failed: %v", err)
+		logging.Warn("  Video transcoding may not work correctly")
 	} else {
-		log.Printf("  [OK] FFmpeg is available")
+		logging.Info("  [OK] FFmpeg is available")
 	}
 }
 
 // LogThumbnailInit logs thumbnail generator initialization
 func LogThumbnailInit(enabled bool) {
 	if !enabled {
-		log.Printf("  [INFO] Thumbnails disabled (cache directory not writable)")
-		log.Printf("  [INFO] Default icons will be shown instead")
+		logging.Info("  Thumbnails disabled (cache directory not writable)")
+		logging.Info("  Default icons will be shown instead")
 	}
 }
 
 // LogIndexerInit logs indexer initialization
 func LogIndexerInit(interval time.Duration) {
-	log.Println("")
-	log.Println("------------------------------------------------------------")
-	log.Println("INDEXER INITIALIZATION")
-	log.Println("------------------------------------------------------------")
-	log.Printf("  Index interval: %v", interval)
-	log.Printf("  Starting indexer...")
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("INDEXER INITIALIZATION")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("  Index interval: %v", interval)
+	logging.Debug("  Starting indexer...")
 }
 
 // LogIndexerStarted logs successful indexer start
 func LogIndexerStarted() {
-	log.Printf("  [OK] Indexer started (initial scan running in background)")
+	logging.Info("  [OK] Indexer started (initial scan running in background)")
 }
 
 // LogHTTPRoutes logs all registered HTTP routes
 func LogHTTPRoutes(logStaticFiles bool) {
-	log.Println("")
-	log.Println("------------------------------------------------------------")
-	log.Println("HTTP SERVER SETUP")
-	log.Println("------------------------------------------------------------")
-	log.Println("  Registered API routes:")
-	log.Println("    GET  /api/files            - List directory contents")
-	log.Println("    GET  /api/media            - List media files in directory")
-	log.Println("    GET  /api/file/{path}      - Get raw file")
-	log.Println("    GET  /api/thumbnail/{path} - Get thumbnail")
-	log.Println("    GET  /api/playlists        - List all playlists")
-	log.Println("    GET  /api/playlist/{name}  - Get playlist details")
-	log.Println("    GET  /api/stream/{path}    - Stream video")
-	log.Println("    GET  /api/stream-info/{p}  - Get video info")
-	log.Println("    GET  /api/search           - Search files")
-	log.Println("    GET  /api/stats            - Get index statistics")
-	log.Println("    POST /api/reindex          - Trigger re-index")
-	log.Println("    GET  /*                    - Static files")
-	log.Println("")
-	log.Println("  HTTP logging enabled")
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("HTTP SERVER SETUP")
+	logging.Info("------------------------------------------------------------")
+
+	if logging.IsDebugEnabled() {
+		logging.Debug("  Registered API routes:")
+		logging.Debug("    GET  /api/files            - List directory contents")
+		logging.Debug("    GET  /api/media            - List media files in directory")
+		logging.Debug("    GET  /api/file/{path}      - Get raw file")
+		logging.Debug("    GET  /api/thumbnail/{path} - Get thumbnail")
+		logging.Debug("    GET  /api/playlists        - List all playlists")
+		logging.Debug("    GET  /api/playlist/{name}  - Get playlist details")
+		logging.Debug("    GET  /api/stream/{path}    - Stream video")
+		logging.Debug("    GET  /api/stream-info/{p}  - Get video info")
+		logging.Debug("    GET  /api/search           - Search files")
+		logging.Debug("    GET  /api/stats            - Get index statistics")
+		logging.Debug("    POST /api/reindex          - Trigger re-index")
+		logging.Debug("    GET  /*                    - Static files")
+		logging.Debug("")
+	}
+
+	logging.Info("  HTTP logging enabled")
 	if logStaticFiles {
-		log.Println("    Static file logging: ON")
+		logging.Info("    Static file logging: ON")
 	} else {
-		log.Println("    Static file logging: OFF (set LOG_STATIC_FILES=true to enable)")
+		logging.Info("    Static file logging: OFF (set LOG_STATIC_FILES=true to enable)")
 	}
 }
 
 // LogServerStarted logs successful server start
 func LogServerStarted(port string, startupDuration time.Duration) {
-	log.Println("")
-	log.Println("------------------------------------------------------------")
-	log.Println("SERVER STARTED")
-	log.Println("------------------------------------------------------------")
-	log.Printf("  Startup time:    %v", startupDuration)
-	log.Printf("  Listening on:    http://0.0.0.0:%s", port)
-	log.Printf("  Local access:    http://localhost:%s", port)
-	log.Println("")
-	log.Println("  Press Ctrl+C to stop the server")
-	log.Println("------------------------------------------------------------")
-	log.Println("")
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("SERVER STARTED")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("  Startup time:    %v", startupDuration)
+	logging.Info("  Listening on:    http://0.0.0.0:%s", port)
+	logging.Info("  Local access:    http://localhost:%s", port)
+	logging.Info("")
+	logging.Info("  Press Ctrl+C to stop the server")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("")
 }
 
 // LogShutdownInitiated logs shutdown start
 func LogShutdownInitiated(signal string) {
-	log.Println("")
-	log.Println("------------------------------------------------------------")
-	log.Printf("SHUTDOWN INITIATED (received %s)", signal)
-	log.Println("------------------------------------------------------------")
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("SHUTDOWN INITIATED (received %s)", signal)
+	logging.Info("------------------------------------------------------------")
 }
 
 // LogShutdownStep logs a shutdown step
 func LogShutdownStep(step string) {
-	log.Printf("  %s...", step)
+	logging.Debug("  %s...", step)
 }
 
 // LogShutdownStepComplete logs a completed shutdown step
 func LogShutdownStepComplete(step string) {
-	log.Printf("  [OK] %s", step)
+	logging.Info("  [OK] %s", step)
 }
 
 // LogShutdownComplete logs shutdown completion
 func LogShutdownComplete() {
-	log.Println("  [OK] Shutdown complete")
+	logging.Info("  [OK] Shutdown complete")
 }
 
 // LogFatal logs a fatal error and exits
 func LogFatal(format string, args ...interface{}) {
-	log.Fatalf("  [ERROR] "+format, args...)
+	logging.Fatal(format, args...)
 }
 
 // Helper functions
@@ -288,41 +294,44 @@ func printBanner() {
                                                               
 ------------------------------------------------------------`
 	fmt.Println(banner)
-	log.Printf("  Version: %s", Version)
-	log.Printf("  Started: %s", time.Now().Format(time.RFC1123))
-	log.Println("")
+	logging.Info("  Version: %s", Version)
+	logging.Info("  Started: %s", time.Now().Format(time.RFC1123))
+	logging.Info("")
 }
 
 func logSystemInfo() {
-	log.Println("------------------------------------------------------------")
-	log.Println("SYSTEM INFORMATION")
-	log.Println("------------------------------------------------------------")
-	log.Printf("  Go version:      %s", runtime.Version())
-	log.Printf("  OS/Arch:         %s/%s", runtime.GOOS, runtime.GOARCH)
-	log.Printf("  CPUs available:  %d", runtime.NumCPU())
-	log.Printf("  Goroutines:      %d", runtime.NumGoroutine())
+	logging.Info("------------------------------------------------------------")
+	logging.Info("SYSTEM INFORMATION")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("  Go version:      %s", runtime.Version())
+	logging.Info("  OS/Arch:         %s/%s", runtime.GOOS, runtime.GOARCH)
+	logging.Info("  CPUs available:  %d", runtime.NumCPU())
 
-	if wd, err := os.Getwd(); err == nil {
-		log.Printf("  Working dir:     %s", wd)
+	if logging.IsDebugEnabled() {
+		logging.Debug("  Goroutines:      %d", runtime.NumGoroutine())
+
+		if wd, err := os.Getwd(); err == nil {
+			logging.Debug("  Working dir:     %s", wd)
+		}
+
+		if hostname, err := os.Hostname(); err == nil {
+			logging.Debug("  Hostname:        %s", hostname)
+		}
 	}
 
-	if hostname, err := os.Hostname(); err == nil {
-		log.Printf("  Hostname:        %s", hostname)
-	}
-
-	log.Println("")
+	logging.Info("")
 }
 
 func ensureDirectory(path, name string) error {
-	log.Printf("  Checking %s directory: %s", name, path)
+	logging.Debug("  Checking %s directory: %s", name, path)
 
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
-		log.Printf("    Directory does not exist, creating...")
+		logging.Debug("    Directory does not exist, creating...")
 		if err := os.MkdirAll(path, 0755); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
-		log.Printf("    [OK] Created directory: %s", path)
+		logging.Debug("    [OK] Created directory: %s", path)
 		return nil
 	}
 
@@ -334,10 +343,10 @@ func ensureDirectory(path, name string) error {
 		return fmt.Errorf("path exists but is not a directory")
 	}
 
-	log.Printf("    [OK] Directory exists")
+	logging.Debug("    [OK] Directory exists")
 
-	// List contents summary for media directory
-	if name == "media" {
+	// List contents summary for media directory (debug only)
+	if name == "media" && logging.IsDebugEnabled() {
 		entries, err := os.ReadDir(path)
 		if err == nil {
 			fileCount := 0
@@ -349,7 +358,7 @@ func ensureDirectory(path, name string) error {
 					fileCount++
 				}
 			}
-			log.Printf("    Contents: %d files, %d directories (top level)", fileCount, dirCount)
+			logging.Debug("    Contents: %d files, %d directories (top level)", fileCount, dirCount)
 		}
 	}
 
@@ -370,7 +379,7 @@ func checkFFmpeg() error {
 	if err != nil {
 		return fmt.Errorf("ffmpeg not found in PATH")
 	}
-	log.Printf("  FFmpeg path: %s", path)
+	logging.Debug("  FFmpeg path: %s", path)
 
 	cmd := exec.Command("ffmpeg", "-version")
 	output, err := cmd.Output()
@@ -380,7 +389,7 @@ func checkFFmpeg() error {
 
 	lines := strings.Split(string(output), "\n")
 	if len(lines) > 0 {
-		log.Printf("  FFmpeg version: %s", strings.TrimSpace(lines[0]))
+		logging.Debug("  FFmpeg version: %s", strings.TrimSpace(lines[0]))
 	}
 
 	return nil

@@ -1,7 +1,7 @@
 const Favorites = {
     elements: {},
     contextTarget: null,
-    pinnedPaths: new Set(), // Cache of pinned paths for quick lookup
+    pinnedPaths: new Set(),
 
     init() {
         this.cacheElements();
@@ -57,7 +57,7 @@ const Favorites = {
             this.hideContextMenu();
         });
 
-        // Context menu on right-click (still available as alternative)
+        // Context menu on long-press (mobile) or right-click (desktop)
         document.addEventListener('contextmenu', (e) => {
             const galleryItem = e.target.closest('.gallery-item');
             if (galleryItem) {
@@ -65,9 +65,59 @@ const Favorites = {
                 this.showContextMenu(e, galleryItem);
             }
         });
+
+        // Long-press detection for mobile
+        this.setupLongPress();
     },
 
-    // Load all pinned paths for quick lookup
+    setupLongPress() {
+        let longPressTimer = null;
+        let longPressTarget = null;
+        const longPressDuration = 500; // ms
+
+        document.addEventListener('touchstart', (e) => {
+            const galleryItem = e.target.closest('.gallery-item');
+            if (galleryItem) {
+                longPressTarget = galleryItem;
+                longPressTimer = setTimeout(() => {
+                    // Trigger context menu on long press
+                    const touch = e.touches[0];
+                    this.showContextMenu({
+                        pageX: touch.pageX,
+                        pageY: touch.pageY,
+                        preventDefault: () => {}
+                    }, galleryItem);
+
+                    // Vibrate if supported
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                }, longPressDuration);
+            }
+        }, { passive: true });
+
+        document.addEventListener('touchmove', () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        }, { passive: true });
+
+        document.addEventListener('touchend', () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        }, { passive: true });
+
+        document.addEventListener('touchcancel', () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        }, { passive: true });
+    },
+
     async loadPinnedPaths() {
         try {
             const response = await fetch('/api/favorites');
@@ -81,15 +131,13 @@ const Favorites = {
         }
     },
 
-    // Quick check if a path is pinned (uses cache)
     isPinned(path) {
         return this.pinnedPaths.has(path);
     },
 
-    // Toggle favorite state - returns promise with new state
     async toggleFavorite(path, name, type) {
         const isPinned = this.isPinned(path);
-        
+
         if (isPinned) {
             await this.removeFavorite(path);
             return false;
@@ -109,13 +157,9 @@ const Favorites = {
 
             if (!response.ok) throw new Error('Failed to add favorite');
 
-            // Update cache
             this.pinnedPaths.add(path);
-
-            // Update all UI elements
             this.updateAllPinStates(path, true);
 
-            // Refresh favorites section if on home page
             if (App.state.currentPath === '') {
                 this.loadFavorites();
             }
@@ -123,7 +167,7 @@ const Favorites = {
             return true;
         } catch (error) {
             console.error('Error adding favorite:', error);
-            App.showError('Failed to add favorite');
+            Gallery.showToast('Failed to add favorite');
             return false;
         }
     },
@@ -138,13 +182,9 @@ const Favorites = {
 
             if (!response.ok) throw new Error('Failed to remove favorite');
 
-            // Update cache
             this.pinnedPaths.delete(path);
-
-            // Update all UI elements
             this.updateAllPinStates(path, false);
 
-            // Refresh favorites section if on home page
             if (App.state.currentPath === '') {
                 this.loadFavorites();
             }
@@ -152,20 +192,15 @@ const Favorites = {
             return true;
         } catch (error) {
             console.error('Error removing favorite:', error);
-            App.showError('Failed to remove favorite');
+            Gallery.showToast('Failed to remove favorite');
             return false;
         }
     },
 
-    // Update pin state across all UI components
     updateAllPinStates(path, isPinned) {
-        // Update gallery items
         Gallery.updatePinState(path, isPinned);
-
-        // Update lightbox if open
         Lightbox.onFavoriteChanged(path, isPinned);
 
-        // Update App state if item exists
         if (App.state.listing?.items) {
             const item = App.state.listing.items.find(i => i.path === path);
             if (item) {
@@ -197,16 +232,28 @@ const Favorites = {
         this.elements.ctxOpenFolder.classList.toggle('hidden', !isInSearchOrFavorites || type === 'folder');
 
         const menu = this.elements.contextMenu;
-        menu.style.left = `${event.pageX}px`;
-        menu.style.top = `${event.pageY}px`;
+        
+        // Position menu
+        let x = event.pageX;
+        let y = event.pageY;
+
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
         menu.classList.remove('hidden');
 
+        // Adjust if off-screen
         const rect = menu.getBoundingClientRect();
         if (rect.right > window.innerWidth) {
-            menu.style.left = `${event.pageX - rect.width}px`;
+            menu.style.left = `${x - rect.width}px`;
         }
         if (rect.bottom > window.innerHeight) {
-            menu.style.top = `${event.pageY - rect.height}px`;
+            menu.style.top = `${y - rect.height}px`;
+        }
+        if (rect.left < 0) {
+            menu.style.left = '0.5rem';
+        }
+        if (rect.top < 0) {
+            menu.style.top = '0.5rem';
         }
     },
 
@@ -221,8 +268,7 @@ const Favorites = {
             if (!response.ok) throw new Error('Failed to load favorites');
 
             const favorites = await response.json();
-            
-            // Update cache
+
             this.pinnedPaths.clear();
             favorites.forEach(f => this.pinnedPaths.add(f.path));
 
@@ -242,7 +288,7 @@ const Favorites = {
         this.elements.gallery.innerHTML = '';
 
         favorites.forEach(item => {
-            item.isFavorite = true; // Mark as favorite for pin button state
+            item.isFavorite = true;
             const element = Gallery.createGalleryItem(item);
             this.elements.gallery.appendChild(element);
         });
@@ -252,18 +298,14 @@ const Favorites = {
 
     updateFromListing(listing) {
         if (listing.path === '' && listing.favorites && listing.favorites.length > 0) {
-            // Update cache from listing
             listing.favorites.forEach(f => this.pinnedPaths.add(f.path));
             this.renderFavorites(listing.favorites);
         } else if (listing.path === '') {
-            // On home page but no favorites
             this.elements.section.classList.add('hidden');
         } else {
-            // Not on home page
             this.elements.section.classList.add('hidden');
         }
 
-        // Update pinned paths cache from items
         if (listing.items) {
             listing.items.forEach(item => {
                 if (item.isFavorite) {
