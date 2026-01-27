@@ -1,8 +1,7 @@
 const Gallery = {
     // Double-tap detection
-    lastTap: 0,
-    lastTapTarget: null,
     doubleTapDelay: 300, // milliseconds
+    scrollThreshold: 10, // pixels - movement beyond this is considered a scroll
 
     render(items) {
         const gallery = App.elements.gallery;
@@ -47,58 +46,116 @@ const Gallery = {
     },
 
     attachTapHandler(element, item) {
-        // Use pointer events for unified handling
-        let tapTimeout = null;
+        // Touch state tracking
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
         let lastTapTime = 0;
+        let tapTimeout = null;
+        let isTouchMove = false;
 
-        const handleTap = (e) => {
+        // Touch start - record position
+        element.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                touchStartTime = Date.now();
+                isTouchMove = false;
+            }
+        }, { passive: true });
+
+        // Touch move - detect scrolling
+        element.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1) {
+                const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+                const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+                
+                // If moved beyond threshold, it's a scroll
+                if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
+                    isTouchMove = true;
+                    
+                    // Cancel any pending tap
+                    if (tapTimeout) {
+                        clearTimeout(tapTimeout);
+                        tapTimeout = null;
+                    }
+                }
+            }
+        }, { passive: true });
+
+        // Touch end - handle tap if not scrolling
+        element.addEventListener('touchend', (e) => {
+            // Ignore if it was a scroll gesture
+            if (isTouchMove) {
+                isTouchMove = false;
+                return;
+            }
+
             // Ignore if clicking on buttons
             if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
                 return;
             }
 
-            const currentTime = Date.now();
-            const tapLength = currentTime - lastTapTime;
+            // Ignore multi-touch
+            if (e.changedTouches.length !== 1) {
+                return;
+            }
 
-            if (tapLength < this.doubleTapDelay && tapLength > 0) {
+            // Final position check
+            const touch = e.changedTouches[0];
+            const deltaX = Math.abs(touch.clientX - touchStartX);
+            const deltaY = Math.abs(touch.clientY - touchStartY);
+            
+            if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
+                return;
+            }
+
+            // Check touch duration - very long touches might be long-press
+            const touchDuration = Date.now() - touchStartTime;
+            if (touchDuration > 500) {
+                // Long press - don't treat as tap (context menu handles this)
+                return;
+            }
+
+            e.preventDefault();
+
+            const currentTime = Date.now();
+            const tapInterval = currentTime - lastTapTime;
+
+            if (tapInterval < this.doubleTapDelay && tapInterval > 0) {
                 // Double tap detected
-                e.preventDefault();
                 clearTimeout(tapTimeout);
+                tapTimeout = null;
+                lastTapTime = 0;
                 this.handleDoubleTap(element, item);
-                lastTapTime = 0; // Reset
             } else {
-                // Single tap - wait to see if it's a double tap
+                // Potential single tap - wait to see if double tap follows
                 lastTapTime = currentTime;
                 tapTimeout = setTimeout(() => {
                     if (lastTapTime !== 0) {
                         this.handleSingleTap(item);
                         lastTapTime = 0;
                     }
+                    tapTimeout = null;
                 }, this.doubleTapDelay);
-            }
-        };
-
-        // Touch devices
-        element.addEventListener('touchend', (e) => {
-            // Only handle single touch
-            if (e.changedTouches.length === 1) {
-                handleTap(e);
             }
         }, { passive: false });
 
-        // Mouse devices - use click for immediate response
+        // Touch cancel - reset state
+        element.addEventListener('touchcancel', () => {
+            isTouchMove = false;
+            if (tapTimeout) {
+                clearTimeout(tapTimeout);
+                tapTimeout = null;
+            }
+            lastTapTime = 0;
+        }, { passive: true });
+
+        // Mouse click for desktop (immediate, no double-tap delay)
         element.addEventListener('click', (e) => {
-            // Check if this is a touch device (touchend already handled it)
-            if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-                // On touch devices, click fires after touchend, so ignore it
-                // unless it's from a mouse
-                if (e.pointerType === 'mouse' || !e.pointerType) {
-                    // Could be a mouse on a touch-capable device
-                    // For simplicity, let touchend handle touch devices
-                    if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) {
-                        return;
-                    }
-                }
+            // Skip if this is a touch device and touch already handled it
+            if ('ontouchstart' in window && e.sourceCapabilities?.firesTouchEvents) {
+                return;
             }
 
             // Ignore if clicking on buttons
@@ -106,15 +163,20 @@ const Gallery = {
                 return;
             }
 
-            // For mouse, use dblclick event instead
             this.handleSingleTap(item);
         });
 
-        // Mouse double-click (for desktop)
+        // Mouse double-click for desktop
         element.addEventListener('dblclick', (e) => {
+            // Skip if this is a touch device
+            if ('ontouchstart' in window && e.sourceCapabilities?.firesTouchEvents) {
+                return;
+            }
+
             if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
                 return;
             }
+
             e.preventDefault();
             this.handleDoubleTap(element, item);
         });
