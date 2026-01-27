@@ -189,7 +189,12 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/auth/") ||
 			r.URL.Path == "/login.html" ||
 			r.URL.Path == "/css/login.css" ||
-			r.URL.Path == "/js/login.js" {
+			r.URL.Path == "/js/login.js" ||
+			// Health check endpoints
+			r.URL.Path == "/health" ||
+			r.URL.Path == "/healthz" ||
+			r.URL.Path == "/livez" ||
+			r.URL.Path == "/readyz" {
 			next.ServeHTTP(w, r)
 			return
 		}
