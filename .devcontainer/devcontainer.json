@@ -1,0 +1,34 @@
+{
+  "name": "Media Viewer Dev",
+  "image": "mcr.microsoft.com/devcontainers/go:1.25",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": false
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go", "ms-azuretools.vscode-docker"]
+    }
+  },
+
+  "forwardPorts": [8080],
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  "mounts": [
+    "source=${localWorkspaceFolder}/sample-media,target=/media,type=bind,consistency=cached",
+    "source=media-viewer-cache,target=/cache,type=volume"
+  ],
+  
+  "remoteUser": "vscode",
+
+  "remoteEnv": {
+    "MEDIA_DIR": "/media",
+    "CACHE_DIR": "/cache",
+    "PORT": "8080"
+  }
+}

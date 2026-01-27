@@ -1,0 +1,6 @@
+sample-media/
+Dockerfile
+.devcontainer/
+Makefile
+README.md
+.air.toml

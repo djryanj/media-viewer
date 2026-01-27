@@ -1,0 +1,395 @@
+package database
+
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// InitTagTables creates the tag-related tables (called from main initialize)
+func (d *Database) initTagTables() error {
+	schema := `
+	-- Tags table
+	CREATE TABLE IF NOT EXISTS tags (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		color TEXT,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name COLLATE NOCASE);
+
+	-- File-Tag relationship table
+	CREATE TABLE IF NOT EXISTS file_tags (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		file_path TEXT NOT NULL,
+		tag_id INTEGER NOT NULL,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+		UNIQUE(file_path, tag_id)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_file_tags_path ON file_tags(file_path);
+	CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(tag_id);
+	`
+
+	_, err := d.db.Exec(schema)
+	return err
+}
+
+// GetOrCreateTag gets an existing tag or creates a new one
+func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("tag name cannot be empty")
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Try to get existing tag
+	var tag Tag
+	var createdAt int64
+	var color sql.NullString
+
+	err := d.db.QueryRow(
+		"SELECT id, name, color, created_at FROM tags WHERE name = ? COLLATE NOCASE",
+		name,
+	).Scan(&tag.ID, &tag.Name, &color, &createdAt)
+
+	if err == nil {
+		tag.CreatedAt = time.Unix(createdAt, 0)
+		if color.Valid {
+			tag.Color = color.String
+		}
+		return &tag, nil
+	}
+
+	// Create new tag
+	result, err := d.db.Exec(
+		"INSERT INTO tags (name) VALUES (?)",
+		name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tag: %w", err)
+	}
+
+	tag.ID, _ = result.LastInsertId()
+	tag.Name = name
+	tag.CreatedAt = time.Now()
+
+	return &tag, nil
+}
+
+// AddTagToFile adds a tag to a file
+func (d *Database) AddTagToFile(filePath, tagName string) error {
+	tag, err := d.GetOrCreateTag(tagName)
+	if err != nil {
+		return err
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err = d.db.Exec(
+		"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
+		filePath, tag.ID,
+	)
+	return err
+}
+
+// RemoveTagFromFile removes a tag from a file
+func (d *Database) RemoveTagFromFile(filePath, tagName string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(`
+		DELETE FROM file_tags 
+		WHERE file_path = ? AND tag_id = (SELECT id FROM tags WHERE name = ? COLLATE NOCASE)
+	`, filePath, tagName)
+
+	return err
+}
+
+// GetFileTags returns all tags for a file
+func (d *Database) GetFileTags(filePath string) ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT t.name 
+		FROM tags t
+		INNER JOIN file_tags ft ON t.id = ft.tag_id
+		WHERE ft.file_path = ?
+		ORDER BY t.name COLLATE NOCASE
+	`, filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tags []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			tags = append(tags, name)
+		}
+	}
+
+	return tags, nil
+}
+
+// GetFileTagsNoLock returns tags without acquiring lock (caller must handle locking)
+func (d *Database) getFileTagsNoLock(filePath string) []string {
+	rows, err := d.db.Query(`
+		SELECT t.name 
+		FROM tags t
+		INNER JOIN file_tags ft ON t.id = ft.tag_id
+		WHERE ft.file_path = ?
+		ORDER BY t.name COLLATE NOCASE
+	`, filePath)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var tags []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			tags = append(tags, name)
+		}
+	}
+
+	return tags
+}
+
+// SetFileTags replaces all tags for a file
+func (d *Database) SetFileTags(filePath string, tagNames []string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Start transaction
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Remove existing tags
+	_, err = tx.Exec("DELETE FROM file_tags WHERE file_path = ?", filePath)
+	if err != nil {
+		return err
+	}
+
+	// Add new tags
+	for _, tagName := range tagNames {
+		tagName = strings.TrimSpace(tagName)
+		if tagName == "" {
+			continue
+		}
+
+		// Get or create tag
+		var tagID int64
+		err := tx.QueryRow("SELECT id FROM tags WHERE name = ? COLLATE NOCASE", tagName).Scan(&tagID)
+		if err != nil {
+			// Create tag
+			result, err := tx.Exec("INSERT INTO tags (name) VALUES (?)", tagName)
+			if err != nil {
+				return err
+			}
+			tagID, _ = result.LastInsertId()
+		}
+
+		// Add relationship
+		_, err = tx.Exec(
+			"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
+			filePath, tagID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetAllTags returns all tags with item counts
+func (d *Database) GetAllTags() ([]Tag, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT t.id, t.name, t.color, t.created_at, COUNT(ft.id) as item_count
+		FROM tags t
+		LEFT JOIN file_tags ft ON t.id = ft.tag_id
+		GROUP BY t.id
+		ORDER BY t.name COLLATE NOCASE
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tags []Tag
+	for rows.Next() {
+		var tag Tag
+		var createdAt int64
+		var color sql.NullString
+
+		if err := rows.Scan(&tag.ID, &tag.Name, &color, &createdAt, &tag.ItemCount); err != nil {
+			continue
+		}
+
+		tag.CreatedAt = time.Unix(createdAt, 0)
+		if color.Valid {
+			tag.Color = color.String
+		}
+
+		tags = append(tags, tag)
+	}
+
+	return tags, nil
+}
+
+// GetFilesByTag returns all files with a specific tag
+func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	// Get total count
+	var totalItems int
+	err := d.db.QueryRow(`
+		SELECT COUNT(DISTINCT ft.file_path)
+		FROM file_tags ft
+		INNER JOIN tags t ON ft.tag_id = t.id
+		WHERE t.name = ? COLLATE NOCASE
+	`, tagName).Scan(&totalItems)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := (totalItems + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	offset := (page - 1) * pageSize
+
+	// Get files
+	rows, err := d.db.Query(`
+		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+		FROM files f
+		INNER JOIN file_tags ft ON f.path = ft.file_path
+		INNER JOIN tags t ON ft.tag_id = t.id
+		WHERE t.name = ? COLLATE NOCASE
+		ORDER BY f.name COLLATE NOCASE
+		LIMIT ? OFFSET ?
+	`, tagName, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []MediaFile
+	for rows.Next() {
+		var file MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+
+		if err := rows.Scan(
+			&file.ID, &file.Name, &file.Path, &file.ParentPath,
+			&file.Type, &file.Size, &modTime, &mimeType,
+		); err != nil {
+			continue
+		}
+
+		file.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			file.MimeType = mimeType.String
+		}
+
+		if file.Type == FileTypeImage || file.Type == FileTypeVideo {
+			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		}
+
+		file.Tags = d.getFileTagsNoLock(file.Path)
+		file.IsFavorite = d.isFavoriteNoLockInternal(file.Path)
+
+		items = append(items, file)
+	}
+
+	return &SearchResult{
+		Items:      items,
+		Query:      "tag:" + tagName,
+		TotalItems: totalItems,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// DeleteTag removes a tag and all its associations
+func (d *Database) DeleteTag(tagName string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec("DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
+	return err
+}
+
+// RenameTag renames a tag
+func (d *Database) RenameTag(oldName, newName string) error {
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return fmt.Errorf("tag name cannot be empty")
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(
+		"UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE",
+		newName, oldName,
+	)
+	return err
+}
+
+// SetTagColor sets the color for a tag
+func (d *Database) SetTagColor(tagName, color string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(
+		"UPDATE tags SET color = ? WHERE name = ? COLLATE NOCASE",
+		color, tagName,
+	)
+	return err
+}
+
+// GetTagCount returns the total number of tags
+func (d *Database) GetTagCount() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var count int
+	d.db.QueryRow("SELECT COUNT(*) FROM tags").Scan(&count)
+	return count
+}
+
+// Internal helper without lock
+func (d *Database) isFavoriteNoLockInternal(path string) bool {
+	var count int
+	d.db.QueryRow("SELECT COUNT(*) FROM favorites WHERE path = ?", path).Scan(&count)
+	return count > 0
+}

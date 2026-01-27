@@ -1,0 +1,65 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+media-viewer
+
+# Build output
+tmp/
+dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# VS Code (keep settings but ignore local history)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Cache
+.cache/
+
+# Air tmp directory
+tmp/
+
+# Sample media (optional - uncomment if you don't want to track)
+# sample-media/
+
+# Log files
+*.log
+air.log
+
+# Coverage
+coverage.out
+coverage.html
+
+sample-media/
+
+/media/
+cache/
