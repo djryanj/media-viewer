@@ -98,7 +98,6 @@ jobs:
   build-docker:
     name: Build Docker Image
     needs: [changes, lint]
-    # Only build Docker if Docker-related files changed, or on push to main
     if: |
       needs.changes.outputs.docker == 'true' || 
       needs.changes.outputs.go == 'true' ||
@@ -106,6 +105,7 @@ jobs:
     uses: ./.github/workflows/docker-build.yml
     with:
       push: false
+      platforms: 'linux/amd64'  # Only test amd64 in CI for speed
     permissions:
       contents: read
       packages: write

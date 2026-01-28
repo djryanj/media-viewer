@@ -151,6 +151,25 @@ If using VS Code with the Dev Containers extension:
 
 ### Building
 
+### Docker
+
+Build locally:
+```bash
+docker build -t media-viewer:local .
+```
+
+Build with cross-compilation optimization (faster multi-arch builds):
+```bash
+docker build -f Dockerfile.cross -t media-viewer:local .
+```
+
+### Multi-architecture
+
+The GitHub Actions workflow automatically builds for both amd64 and arm64:
+- PRs: Only amd64 (for speed)
+- Main branch: Both architectures
+- Tags: Both architectures + SBOM generation
+
 ```bash
 # Build the main application
 go build -tags 'fts5' -o media-viewer .
