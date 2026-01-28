@@ -97,7 +97,7 @@ jobs:
 
   build-docker:
     name: Build Docker Image
-    needs: [changes]
+    needs: [changes, lint]
     # Only build Docker if Docker-related files changed, or on push to main
     if: |
       needs.changes.outputs.docker == 'true' || 

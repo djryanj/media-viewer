@@ -316,7 +316,7 @@ func LogHTTPRoutes(router *mux.Router, logStaticFiles, logHealthChecks bool) {
 		}
 
 		// Sort group keys
-		var groupKeys []string
+		groupKeys := make([]string, 0, len(groups))
 		for k := range groups {
 			groupKeys = append(groupKeys, k)
 		}
