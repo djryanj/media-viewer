@@ -10,18 +10,18 @@ import (
 	"media-viewer/internal/logging"
 )
 
-// GetOrCreateTag gets an existing tag or creates a new one
+// GetOrCreateTag gets an existing tag or creates a new one.
 func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("tag name cannot be empty")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 
 	// Try to get existing tag
 	var tag Tag
@@ -57,31 +57,48 @@ func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
 	return &tag, nil
 }
 
-// AddTagToFile adds a tag to a file
+// AddTagToFile adds a tag to a file.
 func (d *Database) AddTagToFile(filePath, tagName string) error {
-	tag, err := d.GetOrCreateTag(tagName)
-	if err != nil {
-		return err
+	tagName = strings.TrimSpace(tagName)
+	if tagName == "" {
+		return fmt.Errorf("tag name cannot be empty")
 	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
+
+	// Get or create tag within the same lock
+	var tagID int64
+	err := d.db.QueryRowContext(ctx,
+		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+		tagName,
+	).Scan(&tagID)
+
+	if err != nil {
+		// Create new tag
+		result, err := d.db.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
+		if err != nil {
+			return fmt.Errorf("failed to create tag: %w", err)
+		}
+		tagID, _ = result.LastInsertId()
+	}
 
 	_, err = d.db.ExecContext(ctx,
 		"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
-		filePath, tag.ID,
+		filePath, tagID,
 	)
 	return err
 }
 
-// RemoveTagFromFile removes a tag from a file
+// RemoveTagFromFile removes a tag from a file.
 func (d *Database) RemoveTagFromFile(filePath, tagName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, `
@@ -92,14 +109,20 @@ func (d *Database) RemoveTagFromFile(filePath, tagName string) error {
 	return err
 }
 
-// GetFileTags returns all tags for a file
+// GetFileTags returns all tags for a file.
 func (d *Database) GetFileTags(filePath string) ([]string, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
+	return d.getFileTagsUnlocked(ctx, filePath)
+}
+
+// getFileTagsUnlocked returns tags without acquiring lock.
+// Caller must hold at least a read lock.
+func (d *Database) getFileTagsUnlocked(ctx context.Context, filePath string) ([]string, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT t.name 
 		FROM tags t
@@ -127,39 +150,7 @@ func (d *Database) GetFileTags(filePath string) ([]string, error) {
 	return tags, nil
 }
 
-// GetFileTagsNoLock returns tags without acquiring lock (caller must handle locking)
-func (d *Database) getFileTagsNoLock(filePath string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT t.name 
-		FROM tags t
-		INNER JOIN file_tags ft ON t.id = ft.tag_id
-		WHERE ft.file_path = ?
-		ORDER BY t.name COLLATE NOCASE
-	`, filePath)
-	if err != nil {
-		return nil
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			logging.Error("error closing rows: %v", err)
-		}
-	}()
-
-	var tags []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err == nil {
-			tags = append(tags, name)
-		}
-	}
-
-	return tags
-}
-
-// SetFileTags replaces all tags for a file
+// SetFileTags replaces all tags for a file.
 func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -172,20 +163,19 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 		return err
 	}
 
-	// Use a named return to properly handle the rollback
-	var txErr error
+	committed := false
 	defer func() {
-		if txErr != nil {
+		if !committed {
 			if rbErr := tx.Rollback(); rbErr != nil {
-				logging.Error("rollback failed: %v (original error: %v)", rbErr, txErr)
+				logging.Error("rollback failed: %v", rbErr)
 			}
 		}
 	}()
 
 	// Remove existing tags
-	_, txErr = tx.ExecContext(ctx, "DELETE FROM file_tags WHERE file_path = ?", filePath)
-	if txErr != nil {
-		return txErr
+	_, err = tx.ExecContext(ctx, "DELETE FROM file_tags WHERE file_path = ?", filePath)
+	if err != nil {
+		return err
 	}
 
 	// Add new tags
@@ -217,15 +207,19 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
-// GetAllTags returns all tags with item counts
+// GetAllTags returns all tags with item counts.
 func (d *Database) GetAllTags() ([]Tag, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	rows, err := d.db.QueryContext(ctx, `
@@ -265,7 +259,7 @@ func (d *Database) GetAllTags() ([]Tag, error) {
 	return tags, nil
 }
 
-// GetFilesByTag returns all files with a specific tag
+// GetFilesByTag returns all files with a specific tag.
 func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchResult, error) {
 	if page < 1 {
 		page = 1
@@ -277,11 +271,11 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 		pageSize = 200
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	// Get total count
 	var totalItems int
@@ -342,8 +336,10 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 			file.ThumbnailURL = "/api/thumbnail/" + file.Path
 		}
 
-		file.Tags = d.getFileTagsNoLock(file.Path)
-		file.IsFavorite = d.isFavoriteNoLockInternal(file.Path)
+		// Use unlocked versions since we already hold the lock
+		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
+		file.Tags = tags
+		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
 
 		items = append(items, file)
 	}
@@ -358,18 +354,19 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 	}, nil
 }
 
-// DeleteTag removes a tag and all its associations
+// DeleteTag removes a tag and all its associations.
 func (d *Database) DeleteTag(tagName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
 	return err
 }
 
-// RenameTag renames a tag
+// RenameTag renames a tag.
 func (d *Database) RenameTag(oldName, newName string) error {
 	newName = strings.TrimSpace(newName)
 	if newName == "" {
@@ -378,7 +375,8 @@ func (d *Database) RenameTag(oldName, newName string) error {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(
@@ -389,11 +387,12 @@ func (d *Database) RenameTag(oldName, newName string) error {
 	return err
 }
 
-// SetTagColor sets the color for a tag
+// SetTagColor sets the color for a tag.
 func (d *Database) SetTagColor(tagName, color string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(
@@ -404,29 +403,17 @@ func (d *Database) SetTagColor(tagName, color string) error {
 	return err
 }
 
-// GetTagCount returns the total number of tags
+// GetTagCount returns the total number of tags.
 func (d *Database) GetTagCount() int {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 
 	var count int
 	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&count); err != nil {
 		return 0
 	}
 	return count
-}
-
-// Internal helper without lock
-func (d *Database) isFavoriteNoLockInternal(path string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var count int
-	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites WHERE path = ?", path).Scan(&count); err != nil {
-		return false
-	}
-	return count > 0
 }

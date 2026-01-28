@@ -8,12 +8,12 @@ import (
 	"media-viewer/internal/logging"
 )
 
-// AddFavorite adds a path to favorites
+// AddFavorite adds a path to favorites.
 func (d *Database) AddFavorite(path, name string, fileType FileType) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	query := `
@@ -26,26 +26,32 @@ func (d *Database) AddFavorite(path, name string, fileType FileType) error {
 	return err
 }
 
-// RemoveFavorite removes a path from favorites
+// RemoveFavorite removes a path from favorites.
 func (d *Database) RemoveFavorite(path string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
 	return err
 }
 
-// IsFavorite checks if a path is a favorite
+// IsFavorite checks if a path is a favorite.
 func (d *Database) IsFavorite(path string) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
+	return d.isFavoriteUnlocked(ctx, path)
+}
+
+// isFavoriteUnlocked checks favorite status without acquiring lock.
+// Caller must hold at least a read lock.
+func (d *Database) isFavoriteUnlocked(ctx context.Context, path string) bool {
 	var count int
 	err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites WHERE path = ?", path).Scan(&count)
 	if err != nil {
@@ -54,7 +60,7 @@ func (d *Database) IsFavorite(path string) bool {
 	return count > 0
 }
 
-// GetFavorites returns all favorites with their file info
+// GetFavorites returns all favorites with their file info.
 func (d *Database) GetFavorites() ([]MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -62,6 +68,12 @@ func (d *Database) GetFavorites() ([]MediaFile, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	return d.getFavoritesUnlocked(ctx)
+}
+
+// getFavoritesUnlocked returns favorites without acquiring lock.
+// Caller must hold at least a read lock.
+func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error) {
 	query := `
 		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
 		FROM favorites fav
@@ -75,7 +87,7 @@ func (d *Database) GetFavorites() ([]MediaFile, error) {
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			logging.Error("error closing rows in GetFavorites: %v", err)
+			logging.Error("error closing rows in getFavoritesUnlocked: %v", err)
 		}
 	}()
 
@@ -103,7 +115,7 @@ func (d *Database) GetFavorites() ([]MediaFile, error) {
 		}
 
 		if file.Type == FileTypeFolder {
-			file.ItemCount = d.getItemCountUnlocked(file.Path)
+			file.ItemCount = d.getItemCountUnlocked(ctx, file.Path)
 		}
 
 		favorites = append(favorites, file)
@@ -112,12 +124,12 @@ func (d *Database) GetFavorites() ([]MediaFile, error) {
 	return favorites, nil
 }
 
-// GetFavoriteCount returns the number of favorites
+// GetFavoriteCount returns the number of favorites.
 func (d *Database) GetFavoriteCount() int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var count int
@@ -127,11 +139,9 @@ func (d *Database) GetFavoriteCount() int {
 	return count
 }
 
-// Helper to get item count without lock (used internally)
-func (d *Database) getItemCountUnlocked(path string) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+// getItemCountUnlocked gets item count without acquiring lock.
+// Caller must hold at least a read lock.
+func (d *Database) getItemCountUnlocked(ctx context.Context, path string) int {
 	var count int
 	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM files WHERE parent_path = ?", path).Scan(&count); err != nil {
 		return 0

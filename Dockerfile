@@ -1,5 +1,10 @@
+# syntax=docker/dockerfile:1
+
 # Build stage
-FROM --platform=$TARGETPLATFORM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+# Install xx for cross-compilation
+COPY --from=tonistiigi/xx:1.9.0 / /
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -11,18 +16,19 @@ ARG BUILD_TIME=unknown
 
 WORKDIR /app
 
-# Install build dependencies including cross-compilation tools
-# This allows native compilation speed even when cross-compiling
+# Install build dependencies for the build platform
 RUN apk add --no-cache \
+    clang \
+    lld \
+    make \
+    git
+
+# Install target platform dependencies
+RUN xx-apk add --no-cache \
     gcc \
     g++ \
     musl-dev \
-    sqlite-dev \
-    # Cross-compilation tools for ARM64
-    gcc-aarch64-none-elf \
-    # Additional useful tools
-    make \
-    git
+    sqlite-dev
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
@@ -31,44 +37,39 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build with proper cross-compilation setup
+# Build the main application using xx-clang
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
-    # Cross-compiling to ARM64
-    export CC=aarch64-linux-musl-gcc; \
-    export CXX=aarch64-linux-musl-g++; \
-    export AR=aarch64-linux-musl-ar; \
-    fi && \
     CGO_ENABLED=1 \
-    GOOS=${TARGETOS} \
-    GOARCH=${TARGETARCH} \
+    GOOS=$(xx-info os) \
+    GOARCH=$(xx-info arch) \
+    CC="xx-clang" \
+    CXX="xx-clang++" \
     go build \
     -tags 'fts5 netgo osusergo' \
     -ldflags "-s -w -extldflags '-static' \
     -X 'media-viewer/internal/startup.Version=${VERSION}' \
     -X 'media-viewer/internal/startup.Commit=${COMMIT}' \
     -X 'media-viewer/internal/startup.BuildTime=${BUILD_TIME}'" \
-    -a -o media-viewer .
+    -a -o media-viewer . && \
+    xx-verify --static media-viewer
 
 # Build password reset tool
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
-    export CC=aarch64-linux-musl-gcc; \
-    export CXX=aarch64-linux-musl-g++; \
-    export AR=aarch64-linux-musl-ar; \
-    fi && \
     CGO_ENABLED=1 \
-    GOOS=${TARGETOS} \
-    GOARCH=${TARGETARCH} \
+    GOOS=$(xx-info os) \
+    GOARCH=$(xx-info arch) \
+    CC="xx-clang" \
+    CXX="xx-clang++" \
     go build \
-    -tags 'netgo osusergo' \
+    -tags 'fts5 netgo osusergo' \
     -ldflags "-s -w -extldflags '-static' \
     -X 'media-viewer/internal/startup.Version=${VERSION}' \
     -X 'media-viewer/internal/startup.Commit=${COMMIT}' \
     -X 'media-viewer/internal/startup.BuildTime=${BUILD_TIME}'" \
-    -a -o resetpw ./cmd/resetpw
+    -a -o resetpw ./cmd/resetpw && \
+    xx-verify --static resetpw
 
 # Runtime stage
 FROM alpine:3.23

@@ -34,10 +34,14 @@ type Session struct {
 // SessionDuration is the length of time a session remains valid.
 const SessionDuration = 7 * 24 * time.Hour // 7 days
 
-// InitAuthTables creates the authentication tables
+// InitAuthTables creates the authentication tables.
 func (d *Database) InitAuthTables() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
+
 	schema := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,11 +68,12 @@ func (d *Database) InitAuthTables() error {
 	return err
 }
 
-// HasUsers checks if any users exist
+// HasUsers checks if any users exist.
 func (d *Database) HasUsers() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var count int
@@ -79,11 +84,12 @@ func (d *Database) HasUsers() bool {
 	return count > 0
 }
 
-// CreateUser creates a new user with hashed password
+// CreateUser creates a new user with hashed password.
 func (d *Database) CreateUser(username, password string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	// Hash the password
@@ -103,12 +109,12 @@ func (d *Database) CreateUser(username, password string) error {
 	return nil
 }
 
-// ValidateUser checks username and password, returns user if valid
+// ValidateUser checks username and password, returns user if valid.
 func (d *Database) ValidateUser(username, password string) (*User, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var user User
@@ -134,13 +140,14 @@ func (d *Database) ValidateUser(username, password string) (*User, error) {
 	return &user, nil
 }
 
-// CreateSession creates a new session for a user
+// CreateSession creates a new session for a user.
 func (d *Database) CreateSession(userID int64) (*Session, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
+
 	// Generate random token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -173,13 +180,14 @@ func (d *Database) CreateSession(userID int64) (*Session, error) {
 	}, nil
 }
 
-// ValidateSession checks if a session token is valid
+// ValidateSession checks if a session token is valid.
 func (d *Database) ValidateSession(token string) (*User, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
+
 	// Hash the token for lookup
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
@@ -202,8 +210,12 @@ func (d *Database) ValidateSession(token string) (*User, error) {
 
 	// Check expiration
 	if time.Now().Unix() > expiresAt {
-		// Clean up expired session - ignore error as this is best-effort cleanup
-		_ = d.DeleteSession(token)
+		// Clean up expired session in background - don't block validation
+		go func() {
+			if delErr := d.deleteSessionByHash(tokenHash); delErr != nil {
+				logging.Error("failed to delete expired session: %v", delErr)
+			}
+		}()
 		return nil, fmt.Errorf("session expired")
 	}
 
@@ -225,54 +237,60 @@ func (d *Database) ValidateSession(token string) (*User, error) {
 	return &user, nil
 }
 
-// DeleteSession removes a session
-func (d *Database) DeleteSession(token string) error {
+// deleteSessionByHash removes a session by its hashed token.
+func (d *Database) deleteSessionByHash(tokenHash string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	_, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", tokenHash)
+	return err
+}
+
+// DeleteSession removes a session.
+func (d *Database) DeleteSession(token string) error {
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
-		return nil
+		return fmt.Errorf("invalid token format: %w", err)
 	}
 	hash := sha256.Sum256(tokenBytes)
 	tokenHash := hex.EncodeToString(hash[:])
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err = d.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", tokenHash)
-	return err
+	return d.deleteSessionByHash(tokenHash)
 }
 
-// DeleteUserSessions removes all sessions for a user
+// DeleteUserSessions removes all sessions for a user.
 func (d *Database) DeleteUserSessions(userID int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", userID)
 	return err
 }
 
-// CleanExpiredSessions removes all expired sessions
+// CleanExpiredSessions removes all expired sessions.
 func (d *Database) CleanExpiredSessions() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
 	return err
 }
 
-// UpdatePassword updates a user's password
+// UpdatePassword updates a user's password.
 func (d *Database) UpdatePassword(username, newPassword string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -293,32 +311,26 @@ func (d *Database) UpdatePassword(username, newPassword string) error {
 		return fmt.Errorf("user not found: %s", username)
 	}
 
-	// Invalidate all sessions for this user
+	// Invalidate all sessions for this user (best effort)
+	// We intentionally ignore errors here since the password update already succeeded
 	var userID int64
-	err = d.db.QueryRowContext(ctx, "SELECT id FROM users WHERE username = ?", username).Scan(&userID)
-	if err != nil {
-		// User was just updated, so this shouldn't fail, but if it does,
-		// the password is already changed - just skip session invalidation
-		return nil
-	}
-
-	if userID > 0 {
-		_, err = d.db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", userID)
-		if err != nil {
-			// Log but don't fail - password was already updated successfully
-			// Sessions will expire naturally
-			logging.Warn("warning: failed to invalidate sessions for user %s: %v", username, err)
+	if scanErr := d.db.QueryRowContext(ctx, "SELECT id FROM users WHERE username = ?", username).Scan(&userID); scanErr == nil {
+		if _, delErr := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", userID); delErr != nil {
+			logging.Warn("failed to invalidate sessions for user %s: %v", username, delErr)
 		}
+	} else {
+		logging.Warn("failed to get user ID for session invalidation (user: %s): %v", username, scanErr)
 	}
 
 	return nil
 }
 
-// GetUserByUsername retrieves a user by username
+// GetUserByUsername retrieves a user by username.
 func (d *Database) GetUserByUsername(username string) (*User, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var user User
@@ -339,11 +351,12 @@ func (d *Database) GetUserByUsername(username string) (*User, error) {
 	return &user, nil
 }
 
-// DeleteUser removes a user and all associated sessions from the database
+// DeleteUser removes a user and all associated sessions from the database.
 func (d *Database) DeleteUser(username string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	// Start a transaction to ensure atomicity
@@ -352,27 +365,37 @@ func (d *Database) DeleteUser(username string) error {
 		return err
 	}
 
+	committed := false
+	defer func() {
+		if !committed {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				logging.Error("rollback failed: %v", rbErr)
+			}
+		}
+	}()
+
 	// Get user ID first
 	var userID int64
 	err = tx.QueryRowContext(ctx, "SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("user not found: %w", err)
 	}
 
-	// Delete all sessions for this user (cascades automatically due to foreign key)
+	// Delete all sessions for this user
 	_, err = tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", userID)
 	if err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("failed to delete sessions: %w", err)
 	}
 
 	// Delete the user
 	_, err = tx.ExecContext(ctx, "DELETE FROM users WHERE id = ?", userID)
 	if err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }

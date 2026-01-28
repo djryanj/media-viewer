@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -11,6 +12,9 @@ import (
 
 	"media-viewer/internal/logging"
 )
+
+// Default timeout for database operations
+const defaultTimeout = 5 * time.Second
 
 // Database manages all database operations for the media viewer.
 type Database struct {
@@ -37,7 +41,7 @@ func New(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {
@@ -187,14 +191,16 @@ func (d *Database) Close() error {
 	return d.db.Close()
 }
 
-// BeginBatch starts a transaction for batch operations
+// BeginBatch starts a transaction for batch operations.
+// The caller is responsible for calling EndBatch when done.
+// Note: This acquires an exclusive lock that is held until EndBatch is called.
 func (d *Database) BeginBatch() (*sql.Tx, error) {
 	d.mu.Lock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	tx, err := d.db.BeginTx(ctx, nil)
+	// Use background context - transaction lifetime is managed by EndBatch, not a timeout.
+	// The timeout context pattern doesn't work here because defer cancel() would
+	// cancel the transaction immediately when this function returns.
+	tx, err := d.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		d.mu.Unlock()
 		return nil, err
@@ -202,20 +208,21 @@ func (d *Database) BeginBatch() (*sql.Tx, error) {
 	return tx, nil
 }
 
-// EndBatch commits or rolls back a transaction
+// EndBatch commits or rolls back a transaction and releases the lock.
 func (d *Database) EndBatch(tx *sql.Tx, err error) error {
 	defer d.mu.Unlock()
 	if err != nil {
-		if rbErr := tx.Rollback(); rbErr != nil {
-			// Return combined error - original error is more important
-			return fmt.Errorf("rollback failed (%w) after error: %w", rbErr, err)
+		rbErr := tx.Rollback()
+		if rbErr != nil {
+			return errors.Join(err, fmt.Errorf("rollback also failed: %w", rbErr))
 		}
 		return err
 	}
 	return tx.Commit()
 }
 
-// UpsertFile inserts or updates a file record
+// UpsertFile inserts or updates a file record within a transaction.
+// The transaction's context controls the operation timeout.
 func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 	query := `
 	INSERT INTO files (name, path, parent_path, type, size, mod_time, mime_type, file_hash, updated_at)
@@ -230,10 +237,9 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 		updated_at = strftime('%s', 'now')
 	`
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := tx.ExecContext(ctx, query,
+	// Use background context since we're within a transaction.
+	// The transaction itself controls the operation's lifecycle.
+	_, err := tx.ExecContext(context.Background(), query,
 		file.Name,
 		file.Path,
 		file.ParentPath,
@@ -246,30 +252,32 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 	return err
 }
 
-// DeleteMissingFiles removes files that weren't seen during indexing
+// DeleteMissingFiles removes files that weren't seen during indexing.
+// Must be called within a transaction.
 func (d *Database) DeleteMissingFiles(tx *sql.Tx, cutoffTime time.Time) (int64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	result, err := tx.ExecContext(ctx, "DELETE FROM files WHERE updated_at < ?", cutoffTime.Unix())
+	// Use background context since we're within a transaction.
+	result, err := tx.ExecContext(context.Background(),
+		"DELETE FROM files WHERE updated_at < ?",
+		cutoffTime.Unix(),
+	)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
 }
 
-// GetFileByPath retrieves a single file by path
+// GetFileByPath retrieves a single file by path.
 func (d *Database) GetFileByPath(path string) (*MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 
 	query := `
 	SELECT id, name, path, parent_path, type, size, mod_time, mime_type
 	FROM files WHERE path = ?
 	`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	var file MediaFile
 	var modTime int64
@@ -286,21 +294,21 @@ func (d *Database) GetFileByPath(path string) (*MediaFile, error) {
 	return &file, nil
 }
 
-// UpdateStats updates the cached statistics
+// UpdateStats updates the cached statistics.
 func (d *Database) UpdateStats(stats IndexStats) {
 	d.statsMu.Lock()
 	defer d.statsMu.Unlock()
 	d.stats = stats
 }
 
-// GetStats returns the current index statistics
+// GetStats returns the current index statistics.
 func (d *Database) GetStats() IndexStats {
 	d.statsMu.RLock()
 	defer d.statsMu.RUnlock()
 	return d.stats
 }
 
-// RebuildFTS rebuilds the full-text search index
+// RebuildFTS rebuilds the full-text search index.
 func (d *Database) RebuildFTS() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -312,7 +320,7 @@ func (d *Database) RebuildFTS() error {
 	return err
 }
 
-// Vacuum optimizes the database
+// Vacuum optimizes the database.
 func (d *Database) Vacuum() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

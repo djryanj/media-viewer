@@ -56,33 +56,39 @@ type SearchOptions struct {
 	PageSize   int
 }
 
-// ListDirectory returns a paginated directory listing
+// ListDirectory returns a paginated directory listing.
 func (d *Database) ListDirectory(opts ListOptions) (*DirectoryListing, error) {
 	start := time.Now()
 	logging.Debug("ListDirectory called: path=%q", opts.Path)
 
 	opts = normalizeListOptions(opts)
 
-	totalItems, err := d.countDirectoryItems(opts)
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	totalItems, err := d.countDirectoryItemsUnlocked(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	logging.Debug("ListDirectory: count=%d, getting items...", totalItems)
 
-	items, err := d.fetchDirectoryItems(opts)
+	items, err := d.fetchDirectoryItemsUnlocked(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	listing := d.buildDirectoryListing(opts, items, totalItems)
+	listing := d.buildDirectoryListingUnlocked(ctx, opts, items, totalItems)
 
 	logging.Debug("ListDirectory completed in %v", time.Since(start))
 
 	return listing, nil
 }
 
-// normalizeListOptions applies defaults and normalizes the options
+// normalizeListOptions applies defaults and normalizes the options.
 func normalizeListOptions(opts ListOptions) ListOptions {
 	if opts.Path == "." {
 		opts.Path = ""
@@ -99,8 +105,9 @@ func normalizeListOptions(opts ListOptions) ListOptions {
 	return opts
 }
 
-// countDirectoryItems returns the total count of items in a directory
-func (d *Database) countDirectoryItems(opts ListOptions) (int, error) {
+// countDirectoryItemsUnlocked returns the total count of items in a directory.
+// Caller must hold at least a read lock.
+func (d *Database) countDirectoryItemsUnlocked(ctx context.Context, opts ListOptions) (int, error) {
 	logging.Debug("ListDirectory: getting count...")
 
 	countQuery := `SELECT COUNT(*) FROM files WHERE parent_path = ?`
@@ -110,12 +117,6 @@ func (d *Database) countDirectoryItems(opts ListOptions) (int, error) {
 		countQuery += ` AND (type = 'folder' OR type = ?)`
 		countArgs = append(countArgs, opts.FilterType)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 
 	var totalItems int
 	err := d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
@@ -127,8 +128,9 @@ func (d *Database) countDirectoryItems(opts ListOptions) (int, error) {
 	return totalItems, nil
 }
 
-// fetchDirectoryItems retrieves the items for the current page
-func (d *Database) fetchDirectoryItems(opts ListOptions) ([]MediaFile, error) {
+// fetchDirectoryItemsUnlocked retrieves the items for the current page.
+// Caller must hold at least a read lock.
+func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOptions) ([]MediaFile, error) {
 	logging.Debug("ListDirectory: executing select query...")
 
 	sortColumn := getSortColumn(opts.SortField)
@@ -155,13 +157,7 @@ func (d *Database) fetchDirectoryItems(opts ListOptions) ([]MediaFile, error) {
 	selectQuery += ` LIMIT ? OFFSET ?`
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
 	rows, err := d.db.QueryContext(ctx, selectQuery, selectArgs...)
-	d.mu.RUnlock()
-
 	if err != nil {
 		logging.Error("ListDirectory select query failed: %v", err)
 		return nil, fmt.Errorf("select query failed: %w", err)
@@ -172,10 +168,10 @@ func (d *Database) fetchDirectoryItems(opts ListOptions) ([]MediaFile, error) {
 		}
 	}()
 
-	return d.scanDirectoryItems(rows)
+	return d.scanDirectoryItemsUnlocked(ctx, rows)
 }
 
-// getSortColumn returns the SQL column for sorting
+// getSortColumn returns the SQL column for sorting.
 func getSortColumn(field SortField) string {
 	switch field {
 	case SortByName:
@@ -191,18 +187,19 @@ func getSortColumn(field SortField) string {
 	}
 }
 
-// scanDirectoryItems scans rows into MediaFile structs and enriches them
-func (d *Database) scanDirectoryItems(rows *sql.Rows) ([]MediaFile, error) {
+// scanDirectoryItemsUnlocked scans rows into MediaFile structs and enriches them.
+// Caller must hold at least a read lock.
+func (d *Database) scanDirectoryItemsUnlocked(ctx context.Context, rows *sql.Rows) ([]MediaFile, error) {
 	logging.Debug("ListDirectory: scanning rows...")
 
 	var items []MediaFile
 	for rows.Next() {
-		file, err := d.scanMediaFile(rows)
+		file, err := scanMediaFileRow(rows)
 		if err != nil {
 			return nil, err
 		}
 
-		d.enrichMediaFile(&file)
+		d.enrichMediaFileUnlocked(ctx, &file)
 		items = append(items, file)
 	}
 
@@ -214,8 +211,8 @@ func (d *Database) scanDirectoryItems(rows *sql.Rows) ([]MediaFile, error) {
 	return items, nil
 }
 
-// scanMediaFile scans a single row into a MediaFile struct
-func (d *Database) scanMediaFile(rows *sql.Rows) (MediaFile, error) {
+// scanMediaFileRow scans a single row into a MediaFile struct.
+func scanMediaFileRow(rows *sql.Rows) (MediaFile, error) {
 	var file MediaFile
 	var modTime int64
 	var mimeType sql.NullString
@@ -236,8 +233,9 @@ func (d *Database) scanMediaFile(rows *sql.Rows) (MediaFile, error) {
 	return file, nil
 }
 
-// enrichMediaFile adds computed fields to a MediaFile
-func (d *Database) enrichMediaFile(file *MediaFile) {
+// enrichMediaFileUnlocked adds computed fields to a MediaFile.
+// Caller must hold at least a read lock.
+func (d *Database) enrichMediaFileUnlocked(ctx context.Context, file *MediaFile) {
 	switch file.Type {
 	case FileTypeImage, FileTypeVideo, FileTypeFolder:
 		file.ThumbnailURL = "/api/thumbnail/" + file.Path
@@ -246,15 +244,17 @@ func (d *Database) enrichMediaFile(file *MediaFile) {
 	}
 
 	if file.Type == FileTypeFolder {
-		file.ItemCount = d.getItemCountNoLock(file.Path)
+		file.ItemCount = d.getItemCountUnlocked(ctx, file.Path)
 	}
 
-	file.IsFavorite = d.isFavoriteNoLock(file.Path)
-	file.Tags = d.getFileTagsNoLock(file.Path)
+	file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
+	tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
+	file.Tags = tags
 }
 
-// buildDirectoryListing constructs the final DirectoryListing response
-func (d *Database) buildDirectoryListing(opts ListOptions, items []MediaFile, totalItems int) *DirectoryListing {
+// buildDirectoryListingUnlocked constructs the final DirectoryListing response.
+// Caller must hold at least a read lock.
+func (d *Database) buildDirectoryListingUnlocked(ctx context.Context, opts ListOptions, items []MediaFile, totalItems int) *DirectoryListing {
 	logging.Debug("ListDirectory: building response...")
 
 	totalPages := int(math.Ceil(float64(totalItems) / float64(opts.PageSize)))
@@ -291,7 +291,7 @@ func (d *Database) buildDirectoryListing(opts ListOptions, items []MediaFile, to
 
 	// Include favorites only on root page, first page
 	if opts.Path == "" && opts.Page == 1 {
-		favorites, err := d.GetFavorites()
+		favorites, err := d.getFavoritesUnlocked(ctx)
 		if err == nil && len(favorites) > 0 {
 			listing.Favorites = favorites
 		}
@@ -300,37 +300,7 @@ func (d *Database) buildDirectoryListing(opts ListOptions, items []MediaFile, to
 	return listing
 }
 
-// getItemCountNoLock gets item count - caller must NOT hold the lock
-func (d *Database) getItemCountNoLock(path string) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	var count int
-	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM files WHERE parent_path = ?", path).Scan(&count); err != nil {
-		return 0
-	}
-	return count
-}
-
-// isFavoriteNoLock checks favorite status - caller must NOT hold the lock
-func (d *Database) isFavoriteNoLock(path string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	var count int
-	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites WHERE path = ?", path).Scan(&count); err != nil {
-		return false
-	}
-	return count > 0
-}
-
-// buildBreadcrumb constructs breadcrumb navigation from a file path
+// buildBreadcrumb constructs breadcrumb navigation from a file path.
 func buildBreadcrumb(path string) []PathPart {
 	breadcrumb := []PathPart{
 		{Name: "Media", Path: ""},
@@ -391,6 +361,12 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 	searchTerm := prepareSearchTerm(opts.Query)
 	tagPattern := "%" + opts.Query + "%"
 
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	// First, get files matching FTS
 	ftsQuery := `
 		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
@@ -431,6 +407,11 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 	`, ftsQuery, tagQuery)
 
 	// For counting, we need a similar approach
+	filterClause := ""
+	if opts.FilterType != "" {
+		filterClause = FilterTypeClause
+	}
+
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
 			SELECT DISTINCT path FROM (
@@ -446,17 +427,7 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 				%s
 			)
 		)
-	`, func() string {
-		if opts.FilterType != "" {
-			return FilterTypeClause
-		}
-		return ""
-	}(), func() string {
-		if opts.FilterType != "" {
-			return FilterTypeClause
-		}
-		return ""
-	}())
+	`, filterClause, filterClause)
 
 	// Build count args
 	countArgs := []interface{}{searchTerm}
@@ -468,17 +439,11 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 		countArgs = append(countArgs, opts.FilterType)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
 	var totalItems int
 	err := d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
-	d.mu.RUnlock()
-
 	if err != nil {
 		// If FTS fails (e.g., invalid query), fall back to tag-only search
-		return d.searchByTagOnly(opts, tagPattern)
+		return d.searchByTagOnlyUnlocked(ctx, opts, tagPattern)
 	}
 
 	totalPages := (totalItems + opts.PageSize - 1) / opts.PageSize
@@ -490,19 +455,16 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 	// Add pagination to combined query
 	paginatedQuery := combinedQuery + ` LIMIT ? OFFSET ?`
 
-	// Build select args - create new slice from ftsArgs and tagArgs
+	// Build select args
 	selectArgs := make([]interface{}, 0, len(ftsArgs)+len(tagArgs)+2)
 	selectArgs = append(selectArgs, ftsArgs...)
 	selectArgs = append(selectArgs, tagArgs...)
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
-	d.mu.RLock()
 	rows, err := d.db.QueryContext(ctx, paginatedQuery, selectArgs...)
-	d.mu.RUnlock()
-
 	if err != nil {
 		// Fall back to tag-only search on FTS error
-		return d.searchByTagOnly(opts, tagPattern)
+		return d.searchByTagOnlyUnlocked(ctx, opts, tagPattern)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -532,8 +494,9 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 			file.ThumbnailURL = "/api/thumbnail/" + file.Path
 		}
 
-		file.Tags = d.getFileTagsNoLock(file.Path)
-		file.IsFavorite = d.isFavoriteNoLockInternal(file.Path)
+		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
+		file.Tags = tags
+		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
 
 		items = append(items, file)
 	}
@@ -548,8 +511,9 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 	}, nil
 }
 
-// searchByTagOnly is a fallback when FTS fails
-func (d *Database) searchByTagOnly(opts SearchOptions, tagPattern string) (*SearchResult, error) {
+// searchByTagOnlyUnlocked is a fallback when FTS fails.
+// Caller must hold at least a read lock.
+func (d *Database) searchByTagOnlyUnlocked(ctx context.Context, opts SearchOptions, tagPattern string) (*SearchResult, error) {
 	// Count
 	countQuery := `
 		SELECT COUNT(DISTINCT f.path)
@@ -565,14 +529,8 @@ func (d *Database) searchByTagOnly(opts SearchOptions, tagPattern string) (*Sear
 		countArgs = append(countArgs, opts.FilterType)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
 	var totalItems int
 	err := d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
-	d.mu.RUnlock()
-
 	if err != nil {
 		return &SearchResult{Items: []MediaFile{}, Query: opts.Query}, nil
 	}
@@ -598,13 +556,10 @@ func (d *Database) searchByTagOnly(opts SearchOptions, tagPattern string) (*Sear
 		selectArgs = append(selectArgs, opts.FilterType)
 	}
 
-	selectQuery += fmt.Sprintf(` ORDER BY f.name %s LIMIT ? OFFSET ?`, NameCollation)
+	selectQuery += ` ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?`
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
-	d.mu.RLock()
 	rows, err := d.db.QueryContext(ctx, selectQuery, selectArgs...)
-	d.mu.RUnlock()
-
 	if err != nil {
 		return &SearchResult{Items: []MediaFile{}, Query: opts.Query}, nil
 	}
@@ -636,8 +591,9 @@ func (d *Database) searchByTagOnly(opts SearchOptions, tagPattern string) (*Sear
 			file.ThumbnailURL = "/api/thumbnail/" + file.Path
 		}
 
-		file.Tags = d.getFileTagsNoLock(file.Path)
-		file.IsFavorite = d.isFavoriteNoLockInternal(file.Path)
+		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
+		file.Tags = tags
+		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
 
 		items = append(items, file)
 	}
@@ -652,8 +608,7 @@ func (d *Database) searchByTagOnly(opts SearchOptions, tagPattern string) (*Sear
 	}, nil
 }
 
-// SearchSuggestions returns quick search suggestions for autocomplete
-// SearchSuggestions returns quick search suggestions for autocomplete
+// SearchSuggestions returns quick search suggestions for autocomplete.
 func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestion, error) {
 	if query == "" || len(query) < 2 {
 		return []SearchSuggestion{}, nil
@@ -666,10 +621,16 @@ func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestio
 		limit = 20
 	}
 
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
 	var suggestions []SearchSuggestion
 
 	// First, get matching tags as suggestions
-	tagSuggestions, err := d.getTagSuggestions(query, limit/2)
+	tagSuggestions, err := d.getTagSuggestionsUnlocked(ctx, query, limit/2)
 	if err == nil {
 		suggestions = append(suggestions, tagSuggestions...)
 	}
@@ -692,13 +653,7 @@ func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestio
 		LIMIT ?
 	`
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
 	rows, err := d.db.QueryContext(ctx, sqlQuery, searchTerm, remainingLimit)
-	d.mu.RUnlock()
-
 	if err != nil {
 		// Return tag suggestions even if FTS fails
 		return suggestions, nil
@@ -724,14 +679,9 @@ func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestio
 	return suggestions, nil
 }
 
-// getTagSuggestions returns tags matching the query as search suggestions
-func (d *Database) getTagSuggestions(query string, limit int) ([]SearchSuggestion, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
+// getTagSuggestionsUnlocked returns tags matching the query as search suggestions.
+// Caller must hold at least a read lock.
+func (d *Database) getTagSuggestionsUnlocked(ctx context.Context, query string, limit int) ([]SearchSuggestion, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT t.name, COUNT(ft.id) as item_count
 		FROM tags t
@@ -771,7 +721,7 @@ func (d *Database) getTagSuggestions(query string, limit int) ([]SearchSuggestio
 	return suggestions, nil
 }
 
-// prepareSearchTerm prepares a search term for FTS5 trigram search
+// prepareSearchTerm prepares a search term for FTS5 trigram search.
 func prepareSearchTerm(query string) string {
 	// Clean up the query
 	query = strings.TrimSpace(query)
@@ -783,7 +733,7 @@ func prepareSearchTerm(query string) string {
 	return `"` + query + `"`
 }
 
-// highlightMatch wraps matching text in <mark> tags
+// highlightMatch wraps matching text in <mark> tags.
 func highlightMatch(text, query string) string {
 	lowerText := strings.ToLower(text)
 	lowerQuery := strings.ToLower(query)
@@ -796,13 +746,13 @@ func highlightMatch(text, query string) string {
 	return text[:idx] + "<mark>" + text[idx:idx+len(query)] + "</mark>" + text[idx+len(query):]
 }
 
-// GetAllPlaylists returns all playlist files
+// GetAllPlaylists returns all playlist files.
 func (d *Database) GetAllPlaylists() ([]MediaFile, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 
 	query := `
 		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
@@ -844,10 +794,13 @@ func (d *Database) GetAllPlaylists() ([]MediaFile, error) {
 	return playlists, nil
 }
 
-// GetMediaInDirectory returns all media files in a directory (for lightbox)
+// GetMediaInDirectory returns all media files in a directory (for lightbox).
 func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	// Build sort clause - default to name if not specified
 	if sortField == "" {
@@ -857,18 +810,7 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 		sortOrder = SortAsc
 	}
 
-	sortColumn := "name COLLATE NOCASE"
-	switch sortField {
-	case SortByDate:
-		sortColumn = "mod_time"
-	case SortBySize:
-		sortColumn = "size"
-	case SortByType:
-		sortColumn = "type"
-	case SortByName:
-		sortColumn = "name COLLATE NOCASE"
-	}
-
+	sortColumn := getSortColumn(sortField)
 	sortDir := "ASC"
 	if sortOrder == SortDesc {
 		sortDir = "DESC"
@@ -880,12 +822,6 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 		WHERE parent_path = ? AND type IN ('image', 'video')
 		ORDER BY %s %s
 	`, sortColumn, sortDir)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 
 	rows, err := d.db.QueryContext(ctx, query, parentPath)
 	if err != nil {
@@ -916,9 +852,10 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 		}
 		file.ThumbnailURL = "/api/thumbnail/" + file.Path
 
-		// Load favorite status and tags
-		file.IsFavorite = d.isFavoriteNoLockInternal(file.Path)
-		file.Tags = d.getFileTagsNoLock(file.Path)
+		// Use unlocked versions since we already hold the lock
+		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
+		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
+		file.Tags = tags
 
 		files = append(files, file)
 	}
@@ -926,10 +863,13 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 	return files, nil
 }
 
-// GetMediaFilesInFolder returns media files directly within a folder (for folder thumbnails)
+// GetMediaFilesInFolder returns media files directly within a folder (for folder thumbnails).
 func (d *Database) GetMediaFilesInFolder(folderPath string, limit int) ([]MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 
 	if limit <= 0 {
 		limit = 10
@@ -942,12 +882,6 @@ func (d *Database) GetMediaFilesInFolder(folderPath string, limit int) ([]MediaF
 		ORDER BY name COLLATE NOCASE
 		LIMIT ?
 	`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 
 	rows, err := d.db.QueryContext(ctx, query, folderPath, FileTypeImage, FileTypeVideo, limit)
 	if err != nil {
@@ -980,10 +914,13 @@ func (d *Database) GetMediaFilesInFolder(folderPath string, limit int) ([]MediaF
 	return files, rows.Err()
 }
 
-// CalculateStats calculates current index statistics
+// CalculateStats calculates current index statistics.
 func (d *Database) CalculateStats() (IndexStats, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 
 	var stats IndexStats
 
@@ -998,8 +935,6 @@ func (d *Database) CalculateStats() (IndexStats, error) {
 		{"SELECT COUNT(*) FROM files WHERE type = 'playlist'", &stats.TotalPlaylists},
 		{"SELECT COUNT(*) FROM favorites", &stats.TotalFavorites},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	for _, q := range queries {
 		if err := d.db.QueryRowContext(ctx, q.query).Scan(q.dest); err != nil {
