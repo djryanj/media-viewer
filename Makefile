@@ -46,21 +46,3 @@ clean:
 
 docker-build:
 	docker build -t media-viewer .
-
-build-all:
-	@echo "Building for multiple platforms..."
-	@mkdir -p $(DIST_DIR)
-	@$(foreach platform,$(PLATFORMS), \
-		$(eval OS := $(word 1,$(subst /, ,$(platform)))) \
-		$(eval ARCH := $(word 2,$(subst /, ,$(platform)))) \
-		echo "Building $(OS)/$(ARCH)..." && \
-		GOOS=$(OS) GOARCH=$(ARCH) go build \
-			-ldflags "$(LDFLAGS)" \
-			-o $(DIST_DIR)/media-viewer-$(VERSION)-$(OS)-$(ARCH) \
-			./cmd/server && \
-		GOOS=$(OS) GOARCH=$(ARCH) go build \
-			-ldflags "$(LDFLAGS)" \
-			-o $(DIST_DIR)/usermgmt-$(VERSION)-$(OS)-$(ARCH) \
-			./cmd/resetpw || exit 1; \
-	)
-	@echo "Build complete! Binaries in $(DIST_DIR)/"
