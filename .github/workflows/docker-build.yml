@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload SBOM
         if: inputs.push
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-${{ github.sha }}
           path: sbom.spdx.json
