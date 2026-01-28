@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,26 +22,35 @@ func main() {
 
 	command := os.Args[1]
 
-	// Get cache directory from env or default
-	cacheDir := os.Getenv("CACHE_DIR")
-	if cacheDir == "" {
-		cacheDir = "/cache"
+	// Get database directory from env or default
+	databaseDir := os.Getenv("DATABASE_DIR")
+	if databaseDir == "" {
+		databaseDir = "/database"
 	}
+	dbPath := filepath.Join(databaseDir, "media.db")
 
 	// Initialize database
-	db, err := database.New(cacheDir)
+	db, err := database.New(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to connect to database: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Make sure CACHE_DIR is set correctly (current: %s)\n", cacheDir)
+		fmt.Fprintf(os.Stderr, "Make sure DATABASE_DIR is set correctly (current: %s)\n", databaseDir)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close database: %v\n", err)
+		}
+	}()
 
 	switch command {
 	case "reset":
-		resetPassword(db)
+		if !resetPassword(db) {
+			os.Exit(1)
+		}
 	case "create":
-		createUser(db)
+		if !createUser(db) {
+			os.Exit(1)
+		}
 	case "list":
 		listUsers(db)
 	case "delete":
@@ -55,7 +65,7 @@ func main() {
 func printUsage() {
 	fmt.Println("Media Viewer User Management")
 	fmt.Println("")
-	fmt.Println("Usage: resetpw <command>")
+	fmt.Println("Usage: usermgmt <command>")
 	fmt.Println("")
 	fmt.Println("Commands:")
 	fmt.Println("  reset   - Reset a user's password")
@@ -64,10 +74,10 @@ func printUsage() {
 	fmt.Println("  delete  - Delete a user")
 	fmt.Println("")
 	fmt.Println("Environment:")
-	fmt.Println("  CACHE_DIR - Path to cache directory (default: /cache)")
+	fmt.Println("  DATABASE_DIR - Path to database directory (default: /database)")
 }
 
-func resetPassword(db *database.Database) {
+func resetPassword(db *database.Database) bool {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Print("Username: ")
@@ -76,52 +86,53 @@ func resetPassword(db *database.Database) {
 
 	if username == "" {
 		fmt.Fprintln(os.Stderr, "Error: Username cannot be empty")
-		os.Exit(1)
+		return false
 	}
 
 	// Check if user exists
 	_, err := db.GetUserByUsername(username)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: User '%s' not found\n", username)
-		os.Exit(1)
+		return false
 	}
 
 	fmt.Print("New Password: ")
-	password, err := term.ReadPassword(int(syscall.Stdin))
+	password, err := term.ReadPassword(syscall.Stdin)
 	fmt.Println()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading password: %v\n", err)
-		os.Exit(1)
+		return false
 	}
 
 	fmt.Print("Confirm Password: ")
-	confirm, err := term.ReadPassword(int(syscall.Stdin))
+	confirm, err := term.ReadPassword(syscall.Stdin)
 	fmt.Println()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading password: %v\n", err)
-		os.Exit(1)
+		return false
 	}
 
-	if string(password) != string(confirm) {
+	if !bytes.Equal(password, confirm) {
 		fmt.Fprintln(os.Stderr, "Error: Passwords do not match")
-		os.Exit(1)
+		return false
 	}
 
 	if len(password) < 6 {
 		fmt.Fprintln(os.Stderr, "Error: Password must be at least 6 characters")
-		os.Exit(1)
+		return false
 	}
 
 	if err := db.UpdatePassword(username, string(password)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to update password: %v\n", err)
-		os.Exit(1)
+		return false
 	}
 
 	fmt.Printf("Password updated successfully for user '%s'\n", username)
 	fmt.Println("All existing sessions have been invalidated.")
+	return true
 }
 
-func createUser(db *database.Database) {
+func createUser(db *database.Database) bool {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Print("Username: ")
@@ -130,41 +141,42 @@ func createUser(db *database.Database) {
 
 	if len(username) < 3 {
 		fmt.Fprintln(os.Stderr, "Error: Username must be at least 3 characters")
-		os.Exit(1)
+		return false
 	}
 
 	fmt.Print("Password: ")
-	password, err := term.ReadPassword(int(syscall.Stdin))
+	password, err := term.ReadPassword(syscall.Stdin)
 	fmt.Println()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading password: %v\n", err)
-		os.Exit(1)
+		return false
 	}
 
 	fmt.Print("Confirm Password: ")
-	confirm, err := term.ReadPassword(int(syscall.Stdin))
+	confirm, err := term.ReadPassword(syscall.Stdin)
 	fmt.Println()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading password: %v\n", err)
-		os.Exit(1)
+		return false
 	}
 
-	if string(password) != string(confirm) {
+	if !bytes.Equal(password, confirm) {
 		fmt.Fprintln(os.Stderr, "Error: Passwords do not match")
-		os.Exit(1)
+		return false
 	}
 
 	if len(password) < 6 {
 		fmt.Fprintln(os.Stderr, "Error: Password must be at least 6 characters")
-		os.Exit(1)
+		return false
 	}
 
 	if err := db.CreateUser(username, string(password)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to create user: %v\n", err)
-		os.Exit(1)
+		return false
 	}
 
 	fmt.Printf("User '%s' created successfully\n", username)
+	return true
 }
 
 func listUsers(db *database.Database) {
@@ -187,7 +199,14 @@ func deleteUser(db *database.Database) {
 
 	if username == "" {
 		fmt.Fprintln(os.Stderr, "Error: Username cannot be empty")
-		os.Exit(1)
+		return
+	}
+
+	// Verify user exists
+	_, err := db.GetUserByUsername(username)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: User '%s' not found\n", username)
+		return
 	}
 
 	fmt.Printf("Are you sure you want to delete user '%s'? (yes/no): ", username)
@@ -195,13 +214,14 @@ func deleteUser(db *database.Database) {
 	confirm = strings.TrimSpace(strings.ToLower(confirm))
 
 	if confirm != "yes" {
-		fmt.Println("Cancelled.")
+		fmt.Println("Canceled.")
 		return
 	}
 
-	// Note: You'll need to add a DeleteUser method to the database
-	fmt.Println("User deletion not yet implemented.")
-	fmt.Println("You can manually delete from the database:")
-	fmt.Printf("  sqlite3 %s \"DELETE FROM users WHERE username='%s'\"\n",
-		filepath.Join(os.Getenv("CACHE_DIR"), "media.db"), username)
+	if err := db.DeleteUser(username); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to delete user: %v\n", err)
+		return
+	}
+
+	fmt.Printf("User '%s' deleted successfully\n", username)
 }

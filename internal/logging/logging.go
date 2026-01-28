@@ -12,9 +12,13 @@ import (
 type LogLevel int
 
 const (
+	// LevelDebug is the debug log level
 	LevelDebug LogLevel = iota
+	// LevelInfo is the info log level
 	LevelInfo
+	// LevelWarn is the warning log level
 	LevelWarn
+	// LevelError is the error log level
 	LevelError
 )
 

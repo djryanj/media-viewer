@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"runtime"
 
@@ -29,7 +28,7 @@ type HealthResponse struct {
 }
 
 // HealthCheck returns the health status of the service
-func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HealthCheck(w http.ResponseWriter, _ *http.Request) {
 	healthStatus := h.indexer.GetHealthStatus()
 	stats := h.db.GetStats()
 
@@ -73,30 +72,29 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}
 
-	json.NewEncoder(w).Encode(response)
+	writeJSON(w, response)
 }
 
 // LivenessCheck is a simple liveness probe (always returns 200 if server is running)
-func (h *Handlers) LivenessCheck(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) LivenessCheck(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, map[string]string{
 		"status": "alive",
 	})
 }
 
 // ReadinessCheck returns 200 only when the service is ready to accept traffic
-func (h *Handlers) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) ReadinessCheck(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	if h.indexer.IsReady() {
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
+		writeJSON(w, map[string]string{
 			"status": "ready",
 		})
 	} else {
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
+		writeJSON(w, map[string]string{
 			"status": "not_ready",
 		})
 	}

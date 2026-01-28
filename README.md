@@ -29,10 +29,12 @@ services:
       - "8080:8080"
     volumes:
       - /path/to/your/media:/media:ro
-      - media-cache:/cache
+      - media-cache:/cache # optional
+      - media-database:/database
     environment:
       - MEDIA_DIR=/media
       - CACHE_DIR=/cache
+      - DATABASE_DIR=/database
       - PORT=8080
       - INDEX_INTERVAL=30m
     restart: unless-stopped
@@ -64,7 +66,7 @@ docker run -d \
   --name media-viewer \
   -p 8080:8080 \
   -v /path/to/your/media:/media:ro \
-  -v media-cache:/cache \
+  -v media-database:/database \
   media-viewer
 ```
 
@@ -75,8 +77,8 @@ docker run -d `
   --name media-viewer `
   -p 8080:8080 `
   -v "${PWD}:/media:ro" `
-  -v media-cache:/cache `
-  djryanj.azurecr.io:media-viewer
+  -v media-database:/database `
+  media-viewer
 ```
 
 ## Configuration
@@ -84,7 +86,8 @@ docker run -d `
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `MEDIA_DIR` | `/media` | Path to media directory inside container |
-| `CACHE_DIR` | `/cache` | Path to cache directory (database, thumbnails) |
+| `CACHE_DIR` | `/cache` | Path to cache directory (thumbnails, transcodes) |
+| `DATABASE_DIR` | `/database` | Path to database directory |
 | `PORT` | `8080` | HTTP server port |
 | `INDEX_INTERVAL` | `30m` | How often to re-scan the media directory |
 | `LOG_STATIC_FILES` | `false` | Set to `true` to log static file requests |
@@ -93,7 +96,7 @@ docker run -d `
 
 ### Prerequisites
 
-- Go 1.22 or later
+- Go 1.25 or later (built with 1.25, might work with earlier versions)
 - FFmpeg
 - GCC (for SQLite CGO compilation)
 
@@ -153,7 +156,7 @@ If using VS Code with the Dev Containers extension:
 go build -tags 'fts5' -o media-viewer .
 
 # Build the password reset utility
-go build -tags 'fts5' -o resetpw ./cmd/resetpw
+go build -o resetpw ./cmd/resetpw
 ```
 
 ## Password Reset
@@ -171,8 +174,8 @@ docker exec -it media-viewer ./resetpw reset
 # With docker-compose
 docker-compose exec media-viewer ./resetpw reset
 
-# Locally (set CACHE_DIR if not using default)
-CACHE_DIR=/path/to/cache ./resetpw reset
+# Locally (set DATABASE_DIR if not using default)
+DATABASE_DIR=/path/to/cache ./resetpw reset
 ```
 
 You'll be prompted for the username and new password.
@@ -201,19 +204,19 @@ python3 -c "import bcrypt; print(bcrypt.hashpw(b'yournewpassword', bcrypt.gensal
 
 ```bash
 # Find your cache volume location
-docker volume inspect media-cache
+docker volume inspect media-database
 
 # Or exec into the container
 docker exec -it media-viewer sh
 
 # Update the password hash
-sqlite3 /cache/media.db "UPDATE users SET password_hash='YOUR_BCRYPT_HASH' WHERE username='yourusername';"
+sqlite3 /database/media.db "UPDATE users SET password_hash='YOUR_BCRYPT_HASH' WHERE username='yourusername';"
 ```
 
 3. Invalidate all existing sessions (forces re-login):
 
 ```bash
-sqlite3 /cache/media.db "DELETE FROM sessions;"
+sqlite3 /database/media.db "DELETE FROM sessions;"
 ```
 
 ### Complete Password Reset Example
@@ -224,10 +227,10 @@ docker exec -it media-viewer sh
 
 # Inside the container, reset password to "newpassword123"
 # First, generate hash using the resetpw tool, or manually:
-sqlite3 /cache/media.db "UPDATE users SET password_hash='\$2a\$10\$N9qo8uLOickgx2ZMRZoMy.MqrqBuBi.zu1r/s7OLQX1iDnXo6S0my' WHERE username='admin';"
+sqlite3 /database/media.db "UPDATE users SET password_hash='\$2a\$10\$N9qo8uLOickgx2ZMRZoMy.MqrqBuBi.zu1r/s7OLQX1iDnXo6S0my' WHERE username='admin';"
 
 # Clear sessions
-sqlite3 /cache/media.db "DELETE FROM sessions;"
+sqlite3 /database/media.db "DELETE FROM sessions;"
 
 # Exit container
 exit

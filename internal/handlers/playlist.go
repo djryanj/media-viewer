@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -11,7 +10,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func (h *Handlers) ListPlaylists(w http.ResponseWriter, r *http.Request) {
+// ListPlaylists returns all available playlists
+func (h *Handlers) ListPlaylists(w http.ResponseWriter, _ *http.Request) {
 	playlists, err := h.db.GetAllPlaylists()
 	if err != nil {
 		http.Error(w, "Failed to get playlists", http.StatusInternalServerError)
@@ -19,9 +19,10 @@ func (h *Handlers) ListPlaylists(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(playlists)
+	writeJSON(w, playlists)
 }
 
+// GetPlaylist returns the contents of a specific playlist
 func (h *Handlers) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	name := vars["name"]
@@ -54,5 +55,5 @@ func (h *Handlers) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pl)
+	writeJSON(w, pl)
 }

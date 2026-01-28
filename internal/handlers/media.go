@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// ListFiles lists files in a directory with sorting and pagination
 func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	logging.Debug("ListFiles called: %s", r.URL.String())
 
@@ -54,17 +54,16 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	logging.Debug("ListFiles completed, found %d items", len(listing.Items))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(listing)
+	writeJSON(w, listing)
 }
 
+// GetMediaFiles returns all media files (images and videos) in a directory for lightbox viewing
 func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 	parentPath := r.URL.Query().Get("path")
 
-	// Get sort parameters from query string
 	sortField := database.SortField(r.URL.Query().Get("sort"))
 	sortOrder := database.SortOrder(r.URL.Query().Get("order"))
 
-	// Apply defaults if not specified
 	if sortField == "" {
 		sortField = database.SortByName
 	}
@@ -86,9 +85,10 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(files)
+	writeJSON(w, files)
 }
 
+// GetFile serves a file from the media directory
 func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
@@ -104,6 +104,7 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, fullPath)
 }
 
+// GetThumbnail returns a thumbnail image for a media file
 func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
@@ -132,40 +133,54 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileInfo, err := os.Stat(fullPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			logging.Warn("Thumbnail: file not found: %s", fullPath)
-			http.Error(w, "File not found", http.StatusNotFound)
-		} else {
-			logging.Error("Thumbnail: failed to stat file %s: %v", fullPath, err)
-			http.Error(w, "Failed to access file", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if fileInfo.IsDir() {
-		logging.Warn("Thumbnail: path is a directory: %s", fullPath)
-		http.Error(w, "Cannot generate thumbnail for directory", http.StatusBadRequest)
-		return
-	}
-
 	if !h.thumbGen.IsEnabled() {
 		logging.Warn("Thumbnail: thumbnails disabled, returning 503")
 		http.Error(w, "Thumbnails disabled", http.StatusServiceUnavailable)
 		return
 	}
 
-	fileType := h.thumbGen.GetFileType(fullPath)
-	if fileType == database.FileTypeOther {
-		logging.Warn("Thumbnail: unsupported file type for %s", filePath)
+	// Get file info from database to determine type
+	file, err := h.db.GetFileByPath(filePath)
+	if err != nil {
+		logging.Error("Thumbnail: file not found in database %s: %v", filePath, err)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+
+	// Validate file/folder exists on disk (skip for folders as they're handled differently)
+	if file.Type != database.FileTypeFolder {
+		fileInfo, err := os.Stat(fullPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				logging.Warn("Thumbnail: file not found: %s", fullPath)
+				http.Error(w, "File not found", http.StatusNotFound)
+			} else {
+				logging.Error("Thumbnail: failed to stat file %s: %v", fullPath, err)
+				http.Error(w, "Failed to access file", http.StatusInternalServerError)
+			}
+			return
+		}
+
+		if fileInfo.IsDir() {
+			logging.Warn("Thumbnail: path is a directory but not marked as folder in DB: %s", fullPath)
+			http.Error(w, "Invalid file type", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Check if this file type supports thumbnails
+	switch file.Type {
+	case database.FileTypeImage, database.FileTypeVideo, database.FileTypeFolder:
+		// Supported
+	case database.FileTypePlaylist, database.FileTypeOther:
+		logging.Warn("Thumbnail: unsupported file type %s for %s", file.Type, filePath)
 		http.Error(w, "Unsupported file type", http.StatusBadRequest)
 		return
 	}
 
-	logging.Debug("Thumbnail: generating for %s (type: %s)", filePath, fileType)
+	logging.Debug("Thumbnail: generating for %s (type: %s)", filePath, file.Type)
 
-	thumb, err := h.thumbGen.GetThumbnail(fullPath, fileType)
+	thumb, err := h.thumbGen.GetThumbnail(fullPath, file.Type)
 	if err != nil {
 		logging.Error("Thumbnail: generation failed for %s: %v", filePath, err)
 		http.Error(w, fmt.Sprintf("Failed to generate thumbnail: %v", err), http.StatusInternalServerError)
@@ -176,9 +191,12 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	w.Write(thumb)
+	if _, err := w.Write(thumb); err != nil {
+		logging.Error("failed to write thumbnail response: %v", err)
+	}
 }
 
+// StreamVideo streams a video file, transcoding if necessary for browser compatibility
 func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
@@ -201,7 +219,7 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		targetWidth, _ = strconv.Atoi(widthStr)
 	}
 
-	info, err := h.transcoder.GetVideoInfo(fullPath)
+	info, err := h.transcoder.GetVideoInfo(r.Context(), fullPath)
 	if err != nil {
 		http.Error(w, "Failed to get video info", http.StatusInternalServerError)
 		return
@@ -215,9 +233,12 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	h.transcoder.StreamVideo(r.Context(), fullPath, w, targetWidth)
+	if err := h.transcoder.StreamVideo(r.Context(), fullPath, w, targetWidth); err != nil {
+		logging.Error("error streaming video %s: %v", filePath, err)
+	}
 }
 
+// GetStreamInfo returns codec and dimension information about a video file
 func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
@@ -230,29 +251,31 @@ func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := h.transcoder.GetVideoInfo(fullPath)
+	info, err := h.transcoder.GetVideoInfo(r.Context(), fullPath)
 	if err != nil {
 		http.Error(w, "Failed to get video info", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info)
+	writeJSON(w, info)
 }
 
-func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
+// GetStats returns current library statistics
+func (h *Handlers) GetStats(w http.ResponseWriter, _ *http.Request) {
 	stats := h.db.GetStats()
 	stats.TotalFavorites = h.db.GetFavoriteCount()
 	stats.TotalTags = h.db.GetTagCount()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	writeJSON(w, stats)
 }
 
-func (h *Handlers) TriggerReindex(w http.ResponseWriter, r *http.Request) {
+// TriggerReindex starts a new media library indexing operation
+func (h *Handlers) TriggerReindex(w http.ResponseWriter, _ *http.Request) {
 	if h.indexer.IsIndexing() {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		writeJSON(w, map[string]string{
 			"status":  "already_running",
 			"message": "Indexing is already in progress",
 		})
@@ -262,7 +285,7 @@ func (h *Handlers) TriggerReindex(w http.ResponseWriter, r *http.Request) {
 	h.indexer.TriggerIndex()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, map[string]string{
 		"status":  "started",
 		"message": "Re-indexing started",
 	})

@@ -3,6 +3,7 @@ package indexer
 import (
 	"crypto/md5"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,7 @@ var mimeTypes = map[string]string{
 	".wpl": "application/vnd.ms-wpl",
 }
 
+// Indexer manages the indexing of media files in the media directory.
 type Indexer struct {
 	db                   *database.Database
 	mediaDir             string
@@ -55,6 +57,7 @@ type Indexer struct {
 	startTime            time.Time
 }
 
+// New creates a new Indexer instance.
 func New(db *database.Database, mediaDir string, indexInterval time.Duration) *Indexer {
 	return &Indexer{
 		db:            db,
@@ -65,6 +68,7 @@ func New(db *database.Database, mediaDir string, indexInterval time.Duration) *I
 	}
 }
 
+// Start begins the indexing process.
 func (idx *Indexer) Start() error {
 	// Initial index
 	logging.Info("Starting initial index...")
@@ -89,10 +93,13 @@ func (idx *Indexer) Start() error {
 	return nil
 }
 
+// Stop stops the indexing process.
 func (idx *Indexer) Stop() {
 	close(idx.stopChan)
 	if idx.watcher != nil {
-		idx.watcher.Close()
+		if err := idx.watcher.Close(); err != nil {
+			log.Printf("error closing file watcher: %v", err)
+		}
 	}
 }
 
@@ -133,11 +140,12 @@ type HealthStatus struct {
 	InitialIndexError string    `json:"initialIndexError,omitempty"`
 }
 
+// Index performs a full index of the media directory.
 func (idx *Indexer) Index() error {
 	idx.indexMu.Lock()
 	if idx.isIndexing {
 		idx.indexMu.Unlock()
-		logging.Debug("Index already in progress, skipping...")
+		logging.Info("Index already in progress, skipping...")
 		return nil
 	}
 	idx.isIndexing = true
@@ -150,7 +158,7 @@ func (idx *Indexer) Index() error {
 	}()
 
 	startTime := time.Now()
-	logging.Info("Starting file index...")
+	logging.Info("Starting file indexing. If this is the first time it has run and you have a lot of files, the server will not be available until after the index is complete. Be patient...")
 
 	logging.Debug("Acquiring database lock...")
 
@@ -182,7 +190,7 @@ func (idx *Indexer) Index() error {
 
 		relPath, err := filepath.Rel(idx.mediaDir, path)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		// Skip root
@@ -237,14 +245,16 @@ func (idx *Indexer) Index() error {
 
 		// Log progress every 1000 items
 		if (fileCount+folderCount)%1000 == 0 {
-			logging.Debug("Indexed %d files, %d folders...", fileCount, folderCount)
+			logging.Info("Indexed %d files, %d folders...", fileCount, folderCount)
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		idx.db.EndBatch(tx, err)
+		if endErr := idx.db.EndBatch(tx, err); endErr != nil {
+			logging.Error("failed to end batch after walk error: %v", endErr)
+		}
 		return fmt.Errorf("walk error: %w", err)
 	}
 
@@ -284,34 +294,42 @@ func (idx *Indexer) watchFiles() {
 		return
 	}
 
-	// Add all directories to watcher
+	watchCount := idx.addDirectoriesToWatcher()
+	logging.Debug("File watcher started, watching %d directories", watchCount)
+
+	idx.processWatcherEvents()
+}
+
+// addDirectoriesToWatcher adds all directories in mediaDir to the watcher
+func (idx *Indexer) addDirectoriesToWatcher() int {
 	watchCount := 0
-	filepath.Walk(idx.mediaDir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && info.IsDir() && !strings.HasPrefix(info.Name(), ".") {
-			idx.watcher.Add(path)
-			watchCount++
+	err := filepath.Walk(idx.mediaDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && !strings.HasPrefix(info.Name(), ".") {
+			if addErr := idx.watcher.Add(path); addErr != nil {
+				logging.Warn("failed to add path to watcher %s: %v", path, addErr)
+			} else {
+				watchCount++
+			}
 		}
 		return nil
 	})
-
-	logging.Debug("File watcher started, watching %d directories", watchCount)
-
-	// Debounce mechanism
-	var debounceTimer *time.Timer
-	var debounceMu sync.Mutex
-
-	triggerReindex := func() {
-		debounceMu.Lock()
-		defer debounceMu.Unlock()
-
-		if debounceTimer != nil {
-			debounceTimer.Stop()
-		}
-		debounceTimer = time.AfterFunc(2*time.Second, func() {
-			logging.Debug("File changes detected, re-indexing...")
-			idx.Index()
-		})
+	if err != nil {
+		logging.Error("failed to walk media directory for watcher: %v", err)
 	}
+	return watchCount
+}
+
+// processWatcherEvents handles file system events from the watcher
+func (idx *Indexer) processWatcherEvents() {
+	debouncer := newIndexDebouncer(2*time.Second, func() {
+		logging.Debug("File changes detected, re-indexing...")
+		if err := idx.Index(); err != nil {
+			logging.Error("re-index after file change failed: %v", err)
+		}
+	})
 
 	for {
 		select {
@@ -319,33 +337,7 @@ func (idx *Indexer) watchFiles() {
 			if !ok {
 				return
 			}
-
-			// Skip hidden files
-			if strings.Contains(event.Name, "/.") {
-				continue
-			}
-
-			switch {
-			case event.Op&fsnotify.Create != 0:
-				// Add new directories to watcher
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					idx.watcher.Add(event.Name)
-					logging.Debug("Added new directory to watcher: %s", event.Name)
-				}
-				triggerReindex()
-
-			case event.Op&fsnotify.Remove != 0:
-				triggerReindex()
-
-			case event.Op&fsnotify.Rename != 0:
-				triggerReindex()
-
-			case event.Op&fsnotify.Write != 0:
-				// Only trigger for non-directory writes
-				if info, err := os.Stat(event.Name); err == nil && !info.IsDir() {
-					triggerReindex()
-				}
-			}
+			idx.handleWatcherEvent(event, debouncer)
 
 		case err, ok := <-idx.watcher.Errors:
 			if !ok {
@@ -359,6 +351,82 @@ func (idx *Indexer) watchFiles() {
 	}
 }
 
+// handleWatcherEvent processes a single file system event
+func (idx *Indexer) handleWatcherEvent(event fsnotify.Event, debouncer *indexDebouncer) {
+	// Skip hidden files
+	if strings.Contains(event.Name, "/.") {
+		return
+	}
+
+	switch {
+	case event.Op&fsnotify.Create != 0:
+		idx.handleCreateEvent(event)
+		debouncer.trigger()
+
+	case event.Op&fsnotify.Remove != 0:
+		debouncer.trigger()
+
+	case event.Op&fsnotify.Rename != 0:
+		debouncer.trigger()
+
+	case event.Op&fsnotify.Write != 0:
+		idx.handleWriteEvent(event, debouncer)
+	}
+}
+
+// handleCreateEvent handles file/directory creation events
+func (idx *Indexer) handleCreateEvent(event fsnotify.Event) {
+	info, err := os.Stat(event.Name)
+	if err != nil {
+		return
+	}
+	if info.IsDir() {
+		if addErr := idx.watcher.Add(event.Name); addErr != nil {
+			logging.Warn("failed to add new directory to watcher %s: %v", event.Name, addErr)
+		} else {
+			logging.Debug("Added new directory to watcher: %s", event.Name)
+		}
+	}
+}
+
+// handleWriteEvent handles file write events
+func (idx *Indexer) handleWriteEvent(event fsnotify.Event, debouncer *indexDebouncer) {
+	info, err := os.Stat(event.Name)
+	if err != nil {
+		return
+	}
+	if !info.IsDir() {
+		debouncer.trigger()
+	}
+}
+
+// indexDebouncer provides debounced triggering of the index function
+type indexDebouncer struct {
+	delay    time.Duration
+	callback func()
+	timer    *time.Timer
+	mu       sync.Mutex
+}
+
+// newIndexDebouncer creates a new debouncer with the specified delay and callback
+func newIndexDebouncer(delay time.Duration, callback func()) *indexDebouncer {
+	return &indexDebouncer{
+		delay:    delay,
+		callback: callback,
+	}
+}
+
+// trigger resets the debounce timer
+func (d *indexDebouncer) trigger() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.timer != nil {
+		d.timer.Stop()
+	}
+	d.timer = time.AfterFunc(d.delay, d.callback)
+}
+
 func (idx *Indexer) periodicIndex() {
 	ticker := time.NewTicker(idx.indexInterval)
 	defer ticker.Stop()
@@ -367,19 +435,23 @@ func (idx *Indexer) periodicIndex() {
 		select {
 		case <-ticker.C:
 			logging.Debug("Periodic re-index triggered")
-			idx.Index()
+			if err := idx.Index(); err != nil {
+				logging.Error("periodic re-index failed: %v", err)
+			}
 		case <-idx.stopChan:
 			return
 		}
 	}
 }
 
+// IsIndexing returns whether an index operation is currently in progress.
 func (idx *Indexer) IsIndexing() bool {
 	idx.indexMu.Lock()
 	defer idx.indexMu.Unlock()
 	return idx.isIndexing
 }
 
+// LastIndexTime returns the time of the last completed index operation.
 func (idx *Indexer) LastIndexTime() time.Time {
 	idx.indexMu.Lock()
 	defer idx.indexMu.Unlock()
@@ -388,7 +460,11 @@ func (idx *Indexer) LastIndexTime() time.Time {
 
 // TriggerIndex manually triggers a re-index
 func (idx *Indexer) TriggerIndex() {
-	go idx.Index()
+	go func() {
+		if err := idx.Index(); err != nil {
+			logging.Error("manually triggered re-index failed: %v", err)
+		}
+	}()
 }
 
 func getFileType(ext string) string {

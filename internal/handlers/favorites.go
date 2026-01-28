@@ -7,13 +7,15 @@ import (
 	"media-viewer/internal/database"
 )
 
+// FavoriteRequest represents a request to manage favorites
 type FavoriteRequest struct {
 	Path string            `json:"path"`
 	Name string            `json:"name"`
 	Type database.FileType `json:"type"`
 }
 
-func (h *Handlers) GetFavorites(w http.ResponseWriter, r *http.Request) {
+// GetFavorites returns all favorite media files
+func (h *Handlers) GetFavorites(w http.ResponseWriter, _ *http.Request) {
 	favorites, err := h.db.GetFavorites()
 	if err != nil {
 		http.Error(w, "Failed to get favorites", http.StatusInternalServerError)
@@ -25,9 +27,10 @@ func (h *Handlers) GetFavorites(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(favorites)
+	writeJSON(w, favorites)
 }
 
+// AddFavorite adds a media file to favorites
 func (h *Handlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
 	var req FavoriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -45,10 +48,10 @@ func (h *Handlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONStatus(w, "ok")
 }
 
+// RemoveFavorite removes a media file from favorites
 func (h *Handlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	var req FavoriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -66,10 +69,10 @@ func (h *Handlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONStatus(w, "ok")
 }
 
+// CheckFavorite checks if a media file is in favorites
 func (h *Handlers) CheckFavorite(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -80,5 +83,5 @@ func (h *Handlers) CheckFavorite(w http.ResponseWriter, r *http.Request) {
 	isFavorite := h.db.IsFavorite(path)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"isFavorite": isFavorite})
+	writeJSON(w, map[string]bool{"isFavorite": isFavorite})
 }

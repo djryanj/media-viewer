@@ -42,7 +42,7 @@ type PlaylistItem struct {
 }
 
 // ParseWPL parses a Windows Playlist file
-func ParseWPL(wplPath string, mediaDir string) (*Playlist, error) {
+func ParseWPL(wplPath, mediaDir string) (*Playlist, error) {
 	logging.Debug("Parsing WPL: %s (mediaDir: %s)", wplPath, mediaDir)
 
 	data, err := os.ReadFile(wplPath)
@@ -81,7 +81,7 @@ func ParseWPL(wplPath string, mediaDir string) (*Playlist, error) {
 }
 
 // resolveMediaPath resolves a media path from the playlist to an actual file
-func resolveMediaPath(src string, playlistDir string, mediaDir string) PlaylistItem {
+func resolveMediaPath(src, playlistDir, mediaDir string) PlaylistItem {
 	logging.Debug("Resolving media path: %s", src)
 
 	item := PlaylistItem{
@@ -92,13 +92,14 @@ func resolveMediaPath(src string, playlistDir string, mediaDir string) PlaylistI
 	// Normalize the source path (convert backslashes to forward slashes for processing)
 	normalizedSrc := strings.ReplaceAll(src, "\\", "/")
 
-	// Check if it's a UNC path (starts with // after normalization)
-	if strings.HasPrefix(normalizedSrc, "//") {
+	// Check if it's a UNC path, absolute path, or relative path
+	switch {
+	case strings.HasPrefix(normalizedSrc, "//"):
 		item = resolveUNCPath(normalizedSrc, playlistDir, mediaDir, item)
-	} else if filepath.IsAbs(src) || (len(src) > 1 && src[1] == ':') {
-		// Absolute path (including Windows drive letters like C:$
+	case filepath.IsAbs(src) || (len(src) > 1 && src[1] == ':'):
+		// Absolute path (including Windows drive letters like C:)
 		item = resolveAbsolutePath(normalizedSrc, playlistDir, mediaDir, item)
-	} else {
+	default:
 		// Relative path
 		item = resolveRelativePath(src, playlistDir, mediaDir, item)
 	}
@@ -112,7 +113,7 @@ func resolveMediaPath(src string, playlistDir string, mediaDir string) PlaylistI
 }
 
 // resolveUNCPath handles UNC paths like \\server\share\path\file.mp4
-func resolveUNCPath(normalizedSrc string, playlistDir string, mediaDir string, item PlaylistItem) PlaylistItem {
+func resolveUNCPath(normalizedSrc, playlistDir, mediaDir string, item PlaylistItem) PlaylistItem {
 	logging.Debug("Resolving UNC path: %s", normalizedSrc)
 
 	// Remove the leading // and split into components
@@ -186,7 +187,7 @@ func resolveUNCPath(normalizedSrc string, playlistDir string, mediaDir string, i
 }
 
 // resolveAbsolutePath handles absolute paths like C:\folder\file.mp4
-func resolveAbsolutePath(normalizedSrc string, playlistDir string, mediaDir string, item PlaylistItem) PlaylistItem {
+func resolveAbsolutePath(normalizedSrc, playlistDir, mediaDir string, item PlaylistItem) PlaylistItem {
 	logging.Debug("Resolving absolute path: %s", normalizedSrc)
 
 	// Remove drive letter if present (e.g., "C:/folder" -> "folder")
@@ -237,7 +238,7 @@ func resolveAbsolutePath(normalizedSrc string, playlistDir string, mediaDir stri
 }
 
 // resolveRelativePath handles relative paths
-func resolveRelativePath(src string, playlistDir string, mediaDir string, item PlaylistItem) PlaylistItem {
+func resolveRelativePath(src, playlistDir, mediaDir string, item PlaylistItem) PlaylistItem {
 	logging.Debug("Resolving relative path: %s", src)
 
 	// Normalize path separators
@@ -276,16 +277,16 @@ func resolveRelativePath(src string, playlistDir string, mediaDir string, item P
 }
 
 // searchForFile searches for a file by name in a directory tree
-func searchForFile(rootDir string, filename string, maxDepth int) string {
+func searchForFile(rootDir, filename string, maxDepth int) string {
 	if maxDepth <= 0 {
 		return ""
 	}
 
 	var foundPath string
 
-	filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // Continue on errors
+			return err
 		}
 
 		// Check depth
@@ -320,7 +321,7 @@ func fileExists(path string) bool {
 }
 
 // getRelativePath returns the path relative to mediaDir, or the original path if not under mediaDir
-func getRelativePath(fullPath string, mediaDir string) string {
+func getRelativePath(fullPath, mediaDir string) string {
 	relPath, err := filepath.Rel(mediaDir, fullPath)
 	if err != nil {
 		return fullPath

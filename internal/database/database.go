@@ -1,17 +1,18 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3" // SQLite3 driver
+
+	"media-viewer/internal/logging"
 )
 
+// Database manages all database operations for the media viewer.
 type Database struct {
 	db      *sql.DB
 	dbPath  string
@@ -20,25 +21,12 @@ type Database struct {
 	statsMu sync.RWMutex
 }
 
-func New(cacheDir string) (*Database, error) {
-	absCacheDir, err := filepath.Abs(cacheDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve cache directory path: %w", err)
-	}
-
-	log.Printf("  Creating cache directory: %s", absCacheDir)
-	if err := os.MkdirAll(absCacheDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create cache directory: %w", err)
-	}
-
-	if info, err := os.Stat(absCacheDir); err != nil {
-		return nil, fmt.Errorf("cache directory does not exist after creation: %w", err)
-	} else if !info.IsDir() {
-		return nil, fmt.Errorf("cache path exists but is not a directory: %s", absCacheDir)
-	}
-
-	dbPath := filepath.Join(absCacheDir, "media.db")
-	log.Printf("  Database path: %s", dbPath)
+// New creates a new Database instance.
+// IMPORTANT: dbPath should be the full path to the database FILE (e.g., "/database/media.db"),
+// and the parent directory must already exist and be writable.
+// Use startup.LoadConfig() to ensure proper directory validation before calling this.
+func New(dbPath string) (*Database, error) {
+	logging.Info("Database path: %s", dbPath)
 
 	// Use WAL mode and other optimizations
 	// busy_timeout helps prevent "database is locked" errors
@@ -49,8 +37,13 @@ func New(cacheDir string) (*Database, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
-		db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			logging.Error("failed to close database after ping failure: %v", closeErr)
+		}
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
@@ -65,11 +58,13 @@ func New(cacheDir string) (*Database, error) {
 	}
 
 	if err := d.initialize(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			logging.Error("failed to close database after initialization failure: %v", closeErr)
+		}
 		return nil, fmt.Errorf("failed to initialize database schema: %w", err)
 	}
 
-	log.Printf("  Database initialized successfully at %s", dbPath)
+	logging.Info("Database initialized successfully at %s", dbPath)
 	return d, nil
 }
 
@@ -180,10 +175,14 @@ func (d *Database) initialize() error {
 	);
 	`
 
-	_, err := d.db.Exec(schema)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := d.db.ExecContext(ctx, schema)
 	return err
 }
 
+// Close closes the database connection.
 func (d *Database) Close() error {
 	return d.db.Close()
 }
@@ -191,7 +190,11 @@ func (d *Database) Close() error {
 // BeginBatch starts a transaction for batch operations
 func (d *Database) BeginBatch() (*sql.Tx, error) {
 	d.mu.Lock()
-	tx, err := d.db.Begin()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		d.mu.Unlock()
 		return nil, err
@@ -203,7 +206,10 @@ func (d *Database) BeginBatch() (*sql.Tx, error) {
 func (d *Database) EndBatch(tx *sql.Tx, err error) error {
 	defer d.mu.Unlock()
 	if err != nil {
-		tx.Rollback()
+		if rbErr := tx.Rollback(); rbErr != nil {
+			// Return combined error - original error is more important
+			return fmt.Errorf("rollback failed (%w) after error: %w", rbErr, err)
+		}
 		return err
 	}
 	return tx.Commit()
@@ -224,7 +230,10 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 		updated_at = strftime('%s', 'now')
 	`
 
-	_, err := tx.Exec(query,
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := tx.ExecContext(ctx, query,
 		file.Name,
 		file.Path,
 		file.ParentPath,
@@ -239,7 +248,10 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 
 // DeleteMissingFiles removes files that weren't seen during indexing
 func (d *Database) DeleteMissingFiles(tx *sql.Tx, cutoffTime time.Time) (int64, error) {
-	result, err := tx.Exec("DELETE FROM files WHERE updated_at < ?", cutoffTime.Unix())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := tx.ExecContext(ctx, "DELETE FROM files WHERE updated_at < ?", cutoffTime.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -256,10 +268,13 @@ func (d *Database) GetFileByPath(path string) (*MediaFile, error) {
 	FROM files WHERE path = ?
 	`
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	var file MediaFile
 	var modTime int64
 
-	err := d.db.QueryRow(query, path).Scan(
+	err := d.db.QueryRowContext(ctx, query, path).Scan(
 		&file.ID, &file.Name, &file.Path, &file.ParentPath,
 		&file.Type, &file.Size, &modTime, &file.MimeType,
 	)
@@ -290,7 +305,10 @@ func (d *Database) RebuildFTS() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	_, err := d.db.Exec("INSERT INTO files_fts(files_fts) VALUES('rebuild')")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	_, err := d.db.ExecContext(ctx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
 	return err
 }
 
@@ -299,6 +317,9 @@ func (d *Database) Vacuum() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	_, err := d.db.Exec("VACUUM")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	_, err := d.db.ExecContext(ctx, "VACUUM")
 	return err
 }

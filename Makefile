@@ -35,4 +35,4 @@ clean:
 	rm -f resetpw
 
 docker-build:
-	docker build -t djryanj.azurecr.io/media-viewer .
+	docker build -t media-viewer .

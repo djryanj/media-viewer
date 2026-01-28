@@ -3,6 +3,7 @@ package middleware
 import (
 	"compress/gzip"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -138,18 +139,40 @@ func (g *gzipResponseWriter) finalize() {
 		g.Header().Add("Vary", "Accept-Encoding")
 
 		// Get a gzip writer from the pool
-		g.gzipWriter = gzipWriterPool.Get().(*gzip.Writer)
-		g.gzipWriter.Reset(g.ResponseWriter)
+		writer, ok := gzipWriterPool.Get().(*gzip.Writer)
+		if !ok {
+			// Fallback: create new writer if type assertion fails
+			var err error
+			writer, err = gzip.NewWriterLevel(g.ResponseWriter, g.config.Level)
+			if err != nil {
+				// If we can't create a gzip writer, write uncompressed
+				log.Printf("failed to create gzip writer: %v", err)
+				g.shouldCompress = false
+				g.ResponseWriter.WriteHeader(g.statusCode)
+				if _, err := g.ResponseWriter.Write(g.buffer); err != nil {
+					log.Printf("failed to write uncompressed response: %v", err)
+				}
+				g.buffer = nil
+				return
+			}
+		} else {
+			writer.Reset(g.ResponseWriter)
+		}
+		g.gzipWriter = writer
 
 		// Write the status code
 		g.ResponseWriter.WriteHeader(g.statusCode)
 
 		// Write buffered data
-		g.gzipWriter.Write(g.buffer)
+		if _, err := g.gzipWriter.Write(g.buffer); err != nil {
+			log.Printf("failed to write compressed data: %v", err)
+		}
 	} else {
 		// Write without compression
 		g.ResponseWriter.WriteHeader(g.statusCode)
-		g.ResponseWriter.Write(g.buffer)
+		if _, err := g.ResponseWriter.Write(g.buffer); err != nil {
+			log.Printf("failed to write response: %v", err)
+		}
 	}
 
 	// Clear buffer to free memory
@@ -183,7 +206,9 @@ func (g *gzipResponseWriter) Flush() {
 
 	// Flush the gzip writer
 	if g.gzipWriter != nil {
-		g.gzipWriter.Flush()
+		if err := g.gzipWriter.Flush(); err != nil {
+			log.Printf("failed to flush gzip writer: %v", err)
+		}
 	}
 
 	// Flush the underlying response writer if it supports it
@@ -224,7 +249,11 @@ func Compression(config CompressionConfig) func(http.Handler) http.Handler {
 
 			// Create gzip response writer
 			gzw := newGzipResponseWriter(w, config)
-			defer gzw.Close()
+			defer func() {
+				if err := gzw.Close(); err != nil {
+					log.Printf("failed to close gzip response writer: %v", err)
+				}
+			}()
 
 			// Call the next handler
 			next.ServeHTTP(gzw, r)

@@ -1,42 +1,14 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
+
+	"media-viewer/internal/logging"
 )
-
-// InitTagTables creates the tag-related tables (called from main initialize)
-func (d *Database) initTagTables() error {
-	schema := `
-	-- Tags table
-	CREATE TABLE IF NOT EXISTS tags (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-		color TEXT,
-		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name COLLATE NOCASE);
-
-	-- File-Tag relationship table
-	CREATE TABLE IF NOT EXISTS file_tags (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		file_path TEXT NOT NULL,
-		tag_id INTEGER NOT NULL,
-		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-		FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
-		UNIQUE(file_path, tag_id)
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_file_tags_path ON file_tags(file_path);
-	CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(tag_id);
-	`
-
-	_, err := d.db.Exec(schema)
-	return err
-}
 
 // GetOrCreateTag gets an existing tag or creates a new one
 func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
@@ -44,6 +16,9 @@ func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
 	if name == "" {
 		return nil, fmt.Errorf("tag name cannot be empty")
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -53,7 +28,7 @@ func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
 	var createdAt int64
 	var color sql.NullString
 
-	err := d.db.QueryRow(
+	err := d.db.QueryRowContext(ctx,
 		"SELECT id, name, color, created_at FROM tags WHERE name = ? COLLATE NOCASE",
 		name,
 	).Scan(&tag.ID, &tag.Name, &color, &createdAt)
@@ -67,7 +42,7 @@ func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
 	}
 
 	// Create new tag
-	result, err := d.db.Exec(
+	result, err := d.db.ExecContext(ctx,
 		"INSERT INTO tags (name) VALUES (?)",
 		name,
 	)
@@ -92,7 +67,10 @@ func (d *Database) AddTagToFile(filePath, tagName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	_, err = d.db.Exec(
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = d.db.ExecContext(ctx,
 		"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
 		filePath, tag.ID,
 	)
@@ -103,8 +81,10 @@ func (d *Database) AddTagToFile(filePath, tagName string) error {
 func (d *Database) RemoveTagFromFile(filePath, tagName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		DELETE FROM file_tags 
 		WHERE file_path = ? AND tag_id = (SELECT id FROM tags WHERE name = ? COLLATE NOCASE)
 	`, filePath, tagName)
@@ -117,7 +97,10 @@ func (d *Database) GetFileTags(filePath string) ([]string, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	rows, err := d.db.Query(`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT t.name 
 		FROM tags t
 		INNER JOIN file_tags ft ON t.id = ft.tag_id
@@ -127,7 +110,11 @@ func (d *Database) GetFileTags(filePath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
 
 	var tags []string
 	for rows.Next() {
@@ -142,7 +129,10 @@ func (d *Database) GetFileTags(filePath string) ([]string, error) {
 
 // GetFileTagsNoLock returns tags without acquiring lock (caller must handle locking)
 func (d *Database) getFileTagsNoLock(filePath string) []string {
-	rows, err := d.db.Query(`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT t.name 
 		FROM tags t
 		INNER JOIN file_tags ft ON t.id = ft.tag_id
@@ -152,7 +142,11 @@ func (d *Database) getFileTagsNoLock(filePath string) []string {
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
 
 	var tags []string
 	for rows.Next() {
@@ -170,17 +164,28 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Start transaction
-	tx, err := d.db.Begin()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+
+	// Use a named return to properly handle the rollback
+	var txErr error
+	defer func() {
+		if txErr != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				logging.Error("rollback failed: %v (original error: %v)", rbErr, txErr)
+			}
+		}
+	}()
 
 	// Remove existing tags
-	_, err = tx.Exec("DELETE FROM file_tags WHERE file_path = ?", filePath)
-	if err != nil {
-		return err
+	_, txErr = tx.ExecContext(ctx, "DELETE FROM file_tags WHERE file_path = ?", filePath)
+	if txErr != nil {
+		return txErr
 	}
 
 	// Add new tags
@@ -192,10 +197,10 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 
 		// Get or create tag
 		var tagID int64
-		err := tx.QueryRow("SELECT id FROM tags WHERE name = ? COLLATE NOCASE", tagName).Scan(&tagID)
+		err := tx.QueryRowContext(ctx, "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", tagName).Scan(&tagID)
 		if err != nil {
 			// Create tag
-			result, err := tx.Exec("INSERT INTO tags (name) VALUES (?)", tagName)
+			result, err := tx.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
 			if err != nil {
 				return err
 			}
@@ -203,7 +208,7 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 		}
 
 		// Add relationship
-		_, err = tx.Exec(
+		_, err = tx.ExecContext(ctx,
 			"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
 			filePath, tagID,
 		)
@@ -220,7 +225,10 @@ func (d *Database) GetAllTags() ([]Tag, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	rows, err := d.db.Query(`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT t.id, t.name, t.color, t.created_at, COUNT(ft.id) as item_count
 		FROM tags t
 		LEFT JOIN file_tags ft ON t.id = ft.tag_id
@@ -230,7 +238,11 @@ func (d *Database) GetAllTags() ([]Tag, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
 
 	var tags []Tag
 	for rows.Next() {
@@ -265,12 +277,15 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 		pageSize = 200
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	// Get total count
 	var totalItems int
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT ft.file_path)
 		FROM file_tags ft
 		INNER JOIN tags t ON ft.tag_id = t.id
@@ -287,7 +302,7 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 	offset := (page - 1) * pageSize
 
 	// Get files
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
 		FROM files f
 		INNER JOIN file_tags ft ON f.path = ft.file_path
@@ -299,7 +314,11 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
 
 	var items []MediaFile
 	for rows.Next() {
@@ -343,8 +362,10 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 func (d *Database) DeleteTag(tagName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	_, err := d.db.Exec("DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
+	_, err := d.db.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
 	return err
 }
 
@@ -357,8 +378,11 @@ func (d *Database) RenameTag(oldName, newName string) error {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	_, err := d.db.Exec(
+	_, err := d.db.ExecContext(
+		ctx,
 		"UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE",
 		newName, oldName,
 	)
@@ -369,8 +393,11 @@ func (d *Database) RenameTag(oldName, newName string) error {
 func (d *Database) SetTagColor(tagName, color string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	_, err := d.db.Exec(
+	_, err := d.db.ExecContext(
+		ctx,
 		"UPDATE tags SET color = ? WHERE name = ? COLLATE NOCASE",
 		color, tagName,
 	)
@@ -379,17 +406,27 @@ func (d *Database) SetTagColor(tagName, color string) error {
 
 // GetTagCount returns the total number of tags
 func (d *Database) GetTagCount() int {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var count int
-	d.db.QueryRow("SELECT COUNT(*) FROM tags").Scan(&count)
+	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&count); err != nil {
+		return 0
+	}
 	return count
 }
 
 // Internal helper without lock
 func (d *Database) isFavoriteNoLockInternal(path string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	var count int
-	d.db.QueryRow("SELECT COUNT(*) FROM favorites WHERE path = ?", path).Scan(&count)
+	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites WHERE path = ?", path).Scan(&count); err != nil {
+		return false
+	}
 	return count > 0
 }

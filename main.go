@@ -1,7 +1,26 @@
+// Main entry point for the media viewer application.
+//
+// It starts an HTTP server that provides:
+//   - Web-based media browsing interface
+//   - RESTful API for media operations
+//   - Background media indexing
+//   - Video transcoding and streaming
+//   - User authentication
+//
+// Configuration is provided via environment variables:
+//   - MEDIA_DIR: Path to media files (default: /media)
+//   - CACHE_DIR: Path to cache directory (default: /cache)
+//   - DATABASE_DIR: Path to database directory (default: /database)
+//   - PORT: HTTP server port (default: 8080)
+//   - INDEX_INTERVAL: Media indexing interval (default: 30m)
+//   - LOG_LEVEL: Logging verbosity (default: info)
+//   - LOG_STATIC_FILES: Log static file requests (default: false)
+//   - LOG_HEALTH_CHECKS: Log health check requests (default: true)
 package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,18 +49,25 @@ func main() {
 
 	// Initialize database
 	dbStart := time.Now()
-	db, err := database.New(config.CacheDir)
+	db, err := database.New(config.DatabasePath)
 	if err != nil {
 		startup.LogFatal("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("error closing database: %v", err)
+		}
+	}()
 	startup.LogDatabaseInit(time.Since(dbStart))
 
 	// Clean up expired sessions periodically
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
 		for range ticker.C {
-			db.CleanExpiredSessions()
+			if err := db.CleanExpiredSessions(); err != nil {
+				logging.Error("failed to clean expired sessions: %v", err)
+			}
 		}
 	}()
 
@@ -68,7 +94,7 @@ func main() {
 	router := setupRouter(h)
 
 	// Log routes dynamically
-	startup.LogHTTPRoutes(router, config.LogStaticFiles)
+	startup.LogHTTPRoutes(router, config.LogStaticFiles, config.LogHealthChecks)
 
 	// Apply authentication middleware
 	authedRouter := h.AuthMiddleware(router)
@@ -76,6 +102,7 @@ func main() {
 	// Apply logging middleware
 	loggingConfig := middleware.DefaultLoggingConfig()
 	loggingConfig.LogStaticFiles = config.LogStaticFiles
+	loggingConfig.LogHealthChecks = config.LogHealthChecks
 	loggedHandler := middleware.Logger(loggingConfig)(authedRouter)
 
 	// Apply compression middleware

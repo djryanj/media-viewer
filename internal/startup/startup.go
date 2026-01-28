@@ -1,6 +1,7 @@
 package startup
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,11 +55,13 @@ type RouteInfo struct {
 
 // Config holds all application configuration
 type Config struct {
-	MediaDir       string
-	CacheDir       string
-	Port           string
-	IndexInterval  time.Duration
-	LogStaticFiles bool
+	MediaDir        string
+	CacheDir        string
+	DatabaseDir     string
+	Port            string
+	IndexInterval   time.Duration
+	LogStaticFiles  bool
+	LogHealthChecks bool
 
 	// Derived paths
 	DatabasePath string
@@ -81,16 +84,20 @@ func LoadConfig() (*Config, error) {
 
 	mediaDir := getEnv("MEDIA_DIR", "/media")
 	cacheDir := getEnv("CACHE_DIR", "/cache")
+	databaseDir := getEnv("DATABASE_DIR", "/database")
 	port := getEnv("PORT", "8080")
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
 	logStaticFiles := getEnv("LOG_STATIC_FILES", "false") == "true"
+	logHealthChecks := getEnv("LOG_HEALTH_CHECKS", "true") == "true"
 
-	logging.Info("  MEDIA_DIR:        %s", mediaDir)
-	logging.Info("  CACHE_DIR:        %s", cacheDir)
-	logging.Info("  PORT:             %s", port)
-	logging.Info("  INDEX_INTERVAL:   %s", indexIntervalStr)
-	logging.Info("  LOG_STATIC_FILES: %v", logStaticFiles)
-	logging.Info("  LOG_LEVEL:        %s", logging.GetLevel())
+	logging.Info("  MEDIA_DIR:         %s", mediaDir)
+	logging.Info("  CACHE_DIR:         %s", cacheDir)
+	logging.Info("  DATABASE_DIR:      %s", databaseDir)
+	logging.Info("  PORT:              %s", port)
+	logging.Info("  INDEX_INTERVAL:    %s", indexIntervalStr)
+	logging.Info("  LOG_STATIC_FILES:  %v", logStaticFiles)
+	logging.Info("  LOG_HEALTH_CHECKS: %v", logHealthChecks)
+	logging.Info("  LOG_LEVEL:         %s", logging.GetLevel())
 
 	indexInterval, err := time.ParseDuration(indexIntervalStr)
 	if err != nil {
@@ -116,6 +123,12 @@ func LoadConfig() (*Config, error) {
 	}
 	logging.Info("  Cache directory (absolute): %s", cacheDir)
 
+	databaseDir, err = filepath.Abs(databaseDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve database directory path: %w", err)
+	}
+	logging.Info("  Cache directory (absolute): %s", databaseDir)
+
 	// Check/create media directory (warning only)
 	if err := ensureDirectory(mediaDir, "media"); err != nil {
 		logging.Warn("  Media directory issue: %v", err)
@@ -123,25 +136,27 @@ func LoadConfig() (*Config, error) {
 
 	// Check/create cache directory structure
 	config := &Config{
-		MediaDir:       mediaDir,
-		CacheDir:       cacheDir,
-		Port:           port,
-		IndexInterval:  indexInterval,
-		LogStaticFiles: logStaticFiles,
-		DatabasePath:   filepath.Join(cacheDir, "media.db"),
-		ThumbnailDir:   filepath.Join(cacheDir, "thumbnails"),
-		TranscodeDir:   filepath.Join(cacheDir, "transcoded"),
+		MediaDir:        mediaDir,
+		CacheDir:        cacheDir,
+		DatabaseDir:     databaseDir,
+		Port:            port,
+		IndexInterval:   indexInterval,
+		LogStaticFiles:  logStaticFiles,
+		LogHealthChecks: logHealthChecks,
+		DatabasePath:    filepath.Join(databaseDir, "media.db"),
+		ThumbnailDir:    filepath.Join(cacheDir, "thumbnails"),
+		TranscodeDir:    filepath.Join(cacheDir, "transcoded"),
 	}
 
-	// Ensure base cache directory exists (required for database)
-	if err := ensureDirectory(cacheDir, "cache"); err != nil {
-		return nil, fmt.Errorf("cache directory error: %w", err)
+	// Ensure base database directory exists (required for database)
+	if err := ensureDirectory(databaseDir, "database"); err != nil {
+		return nil, fmt.Errorf("database directory error: %w", err)
 	}
 
 	// Test write access for database (required)
-	logging.Debug("  Testing cache directory write access...")
-	if err := testWriteAccess(cacheDir); err != nil {
-		return nil, fmt.Errorf("cache directory is not writable (required for database): %w", err)
+	logging.Debug("  Testing database directory write access...")
+	if err := testWriteAccess(databaseDir); err != nil {
+		return nil, fmt.Errorf("database directory is not writable (required for database): %w", err)
 	}
 	logging.Info("  [OK] Cache directory is writable")
 
@@ -164,19 +179,22 @@ func LoadConfig() (*Config, error) {
 func setupOptionalDir(path, name string) bool {
 	logging.Debug("  Setting up %s directory: %s", name, path)
 
-	if err := os.MkdirAll(path, 0755); err != nil {
+	if err := os.MkdirAll(path, 0o755); err != nil {
 		logging.Warn("    Failed to create %s directory: %v", name, err)
 		logging.Warn("    %s will be disabled", name)
 		return false
 	}
 
 	testFile := filepath.Join(path, ".write-test")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
 		logging.Warn("    %s directory is not writable: %v", name, err)
 		logging.Warn("    %s will be disabled", name)
 		return false
 	}
-	os.Remove(testFile)
+	if err := os.Remove(testFile); err != nil {
+		logging.Warn("    failed to remove test file %s: %v", testFile, err)
+		// Still return true since write succeeded
+	}
 
 	logging.Debug("    [OK] %s directory ready", name)
 	return true
@@ -234,22 +252,22 @@ func LogIndexerInit(interval time.Duration) {
 	logging.Info("INDEXER INITIALIZATION")
 	logging.Info("------------------------------------------------------------")
 	logging.Info("  Index interval: %v", interval)
-	logging.Debug("  Starting indexer...")
+	logging.Info("  Starting indexer...")
 }
 
 // LogIndexerStarted logs successful indexer start
 func LogIndexerStarted() {
-	logging.Info("  [OK] Indexer started (initial scan running in background)")
+	logging.Info("  [OK] Indexer started")
 }
 
 // GetRoutes extracts all registered routes from a mux.Router
-func GetRoutes(router *mux.Router) []RouteInfo {
+func GetRoutes(router *mux.Router) ([]RouteInfo, error) {
 	var routes []RouteInfo
 
-	router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
 		pathTemplate, err := route.GetPathTemplate()
 		if err != nil {
-			return nil
+			return err
 		}
 
 		methods, err := route.GetMethods()
@@ -271,26 +289,21 @@ func GetRoutes(router *mux.Router) []RouteInfo {
 		return nil
 	})
 
-	// Sort routes by path, then method
-	sort.Slice(routes, func(i, j int) bool {
-		if routes[i].Path == routes[j].Path {
-			return routes[i].Method < routes[j].Method
-		}
-		return routes[i].Path < routes[j].Path
-	})
-
-	return routes
+	return routes, err
 }
 
 // LogHTTPRoutes logs all registered HTTP routes dynamically
-func LogHTTPRoutes(router *mux.Router, logStaticFiles bool) {
+func LogHTTPRoutes(router *mux.Router, logStaticFiles, logHealthChecks bool) {
 	logging.Info("")
 	logging.Info("------------------------------------------------------------")
 	logging.Info("HTTP SERVER SETUP")
 	logging.Info("------------------------------------------------------------")
 
 	if logging.IsDebugEnabled() {
-		routes := GetRoutes(router)
+		routes, err := GetRoutes(router)
+		if err != nil {
+			logging.Warn("error walking routes: %v", err)
+		}
 
 		logging.Debug("  Registered routes (%d total):", len(routes))
 		logging.Debug("")
@@ -331,6 +344,11 @@ func LogHTTPRoutes(router *mux.Router, logStaticFiles bool) {
 		logging.Info("    Static file logging: ON")
 	} else {
 		logging.Info("    Static file logging: OFF (set LOG_STATIC_FILES=true to enable)")
+	}
+	if logHealthChecks {
+		logging.Info("    Health check logging: ON")
+	} else {
+		logging.Info("    Health check logging: OFF (set LOG_HEALTH_CHECKS=true to enable)")
 	}
 }
 
@@ -448,7 +466,7 @@ func ensureDirectory(path, name string) error {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		logging.Debug("    Directory does not exist, creating...")
-		if err := os.MkdirAll(path, 0755); err != nil {
+		if err := os.MkdirAll(path, 0o755); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
 		logging.Debug("    [OK] Created directory: %s", path)
@@ -486,10 +504,13 @@ func ensureDirectory(path, name string) error {
 
 func testWriteAccess(dir string) error {
 	testFile := filepath.Join(dir, ".write-test")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
 		return err
 	}
-	os.Remove(testFile)
+	if err := os.Remove(testFile); err != nil {
+		logging.Warn("failed to remove write test file %s: %v", testFile, err)
+		// Don't return error since write access was confirmed
+	}
 	return nil
 }
 
@@ -500,7 +521,10 @@ func checkFFmpeg() error {
 	}
 	logging.Debug("  FFmpeg path: %s", path)
 
-	cmd := exec.Command("ffmpeg", "-version")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-version")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get ffmpeg version: %w", err)

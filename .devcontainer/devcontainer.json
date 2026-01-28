@@ -11,11 +11,14 @@
 
   "customizations": {
     "vscode": {
-      "extensions": ["golang.go", "ms-azuretools.vscode-docker"]
+      "extensions": ["golang.go", "ms-azuretools.vscode-docker"],
+      "settings": {
+        "remote.localPortHost": "allInterfaces"
+      }
     }
   },
 
-  "forwardPorts": [8080],
+  "forwardPorts": ["8080:8080"],
 
   "postCreateCommand": "bash .devcontainer/post-create.sh",
 
@@ -29,6 +32,7 @@
   "remoteEnv": {
     "MEDIA_DIR": "/media",
     "CACHE_DIR": "/cache",
+    "DATABASE_DIR": "/database",
     "PORT": "8080"
   }
 }

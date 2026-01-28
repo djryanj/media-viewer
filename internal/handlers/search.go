@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"media-viewer/internal/database"
 )
 
+// Search searches for media files matching a query
 func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	opts := database.SearchOptions{
 		Query:      r.URL.Query().Get("q"),
@@ -25,7 +25,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	if opts.Query == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(database.SearchResult{
+		writeJSON(w, database.SearchResult{
 			Items:      []database.MediaFile{},
 			Query:      "",
 			TotalItems: 0,
@@ -43,9 +43,10 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
+// SearchSuggestions returns autocomplete suggestions for a search query
 func (h *Handlers) SearchSuggestions(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	limit := 10
@@ -64,5 +65,5 @@ func (h *Handlers) SearchSuggestions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(suggestions)
+	writeJSON(w, suggestions)
 }

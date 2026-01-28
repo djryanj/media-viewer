@@ -24,26 +24,89 @@ const Gallery = {
     },
 
     createGalleryItem(item) {
-        const element = document.createElement('div');
-        element.className = 'gallery-item' + (item.type === 'folder' ? ' folder' : '');
-        if (item.isFavorite) {
-            element.classList.add('is-favorite');
+        if (item.type === 'folder') {
+            console.log('FOLDER FOUND:', {
+                name: item.name,
+                type: item.type,
+                thumbnailUrl: item.thumbnailUrl,
+                path: item.path
+            });
         }
-        element.dataset.path = item.path;
-        element.dataset.type = item.type;
-        element.dataset.name = item.name;
+        
+        const div = document.createElement('div');
+        div.className = 'gallery-item';
+        div.dataset.path = item.path;
+        div.dataset.type = item.type;
 
-        const thumb = this.createThumbnail(item);
-        const info = this.createInfo(item);
+        const preview = document.createElement('div');
+        preview.className = 'gallery-item-preview';
 
-        element.appendChild(thumb);
-        element.appendChild(info);
+        if (item.type === 'image' || item.type === 'video' || item.type === 'folder') {
+            const img = document.createElement('img');
+            img.src = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
+            img.alt = item.name;
+            img.loading = 'lazy';
+            img.onerror = () => {
+                preview.innerHTML = `<span class="gallery-item-icon">${this.getIcon(item.type)}</span>`;
+            };
+            preview.appendChild(img);
 
-        // Handle clicks and taps
-        this.attachTapHandler(element, item);
+            if (item.type === 'video') {
+                const indicator = document.createElement('span');
+                indicator.className = 'video-indicator';
+                indicator.textContent = '▶';
+                preview.appendChild(indicator);
+            }
+        } else {
+            preview.innerHTML = `<span class="gallery-item-icon">${this.getIcon(item.type)}</span>`;
+        }
 
-        return element;
+        div.appendChild(preview);
+
+        const info = document.createElement('div');
+        info.className = 'gallery-item-info';
+
+        const name = document.createElement('div');
+        name.className = 'gallery-item-name';
+        name.textContent = item.name;
+        name.title = item.name;
+
+        info.appendChild(name);
+
+        if (item.type !== 'folder') {
+            const meta = document.createElement('div');
+            meta.className = 'gallery-item-meta';
+            meta.textContent = App.formatFileSize(item.size);
+            info.appendChild(meta);
+        } else if (item.itemCount !== undefined) {
+            const meta = document.createElement('div');
+            meta.className = 'gallery-item-meta';
+            meta.textContent = `${item.itemCount} items`;
+            info.appendChild(meta);
+        }
+
+        div.appendChild(info);
+
+        // Add tags if present
+        if (item.tags && item.tags.length > 0) {
+            const tagsHtml = Tags.renderItemTags(item.tags);
+            if (tagsHtml) {
+                div.insertAdjacentHTML('beforeend', tagsHtml);
+            }
+        }
+
+        // Add favorite indicator
+        if (item.isFavorite) {
+            div.classList.add('is-favorite');
+        }
+
+        // Bind tap/click handlers using existing method
+        this.attachTapHandler(div, item);
+
+        return div;
     },
+
+
 
     attachTapHandler(element, item) {
         // Touch state tracking

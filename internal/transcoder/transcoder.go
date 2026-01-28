@@ -12,8 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"media-viewer/internal/logging"
 )
 
+// Transcoder manages video transcoding operations for compatible playback.
 type Transcoder struct {
 	cacheDir  string
 	enabled   bool
@@ -21,6 +24,7 @@ type Transcoder struct {
 	processMu sync.Mutex
 }
 
+// VideoInfo contains information about a video file.
 type VideoInfo struct {
 	Duration       float64 `json:"duration"`
 	Width          int     `json:"width"`
@@ -42,6 +46,7 @@ var compatibleContainers = map[string]bool{
 	"ogg":  true,
 }
 
+// New creates a new Transcoder instance.
 func New(cacheDir string, enabled bool) *Transcoder {
 	return &Transcoder{
 		cacheDir:  cacheDir,
@@ -50,12 +55,14 @@ func New(cacheDir string, enabled bool) *Transcoder {
 	}
 }
 
+// IsEnabled returns whether transcoding is enabled.
 func (t *Transcoder) IsEnabled() bool {
 	return t.enabled
 }
 
-func (t *Transcoder) GetVideoInfo(filePath string) (*VideoInfo, error) {
-	cmd := exec.Command("ffprobe",
+// GetVideoInfo retrieves codec and dimension information about a video file.
+func (t *Transcoder) GetVideoInfo(ctx context.Context, filePath string) (*VideoInfo, error) {
+	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_format",
@@ -68,7 +75,7 @@ func (t *Transcoder) GetVideoInfo(filePath string) (*VideoInfo, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("ffprobe error: %v - %s", err, stderr.String())
+		return nil, fmt.Errorf("ffprobe error: %w - %s", err, stderr.String())
 	}
 
 	output := stdout.String()
@@ -119,8 +126,9 @@ func (t *Transcoder) GetVideoInfo(filePath string) (*VideoInfo, error) {
 	return info, nil
 }
 
+// StreamVideo streams a video file, transcoding if necessary for browser compatibility.
 func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writer, targetWidth int) error {
-	info, err := t.GetVideoInfo(filePath)
+	info, err := t.GetVideoInfo(ctx, filePath)
 	if err != nil {
 		return err
 	}
@@ -131,7 +139,11 @@ func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writ
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				log.Printf("failed to close video file %s: %v", filePath, err)
+			}
+		}()
 		_, err = io.Copy(w, file)
 		return err
 	}
@@ -179,21 +191,24 @@ func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writ
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		log.Printf("FFmpeg stderr: %s", stderr.String())
-		return fmt.Errorf("transcoding error: %v", err)
+		logging.Error("FFmpeg stderr: %s", stderr.String())
+		return fmt.Errorf("transcoding error: %w", err)
 	}
 
 	return nil
 }
 
+// Cleanup stops all active transcoding processes.
 func (t *Transcoder) Cleanup() {
 	t.processMu.Lock()
 	defer t.processMu.Unlock()
 
 	for path, cmd := range t.processes {
 		if cmd.Process != nil {
-			log.Printf("Killing transcoding process for: %s", path)
-			cmd.Process.Kill()
+			logging.Info("Killing transcoding process for: %s", path)
+			if err := cmd.Process.Kill(); err != nil {
+				logging.Warn("failed to kill transcoding process for %s: %v", path, err)
+			}
 		}
 	}
 }

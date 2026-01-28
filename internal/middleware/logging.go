@@ -50,17 +50,19 @@ func (rw *responseWriter) Flush() {
 
 // LoggingConfig holds configuration for the logging middleware
 type LoggingConfig struct {
-	SkipPaths      []string
-	SkipExtensions []string
-	LogStaticFiles bool
+	SkipPaths       []string
+	SkipExtensions  []string
+	LogStaticFiles  bool
+	LogHealthChecks bool
 }
 
 // DefaultLoggingConfig returns a sensible default configuration
 func DefaultLoggingConfig() LoggingConfig {
 	return LoggingConfig{
-		SkipPaths:      []string{},
-		SkipExtensions: []string{".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
-		LogStaticFiles: false,
+		SkipPaths:       []string{},
+		SkipExtensions:  []string{".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+		LogStaticFiles:  false,
+		LogHealthChecks: true,
 	}
 }
 
@@ -79,13 +81,21 @@ func NewW3CLogger(config LoggingConfig, serviceName string) *W3CLogger {
 	}
 }
 
+var healthCheckPaths = map[string]bool{
+	"/health":  true,
+	"/healthz": true,
+	"/livez":   true,
+	"/readyz":  true,
+}
+
 // writeHeader writes the W3C log file header directives
 func (l *W3CLogger) writeHeader() {
 	// W3C Extended Log File Format header
-	fmt.Fprintf(os.Stdout, "#Version: 1.0\n")
-	fmt.Fprintf(os.Stdout, "#Software: %s\n", l.serviceName)
-	fmt.Fprintf(os.Stdout, "#Start-Date: %s\n", time.Now().UTC().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(os.Stdout, "#Fields: date time c-ip cs-method cs-uri-stem cs-uri-query sc-status sc-bytes time-taken cs(Content-Encoding) cs(User-Agent) cs(Referer)\n")
+	// Errors writing to stdout are not recoverable, so we ignore them
+	_, _ = fmt.Fprintf(os.Stdout, "#Version: 1.0\n")
+	_, _ = fmt.Fprintf(os.Stdout, "#Software: %s\n", l.serviceName)
+	_, _ = fmt.Fprintf(os.Stdout, "#Start-Date: %s\n", time.Now().UTC().Format("2006-01-02 15:04:05"))
+	_, _ = fmt.Fprintf(os.Stdout, "#Fields: date time c-ip cs-method cs-uri-stem cs-uri-query sc-status sc-bytes time-taken cs(Content-Encoding) cs(User-Agent) cs(Referer)\n")
 }
 
 // Logger returns HTTP logging middleware using W3C Extended Log Format
@@ -170,12 +180,19 @@ func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration tim
 }
 
 func shouldSkip(path string, config LoggingConfig) bool {
+	// Skip explicitly configured paths
 	for _, skipPath := range config.SkipPaths {
 		if strings.HasPrefix(path, skipPath) {
 			return true
 		}
 	}
 
+	// Skip health checks if disabled
+	if !config.LogHealthChecks && healthCheckPaths[path] {
+		return true
+	}
+
+	// Skip static files if disabled
 	if !config.LogStaticFiles {
 		for _, ext := range config.SkipExtensions {
 			if strings.HasSuffix(strings.ToLower(path), ext) {

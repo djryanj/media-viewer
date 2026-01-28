@@ -2,23 +2,26 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
-	"media-viewer/internal/logging"
 	"net/http"
 	"strings"
 	"time"
+
+	"media-viewer/internal/logging"
 )
 
+// LoginRequest represents a login request with username and password
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
+// SetupRequest represents an initial setup request to create the first user
 type SetupRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
+// AuthResponse represents the response from authentication endpoints
 type AuthResponse struct {
 	Success  bool   `json:"success"`
 	Message  string `json:"message,omitempty"`
@@ -26,15 +29,16 @@ type AuthResponse struct {
 }
 
 const (
+	// SessionCookieName is the name of the session cookie
 	SessionCookieName = "media_viewer_session"
 )
 
 // CheckSetupRequired returns whether initial setup is needed
-func (h *Handlers) CheckSetupRequired(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) CheckSetupRequired(w http.ResponseWriter, _ *http.Request) {
 	needsSetup := !h.db.HasUsers()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{
+	writeJSON(w, map[string]bool{
 		"needsSetup": needsSetup,
 	})
 }
@@ -70,10 +74,10 @@ func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[INFO] Initial user created: %s", req.Username)
+	logging.Info("Initial user created: %s", req.Username)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(AuthResponse{
+	writeJSON(w, AuthResponse{
 		Success: true,
 		Message: "User created successfully",
 	})
@@ -90,7 +94,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Validate user
 	user, err := h.db.ValidateUser(req.Username, req.Password)
 	if err != nil {
-		log.Printf("[WARN] Failed login attempt for user: %s", req.Username)
+		logging.Warn("Failed login attempt for user: %s", req.Username)
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
@@ -113,10 +117,10 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	log.Printf("[INFO] User logged in: %s", user.Username)
+	logging.Info("User logged in: %s", user.Username)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(AuthResponse{
+	writeJSON(w, AuthResponse{
 		Success:  true,
 		Username: user.Username,
 	})
@@ -126,7 +130,10 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(SessionCookieName)
 	if err == nil && cookie.Value != "" {
-		h.db.DeleteSession(cookie.Value)
+		// Best-effort session cleanup - don't fail logout if this errors
+		if err := h.db.DeleteSession(cookie.Value); err != nil {
+			logging.Error("failed to delete session during logout: %v", err)
+		}
 	}
 
 	// Clear cookie
@@ -140,7 +147,7 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(AuthResponse{
+	writeJSON(w, AuthResponse{
 		Success: true,
 		Message: "Logged out successfully",
 	})
@@ -151,7 +158,7 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(SessionCookieName)
 	if err != nil || cookie.Value == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(AuthResponse{
+		writeJSON(w, AuthResponse{
 			Success: false,
 		})
 		return
@@ -169,14 +176,14 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 		})
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(AuthResponse{
+		writeJSON(w, AuthResponse{
 			Success: false,
 		})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(AuthResponse{
+	writeJSON(w, AuthResponse{
 		Success:  true,
 		Username: user.Username,
 	})

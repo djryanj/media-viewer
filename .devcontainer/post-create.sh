@@ -23,9 +23,11 @@ echo -e "${GREEN}[SUCCESS] ffmpeg and sqlite installed${NC}"
 # Setup directories with correct permissions
 echo -e "${BLUE}[INFO] Setting up directories...${NC}"
 
-sudo mkdir -p /media /cache
+sudo mkdir -p /media /cache /database
 sudo chown -R vscode:vscode /cache
 sudo chmod -R 755 /cache
+sudo chown -R vscode:vscode /database
+sudo chmod -R 755 /database
 
 if [ -d "/media" ]; then
     sudo chown -R vscode:vscode /media 2>/dev/null || true
@@ -48,6 +50,23 @@ else
         echo -e "${GREEN}[SUCCESS] Cache directory fix applied${NC}"
     else
         echo -e "${YELLOW}[WARN] Could not make cache writable - app may have limited functionality${NC}"
+    fi
+fi
+
+# Verify write access to database dir
+echo -e "${BLUE}[INFO] Verifying database directory write access...${NC}"
+if touch /database/.write-test 2>/dev/null; then
+    rm /database/.write-test
+    echo -e "${GREEN}[SUCCESS] database directory is writable${NC}"
+else
+    echo -e "${YELLOW}[WARN] database directory is not writable - attempting fix...${NC}"
+    sudo chown -R vscode:vscode /database
+    sudo chmod -R 777 /database
+    if touch /database/.write-test 2>/dev/null; then
+        rm /database/.write-test
+        echo -e "${GREEN}[SUCCESS] database directory fix applied${NC}"
+    else
+        echo -e "${YELLOW}[WARN] Could not make database writable - app will not run${NC}"
     fi
 fi
 

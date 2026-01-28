@@ -1,21 +1,24 @@
 package media
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
+	"media-viewer/internal/logging"
+
 	"github.com/fsnotify/fsnotify"
 )
 
+// Scanner provides methods for scanning and listing media directories.
 type Scanner struct {
 	mediaDir string
 	mu       sync.RWMutex
 }
 
+// NewScanner creates a new Scanner instance.
 func NewScanner(mediaDir string) *Scanner {
 	return &Scanner{
 		mediaDir: mediaDir,
@@ -27,114 +30,151 @@ func (s *Scanner) GetDirectory(relativePath string, sortField SortField, sortOrd
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Clean and validate the path
-	relativePath = filepath.Clean(relativePath)
-	if relativePath == "." {
-		relativePath = ""
-	}
+	relativePath = normalizePath(relativePath)
 
-	fullPath := filepath.Join(s.mediaDir, relativePath)
-
-	// Security check - ensure we're still within media directory
-	absPath, err := filepath.Abs(fullPath)
+	fullPath, err := s.validatePath(relativePath)
 	if err != nil {
 		return nil, err
 	}
-	absMediaDir, _ := filepath.Abs(s.mediaDir)
-	if !strings.HasPrefix(absPath, absMediaDir) {
-		return nil, os.ErrPermission
-	}
 
-	// Check if directory exists
-	info, err := os.Stat(fullPath)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() {
-		return nil, os.ErrInvalid
-	}
-
-	// Read directory contents
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
 		return nil, err
 	}
 
+	items := s.processEntries(entries, relativePath, fullPath, filterType)
+
+	s.sortItems(items, sortField, sortOrder)
+
+	return s.buildListing(relativePath, items), nil
+}
+
+// normalizePath cleans and normalizes a relative path
+func normalizePath(relativePath string) string {
+	relativePath = filepath.Clean(relativePath)
+	if relativePath == "." {
+		relativePath = ""
+	}
+	return relativePath
+}
+
+// validatePath ensures the path is valid and within the media directory
+func (s *Scanner) validatePath(relativePath string) (string, error) {
+	fullPath := filepath.Join(s.mediaDir, relativePath)
+
+	absPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return "", err
+	}
+
+	absMediaDir, _ := filepath.Abs(s.mediaDir)
+	if !strings.HasPrefix(absPath, absMediaDir) {
+		return "", os.ErrPermission
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", os.ErrInvalid
+	}
+
+	return fullPath, nil
+}
+
+// processEntries converts directory entries to MediaFile items
+func (s *Scanner) processEntries(entries []os.DirEntry, relativePath, fullPath, filterType string) []MediaFile {
 	var items []MediaFile
 
 	for _, entry := range entries {
-		// Skip hidden files
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 
-		entryInfo, err := entry.Info()
-		if err != nil {
+		item, ok := s.entryToMediaFile(entry, relativePath, fullPath)
+		if !ok {
 			continue
 		}
 
-		entryPath := filepath.Join(relativePath, entry.Name())
-		if relativePath == "" {
-			entryPath = entry.Name()
-		}
-
-		if entry.IsDir() {
-			// Count items in subdirectory
-			itemCount := s.countDirItems(filepath.Join(fullPath, entry.Name()))
-
-			items = append(items, MediaFile{
-				Name:      entry.Name(),
-				Path:      entryPath,
-				Type:      FileTypeFolder,
-				Size:      0,
-				ModTime:   entryInfo.ModTime(),
-				ItemCount: itemCount,
-			})
-		} else {
-			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			fileType := s.getFileType(ext)
-
-			// Skip unsupported files unless showing all
-			if fileType == FileTypeOther {
-				continue
-			}
-
-			mf := MediaFile{
-				Name:     entry.Name(),
-				Path:     entryPath,
-				Type:     fileType,
-				Size:     entryInfo.Size(),
-				ModTime:  entryInfo.ModTime(),
-				MimeType: s.getMimeType(ext),
-			}
-
-			if fileType == FileTypeImage || fileType == FileTypeVideo {
-				mf.ThumbnailURL = "/api/thumbnail/" + entryPath
-			}
-
-			items = append(items, mf)
+		if s.shouldIncludeItem(item, filterType) {
+			items = append(items, item)
 		}
 	}
 
-	// Apply filter
-	if filterType != "" {
-		var filtered []MediaFile
-		for _, item := range items {
-			// Always show folders when filtering
-			if item.Type == FileTypeFolder || string(item.Type) == filterType {
-				filtered = append(filtered, item)
-			}
-		}
-		items = filtered
+	return items
+}
+
+// entryToMediaFile converts a directory entry to a MediaFile
+func (s *Scanner) entryToMediaFile(entry os.DirEntry, relativePath, fullPath string) (MediaFile, bool) {
+	entryInfo, err := entry.Info()
+	if err != nil {
+		return MediaFile{}, false
 	}
 
-	// Sort items (folders first, then by specified field)
-	s.sortItems(items, sortField, sortOrder)
+	entryPath := entry.Name()
+	if relativePath != "" {
+		entryPath = filepath.Join(relativePath, entry.Name())
+	}
 
-	// Build breadcrumb
+	if entry.IsDir() {
+		return s.createFolderItem(entry, entryInfo, entryPath, fullPath), true
+	}
+
+	return s.createFileItem(entry, entryInfo, entryPath)
+}
+
+// createFolderItem creates a MediaFile for a directory
+func (s *Scanner) createFolderItem(entry os.DirEntry, info os.FileInfo, entryPath, fullPath string) MediaFile {
+	itemCount := s.countDirItems(filepath.Join(fullPath, entry.Name()))
+
+	return MediaFile{
+		Name:      entry.Name(),
+		Path:      entryPath,
+		Type:      FileTypeFolder,
+		Size:      0,
+		ModTime:   info.ModTime(),
+		ItemCount: itemCount,
+	}
+}
+
+// createFileItem creates a MediaFile for a file
+func (s *Scanner) createFileItem(entry os.DirEntry, info os.FileInfo, entryPath string) (MediaFile, bool) {
+	ext := strings.ToLower(filepath.Ext(entry.Name()))
+	fileType := s.getFileType(ext)
+
+	if fileType == FileTypeOther {
+		return MediaFile{}, false
+	}
+
+	mf := MediaFile{
+		Name:     entry.Name(),
+		Path:     entryPath,
+		Type:     fileType,
+		Size:     info.Size(),
+		ModTime:  info.ModTime(),
+		MimeType: s.getMimeType(ext),
+	}
+
+	if fileType == FileTypeImage || fileType == FileTypeVideo {
+		mf.ThumbnailURL = "/api/thumbnail/" + entryPath
+	}
+
+	return mf, true
+}
+
+// shouldIncludeItem checks if an item passes the filter
+func (s *Scanner) shouldIncludeItem(item MediaFile, filterType string) bool {
+	if filterType == "" {
+		return true
+	}
+	return item.Type == FileTypeFolder || string(item.Type) == filterType
+}
+
+// buildListing constructs the DirectoryListing response
+func (s *Scanner) buildListing(relativePath string, items []MediaFile) *DirectoryListing {
 	breadcrumb := s.buildBreadcrumb(relativePath)
 
-	// Determine parent path
 	var parent string
 	if relativePath != "" {
 		parent = filepath.Dir(relativePath)
@@ -143,7 +183,6 @@ func (s *Scanner) GetDirectory(relativePath string, sortField SortField, sortOrd
 		}
 	}
 
-	// Directory name
 	dirName := filepath.Base(relativePath)
 	if relativePath == "" {
 		dirName = "Media"
@@ -155,7 +194,7 @@ func (s *Scanner) GetDirectory(relativePath string, sortField SortField, sortOrd
 		Parent:     parent,
 		Breadcrumb: breadcrumb,
 		Items:      items,
-	}, nil
+	}
 }
 
 func (s *Scanner) countDirItems(path string) int {
@@ -253,9 +292,9 @@ func (s *Scanner) GetPlaylists() []MediaFile {
 
 	var playlists []MediaFile
 
-	filepath.Walk(s.mediaDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(s.mediaDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
-			return nil
+			return err
 		}
 
 		ext := strings.ToLower(filepath.Ext(info.Name()))
@@ -272,43 +311,96 @@ func (s *Scanner) GetPlaylists() []MediaFile {
 		}
 		return nil
 	})
+	if err != nil {
+		logging.Error("failed to walk media directory for playlists: %v", err)
+	}
 
 	return playlists
 }
 
+// Watch monitors the media directory for changes using fsnotify
 func (s *Scanner) Watch() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Printf("Failed to create file watcher: %v", err)
+		logging.Error("Failed to create file watcher: %v", err)
 		return
 	}
-	defer watcher.Close()
+	defer func() {
+		if err := watcher.Close(); err != nil {
+			logging.Error("failed to close file watcher: %v", err)
+		}
+	}()
 
-	// Add all directories
-	filepath.Walk(s.mediaDir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && info.IsDir() {
-			watcher.Add(path)
+	watchCount := s.addDirectoriesToWatcher(watcher)
+	logging.Debug("Scanner watcher started, watching %d directories", watchCount)
+
+	s.processWatcherEvents(watcher)
+}
+
+// addDirectoriesToWatcher adds all directories in mediaDir to the watcher
+func (s *Scanner) addDirectoriesToWatcher(watcher *fsnotify.Watcher) int {
+	watchCount := 0
+	err := filepath.Walk(s.mediaDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && !strings.HasPrefix(info.Name(), ".") {
+			if addErr := watcher.Add(path); addErr != nil {
+				logging.Warn("failed to add path to watcher %s: %v", path, addErr)
+			} else {
+				watchCount++
+			}
 		}
 		return nil
 	})
+	if err != nil {
+		logging.Error("failed to walk media directory for watcher: %v", err)
+	}
+	return watchCount
+}
 
+// processWatcherEvents handles file system events from the watcher
+func (s *Scanner) processWatcherEvents(watcher *fsnotify.Watcher) {
 	for {
 		select {
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
 			}
-			// Add new directories to watcher
-			if event.Op&fsnotify.Create != 0 {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					watcher.Add(event.Name)
-				}
-			}
+			s.handleWatcherEvent(watcher, event)
+
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return
 			}
-			log.Printf("Watcher error: %v", err)
+			logging.Error("Watcher error: %v", err)
+		}
+	}
+}
+
+// handleWatcherEvent processes a single file system event
+func (s *Scanner) handleWatcherEvent(watcher *fsnotify.Watcher, event fsnotify.Event) {
+	// Skip hidden files
+	if strings.Contains(event.Name, "/.") {
+		return
+	}
+
+	if event.Op&fsnotify.Create != 0 {
+		s.handleCreateEvent(watcher, event)
+	}
+}
+
+// handleCreateEvent handles file/directory creation events
+func (s *Scanner) handleCreateEvent(watcher *fsnotify.Watcher, event fsnotify.Event) {
+	info, err := os.Stat(event.Name)
+	if err != nil {
+		return
+	}
+	if info.IsDir() {
+		if addErr := watcher.Add(event.Name); addErr != nil {
+			logging.Warn("failed to add new directory to watcher %s: %v", event.Name, addErr)
+		} else {
+			logging.Debug("Added new directory to watcher: %s", event.Name)
 		}
 	}
 }

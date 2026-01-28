@@ -2,16 +2,23 @@ package database
 
 import "time"
 
+// FileType represents the type of a media file.
 type FileType string
 
 const (
-	FileTypeFolder   FileType = "folder"
-	FileTypeImage    FileType = "image"
-	FileTypeVideo    FileType = "video"
+	// FileTypeFolder represents a directory.
+	FileTypeFolder FileType = "folder"
+	// FileTypeImage represents an image file.
+	FileTypeImage FileType = "image"
+	// FileTypeVideo represents a video file.
+	FileTypeVideo FileType = "video"
+	// FileTypePlaylist represents a playlist file.
 	FileTypePlaylist FileType = "playlist"
-	FileTypeOther    FileType = "other"
+	// FileTypeOther represents an unknown or unsupported file type.
+	FileTypeOther FileType = "other"
 )
 
+// MediaFile represents a file or folder in the media library.
 type MediaFile struct {
 	ID           int64     `json:"id"`
 	Name         string    `json:"name"`
@@ -28,6 +35,7 @@ type MediaFile struct {
 	Tags         []string  `json:"tags,omitempty"`
 }
 
+// Tag represents a label that can be applied to media files.
 type Tag struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
@@ -36,6 +44,7 @@ type Tag struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// Favorite represents a user's favorite media file or folder.
 type Favorite struct {
 	ID        int64     `json:"id"`
 	Path      string    `json:"path"`
@@ -44,6 +53,7 @@ type Favorite struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// DirectoryListing represents the contents of a directory.
 type DirectoryListing struct {
 	Path       string      `json:"path"`
 	Name       string      `json:"name"`
@@ -57,11 +67,13 @@ type DirectoryListing struct {
 	TotalPages int         `json:"totalPages"`
 }
 
+// PathPart represents a single component of a breadcrumb path.
 type PathPart struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 }
 
+// SearchResult represents the results of a search query.
 type SearchResult struct {
 	Items      []MediaFile `json:"items"`
 	Query      string      `json:"query"`
@@ -71,6 +83,7 @@ type SearchResult struct {
 	TotalPages int         `json:"totalPages"`
 }
 
+// SearchSuggestion represents an autocomplete suggestion for search.
 type SearchSuggestion struct {
 	Path      string   `json:"path"`
 	Name      string   `json:"name"`
@@ -78,6 +91,7 @@ type SearchSuggestion struct {
 	Highlight string   `json:"highlight"`
 }
 
+// IndexStats contains statistics about the indexed media library.
 type IndexStats struct {
 	TotalFiles     int       `json:"totalFiles"`
 	TotalFolders   int       `json:"totalFolders"`

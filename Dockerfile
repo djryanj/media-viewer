@@ -32,7 +32,7 @@ RUN CGO_ENABLED=1 go build \
 
 # Build password reset tool
 RUN CGO_ENABLED=1 go build \
-    -tags 'fts5 netgo osusergo' \
+    -tags 'netgo osusergo' \
     -ldflags "-s -w -extldflags '-static' \
     -X 'media-viewer/internal/startup.Version=${VERSION}' \
     -X 'media-viewer/internal/startup.Commit=${COMMIT}' \
@@ -50,8 +50,8 @@ RUN apk add --no-cache \
     sqlite
 
 # Create directories with proper permissions
-RUN mkdir -p /media /cache && \
-    chown -R nobody:nobody /media /cache
+RUN mkdir -p /media /cache /database && \
+    chown -R nobody:nobody /media /cache /database
 
 # Copy binaries from builder
 COPY --from=builder /app/media-viewer /app/media-viewer
@@ -68,6 +68,7 @@ WORKDIR /app
 # Environment variables
 ENV MEDIA_DIR=/media
 ENV CACHE_DIR=/cache
+ENV DATABASE_DIR=/database
 ENV PORT=8080
 ENV INDEX_INTERVAL=30m
 

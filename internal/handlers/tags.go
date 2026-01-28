@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
-	"media-viewer/internal/database"
 	"net/http"
+
+	"media-viewer/internal/database"
 
 	"github.com/gorilla/mux"
 )
 
+// TagRequest represents a request to manage tags for a file
 type TagRequest struct {
 	Path    string   `json:"path"`
 	Tag     string   `json:"tag,omitempty"`
@@ -17,7 +19,7 @@ type TagRequest struct {
 }
 
 // GetAllTags returns all tags
-func (h *Handlers) GetAllTags(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) GetAllTags(w http.ResponseWriter, _ *http.Request) {
 	tags, err := h.db.GetAllTags()
 	if err != nil {
 		http.Error(w, "Failed to get tags", http.StatusInternalServerError)
@@ -29,7 +31,7 @@ func (h *Handlers) GetAllTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tags)
+	writeJSON(w, tags)
 }
 
 // GetFileTags returns tags for a specific file
@@ -51,7 +53,7 @@ func (h *Handlers) GetFileTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tags)
+	writeJSON(w, tags)
 }
 
 // AddTagToFile adds a tag to a file
@@ -72,8 +74,7 @@ func (h *Handlers) AddTagToFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONStatus(w, "ok")
 }
 
 // RemoveTagFromFile removes a tag from a file
@@ -94,8 +95,7 @@ func (h *Handlers) RemoveTagFromFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONStatus(w, "ok")
 }
 
 // SetFileTags replaces all tags for a file
@@ -116,8 +116,7 @@ func (h *Handlers) SetFileTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONStatus(w, "ok")
 }
 
 // GetFilesByTag returns files with a specific tag
@@ -141,7 +140,7 @@ func (h *Handlers) GetFilesByTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
 // DeleteTag removes a tag entirely
@@ -159,8 +158,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONStatus(w, "ok")
 }
 
 // RenameTag renames a tag
@@ -184,6 +182,5 @@ func (h *Handlers) RenameTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSONStatus(w, "ok")
 }
