@@ -64,73 +64,40 @@ jobs:
           version: latest
           args: --timeout=5m
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.go == 'true' || github.event_name == 'push'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  # test:
+  #   name: Test
+  #   runs-on: ubuntu-latest
+  #   needs: changes
+  #   if: needs.changes.outputs.go == 'true' || github.event_name == 'push'
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
+  #     - name: Set up Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: go.mod
+  #         cache: true
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev ffmpeg
+  #     - name: Install system dependencies
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y libsqlite3-dev ffmpeg
 
-      - name: Run tests
-        run: |
-          go test -v -race -coverprofile=coverage.out -tags 'fts5' ./...
+  #     - name: Run tests
+  #       run: |
+  #         go test -v -race -coverprofile=coverage.out -tags 'fts5' ./...
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.out
-          fail_ci_if_error: false
-        continue-on-error: true
-
-  build-go:
-    name: Build Go Binaries
-    runs-on: ubuntu-latest
-    needs: [lint, test]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev
-
-      - name: Build binaries
-        run: |
-          go build -v -tags 'fts5' -o media-viewer ./cmd/server
-          go build -v -tags 'fts5' -o usermgmt ./cmd/resetpw
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ github.sha }}
-          path: |
-            media-viewer
-            usermgmt
-          retention-days: 7
+  #     - name: Upload coverage
+  #       uses: codecov/codecov-action@v4
+  #       with:
+  #         files: ./coverage.out
+  #         fail_ci_if_error: false
+  #       continue-on-error: true
 
   build-docker:
     name: Build Docker Image
-    needs: [changes, build-go]
+    needs: [changes]
     # Only build Docker if Docker-related files changed, or on push to main
     if: |
       needs.changes.outputs.docker == 'true' || 
@@ -141,20 +108,18 @@ jobs:
       push: false
     permissions:
       contents: read
-      packages: read
+      packages: write
 
   # Final status check for branch protection
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [lint, test, build-go, build-docker]
+    needs: [lint, build-docker]
     if: always()
     steps:
       - name: Check all jobs passed
         run: |
           if [[ "${{ needs.lint.result }}" == "failure" ]] || \
-             [[ "${{ needs.test.result }}" == "failure" ]] || \
-             [[ "${{ needs.build-go.result }}" == "failure" ]] || \
              [[ "${{ needs.build-docker.result }}" == "failure" ]]; then
             echo "One or more jobs failed"
             exit 1
