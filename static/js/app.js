@@ -168,6 +168,7 @@ async checkAuth() {
         }
     },
 
+
     async loadStats() {
         try {
             const response = await fetch('/api/stats');

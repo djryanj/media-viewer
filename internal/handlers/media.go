@@ -60,15 +60,19 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 	parentPath := r.URL.Query().Get("path")
 
+	// Get sort parameters from query string
 	sortField := database.SortField(r.URL.Query().Get("sort"))
 	sortOrder := database.SortOrder(r.URL.Query().Get("order"))
 
+	// Apply defaults if not specified
 	if sortField == "" {
 		sortField = database.SortByName
 	}
 	if sortOrder == "" {
 		sortOrder = database.SortAsc
 	}
+
+	logging.Debug("GetMediaFiles: path=%s, sort=%s, order=%s", parentPath, sortField, sortOrder)
 
 	files, err := h.db.GetMediaInDirectory(parentPath, sortField, sortOrder)
 	if err != nil {

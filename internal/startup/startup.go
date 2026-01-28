@@ -6,13 +6,51 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	"media-viewer/internal/logging"
+
+	"github.com/gorilla/mux"
 )
 
-const Version = "1.0.0"
+// Build-time variables (injected via -ldflags)
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+	GoVersion = runtime.Version()
+)
+
+// BuildInfo contains version and build information
+type BuildInfo struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildTime string `json:"buildTime"`
+	GoVersion string `json:"goVersion"`
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+}
+
+// GetBuildInfo returns the current build information
+func GetBuildInfo() BuildInfo {
+	return BuildInfo{
+		Version:   Version,
+		Commit:    Commit,
+		BuildTime: BuildTime,
+		GoVersion: GoVersion,
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
+	}
+}
+
+// RouteInfo contains information about a registered route
+type RouteInfo struct {
+	Method string
+	Path   string
+	Name   string
+}
 
 // Config holds all application configuration
 type Config struct {
@@ -126,14 +164,12 @@ func LoadConfig() (*Config, error) {
 func setupOptionalDir(path, name string) bool {
 	logging.Debug("  Setting up %s directory: %s", name, path)
 
-	// Try to create directory
 	if err := os.MkdirAll(path, 0755); err != nil {
 		logging.Warn("    Failed to create %s directory: %v", name, err)
 		logging.Warn("    %s will be disabled", name)
 		return false
 	}
 
-	// Test write access
 	testFile := filepath.Join(path, ".write-test")
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
 		logging.Warn("    %s directory is not writable: %v", name, err)
@@ -206,28 +242,88 @@ func LogIndexerStarted() {
 	logging.Info("  [OK] Indexer started (initial scan running in background)")
 }
 
-// LogHTTPRoutes logs all registered HTTP routes
-func LogHTTPRoutes(logStaticFiles bool) {
+// GetRoutes extracts all registered routes from a mux.Router
+func GetRoutes(router *mux.Router) []RouteInfo {
+	var routes []RouteInfo
+
+	router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		pathTemplate, err := route.GetPathTemplate()
+		if err != nil {
+			return nil
+		}
+
+		methods, err := route.GetMethods()
+		if err != nil {
+			// Route might not have methods specified (e.g., static file server)
+			methods = []string{"*"}
+		}
+
+		name := route.GetName()
+
+		for _, method := range methods {
+			routes = append(routes, RouteInfo{
+				Method: method,
+				Path:   pathTemplate,
+				Name:   name,
+			})
+		}
+
+		return nil
+	})
+
+	// Sort routes by path, then method
+	sort.Slice(routes, func(i, j int) bool {
+		if routes[i].Path == routes[j].Path {
+			return routes[i].Method < routes[j].Method
+		}
+		return routes[i].Path < routes[j].Path
+	})
+
+	return routes
+}
+
+// LogHTTPRoutes logs all registered HTTP routes dynamically
+func LogHTTPRoutes(router *mux.Router, logStaticFiles bool) {
 	logging.Info("")
 	logging.Info("------------------------------------------------------------")
 	logging.Info("HTTP SERVER SETUP")
 	logging.Info("------------------------------------------------------------")
 
 	if logging.IsDebugEnabled() {
-		logging.Debug("  Registered API routes:")
-		logging.Debug("    GET  /api/files            - List directory contents")
-		logging.Debug("    GET  /api/media            - List media files in directory")
-		logging.Debug("    GET  /api/file/{path}      - Get raw file")
-		logging.Debug("    GET  /api/thumbnail/{path} - Get thumbnail")
-		logging.Debug("    GET  /api/playlists        - List all playlists")
-		logging.Debug("    GET  /api/playlist/{name}  - Get playlist details")
-		logging.Debug("    GET  /api/stream/{path}    - Stream video")
-		logging.Debug("    GET  /api/stream-info/{p}  - Get video info")
-		logging.Debug("    GET  /api/search           - Search files")
-		logging.Debug("    GET  /api/stats            - Get index statistics")
-		logging.Debug("    POST /api/reindex          - Trigger re-index")
-		logging.Debug("    GET  /*                    - Static files")
+		routes := GetRoutes(router)
+
+		logging.Debug("  Registered routes (%d total):", len(routes))
 		logging.Debug("")
+
+		// Group routes by prefix for cleaner output
+		groups := make(map[string][]RouteInfo)
+		for _, route := range routes {
+			prefix := getRouteGroup(route.Path)
+			groups[prefix] = append(groups[prefix], route)
+		}
+
+		// Sort group keys
+		var groupKeys []string
+		for k := range groups {
+			groupKeys = append(groupKeys, k)
+		}
+		sort.Strings(groupKeys)
+
+		// Print routes by group
+		for _, group := range groupKeys {
+			groupRoutes := groups[group]
+			if group != "" {
+				logging.Debug("  [%s]", group)
+			} else {
+				logging.Debug("  [root]")
+			}
+
+			for _, route := range groupRoutes {
+				methodPadded := fmt.Sprintf("%-6s", route.Method)
+				logging.Debug("    %s %s", methodPadded, route.Path)
+			}
+			logging.Debug("")
+		}
 	}
 
 	logging.Info("  HTTP logging enabled")
@@ -236,6 +332,28 @@ func LogHTTPRoutes(logStaticFiles bool) {
 	} else {
 		logging.Info("    Static file logging: OFF (set LOG_STATIC_FILES=true to enable)")
 	}
+}
+
+// getRouteGroup extracts a group name from a route path
+func getRouteGroup(path string) string {
+	// Remove leading slash
+	path = strings.TrimPrefix(path, "/")
+
+	// Get first segment
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) == 0 {
+		return ""
+	}
+
+	first := parts[0]
+
+	// Special handling for API routes
+	if first == "api" && len(parts) > 1 {
+		subParts := strings.SplitN(parts[1], "/", 2)
+		return "api/" + subParts[0]
+	}
+
+	return first
 }
 
 // LogServerStarted logs successful server start
@@ -294,8 +412,10 @@ func printBanner() {
                                                               
 ------------------------------------------------------------`
 	fmt.Println(banner)
-	logging.Info("  Version: %s", Version)
-	logging.Info("  Started: %s", time.Now().Format(time.RFC1123))
+	logging.Info("  Version:    %s", Version)
+	logging.Info("  Commit:     %s", Commit)
+	logging.Info("  Build Time: %s", BuildTime)
+	logging.Info("  Started:    %s", time.Now().Format(time.RFC1123))
 	logging.Info("")
 }
 
@@ -345,7 +465,6 @@ func ensureDirectory(path, name string) error {
 
 	logging.Debug("    [OK] Directory exists")
 
-	// List contents summary for media directory (debug only)
 	if name == "media" && logging.IsDebugEnabled() {
 		entries, err := os.ReadDir(path)
 		if err == nil {

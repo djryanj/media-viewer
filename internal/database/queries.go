@@ -716,7 +716,14 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	// Build sort clause
+	// Build sort clause - default to name if not specified
+	if sortField == "" {
+		sortField = SortByName
+	}
+	if sortOrder == "" {
+		sortOrder = SortAsc
+	}
+
 	sortColumn := "name COLLATE NOCASE"
 	switch sortField {
 	case SortByDate:

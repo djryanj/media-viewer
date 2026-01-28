@@ -22,13 +22,13 @@ const Tags = {
 
     bindEvents() {
         if (this.elements.tagModalClose) {
-            this.elements.tagModalClose.addEventListener('click', () => this.closeModal());
+            this.elements.tagModalClose.addEventListener('click', () => this.closeModalWithHistory());
         }
 
         if (this.elements.tagModal) {
             this.elements.tagModal.addEventListener('click', (e) => {
                 if (e.target === this.elements.tagModal) {
-                    this.closeModal();
+                    this.closeModalWithHistory();
                 }
             });
         }
@@ -81,11 +81,13 @@ const Tags = {
         this.elements.tagSuggestions.innerHTML = '';
         this.elements.tagSuggestions.classList.add('hidden');
 
-        // Load current tags for this file
         await this.loadFileTags(path);
 
         this.elements.tagModal.classList.remove('hidden');
         this.elements.tagInput.focus();
+        
+        // Push history state for back button support
+        HistoryManager.pushState('tag-modal');
     },
 
     closeModal() {
@@ -95,6 +97,16 @@ const Tags = {
         this.currentPath = null;
         this.currentName = null;
     },
+
+    // Add new method for UI-triggered close:
+    closeModalWithHistory() {
+        this.closeModal();
+        if (HistoryManager.hasState('tag-modal')) {
+            HistoryManager.removeState('tag-modal');
+            history.back();
+        }
+    },
+
 
     async loadFileTags(path) {
         try {

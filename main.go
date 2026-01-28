@@ -65,8 +65,10 @@ func main() {
 	h := handlers.New(db, idx, trans, config)
 
 	// Setup router
-	startup.LogHTTPRoutes(config.LogStaticFiles)
 	router := setupRouter(h)
+
+	// Log routes dynamically
+	startup.LogHTTPRoutes(router, config.LogStaticFiles)
 
 	// Apply authentication middleware
 	authedRouter := h.AuthMiddleware(router)
@@ -102,11 +104,12 @@ func main() {
 func setupRouter(h *handlers.Handlers) *mux.Router {
 	r := mux.NewRouter()
 
-	// Health check routes (no auth required)
+	// Health check and version routes (no auth required)
 	r.HandleFunc("/health", h.HealthCheck).Methods("GET")
 	r.HandleFunc("/healthz", h.HealthCheck).Methods("GET")
 	r.HandleFunc("/livez", h.LivenessCheck).Methods("GET")
 	r.HandleFunc("/readyz", h.ReadinessCheck).Methods("GET")
+	r.HandleFunc("/version", h.GetVersion).Methods("GET")
 
 	// Auth routes
 	auth := r.PathPrefix("/api/auth").Subrouter()

@@ -2,44 +2,405 @@ const Player = {
     elements: {},
     playlist: null,
     currentIndex: 0,
+    touchStartX: 0,
+    touchEndX: 0,
+    touchStartY: 0,
+    isSwiping: false,
+    isLandscape: false,
+    controlsTimeout: null,
+    hintTimeout: null,
+    playlistVisible: false,
+    edgeSwipeStartX: null,
+    edgeSwipeThreshold: 30,
 
     init() {
         this.cacheElements();
+        this.createHotZones();
+        this.createPlaylistToggle();
+        this.createEdgeSwipeZone();
+        this.createPlaylistOverlay();
+        this.createPlaylistCloseBtn();
+        this.createEdgeHint();
+        this.createHintText();
         this.bindEvents();
+        this.checkOrientation();
     },
 
     cacheElements() {
         this.elements = {
             modal: document.getElementById('player-modal'),
+            container: document.querySelector('.player-container'),
+            header: document.querySelector('.player-header'),
             title: document.getElementById('playlist-title'),
             video: document.getElementById('playlist-video'),
             items: document.getElementById('playlist-items'),
             closeBtn: document.querySelector('.player-close'),
             prevBtn: document.getElementById('prev-video'),
             nextBtn: document.getElementById('next-video'),
+            videoWrapper: document.querySelector('.video-wrapper'),
+            sidebar: document.querySelector('.playlist-sidebar'),
+            controls: document.querySelector('.player-controls'),
+            body: document.querySelector('.player-body'),
         };
     },
 
+    createHotZones() {
+        if (!this.elements.videoWrapper) return;
+
+        const leftZone = document.createElement('div');
+        leftZone.className = 'player-hot-zone player-hot-zone-left';
+        leftZone.innerHTML = '<span class="player-hot-zone-icon">‹</span>';
+        leftZone.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.prev();
+        });
+
+        const rightZone = document.createElement('div');
+        rightZone.className = 'player-hot-zone player-hot-zone-right';
+        rightZone.innerHTML = '<span class="player-hot-zone-icon">›</span>';
+        rightZone.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.next();
+        });
+
+        this.elements.videoWrapper.appendChild(leftZone);
+        this.elements.videoWrapper.appendChild(rightZone);
+
+        this.elements.hotZoneLeft = leftZone;
+        this.elements.hotZoneRight = rightZone;
+    },
+
+    createPlaylistToggle() {
+        if (!this.elements.videoWrapper) return;
+
+        const toggle = document.createElement('button');
+        toggle.className = 'playlist-toggle';
+        toggle.innerHTML = '☰';
+        toggle.title = 'Toggle playlist (P)';
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.togglePlaylist();
+        });
+
+        this.elements.videoWrapper.appendChild(toggle);
+        this.elements.playlistToggle = toggle;
+    },
+
+    createEdgeSwipeZone() {
+        if (!this.elements.videoWrapper) return;
+
+        const swipeZone = document.createElement('div');
+        swipeZone.className = 'playlist-swipe-zone';
+
+        swipeZone.addEventListener('touchstart', (e) => {
+            this.edgeSwipeStartX = e.touches[0].clientX;
+            this.edgeSwipeStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        swipeZone.addEventListener('touchmove', (e) => {
+            if (this.edgeSwipeStartX === null) return;
+            
+            const deltaX = this.edgeSwipeStartX - e.touches[0].clientX;
+            const deltaY = Math.abs(e.touches[0].clientY - this.edgeSwipeStartY);
+            
+            // If swiping left (into the screen) and more horizontal than vertical
+            if (deltaX > this.edgeSwipeThreshold && deltaX > deltaY) {
+                this.showPlaylist();
+                this.edgeSwipeStartX = null;
+            }
+        }, { passive: true });
+
+        swipeZone.addEventListener('touchend', () => {
+            this.edgeSwipeStartX = null;
+        }, { passive: true });
+
+        this.elements.videoWrapper.appendChild(swipeZone);
+        this.elements.swipeZone = swipeZone;
+    },
+
+    createPlaylistOverlay() {
+        if (!this.elements.body) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'playlist-overlay';
+        overlay.addEventListener('click', () => {
+            this.hidePlaylist();
+        });
+
+        // Insert after sidebar
+        if (this.elements.sidebar) {
+            this.elements.sidebar.after(overlay);
+        } else {
+            this.elements.body.appendChild(overlay);
+        }
+
+        this.elements.playlistOverlay = overlay;
+    },
+
+    createPlaylistCloseBtn() {
+        if (!this.elements.sidebar) return;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'playlist-close-btn';
+        closeBtn.innerHTML = '×';
+        closeBtn.title = 'Close playlist';
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.hidePlaylist();
+        });
+
+        this.elements.sidebar.insertBefore(closeBtn, this.elements.sidebar.firstChild);
+        this.elements.playlistCloseBtn = closeBtn;
+    },
+
+    createEdgeHint() {
+        if (!this.elements.videoWrapper) return;
+
+        const hint = document.createElement('div');
+        hint.className = 'playlist-edge-hint';
+
+        this.elements.videoWrapper.appendChild(hint);
+        this.elements.edgeHint = hint;
+    },
+
+    createHintText() {
+        if (!this.elements.videoWrapper) return;
+
+        const hintText = document.createElement('div');
+        hintText.className = 'playlist-hint-text';
+        hintText.textContent = '← Swipe for playlist';
+
+        this.elements.videoWrapper.appendChild(hintText);
+        this.elements.hintText = hintText;
+    },
+
     bindEvents() {
-        this.elements.closeBtn.addEventListener('click', () => this.close());
+        this.elements.closeBtn.addEventListener('click', () => this.closeWithHistory());
         this.elements.prevBtn.addEventListener('click', () => this.prev());
         this.elements.nextBtn.addEventListener('click', () => this.next());
 
         this.elements.video.addEventListener('ended', () => this.next());
 
-        // Close on escape
+        // Keyboard navigation
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && !this.elements.modal.classList.contains('hidden')) {
-                this.close();
+            if (this.elements.modal.classList.contains('hidden')) return;
+
+            switch (e.key) {
+                case 'Escape':
+                    if (this.playlistVisible && this.isLandscape) {
+                        this.hidePlaylist();
+                    } else {
+                        this.closeWithHistory();
+                    }
+                    break;
+                case 'ArrowLeft':
+                    this.prev();
+                    break;
+                case 'ArrowRight':
+                    this.next();
+                    break;
+                case 'p':
+                case 'P':
+                    this.togglePlaylist();
+                    break;
             }
         });
 
         // Close on click outside
         this.elements.modal.addEventListener('click', (e) => {
             if (e.target === this.elements.modal) {
-                this.close();
+                this.closeWithHistory();
             }
         });
+
+        // Swipe support for video navigation
+        this.elements.videoWrapper.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.player-hot-zone') || 
+                e.target.closest('.playlist-toggle') ||
+                e.target.closest('.playlist-swipe-zone')) return;
+            
+            this.touchStartX = e.changedTouches[0].screenX;
+            this.touchStartY = e.changedTouches[0].screenY;
+            this.isSwiping = false;
+        }, { passive: true });
+
+        this.elements.videoWrapper.addEventListener('touchmove', (e) => {
+            if (e.target.closest('.playlist-swipe-zone')) return;
+            
+            const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
+            const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
+            
+            if (deltaX > deltaY && deltaX > 10) {
+                this.isSwiping = true;
+            }
+        }, { passive: true });
+
+        this.elements.videoWrapper.addEventListener('touchend', (e) => {
+            if (e.target.closest('.playlist-swipe-zone')) return;
+            
+            if (this.isSwiping) {
+                this.touchEndX = e.changedTouches[0].screenX;
+                this.handleSwipe();
+            }
+        }, { passive: true });
+
+        // Show controls on tap in landscape mode
+        this.elements.videoWrapper.addEventListener('click', (e) => {
+            if (this.isLandscape && 
+                !e.target.closest('.player-hot-zone') && 
+                !e.target.closest('.playlist-toggle') &&
+                !e.target.closest('.playlist-swipe-zone')) {
+                this.showControls();
+            }
+        });
+
+        // Orientation change detection
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => this.checkOrientation(), 100);
+        });
+
+        window.addEventListener('resize', () => {
+            this.checkOrientation();
+        });
+
+        if (screen.orientation) {
+            screen.orientation.addEventListener('change', () => {
+                this.checkOrientation();
+            });
+        }
+
+        // Swipe to close playlist from within sidebar
+        if (this.elements.sidebar) {
+            let sidebarTouchStartX = null;
+
+            this.elements.sidebar.addEventListener('touchstart', (e) => {
+                sidebarTouchStartX = e.touches[0].clientX;
+            }, { passive: true });
+
+            this.elements.sidebar.addEventListener('touchmove', (e) => {
+                if (sidebarTouchStartX === null || !this.isLandscape) return;
+
+                const deltaX = e.touches[0].clientX - sidebarTouchStartX;
+                
+                // Swiping right (away from screen) closes playlist
+                if (deltaX > 50) {
+                    this.hidePlaylist();
+                    sidebarTouchStartX = null;
+                }
+            }, { passive: true });
+
+            this.elements.sidebar.addEventListener('touchend', () => {
+                sidebarTouchStartX = null;
+            }, { passive: true });
+        }
+    },
+
+    handleSwipe() {
+        const swipeThreshold = 50;
+        const diff = this.touchStartX - this.touchEndX;
+
+        if (Math.abs(diff) > swipeThreshold) {
+            if (diff > 0) {
+                this.next();
+            } else {
+                this.prev();
+            }
+        }
+    },
+
+    checkOrientation() {
+        const isLandscape = window.innerWidth > window.innerHeight;
+        const isSmallScreen = window.innerHeight < 500;
+        
+        const shouldBeLandscape = isLandscape && isSmallScreen;
+
+        if (shouldBeLandscape !== this.isLandscape) {
+            this.isLandscape = shouldBeLandscape;
+            this.updateLandscapeMode();
+        }
+    },
+
+    updateLandscapeMode() {
+        if (this.isLandscape) {
+            this.elements.modal.classList.add('landscape-mode');
+            this.playlistVisible = false;
+            this.elements.sidebar?.classList.remove('visible');
+            this.elements.playlistToggle?.classList.remove('active');
+            
+            // Show hint briefly when entering landscape
+            this.showHint();
+        } else {
+            this.elements.modal.classList.remove('landscape-mode');
+            this.elements.modal.classList.remove('controls-visible');
+            this.elements.modal.classList.remove('show-hint');
+        }
+    },
+
+    showHint() {
+        if (!this.isLandscape) return;
+
+        this.elements.modal.classList.add('show-hint');
+
+        if (this.hintTimeout) {
+            clearTimeout(this.hintTimeout);
+        }
+
+        this.hintTimeout = setTimeout(() => {
+            this.elements.modal.classList.remove('show-hint');
+        }, 3000);
+    },
+
+    showControls() {
+        if (!this.isLandscape) return;
+
+        this.elements.modal.classList.add('controls-visible');
+
+        if (this.controlsTimeout) {
+            clearTimeout(this.controlsTimeout);
+        }
+
+        this.controlsTimeout = setTimeout(() => {
+            if (!this.playlistVisible) {
+                this.elements.modal.classList.remove('controls-visible');
+            }
+        }, 3000);
+    },
+
+    showPlaylist() {
+        this.playlistVisible = true;
+        this.elements.sidebar?.classList.add('visible');
+        this.elements.playlistToggle?.classList.add('active');
+        this.elements.modal.classList.add('controls-visible');
+        
+        // Keep controls visible while playlist is open
+        if (this.controlsTimeout) {
+            clearTimeout(this.controlsTimeout);
+        }
+    },
+
+    hidePlaylist() {
+        this.playlistVisible = false;
+        this.elements.sidebar?.classList.remove('visible');
+        this.elements.playlistToggle?.classList.remove('active');
+        
+        // Start hiding controls after delay
+        if (this.isLandscape) {
+            this.controlsTimeout = setTimeout(() => {
+                this.elements.modal.classList.remove('controls-visible');
+            }, 2000);
+        }
+    },
+
+    togglePlaylist() {
+        if (this.playlistVisible) {
+            this.hidePlaylist();
+        } else {
+            this.showPlaylist();
+        }
+        
+        if (this.isLandscape) {
+            this.showControls();
+        }
     },
 
     async loadPlaylist(name) {
@@ -67,15 +428,54 @@ const Player = {
         this.elements.modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
 
-        // Play first available video
+        this.checkOrientation();
+
+        if (typeof HistoryManager !== 'undefined') {
+            HistoryManager.pushState('player');
+        }
+
         this.playCurrentVideo();
+        this.updateNavigation();
     },
 
     close() {
         this.elements.modal.classList.add('hidden');
+        this.elements.modal.classList.remove('landscape-mode');
+        this.elements.modal.classList.remove('controls-visible');
+        this.elements.modal.classList.remove('show-hint');
         document.body.style.overflow = '';
         this.elements.video.pause();
         this.elements.video.src = '';
+        this.isLandscape = false;
+        this.playlistVisible = false;
+        this.elements.sidebar?.classList.remove('visible');
+        this.elements.playlistToggle?.classList.remove('active');
+        
+        if (this.controlsTimeout) {
+            clearTimeout(this.controlsTimeout);
+        }
+        if (this.hintTimeout) {
+            clearTimeout(this.hintTimeout);
+        }
+    },
+
+    closeWithHistory() {
+        this.close();
+        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('player')) {
+            HistoryManager.removeState('player');
+            history.back();
+        }
+    },
+
+    updateNavigation() {
+        const hasMultiple = this.playlist && this.playlist.items.length > 1;
+        
+        if (this.elements.hotZoneLeft) {
+            this.elements.hotZoneLeft.style.display = hasMultiple ? '' : 'none';
+        }
+        if (this.elements.hotZoneRight) {
+            this.elements.hotZoneRight.style.display = hasMultiple ? '' : 'none';
+        }
     },
 
     renderPlaylistItems() {
@@ -93,6 +493,10 @@ const Player = {
                 li.addEventListener('click', () => {
                     this.currentIndex = index;
                     this.playCurrentVideo();
+                    
+                    if (this.isLandscape) {
+                        this.hidePlaylist();
+                    }
                 });
             }
 
@@ -108,24 +512,20 @@ const Player = {
         const item = this.playlist.items[this.currentIndex];
 
         if (!item || !item.exists) {
-            // Skip to next available video
             this.next();
             return;
         }
 
-        // Update active state in playlist
         this.elements.items.querySelectorAll('li').forEach((li, i) => {
             li.classList.toggle('active', i === this.currentIndex);
         });
 
-        // Load video with streaming (handles transcoding)
         this.elements.video.src = `/api/stream/${item.path}`;
         this.elements.video.load();
         this.elements.video.play().catch(err => {
             console.log('Autoplay prevented:', err);
         });
 
-        // Scroll active item into view
         const activeItem = this.elements.items.querySelector('.active');
         if (activeItem) {
             activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -135,7 +535,6 @@ const Player = {
     prev() {
         if (!this.playlist) return;
 
-        // Find previous available video
         let attempts = this.playlist.items.length;
         do {
             this.currentIndex = (this.currentIndex - 1 + this.playlist.items.length) % this.playlist.items.length;
@@ -143,12 +542,15 @@ const Player = {
         } while (!this.playlist.items[this.currentIndex].exists && attempts > 0);
 
         this.playCurrentVideo();
+        
+        if (this.isLandscape) {
+            this.showControls();
+        }
     },
 
     next() {
         if (!this.playlist) return;
 
-        // Find next available video
         let attempts = this.playlist.items.length;
         do {
             this.currentIndex = (this.currentIndex + 1) % this.playlist.items.length;
@@ -156,10 +558,13 @@ const Player = {
         } while (!this.playlist.items[this.currentIndex].exists && attempts > 0);
 
         this.playCurrentVideo();
+        
+        if (this.isLandscape) {
+            this.showControls();
+        }
     },
 };
 
-// Initialize player when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     Player.init();
 });

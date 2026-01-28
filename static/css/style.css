@@ -1794,3 +1794,541 @@ select:focus {
         bottom: 3rem;
     }
 }
+
+/* ===========================================
+   LIGHTBOX HOT ZONES
+   =========================================== */
+
+.lightbox-content {
+    position: relative;
+    max-width: 100vw;
+    max-height: 75vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.lightbox-hot-zone {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 20%;
+    min-width: 60px;
+    max-width: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 5;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.lightbox-hot-zone:hover,
+.lightbox-hot-zone:active {
+    opacity: 1;
+}
+
+.lightbox-hot-zone-left {
+    left: 0;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent);
+}
+
+.lightbox-hot-zone-right {
+    right: 0;
+    background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
+}
+
+.lightbox-hot-zone-icon {
+    font-size: 2rem;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+/* Show hot zones on touch devices */
+@media (hover: none) and (pointer: coarse) {
+    .lightbox-hot-zone {
+        opacity: 0.5;
+    }
+
+    .lightbox-hot-zone:active {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.1);
+    }
+}
+
+/* Hide original prev/next buttons on mobile since we have hot zones */
+@media (max-width: 899px) {
+
+    .lightbox-prev,
+    .lightbox-next {
+        display: none;
+    }
+}
+
+/* ===========================================
+   PLAYER HOT ZONES
+   =========================================== */
+
+.video-wrapper {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: black;
+    min-height: 200px;
+}
+
+.player-hot-zone {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 15%;
+    min-width: 50px;
+    max-width: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 10;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.player-hot-zone:hover,
+.player-hot-zone:active {
+    opacity: 1;
+}
+
+.player-hot-zone-left {
+    left: 0;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.4), transparent);
+}
+
+.player-hot-zone-right {
+    right: 0;
+    background: linear-gradient(to left, rgba(0, 0, 0, 0.4), transparent);
+}
+
+.player-hot-zone-icon {
+    font-size: 1.5rem;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+/* Show hot zones on touch devices */
+@media (hover: none) and (pointer: coarse) {
+    .player-hot-zone {
+        opacity: 0.3;
+    }
+
+    .player-hot-zone:active {
+        opacity: 1;
+    }
+}
+
+/* ===========================================
+   PLAYER LANDSCAPE MODE
+   =========================================== */
+
+.player-modal.landscape-mode {
+    padding: 0;
+}
+
+.player-modal.landscape-mode .player-container {
+    max-width: 100%;
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+}
+
+.player-modal.landscape-mode .player-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
+    border-bottom: none;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    padding: 0.5rem 1rem;
+}
+
+.player-modal.landscape-mode .player-header h2 {
+    font-size: 0.875rem;
+    color: white;
+}
+
+.player-modal.landscape-mode .player-close {
+    color: white;
+}
+
+.player-modal.landscape-mode:hover .player-header,
+.player-modal.landscape-mode.controls-visible .player-header {
+    opacity: 1;
+}
+
+.player-modal.landscape-mode .player-body {
+    height: 100%;
+}
+
+.player-modal.landscape-mode .video-wrapper {
+    height: 100%;
+}
+
+.player-modal.landscape-mode .video-wrapper video {
+    max-height: 100vh;
+    height: 100%;
+    width: 100%;
+    object-fit: contain;
+}
+
+.player-modal.landscape-mode .playlist-sidebar {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 250px;
+    max-height: 100%;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 15;
+    border-left: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.player-modal.landscape-mode .playlist-sidebar.visible {
+    transform: translateX(0);
+}
+
+.player-modal.landscape-mode .player-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+    border-top: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 20;
+    padding: 1rem;
+}
+
+.player-modal.landscape-mode:hover .player-controls,
+.player-modal.landscape-mode.controls-visible .player-controls {
+    opacity: 1;
+}
+
+/* Playlist toggle button for landscape mode */
+.playlist-toggle {
+    display: none;
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 1.25rem;
+    cursor: pointer;
+    z-index: 25;
+    transition: background 0.2s ease;
+}
+
+.playlist-toggle:hover,
+.playlist-toggle:active {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.player-modal.landscape-mode .playlist-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.player-modal.landscape-mode .playlist-sidebar.visible+.playlist-toggle,
+.player-modal.landscape-mode .playlist-toggle.active {
+    right: 260px;
+}
+
+/* Landscape mode on mobile devices */
+@media (orientation: landscape) and (max-height: 500px) {
+    .player-modal:not(.hidden) {
+        /* Auto-enable landscape mode on small landscape screens */
+    }
+}
+
+/* Ensure hot zones work in landscape */
+.player-modal.landscape-mode .player-hot-zone {
+    z-index: 10;
+}
+
+/* ===========================================
+   LIGHTBOX LANDSCAPE IMPROVEMENTS
+   =========================================== */
+
+@media (orientation: landscape) {
+    .lightbox-content {
+        max-height: 85vh;
+    }
+
+    .lightbox-image,
+    .lightbox-video {
+        max-height: 85vh;
+    }
+
+    .lightbox-info {
+        bottom: 0.5rem;
+        padding: 0.5rem 1rem;
+        font-size: 0.75rem;
+    }
+}
+
+/* ===========================================
+   PLAYER LANDSCAPE MODE - ENHANCED
+   =========================================== */
+
+/* Edge hint indicator for swipe */
+.playlist-edge-hint {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 80px;
+    background: linear-gradient(to left, rgba(255, 255, 255, 0.3), transparent);
+    border-radius: 10px 0 0 10px;
+    z-index: 15;
+    pointer-events: none;
+    animation: edgeHintPulse 2s ease-in-out infinite;
+}
+
+.player-modal.landscape-mode .playlist-edge-hint {
+    display: block;
+}
+
+.player-modal.landscape-mode .playlist-sidebar.visible~.playlist-edge-hint,
+.player-modal.landscape-mode.controls-visible .playlist-edge-hint {
+    opacity: 0;
+}
+
+@keyframes edgeHintPulse {
+
+    0%,
+    100% {
+        opacity: 0.3;
+        width: 20px;
+    }
+
+    50% {
+        opacity: 0.6;
+        width: 25px;
+    }
+}
+
+/* Enhanced playlist toggle button */
+.playlist-toggle {
+    display: none;
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 1.25rem;
+    cursor: pointer;
+    z-index: 25;
+    transition: all 0.3s ease;
+}
+
+.playlist-toggle:hover,
+.playlist-toggle:active {
+    background: rgba(0, 0, 0, 0.8);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.player-modal.landscape-mode .playlist-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Pulse animation when controls are visible */
+.player-modal.landscape-mode.controls-visible .playlist-toggle {
+    animation: togglePulse 1s ease-in-out infinite;
+}
+
+.player-modal.landscape-mode .playlist-toggle.active {
+    animation: none;
+    background: var(--accent);
+}
+
+@keyframes togglePulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 0 10px rgba(233, 69, 96, 0);
+    }
+}
+
+/* Move toggle button when playlist is visible */
+.player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper .playlist-toggle,
+.player-modal.landscape-mode .playlist-toggle.active {
+    right: 260px;
+}
+
+/* Swipe zone for edge gesture */
+.playlist-swipe-zone {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    z-index: 14;
+}
+
+.player-modal.landscape-mode .playlist-swipe-zone {
+    display: block;
+}
+
+.player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper .playlist-swipe-zone {
+    display: none;
+}
+
+/* Playlist sidebar improvements for landscape */
+.player-modal.landscape-mode .playlist-sidebar {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 40vw;
+    max-height: 100%;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 15;
+    border-left: 1px solid var(--border-color);
+    background: rgba(22, 33, 62, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.player-modal.landscape-mode .playlist-sidebar.visible {
+    transform: translateX(0);
+}
+
+/* Close playlist button in landscape */
+.playlist-close-btn {
+    display: none;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 1.25rem;
+    cursor: pointer;
+    z-index: 5;
+    transition: background 0.2s ease;
+}
+
+.playlist-close-btn:hover,
+.playlist-close-btn:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.player-modal.landscape-mode .playlist-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Overlay behind playlist in landscape */
+.playlist-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 14;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.player-modal.landscape-mode .playlist-overlay {
+    display: block;
+}
+
+.player-modal.landscape-mode .playlist-sidebar.visible~.playlist-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Hint text that appears briefly */
+.playlist-hint-text {
+    display: none;
+    position: absolute;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    z-index: 15;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.player-modal.landscape-mode .playlist-hint-text {
+    display: block;
+}
+
+.player-modal.landscape-mode.show-hint .playlist-hint-text {
+    opacity: 1;
+}
+
+/* Adjust video wrapper when playlist is visible */
+.player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper {
+    margin-right: 280px;
+}
+
+@media (max-width: 600px) {
+    .player-modal.landscape-mode .playlist-sidebar {
+        width: 250px;
+    }
+
+    .player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper {
+        margin-right: 0;
+    }
+
+    .player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper .playlist-toggle {
+        right: 260px;
+    }
+}

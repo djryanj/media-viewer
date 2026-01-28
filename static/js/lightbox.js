@@ -4,32 +4,61 @@ const Lightbox = {
     currentIndex: 0,
     touchStartX: 0,
     touchEndX: 0,
+    touchStartY: 0,
+    isSwiping: false,
     useAppMedia: true,
 
     init() {
         this.cacheElements();
+        this.createHotZones();
         this.bindEvents();
     },
 
-cacheElements() {
-    this.elements = {
-        lightbox: document.getElementById('lightbox'),
-        image: document.getElementById('lightbox-image'),
-        video: document.getElementById('lightbox-video'),
-        title: document.getElementById('lightbox-title'),
-        counter: document.getElementById('lightbox-counter'),
-        closeBtn: document.querySelector('.lightbox-close'),
-        prevBtn: document.querySelector('.lightbox-prev'),
-        nextBtn: document.querySelector('.lightbox-next'),
-        content: document.querySelector('.lightbox-content'),
-        pinBtn: document.getElementById('lightbox-pin'),
-        tagBtn: document.getElementById('lightbox-tag'),
-    };
-},
+    cacheElements() {
+        this.elements = {
+            lightbox: document.getElementById('lightbox'),
+            image: document.getElementById('lightbox-image'),
+            video: document.getElementById('lightbox-video'),
+            title: document.getElementById('lightbox-title'),
+            counter: document.getElementById('lightbox-counter'),
+            closeBtn: document.querySelector('.lightbox-close'),
+            prevBtn: document.querySelector('.lightbox-prev'),
+            nextBtn: document.querySelector('.lightbox-next'),
+            content: document.querySelector('.lightbox-content'),
+            pinBtn: document.getElementById('lightbox-pin'),
+            tagBtn: document.getElementById('lightbox-tag'),
+        };
+    },
 
+    createHotZones() {
+        // Create left hot zone
+        const leftZone = document.createElement('div');
+        leftZone.className = 'lightbox-hot-zone lightbox-hot-zone-left';
+        leftZone.innerHTML = '<span class="lightbox-hot-zone-icon">‹</span>';
+        leftZone.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.prev();
+        });
+
+        // Create right hot zone
+        const rightZone = document.createElement('div');
+        rightZone.className = 'lightbox-hot-zone lightbox-hot-zone-right';
+        rightZone.innerHTML = '<span class="lightbox-hot-zone-icon">›</span>';
+        rightZone.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.next();
+        });
+
+        // Add to content area
+        this.elements.content.appendChild(leftZone);
+        this.elements.content.appendChild(rightZone);
+
+        this.elements.hotZoneLeft = leftZone;
+        this.elements.hotZoneRight = rightZone;
+    },
 
     bindEvents() {
-        this.elements.closeBtn.addEventListener('click', () => this.close());
+        this.elements.closeBtn.addEventListener('click', () => this.closeWithHistory());
         this.elements.prevBtn.addEventListener('click', () => this.prev());
         this.elements.nextBtn.addEventListener('click', () => this.next());
         this.elements.pinBtn.addEventListener('click', () => this.togglePin());
@@ -39,7 +68,7 @@ cacheElements() {
 
             switch (e.key) {
                 case 'Escape':
-                    this.close();
+                    this.closeWithHistory();
                     break;
                 case 'ArrowLeft':
                     this.prev();
@@ -58,24 +87,39 @@ cacheElements() {
             }
         });
 
+        // Swipe handling with better scroll detection
         this.elements.content.addEventListener('touchstart', (e) => {
             this.touchStartX = e.changedTouches[0].screenX;
+            this.touchStartY = e.changedTouches[0].screenY;
+            this.isSwiping = false;
+        }, { passive: true });
+
+        this.elements.content.addEventListener('touchmove', (e) => {
+            const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
+            const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
+            
+            // If horizontal movement is greater than vertical, it's a swipe
+            if (deltaX > deltaY && deltaX > 10) {
+                this.isSwiping = true;
+            }
         }, { passive: true });
 
         this.elements.content.addEventListener('touchend', (e) => {
-            this.touchEndX = e.changedTouches[0].screenX;
-            this.handleSwipe();
+            if (this.isSwiping) {
+                this.touchEndX = e.changedTouches[0].screenX;
+                this.handleSwipe();
+            }
         }, { passive: true });
 
         this.elements.lightbox.addEventListener('click', (e) => {
             if (e.target === this.elements.lightbox) {
-                this.close();
+                this.closeWithHistory();
             }
         });
 
         if (this.elements.tagBtn) {
-    this.elements.tagBtn.addEventListener('click', () => this.openTagModal());
-}
+            this.elements.tagBtn.addEventListener('click', () => this.openTagModal());
+        }
     },
 
     handleSwipe() {
@@ -109,6 +153,12 @@ cacheElements() {
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
         this.showMedia();
+        this.updateNavigation();
+        
+        // Push history state for back button support
+        if (typeof HistoryManager !== 'undefined') {
+            HistoryManager.pushState('lightbox');
+        }
     },
 
     close() {
@@ -118,16 +168,44 @@ cacheElements() {
         this.elements.video.src = '';
     },
 
+    closeWithHistory() {
+        this.close();
+        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox')) {
+            HistoryManager.removeState('lightbox');
+            history.back();
+        }
+    },
+
     prev() {
         if (this.items.length === 0) return;
         this.currentIndex = (this.currentIndex - 1 + this.items.length) % this.items.length;
         this.showMedia();
+        this.updateNavigation();
     },
 
     next() {
         if (this.items.length === 0) return;
         this.currentIndex = (this.currentIndex + 1) % this.items.length;
         this.showMedia();
+        this.updateNavigation();
+    },
+
+    updateNavigation() {
+        // Hide/show navigation based on item count
+        const hasMultiple = this.items.length > 1;
+        
+        if (this.elements.hotZoneLeft) {
+            this.elements.hotZoneLeft.style.display = hasMultiple ? '' : 'none';
+        }
+        if (this.elements.hotZoneRight) {
+            this.elements.hotZoneRight.style.display = hasMultiple ? '' : 'none';
+        }
+        if (this.elements.prevBtn) {
+            this.elements.prevBtn.style.display = hasMultiple ? '' : 'none';
+        }
+        if (this.elements.nextBtn) {
+            this.elements.nextBtn.style.display = hasMultiple ? '' : 'none';
+        }
     },
 
     showMedia() {
@@ -139,7 +217,6 @@ cacheElements() {
         this.elements.counter.textContent = `${this.currentIndex + 1} / ${this.items.length}`;
         this.elements.title.textContent = file.name;
 
-        // Update pin button state
         this.updatePinButton(file);
 
         this.elements.image.classList.add('hidden');
@@ -182,40 +259,35 @@ cacheElements() {
         if (!file) return;
 
         Favorites.toggleFavorite(file.path, file.name, file.type).then(isPinned => {
-            // Update the current item's state
             file.isFavorite = isPinned;
             this.updatePinButton(file);
         });
     },
 
-    // Called when favorite state changes externally
     onFavoriteChanged(path, isPinned) {
-        // Update item in current items list if present
         const item = this.items.find(i => i.path === path);
         if (item) {
             item.isFavorite = isPinned;
-            // Update button if this is the current item
             if (this.items[this.currentIndex]?.path === path) {
                 this.updatePinButton(item);
             }
         }
     },
+
     openTagModal() {
-    if (this.items.length === 0) return;
-    const file = this.items[this.currentIndex];
-    if (!file) return;
-    Tags.openModal(file.path, file.name);
-},
+        if (this.items.length === 0) return;
+        const file = this.items[this.currentIndex];
+        if (!file) return;
+        Tags.openModal(file.path, file.name);
+    },
 
-updateTagButton(file) {
-    if (!this.elements.tagBtn) return;
-    const hasTags = file.tags && file.tags.length > 0;
-    this.elements.tagBtn.classList.toggle('has-tags', hasTags);
-    this.elements.tagBtn.title = 'Manage tags (T)';
-},
-
+    updateTagButton(file) {
+        if (!this.elements.tagBtn) return;
+        const hasTags = file.tags && file.tags.length > 0;
+        this.elements.tagBtn.classList.toggle('has-tags', hasTags);
+        this.elements.tagBtn.title = 'Manage tags (T)';
+    },
 };
-
 
 document.addEventListener('DOMContentLoaded', () => {
     Lightbox.init();

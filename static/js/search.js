@@ -119,7 +119,7 @@ const Search = {
 
         // Close results
         this.elements.resultsClose.addEventListener('click', () => {
-            this.hideResults();
+            this.hideResultsWithHistory();
         });
 
         // Pagination
@@ -381,14 +381,25 @@ const Search = {
         this.renderPagination();
         this.elements.results.classList.remove('hidden');
         
-        // Blur the input so keyboard doesn't stay open on mobile
+        // Push history state for back button support
+        HistoryManager.pushState('search');
+        
         this.elements.input.blur();
     },
 
+// Update hideResults to not push history when called by HistoryManager
     hideResults() {
         this.elements.results.classList.add('hidden');
         this.lastQuery = '';
         this.results = null;
+    },
+
+    hideResultsWithHistory() {
+        this.hideResults();
+        if (HistoryManager.hasState('search')) {
+            HistoryManager.removeState('search');
+            history.back();
+        }
     },
 
     renderPagination() {
