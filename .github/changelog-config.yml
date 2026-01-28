@@ -1,0 +1,129 @@
+{
+  "categories": [
+    {
+      "title": "## 🚀 Features",
+      "labels": ["feat", "feature", "enhancement"]
+    },
+    {
+      "title": "## 🐛 Bug Fixes",
+      "labels": ["fix", "bugfix", "bug"]
+    },
+    {
+      "title": "## 📚 Documentation",
+      "labels": ["docs", "documentation"]
+    },
+    {
+      "title": "## 🎨 UI/UX",
+      "labels": ["ui", "ux", "style"]
+    },
+    {
+      "title": "## ⚡ Performance",
+      "labels": ["perf", "performance"]
+    },
+    {
+      "title": "## 🔧 Configuration",
+      "labels": ["config", "chore"]
+    },
+    {
+      "title": "## ♻️ Refactoring",
+      "labels": ["refactor", "refactoring"]
+    },
+    {
+      "title": "## 🧪 Tests",
+      "labels": ["test", "tests"]
+    },
+    {
+      "title": "## 🔒 Security",
+      "labels": ["security", "sec"]
+    },
+    {
+      "title": "## 📦 Dependencies",
+      "labels": ["deps", "dependencies"]
+    },
+    {
+      "title": "## 🔨 Build & CI",
+      "labels": ["build", "ci", "cd"]
+    },
+    {
+      "title": "## 🗑️ Deprecations",
+      "labels": ["deprecated", "deprecation"]
+    },
+    {
+      "title": "## 💥 Breaking Changes",
+      "labels": ["breaking", "breaking-change"]
+    }
+  ],
+  "ignore_labels": [
+    "skip-changelog",
+    "wontfix",
+    "duplicate",
+    "invalid"
+  ],
+  "sort": "ASC",
+  "template": "#{{CHANGELOG}}\n\n<details>\n<summary>Uncategorized</summary>\n\n#{{UNCATEGORIZED}}\n</details>",
+  "pr_template": "- #{{TITLE}} (#{{NUMBER}})",
+  "empty_template": "- No changes",
+  "label_extractor": [
+    {
+      "pattern": "^(feat|feature)(\\(.+\\))?:",
+      "target": "feat"
+    },
+    {
+      "pattern": "^fix(\\(.+\\))?:",
+      "target": "fix"
+    },
+    {
+      "pattern": "^docs(\\(.+\\))?:",
+      "target": "docs"
+    },
+    {
+      "pattern": "^style(\\(.+\\))?:",
+      "target": "style"
+    },
+    {
+      "pattern": "^refactor(\\(.+\\))?:",
+      "target": "refactor"
+    },
+    {
+      "pattern": "^perf(\\(.+\\))?:",
+      "target": "perf"
+    },
+    {
+      "pattern": "^test(\\(.+\\))?:",
+      "target": "test"
+    },
+    {
+      "pattern": "^build(\\(.+\\))?:",
+      "target": "build"
+    },
+    {
+      "pattern": "^ci(\\(.+\\))?:",
+      "target": "ci"
+    },
+    {
+      "pattern": "^chore(\\(.+\\))?:",
+      "target": "chore"
+    },
+    {
+      "pattern": "^revert(\\(.+\\))?:",
+      "target": "revert"
+    }
+  ],
+  "transformers": [
+    {
+      "pattern": "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\\(.+\\))?:\\s*(.+)",
+      "target": "$3"
+    }
+  ],
+  "max_tags_to_fetch": 200,
+  "max_pull_requests": 200,
+  "max_back_track_time_days": 365,
+  "exclude_merge_branches": [],
+  "tag_resolver": {
+    "method": "semver"
+  },
+  "base_branches": [
+    "main",
+    "master"
+  ]
+}

@@ -1,0 +1,77 @@
+# Conventional Commit Type Labels
+feat:
+  - head-branch: ['^feat/', 'feature/']
+  - title: ['^feat(\(.+\))?:', '^feature(\(.+\))?:']
+
+fix:
+  - head-branch: ['^fix/', '^bugfix/', '^hotfix/']
+  - title: ['^fix(\(.+\))?:', '^bugfix(\(.+\))?:']
+
+docs:
+  - head-branch: ['^docs/']
+  - title: ['^docs(\(.+\))?:']
+  - changed-files:
+    - any-glob-to-any-file: ['**/*.md', 'docs/**/*']
+
+style:
+  - head-branch: ['^style/']
+  - title: ['^style(\(.+\))?:']
+
+refactor:
+  - head-branch: ['^refactor/']
+  - title: ['^refactor(\(.+\))?:']
+
+perf:
+  - head-branch: ['^perf/']
+  - title: ['^perf(\(.+\))?:', '^performance(\(.+\))?:']
+
+test:
+  - head-branch: ['^test/']
+  - title: ['^test(\(.+\))?:']
+  - changed-files:
+    - any-glob-to-any-file: ['**/*_test.go', '**/test/**/*']
+
+build:
+  - head-branch: ['^build/']
+  - title: ['^build(\(.+\))?:']
+  - changed-files:
+    - any-glob-to-any-file: ['Dockerfile', 'Makefile', 'go.mod', 'go.sum']
+
+ci:
+  - head-branch: ['^ci/']
+  - title: ['^ci(\(.+\))?:']
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**/*']
+
+chore:
+  - head-branch: ['^chore/']
+  - title: ['^chore(\(.+\))?:']
+
+# Component Labels
+database:
+  - changed-files:
+    - any-glob-to-any-file: ['internal/database/**/*']
+
+frontend:
+  - changed-files:
+    - any-glob-to-any-file: ['web/**/*', '**/*.html', '**/*.css', '**/*.js']
+
+api:
+  - changed-files:
+    - any-glob-to-any-file: ['internal/handlers/**/*']
+
+docker:
+  - changed-files:
+    - any-glob-to-any-file: ['Dockerfile', 'docker-compose.yml', '.dockerignore']
+
+security:
+  - title: ['^sec(\(.+\))?:', '^security(\(.+\))?:']
+  - head-branch: ['^security/']
+
+breaking-change:
+  - title: ['BREAKING CHANGE:', '!:']
+  - body: ['BREAKING CHANGE:']
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: ['go.mod', 'go.sum', 'package.json', 'package-lock.json']

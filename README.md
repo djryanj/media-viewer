@@ -251,6 +251,74 @@ Videos not natively supported by browsers (like mkv) are automatically transcode
 ### Playlists
 Windows Media Player playlists (.wpl)
 
+## Installation
+
+### Docker (Recommended)
+
+Pull the latest image from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/djryanj/media-viewer:latest
+```
+
+Or use a specific version:
+
+```bash
+docker pull ghcr.io/djryanj/media-viewer:v1.0.0
+```
+
+Run with docker-compose (recommended):
+
+```bash
+docker-compose up -d
+```
+
+### From Source
+
+```bash
+git clone https://github.com/djryanj/media-viewer.git
+cd media-viewer
+go build -tags 'fts5' -o media-viewer ./cmd/server
+./media-viewer
+```
+
+## Releases
+
+### Creating a Release
+
+To create a new release:
+
+1. **Update version information** (if needed)
+2. **Create and push a tag**:
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
+   ```
+3. **GitHub Actions will automatically**:
+   - Build multi-platform Docker images (amd64, arm64)
+   - Push images to `ghcr.io/djryanj/media-viewer`
+   - Tag with version number and `latest`
+
+### Available Tags
+
+- `latest` - Latest stable release from main branch
+- `v1.0.0` - Specific version tag
+- `v1.0` - Latest patch version of 1.0
+- `v1` - Latest minor version of 1.x
+- `sha-abc1234` - Specific commit build
+
+### Version Information
+
+The application includes build information accessible via:
+- API endpoint: `GET /api/version`
+- Logs on startup
+
+Build information includes:
+- Version (from git tag or "dev")
+- Commit hash
+- Build timestamp
+- Go version
+
 ## License
 
 MIT License
