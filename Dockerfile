@@ -1,8 +1,6 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+FROM --platform=$TARGETPLATFORM golang:1.25-alpine AS builder
 
-ARG TARGETOS
-ARG TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
@@ -15,11 +13,6 @@ RUN apk add --no-cache \
     musl-dev \
     sqlite-dev
 
-# Install cross-compilation tools if needed
-RUN if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "linux/arm64" ]; then \
-    apk add --no-cache gcc-aarch64-none-elf; \
-    fi
-
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
@@ -28,8 +21,8 @@ RUN go mod download
 COPY . .
 
 # Build static binary with CGO enabled (required for SQLite FTS5)
-# Inject version information at build time
-RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+# No need to set GOOS/GOARCH - we're building natively for each platform
+RUN CGO_ENABLED=1 go build \
     -tags 'fts5 netgo osusergo' \
     -ldflags "-s -w -extldflags '-static' \
     -X 'media-viewer/internal/startup.Version=${VERSION}' \
@@ -38,7 +31,7 @@ RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -a -o media-viewer .
 
 # Build password reset tool
-RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+RUN CGO_ENABLED=1 go build \
     -tags 'fts5 netgo osusergo' \
     -ldflags "-s -w -extldflags '-static' \
     -X 'media-viewer/internal/startup.Version=${VERSION}' \
