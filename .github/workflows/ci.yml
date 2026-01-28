@@ -77,7 +77,7 @@ jobs:
           go build -tags 'fts5' -ldflags "-s -w" -o resetpw ./cmd/resetpw
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: binaries
           path: |
