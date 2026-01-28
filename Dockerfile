@@ -24,15 +24,6 @@ RUN apk add --no-cache \
     make \
     git
 
-# Set up cross-compilation environment variables for ARM64
-RUN if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
-    apk add --no-cache crossbuild-essential-arm64 || \
-    (echo "Installing ARM64 cross-compile toolchain..." && \
-    wget -q https://musl.cc/aarch64-linux-musl-cross.tgz && \
-    tar -xzf aarch64-linux-musl-cross.tgz -C /usr/local && \
-    rm aarch64-linux-musl-cross.tgz); \
-    fi
-
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
