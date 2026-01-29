@@ -15,6 +15,7 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
+	"media-viewer/internal/metrics"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -200,6 +201,11 @@ func (idx *Indexer) Index() error {
 	}
 	defer idx.finishIndexing()
 
+	// Update metrics
+	metrics.IndexerIsRunning.Set(1)
+	defer metrics.IndexerIsRunning.Set(0)
+	metrics.IndexerRunsTotal.Inc()
+
 	startTime := time.Now()
 	logging.Info("Starting file indexing...")
 
@@ -208,15 +214,24 @@ func (idx *Indexer) Index() error {
 	indexTime := time.Now()
 	result, err := idx.walkAndIndex(startTime)
 	if err != nil {
+		metrics.IndexerErrors.Inc()
 		return err
 	}
 
-	// Delete files that no longer exist (in a separate transaction)
+	// Delete files that no longer exist
 	if err := idx.cleanupMissingFiles(indexTime); err != nil {
 		logging.Error("Error cleaning up missing files: %v", err)
+		metrics.IndexerErrors.Inc()
 	}
 
 	idx.finalizeIndex(startTime, result.totalFiles, result.totalFolders)
+
+	// Update metrics
+	duration := time.Since(startTime).Seconds()
+	metrics.IndexerLastRunTimestamp.Set(float64(time.Now().Unix()))
+	metrics.IndexerLastRunDuration.Set(duration)
+	metrics.IndexerFilesProcessed.Add(float64(result.totalFiles))
+	metrics.IndexerFoldersProcessed.Add(float64(result.totalFolders))
 
 	return nil
 }

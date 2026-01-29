@@ -18,7 +18,7 @@
     }
   },
 
-  "forwardPorts": ["8080:8080"],
+  "forwardPorts": [8080, 9090],
 
   "postCreateCommand": "bash .devcontainer/post-create.sh",
 

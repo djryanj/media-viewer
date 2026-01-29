@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,10 +60,12 @@ type Config struct {
 	CacheDir          string
 	DatabaseDir       string
 	Port              string
+	MetricsPort       string
 	IndexInterval     time.Duration
-	ThumbnailInterval time.Duration // Add this field
+	ThumbnailInterval time.Duration
 	LogStaticFiles    bool
 	LogHealthChecks   bool
+	MetricsEnabled    bool
 
 	// Derived paths
 	DatabasePath string
@@ -87,17 +90,21 @@ func LoadConfig() (*Config, error) {
 	cacheDir := getEnv("CACHE_DIR", "/cache")
 	databaseDir := getEnv("DATABASE_DIR", "/database")
 	port := getEnv("PORT", "8080")
+	metricsPort := getEnv("METRICS_PORT", "9090")
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
-	thumbnailIntervalStr := getEnv("THUMBNAIL_INTERVAL", "6h") // Add this
-	logStaticFiles := getEnv("LOG_STATIC_FILES", "false") == "true"
-	logHealthChecks := getEnv("LOG_HEALTH_CHECKS", "true") == "true"
+	thumbnailIntervalStr := getEnv("THUMBNAIL_INTERVAL", "6h")
+	logStaticFiles := getEnvBool("LOG_STATIC_FILES", false)
+	logHealthChecks := getEnvBool("LOG_HEALTH_CHECKS", true)
+	metricsEnabled := getEnvBool("METRICS_ENABLED", true)
 
 	logging.Info("  MEDIA_DIR:           %s", mediaDir)
 	logging.Info("  CACHE_DIR:           %s", cacheDir)
 	logging.Info("  DATABASE_DIR:        %s", databaseDir)
 	logging.Info("  PORT:                %s", port)
+	logging.Info("  METRICS_PORT:        %s", metricsPort)
+	logging.Info("  METRICS_ENABLED:     %v", metricsEnabled)
 	logging.Info("  INDEX_INTERVAL:      %s", indexIntervalStr)
-	logging.Info("  THUMBNAIL_INTERVAL:  %s", thumbnailIntervalStr) // Add this
+	logging.Info("  THUMBNAIL_INTERVAL:  %s", thumbnailIntervalStr)
 	logging.Info("  LOG_STATIC_FILES:    %v", logStaticFiles)
 	logging.Info("  LOG_HEALTH_CHECKS:   %v", logHealthChecks)
 	logging.Info("  LOG_LEVEL:           %s", logging.GetLevel())
@@ -136,7 +143,7 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve database directory path: %w", err)
 	}
-	logging.Info("  Cache directory (absolute): %s", databaseDir)
+	logging.Info("  Database directory (absolute): %s", databaseDir)
 
 	// Check/create media directory (warning only)
 	if err := ensureDirectory(mediaDir, "media"); err != nil {
@@ -148,10 +155,12 @@ func LoadConfig() (*Config, error) {
 		CacheDir:          cacheDir,
 		DatabaseDir:       databaseDir,
 		Port:              port,
+		MetricsPort:       metricsPort,
 		IndexInterval:     indexInterval,
 		ThumbnailInterval: thumbnailInterval,
 		LogStaticFiles:    logStaticFiles,
 		LogHealthChecks:   logHealthChecks,
+		MetricsEnabled:    metricsEnabled,
 		DatabasePath:      filepath.Join(databaseDir, "media.db"),
 		ThumbnailDir:      filepath.Join(cacheDir, "thumbnails"),
 		TranscodeDir:      filepath.Join(cacheDir, "transcoded"),
@@ -167,7 +176,7 @@ func LoadConfig() (*Config, error) {
 	if err := testWriteAccess(databaseDir); err != nil {
 		return nil, fmt.Errorf("database directory is not writable (required for database): %w", err)
 	}
-	logging.Info("  [OK] Cache directory is writable")
+	logging.Info("  [OK] Database directory is writable")
 
 	// Setup thumbnail directory (optional)
 	config.ThumbnailsEnabled = setupOptionalDir(config.ThumbnailDir, "thumbnails")
@@ -181,6 +190,7 @@ func LoadConfig() (*Config, error) {
 	logging.Info("    Database:    ENABLED (required)")
 	logging.Info("    Thumbnails:  %s", enabledString(config.ThumbnailsEnabled))
 	logging.Info("    Transcoding: %s", enabledString(config.TranscodingEnabled))
+	logging.Info("    Metrics:     %s", enabledString(config.MetricsEnabled))
 
 	return config, nil
 }
@@ -213,7 +223,7 @@ func enabledString(enabled bool) string {
 	if enabled {
 		return "ENABLED"
 	}
-	return "DISABLED (directory not writable)"
+	return "DISABLED"
 }
 
 // LogDatabaseInit logs database initialization
@@ -383,15 +393,35 @@ func getRouteGroup(path string) string {
 	return first
 }
 
-// LogServerStarted logs successful server start
-func LogServerStarted(port string, startupDuration time.Duration) {
+// ServerConfig holds configuration for the server startup log
+type ServerConfig struct {
+	Port            string
+	MetricsPort     string
+	MetricsEnabled  bool
+	StartupDuration time.Duration
+}
+
+// LogServerStarted logs successful server start with all endpoint information
+func LogServerStarted(config ServerConfig) {
 	logging.Info("")
 	logging.Info("------------------------------------------------------------")
 	logging.Info("SERVER STARTED")
 	logging.Info("------------------------------------------------------------")
-	logging.Info("  Startup time:    %v", startupDuration)
-	logging.Info("  Listening on:    http://0.0.0.0:%s", port)
-	logging.Info("  Local access:    http://localhost:%s", port)
+	logging.Info("  Startup time:    %v", config.StartupDuration)
+	logging.Info("")
+	logging.Info("  Endpoints:")
+	logging.Info("    Application:   http://0.0.0.0:%s", config.Port)
+	if config.MetricsEnabled {
+		logging.Info("    Metrics:       http://0.0.0.0:%s/metrics", config.MetricsPort)
+	} else {
+		logging.Info("    Metrics:       DISABLED")
+	}
+	logging.Info("")
+	logging.Info("  Local access:")
+	logging.Info("    Application:   http://localhost:%s", config.Port)
+	if config.MetricsEnabled {
+		logging.Info("    Metrics:       http://localhost:%s/metrics", config.MetricsPort)
+	}
 	logging.Info("")
 	logging.Info("  Press Ctrl+C to stop the server")
 	logging.Info("------------------------------------------------------------")
@@ -552,4 +582,17 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		logging.Warn("Invalid boolean value for %s: %q, using default: %v", key, value, defaultValue)
+		return defaultValue
+	}
+	return parsed
 }

@@ -8,7 +8,7 @@ LDFLAGS := -X 'media-viewer/internal/startup.Version=$(VERSION)' \
 DIST_DIR := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
-.PHONY: all build run dev test clean docker-build docker-run lint resetpw
+.PHONY: all build run dev test clean docker-build docker-run lint lint-fix resetpw
 
 BUILD_TAGS := fts5
 GO_BUILD := go build -tags '$(BUILD_TAGS)'
@@ -52,3 +52,6 @@ docker-run:
 
 lint:
 	golangci-lint run
+
+lint-fix:
+	golangci-lint run --fix

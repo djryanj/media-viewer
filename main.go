@@ -1,21 +1,4 @@
-// Main entry point for the media viewer application.
-//
-// It starts an HTTP server that provides:
-//   - Web-based media browsing interface
-//   - RESTful API for media operations
-//   - Background media indexing
-//   - Video transcoding and streaming
-//   - User authentication
-//
-// Configuration is provided via environment variables:
-//   - MEDIA_DIR: Path to media files (default: /media)
-//   - CACHE_DIR: Path to cache directory (default: /cache)
-//   - DATABASE_DIR: Path to database directory (default: /database)
-//   - PORT: HTTP server port (default: 8080)
-//   - INDEX_INTERVAL: Media indexing interval (default: 30m)
-//   - LOG_LEVEL: Logging verbosity (default: info)
-//   - LOG_STATIC_FILES: Log static file requests (default: false)
-//   - LOG_HEALTH_CHECKS: Log health check requests (default: true)
+// main.go
 package main
 
 import (
@@ -23,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -31,12 +15,32 @@ import (
 	"media-viewer/internal/indexer"
 	"media-viewer/internal/logging"
 	"media-viewer/internal/media"
+	"media-viewer/internal/metrics"
 	"media-viewer/internal/middleware"
 	"media-viewer/internal/startup"
 	"media-viewer/internal/transcoder"
 
 	"github.com/gorilla/mux"
 )
+
+// dbStatsAdapter adapts database.Database to metrics.StatsProvider
+type dbStatsAdapter struct {
+	db *database.Database
+}
+
+// GetStats converts database.IndexStats to metrics.Stats
+func (a *dbStatsAdapter) GetStats() metrics.Stats {
+	dbStats := a.db.GetStats()
+	return metrics.Stats{
+		TotalFiles:     dbStats.TotalFiles,
+		TotalFolders:   dbStats.TotalFolders,
+		TotalImages:    dbStats.TotalImages,
+		TotalVideos:    dbStats.TotalVideos,
+		TotalPlaylists: dbStats.TotalPlaylists,
+		TotalFavorites: dbStats.TotalFavorites,
+		TotalTags:      dbStats.TotalTags,
+	}
+}
 
 func main() {
 	startTime := time.Now()
@@ -46,6 +50,9 @@ func main() {
 	if err != nil {
 		startup.LogFatal("Configuration error: %v", err)
 	}
+
+	// Set application info metric
+	metrics.SetAppInfo(startup.Version, startup.Commit, runtime.Version())
 
 	// Initialize database
 	dbStart := time.Now()
@@ -83,7 +90,7 @@ func main() {
 	startup.LogIndexerInit(config.IndexInterval)
 	idx := indexer.New(db, config.MediaDir, config.IndexInterval)
 
-	// Start indexer in background (non-blocking)
+	// Start indexer in background
 	go func() {
 		if err := idx.Start(); err != nil {
 			logging.Error("Failed to start indexer: %v", err)
@@ -95,8 +102,19 @@ func main() {
 	thumbGen.Start()
 	logging.Info("Thumbnail generator started")
 
+	// Start metrics collector
+	metricsCollector := metrics.NewCollector(&dbStatsAdapter{db: db}, 1*time.Minute)
+	metricsCollector.Start()
+	logging.Info("Metrics collector started")
+
 	// Initialize handlers
 	h := handlers.New(db, idx, trans, thumbGen, config)
+
+	// Start metrics server if enabled
+	var metricsSrv *http.Server
+	if config.MetricsEnabled {
+		metricsSrv = startMetricsServer(h, config.MetricsPort)
+	}
 
 	// Setup router
 	router := setupRouter(h)
@@ -107,11 +125,15 @@ func main() {
 	// Apply authentication middleware
 	authedRouter := h.AuthMiddleware(router)
 
+	// Apply metrics middleware
+	metricsConfig := middleware.DefaultMetricsConfig()
+	metricsHandler := middleware.Metrics(metricsConfig)(authedRouter)
+
 	// Apply logging middleware
 	loggingConfig := middleware.DefaultLoggingConfig()
 	loggingConfig.LogStaticFiles = config.LogStaticFiles
 	loggingConfig.LogHealthChecks = config.LogHealthChecks
-	loggedHandler := middleware.Logger(loggingConfig)(authedRouter)
+	loggedHandler := middleware.Logger(loggingConfig)(metricsHandler)
 
 	// Apply compression middleware
 	compressionConfig := middleware.DefaultCompressionConfig()
@@ -130,16 +152,50 @@ func main() {
 	shutdownComplete := make(chan struct{})
 
 	// Start graceful shutdown handler
-	go handleShutdown(srv, db, idx, trans, thumbGen, shutdownComplete)
+	go handleShutdown(srv, metricsSrv, db, idx, trans, thumbGen, metricsCollector, shutdownComplete)
 
 	// Start server
-	startup.LogServerStarted(config.Port, time.Since(startTime))
+	startup.LogServerStarted(startup.ServerConfig{
+		Port:            config.Port,
+		MetricsPort:     config.MetricsPort,
+		MetricsEnabled:  config.MetricsEnabled,
+		StartupDuration: time.Since(startTime),
+	})
+
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		startup.LogFatal("Server error: %v", err)
 	}
 
 	// Wait for shutdown to complete
 	<-shutdownComplete
+}
+
+// startMetricsServer starts a separate HTTP server for Prometheus metrics
+func startMetricsServer(h *handlers.Handlers, port string) *http.Server {
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", h.MetricsHandler())
+
+	// Also add a simple health check on the metrics server
+	metricsMux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      metricsMux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			logging.Error("Metrics server error: %v", err)
+		}
+	}()
+
+	return srv
 }
 
 func setupRouter(h *handlers.Handlers) *mux.Router {
@@ -192,9 +248,6 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/tags/{tag}", h.DeleteTag).Methods("DELETE")
 	api.HandleFunc("/tags/{tag}", h.RenameTag).Methods("PUT")
 
-	// Static files
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))
-
 	// Thumbnails
 	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")
 	api.HandleFunc("/thumbnail/{path:.*}", h.InvalidateThumbnail).Methods("DELETE")
@@ -202,10 +255,13 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/thumbnails/rebuild", h.RebuildAllThumbnails).Methods("POST")
 	api.HandleFunc("/thumbnails/status", h.GetThumbnailStatus).Methods("GET")
 
+	// Static files
+	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))
+
 	return r
 }
 
-func handleShutdown(srv *http.Server, db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, done chan struct{}) {
+func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, metricsCollector *metrics.Collector, done chan struct{}) {
 	defer close(done)
 
 	sigChan := make(chan os.Signal, 1)
@@ -216,6 +272,10 @@ func handleShutdown(srv *http.Server, db *database.Database, idx *indexer.Indexe
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	startup.LogShutdownStep("Stopping metrics collector")
+	metricsCollector.Stop()
+	startup.LogShutdownStepComplete("Metrics collector stopped")
 
 	startup.LogShutdownStep("Stopping thumbnail generator")
 	thumbGen.Stop()
@@ -228,6 +288,16 @@ func handleShutdown(srv *http.Server, db *database.Database, idx *indexer.Indexe
 	startup.LogShutdownStep("Cleaning up transcoder")
 	trans.Cleanup()
 	startup.LogShutdownStepComplete("Transcoder cleanup complete")
+
+	// Shutdown metrics server if running
+	if metricsSrv != nil {
+		startup.LogShutdownStep("Shutting down metrics server")
+		if err := metricsSrv.Shutdown(ctx); err != nil {
+			logging.Warn("Metrics server shutdown error: %v", err)
+		} else {
+			startup.LogShutdownStepComplete("Metrics server stopped")
+		}
+	}
 
 	startup.LogShutdownStep("Shutting down HTTP server")
 	if err := srv.Shutdown(ctx); err != nil {
