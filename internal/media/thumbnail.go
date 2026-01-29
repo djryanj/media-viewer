@@ -20,6 +20,7 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
+	"media-viewer/internal/metrics"
 
 	// Image format decoders - required for image.Decode to support these formats
 	_ "image/gif"
@@ -42,6 +43,11 @@ type ThumbnailGenerator struct {
 	generationMu    sync.RWMutex
 	isGenerating    atomic.Bool
 	generationStats GenerationStats
+
+	// Cache metrics state
+	cacheMetricsMu sync.RWMutex
+	lastCacheSize  int64
+	lastCacheCount int
 }
 
 // RebuildProgress tracks thumbnail rebuild progress
@@ -89,7 +95,9 @@ const (
 	// Background generation settings
 	generationBatchSize  = 50                     // Files per batch
 	generationBatchDelay = 100 * time.Millisecond // Delay between batches
-	generationInterval   = 6 * time.Hour          // How often to run full generation
+
+	// Cache metrics update interval
+	cacheMetricsInterval = 1 * time.Minute
 )
 
 // NewThumbnailGenerator creates a new ThumbnailGenerator instance.
@@ -129,9 +137,13 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 		return nil, fmt.Errorf("thumbnails disabled")
 	}
 
+	start := time.Now()
+	fileTypeStr := string(fileType)
+
 	// Folders don't need file existence check (they're virtual paths)
 	if fileType != database.FileTypeFolder {
 		if _, err := os.Stat(filePath); err != nil {
+			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_not_found").Inc()
 			return nil, fmt.Errorf("file not accessible: %w", err)
 		}
 	}
@@ -148,14 +160,17 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 
 	// Check cache (for all types now, including folders during background generation)
 	if data, err := os.ReadFile(cachePath); err == nil {
+		metrics.ThumbnailCacheHits.Inc()
 		return data, nil
 	}
+	metrics.ThumbnailCacheMisses.Inc()
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	// Double-check cache after acquiring lock
 	if data, err := os.ReadFile(cachePath); err == nil {
+		metrics.ThumbnailCacheHits.Inc()
 		return data, nil
 	}
 
@@ -172,14 +187,17 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 	case database.FileTypeFolder:
 		img, err = t.generateFolderThumbnail(filePath)
 	case database.FileTypePlaylist, database.FileTypeOther:
+		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_unsupported").Inc()
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}
 
 	if err != nil {
+		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error").Inc()
 		return nil, fmt.Errorf("thumbnail generation failed: %w", err)
 	}
 
 	if img == nil {
+		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_nil").Inc()
 		return nil, fmt.Errorf("thumbnail generation returned nil image")
 	}
 
@@ -188,12 +206,14 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 	if fileType == database.FileTypeFolder {
 		// Folders use PNG for transparency
 		if err := png.Encode(&buf, img); err != nil {
+			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_encode").Inc()
 			return nil, fmt.Errorf("failed to encode thumbnail as PNG: %w", err)
 		}
 	} else {
 		// Other types use JPEG
 		thumb := imaging.Fit(img, 200, 200, imaging.Lanczos)
 		if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 85}); err != nil {
+			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_encode").Inc()
 			return nil, fmt.Errorf("failed to encode thumbnail as JPEG: %w", err)
 		}
 	}
@@ -201,7 +221,12 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 	// Cache the result
 	if err := os.WriteFile(cachePath, buf.Bytes(), 0o644); err != nil {
 		logging.Warn("Failed to cache thumbnail %s: %v", cachePath, err)
+		// Don't fail the request, just log the warning
 	}
+
+	// Record success metrics
+	metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "success").Inc()
+	metrics.ThumbnailGenerationDuration.WithLabelValues(fileTypeStr).Observe(time.Since(start).Seconds())
 
 	return buf.Bytes(), nil
 }
@@ -915,6 +940,8 @@ func (t *ThumbnailGenerator) InvalidateThumbnail(filePath string) error {
 
 	if deleted {
 		logging.Debug("Invalidated thumbnail cache for: %s", filePath)
+		// Update cache metrics after invalidation
+		t.UpdateCacheMetrics()
 	}
 
 	return nil
@@ -954,8 +981,77 @@ func (t *ThumbnailGenerator) InvalidateAll() (int, error) {
 	}
 
 	logging.Info("Invalidated %d cached thumbnails", count)
+
+	// Update cache metrics after invalidation
+	t.UpdateCacheMetrics()
+
 	return count, nil
 }
+
+// =============================================================================
+// CACHE METRICS
+// =============================================================================
+
+// UpdateCacheMetrics scans the cache directory and updates Prometheus metrics
+func (t *ThumbnailGenerator) UpdateCacheMetrics() {
+	if !t.enabled {
+		metrics.ThumbnailCacheSize.Set(0)
+		metrics.ThumbnailCacheCount.Set(0)
+		return
+	}
+
+	var cacheSize int64
+	var cacheCount int
+
+	entries, err := os.ReadDir(t.cacheDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logging.Debug("Failed to read cache directory for metrics: %v", err)
+		}
+		metrics.ThumbnailCacheSize.Set(0)
+		metrics.ThumbnailCacheCount.Set(0)
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".jpg") && !strings.HasSuffix(name, ".png") {
+			continue
+		}
+
+		cacheCount++
+		if info, err := entry.Info(); err == nil {
+			cacheSize += info.Size()
+		}
+	}
+
+	// Update cached values
+	t.cacheMetricsMu.Lock()
+	t.lastCacheSize = cacheSize
+	t.lastCacheCount = cacheCount
+	t.cacheMetricsMu.Unlock()
+
+	// Update Prometheus metrics
+	metrics.ThumbnailCacheSize.Set(float64(cacheSize))
+	metrics.ThumbnailCacheCount.Set(float64(cacheCount))
+
+	logging.Debug("Updated cache metrics: count=%d, size=%s", cacheCount, formatBytes(cacheSize))
+}
+
+// GetCachedMetrics returns the last known cache metrics without scanning
+func (t *ThumbnailGenerator) GetCachedMetrics() (count int, size int64) {
+	t.cacheMetricsMu.RLock()
+	defer t.cacheMetricsMu.RUnlock()
+	return t.lastCacheCount, t.lastCacheSize
+}
+
+// =============================================================================
+// BACKGROUND GENERATION
+// =============================================================================
 
 // Start begins background thumbnail generation
 func (t *ThumbnailGenerator) Start() {
@@ -964,13 +1060,34 @@ func (t *ThumbnailGenerator) Start() {
 		return
 	}
 
+	// Update cache metrics immediately on startup
+	logging.Info("Initializing thumbnail cache metrics...")
+	t.UpdateCacheMetrics()
+
+	// Start background loops
 	go t.backgroundGenerationLoop()
+	go t.cacheMetricsLoop()
 }
 
 // Stop stops background thumbnail generation
 func (t *ThumbnailGenerator) Stop() {
 	if t.stopChan != nil {
 		close(t.stopChan)
+	}
+}
+
+// cacheMetricsLoop periodically updates cache metrics
+func (t *ThumbnailGenerator) cacheMetricsLoop() {
+	ticker := time.NewTicker(cacheMetricsInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			t.UpdateCacheMetrics()
+		case <-t.stopChan:
+			return
+		}
 	}
 }
 
@@ -1022,6 +1139,9 @@ func (t *ThumbnailGenerator) runGeneration() {
 
 	startTime := time.Now()
 	logging.Info("Starting background thumbnail generation...")
+
+	metrics.ThumbnailGeneratorRunning.Set(1)
+	defer metrics.ThumbnailGeneratorRunning.Set(0)
 
 	// Reset stats
 	t.generationMu.Lock()
@@ -1089,16 +1209,23 @@ func (t *ThumbnailGenerator) runGeneration() {
 	t.generationStats.InProgress = false
 	t.generationStats.LastCompleted = time.Now()
 	t.generationStats.CurrentFile = ""
+	stats := t.generationStats // Copy for logging
 	t.generationMu.Unlock()
 
 	duration := time.Since(startTime)
-	t.generationMu.RLock()
 	logging.Info("Thumbnail generation complete in %v: generated %d, skipped %d, failed %d",
 		duration,
-		t.generationStats.Generated,
-		t.generationStats.Skipped,
-		t.generationStats.Failed)
-	t.generationMu.RUnlock()
+		stats.Generated,
+		stats.Skipped,
+		stats.Failed)
+
+	// Update cache metrics after generation completes
+	t.UpdateCacheMetrics()
+
+	// Record generation metrics
+	metrics.ThumbnailGenerationBatchComplete.WithLabelValues("full").Inc()
+	metrics.ThumbnailGenerationLastDuration.Set(duration.Seconds())
+	metrics.ThumbnailGenerationLastTimestamp.Set(float64(time.Now().Unix()))
 }
 
 // processBatch processes a batch of files for thumbnail generation
@@ -1167,22 +1294,11 @@ func (t *ThumbnailGenerator) GetStatus() ThumbnailStatus {
 		return status
 	}
 
-	// Count cache files and size
-	entries, err := os.ReadDir(t.cacheDir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".png") {
-				status.CacheCount++
-				if info, err := entry.Info(); err == nil {
-					status.CacheSize += info.Size()
-				}
-			}
-		}
-	}
+	// Use cached metrics for quick response
+	t.cacheMetricsMu.RLock()
+	status.CacheCount = t.lastCacheCount
+	status.CacheSize = t.lastCacheSize
+	t.cacheMetricsMu.RUnlock()
 
 	status.CacheSizeHuman = formatBytes(status.CacheSize)
 

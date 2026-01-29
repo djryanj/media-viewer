@@ -59,6 +59,9 @@ type SearchOptions struct {
 // ListDirectory returns a paginated directory listing.
 func (d *Database) ListDirectory(opts ListOptions) (*DirectoryListing, error) {
 	start := time.Now()
+	var err error
+	defer func() { recordQuery("list_directory", start, err) }()
+
 	logging.Debug("ListDirectory called: path=%q", opts.Path)
 
 	opts = normalizeListOptions(opts)
@@ -333,6 +336,10 @@ func buildBreadcrumb(path string) []PathPart {
 
 // Search searches for media files matching the given query.
 func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("search", start, err) }()
+
 	if opts.Query == "" {
 		return &SearchResult{Items: []MediaFile{}}, nil
 	}
@@ -440,7 +447,7 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 	}
 
 	var totalItems int
-	err := d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
+	err = d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
 	if err != nil {
 		// If FTS fails (e.g., invalid query), fall back to tag-only search
 		return d.searchByTagOnlyUnlocked(ctx, opts, tagPattern)
@@ -610,6 +617,10 @@ func (d *Database) searchByTagOnlyUnlocked(ctx context.Context, opts SearchOptio
 
 // SearchSuggestions returns quick search suggestions for autocomplete.
 func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestion, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("search_suggestions", start, err) }()
+
 	if query == "" || len(query) < 2 {
 		return []SearchSuggestion{}, nil
 	}
@@ -630,8 +641,8 @@ func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestio
 	var suggestions []SearchSuggestion
 
 	// First, get matching tags as suggestions
-	tagSuggestions, err := d.getTagSuggestionsUnlocked(ctx, query, limit/2)
-	if err == nil {
+	tagSuggestions, tagErr := d.getTagSuggestionsUnlocked(ctx, query, limit/2)
+	if tagErr == nil {
 		suggestions = append(suggestions, tagSuggestions...)
 	}
 
@@ -748,6 +759,10 @@ func highlightMatch(text, query string) string {
 
 // GetAllPlaylists returns all playlist files.
 func (d *Database) GetAllPlaylists() ([]MediaFile, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_all_playlists", start, err) }()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -796,6 +811,10 @@ func (d *Database) GetAllPlaylists() ([]MediaFile, error) {
 
 // GetMediaInDirectory returns all media files in a directory (for lightbox).
 func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_media_in_directory", start, err) }()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -916,6 +935,10 @@ func (d *Database) GetMediaFilesInFolder(folderPath string, limit int) ([]MediaF
 
 // CalculateStats calculates current index statistics.
 func (d *Database) CalculateStats() (IndexStats, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("calculate_stats", start, err) }()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -937,8 +960,9 @@ func (d *Database) CalculateStats() (IndexStats, error) {
 	}
 
 	for _, q := range queries {
-		if err := d.db.QueryRowContext(ctx, q.query).Scan(q.dest); err != nil {
-			return stats, err
+		if queryErr := d.db.QueryRowContext(ctx, q.query).Scan(q.dest); queryErr != nil {
+			err = queryErr
+			return stats, queryErr
 		}
 	}
 
@@ -1008,6 +1032,10 @@ func (d *Database) GetSubfolders(parentPath string) ([]MediaFile, error) {
 
 // GetAllMediaFiles returns all media files (images, videos, folders) for thumbnail rebuilding
 func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_all_media_files", start, err) }()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -1070,6 +1098,10 @@ func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
 // GetAllMediaFilesForThumbnails returns all media files ordered by path depth (root first)
 // This ensures parent folders are processed before children
 func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_all_media_files_for_thumbnails", start, err) }()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 

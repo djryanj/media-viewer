@@ -10,6 +10,10 @@ import (
 
 // AddFavorite adds a path to favorites.
 func (d *Database) AddFavorite(path, name string, fileType FileType) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("add_favorite", start, err) }()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -22,19 +26,23 @@ func (d *Database) AddFavorite(path, name string, fileType FileType) error {
 		ON CONFLICT(path) DO NOTHING
 	`
 
-	_, err := d.db.ExecContext(ctx, query, path, name, fileType, time.Now().Unix())
+	_, err = d.db.ExecContext(ctx, query, path, name, fileType, time.Now().Unix())
 	return err
 }
 
 // RemoveFavorite removes a path from favorites.
 func (d *Database) RemoveFavorite(path string) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("remove_favorite", start, err) }()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
+	_, err = d.db.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
 	return err
 }
 
@@ -62,6 +70,10 @@ func (d *Database) isFavoriteUnlocked(ctx context.Context, path string) bool {
 
 // GetFavorites returns all favorites with their file info.
 func (d *Database) GetFavorites() ([]MediaFile, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_favorites", start, err) }()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 

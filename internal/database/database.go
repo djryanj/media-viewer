@@ -11,6 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3" // SQLite3 driver
 
 	"media-viewer/internal/logging"
+	"media-viewer/internal/metrics"
 )
 
 // Default timeout for database operations
@@ -310,24 +311,49 @@ func (d *Database) GetStats() IndexStats {
 
 // RebuildFTS rebuilds the full-text search index.
 func (d *Database) RebuildFTS() error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("rebuild_fts", start, err) }()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
+	_, err = d.db.ExecContext(ctx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
 	return err
 }
 
 // Vacuum optimizes the database.
 func (d *Database) Vacuum() error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("vacuum", start, err) }()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "VACUUM")
+	_, err = d.db.ExecContext(ctx, "VACUUM")
 	return err
+}
+
+// recordQuery records database query metrics
+func recordQuery(operation string, start time.Time, err error) {
+	duration := time.Since(start).Seconds()
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+	metrics.DBQueryTotal.WithLabelValues(operation, status).Inc()
+	metrics.DBQueryDuration.WithLabelValues(operation).Observe(duration)
+}
+
+// UpdateDBMetrics updates database connection metrics
+func (d *Database) UpdateDBMetrics() {
+	stats := d.db.Stats()
+	metrics.DBConnectionsOpen.Set(float64(stats.OpenConnections))
 }

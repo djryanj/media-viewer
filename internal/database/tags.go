@@ -59,9 +59,14 @@ func (d *Database) GetOrCreateTag(name string) (*Tag, error) {
 
 // AddTagToFile adds a tag to a file.
 func (d *Database) AddTagToFile(filePath, tagName string) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("add_tag_to_file", start, err) }()
+
 	tagName = strings.TrimSpace(tagName)
 	if tagName == "" {
-		return fmt.Errorf("tag name cannot be empty")
+		err = fmt.Errorf("tag name cannot be empty")
+		return err
 	}
 
 	d.mu.Lock()
@@ -72,16 +77,17 @@ func (d *Database) AddTagToFile(filePath, tagName string) error {
 
 	// Get or create tag within the same lock
 	var tagID int64
-	err := d.db.QueryRowContext(ctx,
+	err = d.db.QueryRowContext(ctx,
 		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
 		tagName,
 	).Scan(&tagID)
 
 	if err != nil {
 		// Create new tag
-		result, err := d.db.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
-		if err != nil {
-			return fmt.Errorf("failed to create tag: %w", err)
+		result, createErr := d.db.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
+		if createErr != nil {
+			err = fmt.Errorf("failed to create tag: %w", createErr)
+			return err
 		}
 		tagID, _ = result.LastInsertId()
 	}
@@ -95,13 +101,17 @@ func (d *Database) AddTagToFile(filePath, tagName string) error {
 
 // RemoveTagFromFile removes a tag from a file.
 func (d *Database) RemoveTagFromFile(filePath, tagName string) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("remove_tag_from_file", start, err) }()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, `
+	_, err = d.db.ExecContext(ctx, `
 		DELETE FROM file_tags 
 		WHERE file_path = ? AND tag_id = (SELECT id FROM tags WHERE name = ? COLLATE NOCASE)
 	`, filePath, tagName)
@@ -152,6 +162,10 @@ func (d *Database) getFileTagsUnlocked(ctx context.Context, filePath string) ([]
 
 // SetFileTags replaces all tags for a file.
 func (d *Database) SetFileTags(filePath string, tagNames []string) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("set_file_tags", start, err) }()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -187,11 +201,12 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 
 		// Get or create tag
 		var tagID int64
-		err := tx.QueryRowContext(ctx, "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", tagName).Scan(&tagID)
+		err = tx.QueryRowContext(ctx, "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", tagName).Scan(&tagID)
 		if err != nil {
 			// Create tag
-			result, err := tx.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
-			if err != nil {
+			result, createErr := tx.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
+			if createErr != nil {
+				err = createErr
 				return err
 			}
 			tagID, _ = result.LastInsertId()
@@ -207,8 +222,9 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
+	if commitErr := tx.Commit(); commitErr != nil {
+		err = commitErr
+		return commitErr
 	}
 	committed = true
 	return nil
@@ -216,6 +232,10 @@ func (d *Database) SetFileTags(filePath string, tagNames []string) error {
 
 // GetAllTags returns all tags with item counts.
 func (d *Database) GetAllTags() ([]Tag, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_all_tags", start, err) }()
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -261,6 +281,10 @@ func (d *Database) GetAllTags() ([]Tag, error) {
 
 // GetFilesByTag returns all files with a specific tag.
 func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchResult, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_files_by_tag", start, err) }()
+
 	if page < 1 {
 		page = 1
 	}
@@ -279,7 +303,7 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 
 	// Get total count
 	var totalItems int
-	err := d.db.QueryRowContext(ctx, `
+	err = d.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT ft.file_path)
 		FROM file_tags ft
 		INNER JOIN tags t ON ft.tag_id = t.id
@@ -356,21 +380,30 @@ func (d *Database) GetFilesByTag(tagName string, page, pageSize int) (*SearchRes
 
 // DeleteTag removes a tag and all its associations.
 func (d *Database) DeleteTag(tagName string) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("delete_tag", start, err) }()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
+	_, err = d.db.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
 	return err
 }
 
 // RenameTag renames a tag.
 func (d *Database) RenameTag(oldName, newName string) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("rename_tag", start, err) }()
+
 	newName = strings.TrimSpace(newName)
 	if newName == "" {
-		return fmt.Errorf("tag name cannot be empty")
+		err = fmt.Errorf("tag name cannot be empty")
+		return err
 	}
 
 	d.mu.Lock()
@@ -379,7 +412,7 @@ func (d *Database) RenameTag(oldName, newName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(
+	_, err = d.db.ExecContext(
 		ctx,
 		"UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE",
 		newName, oldName,

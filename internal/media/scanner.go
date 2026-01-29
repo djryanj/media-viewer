@@ -6,8 +6,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"media-viewer/internal/logging"
+	"media-viewer/internal/metrics"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -27,6 +29,17 @@ func NewScanner(mediaDir string) *Scanner {
 
 // GetDirectory returns the contents of a specific directory
 func (s *Scanner) GetDirectory(relativePath string, sortField SortField, sortOrder SortOrder, filterType string) (*DirectoryListing, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		metrics.ScannerOperationsTotal.WithLabelValues("get_directory", status).Inc()
+		metrics.ScannerOperationDuration.WithLabelValues("get_directory").Observe(time.Since(start).Seconds())
+	}()
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -46,7 +59,12 @@ func (s *Scanner) GetDirectory(relativePath string, sortField SortField, sortOrd
 
 	s.sortItems(items, sortField, sortOrder)
 
-	return s.buildListing(relativePath, items), nil
+	listing := s.buildListing(relativePath, items)
+
+	// Record items returned
+	metrics.ScannerItemsReturned.WithLabelValues("get_directory").Observe(float64(len(items)))
+
+	return listing, nil
 }
 
 // normalizePath cleans and normalizes a relative path
@@ -287,15 +305,29 @@ func (s *Scanner) sortItems(items []MediaFile, sortField SortField, sortOrder So
 
 // GetPlaylists returns all playlist files (searches recursively)
 func (s *Scanner) GetPlaylists() []MediaFile {
+	start := time.Now()
+	var scanErr error
+	defer func() {
+		status := "success"
+		if scanErr != nil {
+			status = "error"
+		}
+		metrics.ScannerOperationsTotal.WithLabelValues("get_playlists", status).Inc()
+		metrics.ScannerOperationDuration.WithLabelValues("get_playlists").Observe(time.Since(start).Seconds())
+	}()
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var playlists []MediaFile
+	var filesScanned int
 
-	err := filepath.Walk(s.mediaDir, func(path string, info os.FileInfo, err error) error {
+	scanErr = filepath.Walk(s.mediaDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
 		}
+
+		filesScanned++
 
 		ext := strings.ToLower(filepath.Ext(info.Name()))
 		if PlaylistExtensions[ext] {
@@ -311,9 +343,14 @@ func (s *Scanner) GetPlaylists() []MediaFile {
 		}
 		return nil
 	})
-	if err != nil {
-		logging.Error("failed to walk media directory for playlists: %v", err)
+
+	if scanErr != nil {
+		logging.Error("failed to walk media directory for playlists: %v", scanErr)
 	}
+
+	// Record metrics
+	metrics.ScannerItemsReturned.WithLabelValues("get_playlists").Observe(float64(len(playlists)))
+	metrics.ScannerFilesScanned.WithLabelValues("get_playlists").Add(float64(filesScanned))
 
 	return playlists
 }
@@ -323,6 +360,7 @@ func (s *Scanner) Watch() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		logging.Error("Failed to create file watcher: %v", err)
+		metrics.ScannerWatcherErrors.Inc()
 		return
 	}
 	defer func() {
@@ -333,6 +371,9 @@ func (s *Scanner) Watch() {
 
 	watchCount := s.addDirectoriesToWatcher(watcher)
 	logging.Debug("Scanner watcher started, watching %d directories", watchCount)
+
+	// Set initial watched directories count
+	metrics.ScannerWatchedDirectories.Set(float64(watchCount))
 
 	s.processWatcherEvents(watcher)
 }
@@ -347,6 +388,7 @@ func (s *Scanner) addDirectoriesToWatcher(watcher *fsnotify.Watcher) int {
 		if info.IsDir() && !strings.HasPrefix(info.Name(), ".") {
 			if addErr := watcher.Add(path); addErr != nil {
 				logging.Warn("failed to add path to watcher %s: %v", path, addErr)
+				metrics.ScannerWatcherErrors.Inc()
 			} else {
 				watchCount++
 			}
@@ -355,6 +397,7 @@ func (s *Scanner) addDirectoriesToWatcher(watcher *fsnotify.Watcher) int {
 	})
 	if err != nil {
 		logging.Error("failed to walk media directory for watcher: %v", err)
+		metrics.ScannerWatcherErrors.Inc()
 	}
 	return watchCount
 }
@@ -374,6 +417,7 @@ func (s *Scanner) processWatcherEvents(watcher *fsnotify.Watcher) {
 				return
 			}
 			logging.Error("Watcher error: %v", err)
+			metrics.ScannerWatcherErrors.Inc()
 		}
 	}
 }
@@ -385,8 +429,30 @@ func (s *Scanner) handleWatcherEvent(watcher *fsnotify.Watcher, event fsnotify.E
 		return
 	}
 
+	// Record the event
+	eventType := s.getEventType(event.Op)
+	metrics.ScannerWatcherEventsTotal.WithLabelValues(eventType).Inc()
+
 	if event.Op&fsnotify.Create != 0 {
 		s.handleCreateEvent(watcher, event)
+	}
+}
+
+// getEventType returns a string representation of the fsnotify operation
+func (s *Scanner) getEventType(op fsnotify.Op) string {
+	switch {
+	case op&fsnotify.Create != 0:
+		return "create"
+	case op&fsnotify.Write != 0:
+		return "write"
+	case op&fsnotify.Remove != 0:
+		return "remove"
+	case op&fsnotify.Rename != 0:
+		return "rename"
+	case op&fsnotify.Chmod != 0:
+		return "chmod"
+	default:
+		return "unknown"
 	}
 }
 
@@ -399,8 +465,11 @@ func (s *Scanner) handleCreateEvent(watcher *fsnotify.Watcher, event fsnotify.Ev
 	if info.IsDir() {
 		if addErr := watcher.Add(event.Name); addErr != nil {
 			logging.Warn("failed to add new directory to watcher %s: %v", event.Name, addErr)
+			metrics.ScannerWatcherErrors.Inc()
 		} else {
 			logging.Debug("Added new directory to watcher: %s", event.Name)
+			// Increment watched directories count
+			metrics.ScannerWatchedDirectories.Inc()
 		}
 	}
 }

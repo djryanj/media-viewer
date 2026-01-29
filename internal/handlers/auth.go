@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"media-viewer/internal/logging"
+	"media-viewer/internal/metrics"
 )
 
 // LoginRequest represents a login request with username and password
@@ -95,9 +96,12 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	user, err := h.db.ValidateUser(req.Username, req.Password)
 	if err != nil {
 		logging.Warn("Failed login attempt for user: %s", req.Username)
+		metrics.AuthAttemptsTotal.WithLabelValues("failure").Inc()
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
+
+	metrics.AuthAttemptsTotal.WithLabelValues("success").Inc()
 
 	// Create session
 	session, err := h.db.CreateSession(user.ID)

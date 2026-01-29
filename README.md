@@ -8,9 +8,11 @@ A lightweight, containerized web application for browsing and viewing images and
 - View images and videos in a lightbox with swipe/keyboard navigation
 - Play Windows Media Player playlists (.wpl)
 - Automatic video transcoding for browser compatibility
-- Full-text fuzzy search
+- Full-text fuzzy search with tag support
+- Tag files for organization
 - Pin favorites to the home page
 - Single-user authentication
+- Prometheus metrics endpoint for monitoring
 
 ## Quick Start with Docker
 
@@ -23,19 +25,21 @@ version: '3.8'
 
 services:
   media-viewer:
-    image: media-viewer:latest
-    build: .
+    image: ghcr.io/djryanj/media-viewer:latest
     ports:
       - "8080:8080"
+      - "9090:9090"  # Metrics port (optional)
     volumes:
       - /path/to/your/media:/media:ro
-      - media-cache:/cache # optional
+      - media-cache:/cache
       - media-database:/database
     environment:
       - MEDIA_DIR=/media
       - CACHE_DIR=/cache
       - DATABASE_DIR=/database
       - PORT=8080
+      - METRICS_PORT=9090
+      - METRICS_ENABLED=true
       - INDEX_INTERVAL=30m
     restart: unless-stopped
 
@@ -59,16 +63,15 @@ docker-compose up -d
 ### Using Docker CLI
 
 ```bash
-# Build the image
-docker build -t media-viewer .
-
 # Run the container
 docker run -d \
   --name media-viewer \
   -p 8080:8080 \
+  -p 9090:9090 \
   -v /path/to/your/media:/media:ro \
+  -v media-cache:/cache \
   -v media-database:/database \
-  media-viewer
+  ghcr.io/djryanj/media-viewer:latest
 ```
 
 Or, PowerShell, from your media directory:
@@ -77,9 +80,11 @@ Or, PowerShell, from your media directory:
 docker run -d `
   --name media-viewer `
   -p 8080:8080 `
+  -p 9090:9090 `
   -v "${PWD}:/media:ro" `
+  -v media-cache:/cache `
   -v media-database:/database `
-  media-viewer
+  ghcr.io/djryanj/media-viewer:latest
 ```
 
 ## Configuration
@@ -90,61 +95,45 @@ docker run -d `
 | `CACHE_DIR` | `/cache` | Path to cache directory (thumbnails, transcodes) |
 | `DATABASE_DIR` | `/database` | Path to database directory |
 | `PORT` | `8080` | HTTP server port |
+| `METRICS_PORT` | `9090` | Prometheus metrics server port |
+| `METRICS_ENABLED` | `true` | Enable or disable the metrics server |
 | `INDEX_INTERVAL` | `30m` | How often to re-scan the media directory |
-| `THUMBNAIL_INTERVAL` | `6h` | How often the thumbnail generator regenerates all thumbnails. Example values are `12h` (every 12 hours), `30m` (every 30 minutes) |
-| `LOG_STATIC_FILES` | `false` | Set to `true` to log static file requests |
-| `LOG_LEVEL` | `info` | Server log level. Valid values are `info`, `warn`, `warning`, `error`, `debug`. |
-| `LOG_HEALTH_CHECKS` | `true` | Whether or not to log http requests on the `/healthz`, `/health`, `/livez`, `/readyz` endpoints. |
+| `THUMBNAIL_INTERVAL` | `6h` | How often the thumbnail generator regenerates all thumbnails |
+| `LOG_LEVEL` | `info` | Server log level (`debug`, `info`, `warn`, `error`) |
+| `LOG_STATIC_FILES` | `false` | Log static file requests |
+| `LOG_HEALTH_CHECKS` | `true` | Log health check endpoint requests |
 
-### Acceptable Interval Values
+### Boolean Environment Variables
 
-Both `INDEX_INTERVAL` and `THUMBNAIL_INTERVAL` use Go's `time.ParseDuration` function, which accepts the following format:
+Boolean environment variables accept the following values:
+- True: `true`, `1`, `t`, `T`, `TRUE`
+- False: `false`, `0`, `f`, `F`, `FALSE`
 
-A duration string is a sequence of decimal numbers, each with an optional fraction and a unit suffix.
+### Duration Values
 
-**Valid unit suffixes:**
+`INDEX_INTERVAL` and `THUMBNAIL_INTERVAL` use Go's duration format:
 
 | Unit | Suffix | Example |
 |------|--------|---------|
 | Nanoseconds | `ns` | `500ns` |
-| Microseconds | `µs` or `us` | `100us` |
+| Microseconds | `us` | `100us` |
 | Milliseconds | `ms` | `500ms` |
 | Seconds | `s` | `30s` |
 | Minutes | `m` | `30m` |
 | Hours | `h` | `6h` |
 
-#### Examples
-
+Examples:
 ```bash
-# Practical examples for thumbnail regeneration:
 THUMBNAIL_INTERVAL=30m      # Every 30 minutes
-THUMBNAIL_INTERVAL=1h       # Every 1 hour
-THUMBNAIL_INTERVAL=2h       # Every 2 hours
 THUMBNAIL_INTERVAL=6h       # Every 6 hours (default)
-THUMBNAIL_INTERVAL=12h      # Every 12 hours
-THUMBNAIL_INTERVAL=24h      # Every 24 hours (once a day)
-
-# Combined units:
 THUMBNAIL_INTERVAL=1h30m    # Every 1 hour and 30 minutes
-THUMBNAIL_INTERVAL=2h30m    # Every 2 hours and 30 minutes
-
-# With fractions:
 THUMBNAIL_INTERVAL=1.5h     # Every 1.5 hours (90 minutes)
-THUMBNAIL_INTERVAL=0.5h     # Every 30 minutes
-
-# Technically valid but not practical for this use case:
-THUMBNAIL_INTERVAL=3600s    # Every 3600 seconds (1 hour)
-THUMBNAIL_INTERVAL=86400s   # Every 86400 seconds (24 hours)
 ```
 
-#### Invalid Examples
-
+Invalid formats:
 ```bash
-# These will NOT work:
 THUMBNAIL_INTERVAL=6        # Missing unit
-THUMBNAIL_INTERVAL=6hours   # Invalid unit (must be 'h')
 THUMBNAIL_INTERVAL=1d       # Days not supported
-THUMBNAIL_INTERVAL=1w       # Weeks not supported
 ```
 
 #### Recommended Values
@@ -155,19 +144,202 @@ THUMBNAIL_INTERVAL=1w       # Weeks not supported
 | Small library (< 1000 files) | `6h` |
 | Medium library (1000-10000 files) | `12h` |
 | Large library (> 10000 files) | `24h` |
-| Disable periodic regeneration | Set very high like `8760h` (1 year) |
+
+## Monitoring
+
+Media Viewer exposes Prometheus metrics on a separate port (default: 9090) for monitoring application health and performance.
+
+### Endpoints
+
+| Endpoint | Port | Description |
+|----------|------|-------------|
+| `/metrics` | 9090 | Prometheus metrics |
+| `/health` | 9090 | Health check for metrics server |
+| `/health` | 8080 | Application health check |
+| `/healthz` | 8080 | Kubernetes liveness probe |
+| `/readyz` | 8080 | Kubernetes readiness probe |
+| `/livez` | 8080 | Kubernetes liveness probe (alias) |
+
+### Available Metrics
+
+The following metric categories are exposed:
+
+| Category | Prefix | Description |
+|----------|--------|-------------|
+| HTTP | `media_viewer_http_*` | Request counts, latency, in-flight requests |
+| Database | `media_viewer_db_*` | Query counts, latency, connection pool |
+| Indexer | `media_viewer_indexer_*` | Run counts, duration, files processed |
+| Thumbnails | `media_viewer_thumbnail_*` | Generation counts, cache hits/misses, cache size |
+| Scanner | `media_viewer_scanner_*` | File system operations, watcher events |
+| Transcoder | `media_viewer_transcoder_*` | Job counts, duration |
+| Authentication | `media_viewer_auth_*` | Login attempts, active sessions |
+| Media Library | `media_viewer_media_*` | File counts by type, folders, favorites, tags |
+
+### Prometheus Configuration
+
+Add the following to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'media-viewer'
+    static_configs:
+      - targets: ['media-viewer:9090']
+    scrape_interval: 15s
+```
+
+### Example Queries
+
+```promql
+# Request rate by endpoint
+sum(rate(media_viewer_http_requests_total[5m])) by (path)
+
+# P95 response time
+histogram_quantile(0.95, sum(rate(media_viewer_http_request_duration_seconds_bucket[5m])) by (le))
+
+# HTTP error rate
+sum(rate(media_viewer_http_requests_total{status=~"5.."}[5m])) / sum(rate(media_viewer_http_requests_total[5m]))
+
+# Thumbnail cache hit rate
+media_viewer_thumbnail_cache_hits_total / (media_viewer_thumbnail_cache_hits_total + media_viewer_thumbnail_cache_misses_total)
+
+# Database query latency by operation
+histogram_quantile(0.95, sum(rate(media_viewer_db_query_duration_seconds_bucket[5m])) by (le, operation))
+```
+
+### Alerting
+
+Example alerting rules for Prometheus Alertmanager:
+
+```yaml
+groups:
+  - name: media-viewer
+    rules:
+      - alert: MediaViewerHighErrorRate
+        expr: |
+          sum(rate(media_viewer_http_requests_total{status=~"5.."}[5m])) 
+          / sum(rate(media_viewer_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP error rate"
+
+      - alert: MediaViewerHighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(media_viewer_http_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency"
+
+      - alert: MediaViewerDown
+        expr: up{job="media-viewer"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Media Viewer is down"
+```
+
+## API Endpoints
+
+### Public Endpoints (No Authentication)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/healthz` | Kubernetes health check |
+| GET | `/livez` | Kubernetes liveness probe |
+| GET | `/readyz` | Kubernetes readiness probe |
+| GET | `/version` | Application version information |
+
+### Authentication Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/auth/setup-required` | Check if initial setup is needed |
+| POST | `/api/auth/setup` | Create initial user account |
+| POST | `/api/auth/login` | Authenticate user |
+| POST | `/api/auth/logout` | End user session |
+| GET | `/api/auth/check` | Verify authentication status |
+
+### Protected API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/files` | List directory contents |
+| GET | `/api/media` | Get media files in directory |
+| GET | `/api/file/{path}` | Get file content |
+| GET | `/api/thumbnail/{path}` | Get file thumbnail |
+| GET | `/api/search` | Search media library |
+| GET | `/api/search/suggestions` | Get search autocomplete suggestions |
+| GET | `/api/stats` | Get library statistics |
+| POST | `/api/reindex` | Trigger media re-indexing |
+
+### Favorites
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/favorites` | List all favorites |
+| POST | `/api/favorites` | Add favorite |
+| DELETE | `/api/favorites` | Remove favorite |
+| GET | `/api/favorites/check` | Check if path is favorited |
+
+### Tags
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tags` | List all tags |
+| GET | `/api/tags/file` | Get tags for a file |
+| POST | `/api/tags/file` | Add tag to file |
+| DELETE | `/api/tags/file` | Remove tag from file |
+| POST | `/api/tags/file/set` | Set all tags for a file |
+| POST | `/api/tags/batch` | Get tags for multiple files |
+| GET | `/api/tags/{tag}` | Get files with tag |
+| DELETE | `/api/tags/{tag}` | Delete tag |
+| PUT | `/api/tags/{tag}` | Rename tag |
+
+### Thumbnails
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/thumbnail/{path}` | Get thumbnail |
+| DELETE | `/api/thumbnail/{path}` | Invalidate thumbnail |
+| POST | `/api/thumbnails/invalidate` | Invalidate all thumbnails |
+| POST | `/api/thumbnails/rebuild` | Rebuild all thumbnails |
+| GET | `/api/thumbnails/status` | Get thumbnail generator status |
+
+### Playlists
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/playlists` | List all playlists |
+| GET | `/api/playlist/{name}` | Get playlist contents |
+
+### Video Streaming
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/stream/{path}` | Stream video (with transcoding if needed) |
+| GET | `/api/stream-info/{path}` | Get stream information |
 
 ## Development Setup
 
 ### Prerequisites
 
-- Go 1.25 or later (built with 1.25, might work with earlier versions)
+- Go 1.21 or later
 - FFmpeg
 - GCC (for SQLite CGO compilation)
 
 ### Running Locally
 
-1. Clone the repository.
+1. Clone the repository:
+
+```bash
+git clone https://github.com/djryanj/media-viewer.git
+cd media-viewer
+```
 
 2. Install dependencies:
 
@@ -216,7 +388,7 @@ If using VS Code with the Dev Containers extension:
 
 ### Building
 
-### Docker
+#### Docker
 
 Build locally:
 ```bash
@@ -228,12 +400,7 @@ Build with cross-compilation optimization (faster multi-arch builds):
 docker build -f Dockerfile.cross -t media-viewer:local .
 ```
 
-### Multi-architecture
-
-The GitHub Actions workflow automatically builds for both amd64 and arm64:
-- PRs: Only amd64 (for speed)
-- Main branch: Both architectures
-- Tags: Both architectures + SBOM generation
+#### Binary
 
 ```bash
 # Build the main application
@@ -242,6 +409,13 @@ go build -tags 'fts5' -o media-viewer .
 # Build the password reset utility
 go build -o resetpw ./cmd/resetpw
 ```
+
+#### Multi-architecture
+
+The GitHub Actions workflow automatically builds for both amd64 and arm64:
+- PRs: Only amd64 (for speed)
+- Main branch: Both architectures
+- Tags: Both architectures + SBOM generation
 
 ## Password Reset
 
@@ -259,10 +433,10 @@ docker exec -it media-viewer ./resetpw reset
 docker-compose exec media-viewer ./resetpw reset
 
 # Locally (set DATABASE_DIR if not using default)
-DATABASE_DIR=/path/to/cache ./resetpw reset
+DATABASE_DIR=/path/to/database ./resetpw reset
 ```
 
-You'll be prompted for the username and new password.
+You will be prompted for the username and new password.
 
 Create a new user:
 
@@ -274,7 +448,7 @@ docker exec -it media-viewer ./resetpw create
 
 If you cannot use the resetpw utility, you can reset the password directly in SQLite.
 
-1. Generate a bcrypt hash for your new password. You can use an online bcrypt generator or this command:
+1. Generate a bcrypt hash for your new password:
 
 ```bash
 # Using htpasswd (if available)
@@ -287,7 +461,7 @@ python3 -c "import bcrypt; print(bcrypt.hashpw(b'yournewpassword', bcrypt.gensal
 2. Update the database:
 
 ```bash
-# Find your cache volume location
+# Find your database volume location
 docker volume inspect media-database
 
 # Or exec into the container
@@ -303,34 +477,15 @@ sqlite3 /database/media.db "UPDATE users SET password_hash='YOUR_BCRYPT_HASH' WH
 sqlite3 /database/media.db "DELETE FROM sessions;"
 ```
 
-### Complete Password Reset Example
-
-```bash
-# Enter the container
-docker exec -it media-viewer sh
-
-# Inside the container, reset password to "newpassword123"
-# First, generate hash using the resetpw tool, or manually:
-sqlite3 /database/media.db "UPDATE users SET password_hash='\$2a\$10\$N9qo8uLOickgx2ZMRZoMy.MqrqBuBi.zu1r/s7OLQX1iDnXo6S0my' WHERE username='admin';"
-
-# Clear sessions
-sqlite3 /database/media.db "DELETE FROM sessions;"
-
-# Exit container
-exit
-```
-
-Note: The example hash above is for "newpassword123". Generate your own hash for security.
-
 ## Supported Formats
 
 ### Images
-jpg, jpeg, png, gif, bmp, webp, svg, ico, tiff, heic
+jpg, jpeg, png, gif, bmp, webp, svg, ico, tiff, heic, heif, avif, jxl, raw, cr2, nef, arw, dng
 
 ### Videos
 mp4, mkv, avi, mov, wmv, flv, webm, m4v, mpeg, mpg, 3gp, ts
 
-Videos not natively supported by browsers (like mkv) are automatically transcoded to mp4 for playback.
+Videos not natively supported by browsers (such as mkv) are automatically transcoded to mp4 for playback.
 
 ### Playlists
 Windows Media Player playlists (.wpl)
@@ -362,7 +517,7 @@ docker-compose up -d
 ```bash
 git clone https://github.com/djryanj/media-viewer.git
 cd media-viewer
-go build -tags 'fts5' -o media-viewer ./cmd/server
+go build -tags 'fts5' -o media-viewer .
 ./media-viewer
 ```
 
@@ -372,36 +527,39 @@ go build -tags 'fts5' -o media-viewer ./cmd/server
 
 To create a new release:
 
-1. **Update version information** (if needed)
-2. **Create and push a tag**:
+1. Update version information (if needed)
+2. Create and push a tag:
    ```bash
    git tag -a v1.0.0 -m "Release v1.0.0"
    git push origin v1.0.0
    ```
-3. **GitHub Actions will automatically**:
+3. GitHub Actions will automatically:
    - Build multi-platform Docker images (amd64, arm64)
    - Push images to `ghcr.io/djryanj/media-viewer`
    - Tag with version number and `latest`
 
 ### Available Tags
 
-- `latest` - Latest stable release from main branch
-- `v1.0.0` - Specific version tag
-- `v1.0` - Latest patch version of 1.0
-- `v1` - Latest minor version of 1.x
-- `sha-abc1234` - Specific commit build
+| Tag | Description |
+|-----|-------------|
+| `latest` | Latest stable release from main branch |
+| `v1.0.0` | Specific version tag |
+| `v1.0` | Latest patch version of 1.0.x |
+| `v1` | Latest minor version of 1.x.x |
+| `sha-abc1234` | Specific commit build |
 
 ### Version Information
 
 The application includes build information accessible via:
-- API endpoint: `GET /api/version`
-- Logs on startup
+- API endpoint: `GET /version`
+- Startup logs
 
 Build information includes:
 - Version (from git tag or "dev")
-- Commit hash
+- Git commit hash
 - Build timestamp
 - Go version
+- OS and architecture
 
 ## License
 
