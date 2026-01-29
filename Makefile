@@ -33,7 +33,7 @@ run:
 
 dev:
 	@echo "Starting development server..."
-	air
+	LOG_LEVEL=debug air
 
 test:
 	@echo "Running tests..."
