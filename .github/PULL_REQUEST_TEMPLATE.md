@@ -6,30 +6,30 @@
 
 <!-- Mark the appropriate option with an "x" -->
 
-- [ ] 🚀 `feat`: New feature
-- [ ] 🐛 `fix`: Bug fix
-- [ ] 📚 `docs`: Documentation only changes
-- [ ] 🎨 `style`: Changes that don't affect code meaning (formatting, etc)
-- [ ] ♻️ `refactor`: Code change that neither fixes a bug nor adds a feature
-- [ ] ⚡ `perf`: Performance improvement
-- [ ] 🧪 `test`: Adding or updating tests
-- [ ] 🔧 `chore`: Changes to build process or auxiliary tools
-- [ ] 🔨 `build`: Changes that affect the build system or dependencies
-- [ ] 💥 `breaking`: Breaking change (add `!` after type, e.g., `feat!:`)
+- [ ] `feat`: New feature
+- [ ] `fix`: Bug fix
+- [ ] `docs`: Documentation only changes
+- [ ] `style`: Changes that don't affect code meaning (formatting, etc)
+- [ ] `refactor`: Code change that neither fixes a bug nor adds a feature
+- [ ] `perf`: Performance improvement
+- [ ] `test`: Adding or updating tests
+- [ ] `chore`: Changes to build process or auxiliary tools
+- [ ] `build`: Changes that affect the build system or dependencies
+- [ ] `breaking`: Breaking change (add `!` after type, e.g., `feat!:`)
 
 ## Component
 
 <!-- Which component does this PR affect? -->
 
-- [ ] 📦 Database
-- [ ] 🎨 Frontend/UI
-- [ ] 🔌 API/Handlers
-- [ ] 🖼️ Media Processing (thumbnails, transcoding)
-- [ ] 🔍 Search/Indexing
-- [ ] 🏷️ Tags
-- [ ] ⭐ Favorites
-- [ ] 🐳 Docker
-- [ ] 📖 Documentation
+- [ ] Database
+- [ ] Frontend/UI
+- [ ] API/Handlers
+- [ ] Media Processing (thumbnails, transcoding)
+- [ ] Search/Indexing
+- [ ] Tags
+- [ ] Favorites
+- [ ] Docker
+- [ ] Documentation
 - [ ] Other: _____
 
 ## Checklist
