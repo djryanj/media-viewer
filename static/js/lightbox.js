@@ -19,6 +19,7 @@ const Lightbox = {
         this.cacheElements();
         this.createHotZones();
         this.createLoadingIndicator();
+        this.createAutoplayToggle();
         this.bindEvents();
     },
 
@@ -36,6 +37,58 @@ const Lightbox = {
             pinBtn: document.getElementById('lightbox-pin'),
             tagBtn: document.getElementById('lightbox-tag'),
         };
+    },
+
+        /**
+     * Create the autoplay toggle button
+     */
+    createAutoplayToggle() {
+        const toggle = document.createElement('button');
+        toggle.className = 'lightbox-autoplay';
+        toggle.id = 'lightbox-autoplay';
+        toggle.title = 'Toggle video autoplay (A)';
+        this.updateAutoplayButton(toggle);
+
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleAutoplay();
+        });
+
+        // Insert after tag button or pin button
+        const info = this.elements.lightbox.querySelector('.lightbox-info');
+        if (info) {
+            info.parentNode.insertBefore(toggle, info);
+        } else {
+            this.elements.lightbox.appendChild(toggle);
+        }
+
+        this.elements.autoplayBtn = toggle;
+    },
+
+    /**
+     * Update autoplay button appearance
+     */
+    updateAutoplayButton(btn = this.elements.autoplayBtn) {
+        if (!btn) return;
+        
+        const isEnabled = Preferences.isVideoAutoplayEnabled();
+        btn.classList.toggle('enabled', isEnabled);
+        btn.innerHTML = isEnabled ? 'advancement' : 'advancement'; // Using symbols
+        btn.innerHTML = isEnabled ? '▶' : '⏸';
+        btn.title = isEnabled ? 'Autoplay ON (A)' : 'Autoplay OFF (A)';
+    },
+
+    /**
+     * Toggle autoplay preference
+     */
+    toggleAutoplay() {
+        const newValue = Preferences.toggleVideoAutoplay();
+        this.updateAutoplayButton();
+        
+        // Show feedback
+        if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+            Gallery.showToast(newValue ? 'Autoplay enabled' : 'Autoplay disabled');
+        }
     },
 
     createHotZones() {
@@ -99,6 +152,11 @@ const Lightbox = {
                 case 't':
                 case 'T':
                     this.openTagModal();
+                    break;
+                case 'a':
+                case 'A':
+                    // NEW: Toggle autoplay with 'A' key
+                    this.toggleAutoplay();
                     break;
             }
         });
@@ -269,6 +327,49 @@ const Lightbox = {
         this.elements.video.classList.remove('loading');
     },
 
+    loadVideo(file, loadId) {
+        this.showLoading();
+        
+        const video = this.elements.video;
+        const videoUrl = `/api/stream/${file.path}`;
+        
+        // Set up load handlers before setting src
+        const onCanPlay = () => {
+            if (loadId !== this.currentLoadId) {
+                return;
+            }
+            video.classList.remove('hidden');
+            this.hideLoading();
+            
+            // Check autoplay preference
+            if (Preferences.isVideoAutoplayEnabled()) {
+                video.play().catch(err => {
+                    console.log('Autoplay prevented by browser:', err);
+                });
+            }
+            
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('error', onError);
+        };
+
+        const onError = (e) => {
+            if (loadId !== this.currentLoadId) {
+                return;
+            }
+            console.error('Error loading video:', e);
+            this.hideLoading();
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('error', onError);
+        };
+
+        video.addEventListener('canplay', onCanPlay);
+        video.addEventListener('error', onError);
+
+        video.src = videoUrl;
+        video.classList.remove('hidden');
+        video.load();
+    },
+
     showMedia() {
         if (this.items.length === 0) return;
 
@@ -291,8 +392,14 @@ const Lightbox = {
         this.elements.image.classList.add('hidden');
         this.elements.video.classList.add('hidden');
 
-        // Toggle video mode class on lightbox for CSS adjustments
-        this.elements.lightbox.classList.toggle('video-mode', file.type === 'video');
+        // Toggle video mode class and autoplay button visibility
+        const isVideo = file.type === 'video';
+        this.elements.lightbox.classList.toggle('video-mode', isVideo);
+        
+        // Show/hide autoplay button based on media type
+        if (this.elements.autoplayBtn) {
+            this.elements.autoplayBtn.classList.toggle('hidden', !isVideo);
+        }
 
         if (file.type === 'image') {
             this.loadImage(file, loadId);
@@ -367,6 +474,14 @@ const Lightbox = {
             }
             video.classList.remove('hidden');
             this.hideLoading();
+            
+            // Check autoplay preference
+            if (Preferences.isVideoAutoplayEnabled()) {
+                video.play().catch(err => {
+                    console.log('Autoplay prevented by browser:', err);
+                });
+            }
+            
             video.removeEventListener('canplay', onCanPlay);
             video.removeEventListener('error', onError);
         };
@@ -388,8 +503,6 @@ const Lightbox = {
         video.classList.remove('hidden');
         video.load();
     },
-
-    // ==================== PRELOADING ====================
 
     clearPreloadCache() {
         // Clear all preloaded images to free memory
