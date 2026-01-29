@@ -3,7 +3,7 @@ const App = {
         currentPath: '',
         listing: null,
         mediaFiles: [],
-        currentSort: { field: 'name', order: 'asc' },
+        currentSort: { field: 'name', order: 'asc' }, // Will be overwritten by Preferences
         currentFilter: '',
         currentPage: 1,
         pageSize: 100,
@@ -52,33 +52,38 @@ const App = {
         });
     },
 
-async checkAuth() {
-    try {
-        const response = await fetch('/api/auth/check');
-        const data = await response.json();
+    async checkAuth() {
+        try {
+            const response = await fetch('/api/auth/check');
+            const data = await response.json();
 
-        if (!data.success) {
+            if (!data.success) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            this.state.username = data.username;
+            if (this.elements.currentUser) {
+                this.elements.currentUser.textContent = data.username;
+            }
+
+            // Initialize preferences BEFORE loading directory
+            Preferences.init();
+            
+            // Apply sort preferences to state
+            this.state.currentSort = Preferences.getSort();
+
+            // Continue with initialization
+            this.handleInitialPath();
+            this.loadStats();
+            Search.init();
+            Favorites.init();
+            Tags.init();
+        } catch (error) {
+            console.error('Auth check failed:', error);
             window.location.href = '/login.html';
-            return;
         }
-
-        this.state.username = data.username;
-        if (this.elements.currentUser) {
-            this.elements.currentUser.textContent = data.username;
-        }
-
-        // Continue with initialization
-        this.handleInitialPath();
-        this.loadStats();
-        Search.init();
-        Favorites.init();
-        Tags.init();
-    } catch (error) {
-        console.error('Auth check failed:', error);
-        window.location.href = '/login.html';
-    }
-},
-
+    },
 
     async logout() {
         try {
@@ -268,6 +273,10 @@ async checkAuth() {
 
     handleSortChange() {
         this.state.currentSort.field = this.elements.sortField.value;
+        
+        // Save preference
+        Preferences.set('sortField', this.state.currentSort.field);
+        
         this.state.currentPage = 1;
         this.loadDirectory(this.state.currentPath);
     },
@@ -281,6 +290,10 @@ async checkAuth() {
             this.state.currentSort.order = 'asc';
             icon.classList.remove('desc');
         }
+        
+        // Save preference
+        Preferences.set('sortOrder', this.state.currentSort.order);
+        
         this.state.currentPage = 1;
         this.loadDirectory(this.state.currentPath);
     },

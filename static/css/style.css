@@ -2404,24 +2404,21 @@ select:focus {
     transition: opacity 0.15s ease-in-out;
 }
 
+
 /* When displaying a video, adjust hot zones to avoid video controls */
 .lightbox.video-mode .lightbox-hot-zone {
-    /* Only cover the top 60% of the lightbox, leaving bottom for video controls */
+    /* Only cover the top portion, leaving bottom for video controls */
     bottom: 40%;
+    width: 15%;
+    min-width: 50px;
+    max-width: 100px;
 }
 
-/* On mobile, make the adjustment more aggressive since controls are larger */
+/* On mobile/touch, make the adjustment more aggressive */
 @media (hover: none) and (pointer: coarse) {
     .lightbox.video-mode .lightbox-hot-zone {
         bottom: 50%;
     }
-}
-
-/* Alternative: Make hot zones narrower in video mode to give more control access */
-.lightbox.video-mode .lightbox-hot-zone {
-    width: 15%;
-    min-width: 50px;
-    max-width: 100px;
 }
 
 /* Ensure video controls are always accessible */
@@ -2439,4 +2436,51 @@ select:focus {
     height: 80px;
     pointer-events: none;
     /* This is just a visual guide, doesn't block anything */
+}
+
+/* ===========================================
+   LIGHTBOX AUTOPLAY TOGGLE
+   =========================================== */
+
+.lightbox-autoplay {
+    position: absolute;
+    top: 0.5rem;
+    left: 7rem;
+    /* Position after pin and tag buttons */
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition), color var(--transition);
+}
+
+.lightbox-autoplay:hover,
+.lightbox-autoplay:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.lightbox-autoplay.enabled {
+    color: #4ecdc4;
+    /* Teal color to indicate active */
+}
+
+.lightbox-autoplay.hidden {
+    display: none;
+}
+
+/* Desktop adjustments */
+@media (min-width: 900px) {
+    .lightbox-autoplay {
+        left: 8rem;
+        width: 44px;
+        height: 44px;
+        font-size: 1.5rem;
+    }
 }
