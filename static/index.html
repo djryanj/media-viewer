@@ -16,6 +16,7 @@
                 <h1>Media Viewer</h1>
                 <div class="user-controls">
                     <span class="current-user" id="current-user"></span>
+                    <button class="btn-icon" id="clear-cache-btn" title="Clear thumbnail cache">🗑️</button>
                     <button class="btn-icon" id="logout-btn" title="Logout">⏻</button>
                 </div>
             </div>
@@ -172,6 +173,21 @@
                             <span class="no-tags">No tags</span>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add before closing </body> tag -->
+        <div class="confirm-modal hidden" id="confirm-modal">
+            <div class="confirm-modal-content">
+                <div class="confirm-modal-icon" id="confirm-modal-icon">🗑️</div>
+                <h3 id="confirm-modal-title">Clear Thumbnail Cache?</h3>
+                <p id="confirm-modal-message">
+                    This will delete all generated thumbnails. They will be regenerated as you browse.
+                </p>
+                <div class="confirm-modal-buttons">
+                    <button class="btn" id="confirm-modal-cancel">Cancel</button>
+                    <button class="btn btn-danger" id="confirm-modal-confirm">Clear Cache</button>
                 </div>
             </div>
         </div>

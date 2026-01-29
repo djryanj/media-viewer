@@ -20,7 +20,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +30,7 @@ import (
 	"media-viewer/internal/handlers"
 	"media-viewer/internal/indexer"
 	"media-viewer/internal/logging"
+	"media-viewer/internal/media"
 	"media-viewer/internal/middleware"
 	"media-viewer/internal/startup"
 	"media-viewer/internal/transcoder"
@@ -53,11 +53,6 @@ func main() {
 	if err != nil {
 		startup.LogFatal("Failed to initialize database: %v", err)
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			log.Printf("error closing database: %v", err)
-		}
-	}()
 	startup.LogDatabaseInit(time.Since(dbStart))
 
 	// Clean up expired sessions periodically
@@ -75,6 +70,15 @@ func main() {
 	startup.LogTranscoderInit(config.TranscodingEnabled)
 	trans := transcoder.New(config.TranscodeDir, config.TranscodingEnabled)
 
+	// Initialize thumbnail generator
+	thumbGen := media.NewThumbnailGenerator(
+		config.ThumbnailDir,
+		config.MediaDir,
+		config.ThumbnailsEnabled,
+		db,
+		config.ThumbnailInterval,
+	)
+
 	// Initialize indexer
 	startup.LogIndexerInit(config.IndexInterval)
 	idx := indexer.New(db, config.MediaDir, config.IndexInterval)
@@ -87,8 +91,12 @@ func main() {
 	}()
 	startup.LogIndexerStarted()
 
+	// Start thumbnail generator in background
+	thumbGen.Start()
+	logging.Info("Thumbnail generator started")
+
 	// Initialize handlers
-	h := handlers.New(db, idx, trans, config)
+	h := handlers.New(db, idx, trans, thumbGen, config)
 
 	// Setup router
 	router := setupRouter(h)
@@ -118,14 +126,20 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Channel to signal shutdown completion
+	shutdownComplete := make(chan struct{})
+
 	// Start graceful shutdown handler
-	go handleShutdown(srv, idx, trans)
+	go handleShutdown(srv, db, idx, trans, thumbGen, shutdownComplete)
 
 	// Start server
 	startup.LogServerStarted(config.Port, time.Since(startTime))
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		startup.LogFatal("Server error: %v", err)
 	}
+
+	// Wait for shutdown to complete
+	<-shutdownComplete
 }
 
 func setupRouter(h *handlers.Handlers) *mux.Router {
@@ -181,10 +195,19 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	// Static files
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))
 
+	// Thumbnails
+	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")
+	api.HandleFunc("/thumbnail/{path:.*}", h.InvalidateThumbnail).Methods("DELETE")
+	api.HandleFunc("/thumbnails/invalidate", h.InvalidateAllThumbnails).Methods("POST")
+	api.HandleFunc("/thumbnails/rebuild", h.RebuildAllThumbnails).Methods("POST")
+	api.HandleFunc("/thumbnails/status", h.GetThumbnailStatus).Methods("GET")
+
 	return r
 }
 
-func handleShutdown(srv *http.Server, idx *indexer.Indexer, trans *transcoder.Transcoder) {
+func handleShutdown(srv *http.Server, db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, done chan struct{}) {
+	defer close(done)
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigChan
@@ -193,6 +216,10 @@ func handleShutdown(srv *http.Server, idx *indexer.Indexer, trans *transcoder.Tr
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	startup.LogShutdownStep("Stopping thumbnail generator")
+	thumbGen.Stop()
+	startup.LogShutdownStepComplete("Thumbnail generator stopped")
 
 	startup.LogShutdownStep("Stopping indexer")
 	idx.Stop()
@@ -207,6 +234,13 @@ func handleShutdown(srv *http.Server, idx *indexer.Indexer, trans *transcoder.Tr
 		logging.Warn("Server shutdown error: %v", err)
 	} else {
 		startup.LogShutdownStepComplete("HTTP server stopped")
+	}
+
+	startup.LogShutdownStep("Closing database")
+	if err := db.Close(); err != nil {
+		logging.Warn("Database close error: %v", err)
+	} else {
+		startup.LogShutdownStepComplete("Database closed")
 	}
 
 	startup.LogShutdownComplete()

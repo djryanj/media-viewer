@@ -2569,3 +2569,102 @@ select:focus {
 .player-modal.landscape-mode .playlist-tag {
     font-size: 0.5625rem;
 }
+
+/* ===========================================
+   CACHE CLEAR BUTTON
+   =========================================== */
+
+#clear-cache-btn {
+    font-size: 1rem;
+    width: 36px;
+    height: 36px;
+}
+
+#clear-cache-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+/* Confirmation that it's a destructive action on hover */
+@media (hover: hover) {
+    #clear-cache-btn:hover {
+        color: white;
+    }
+}
+
+/* Mobile touch feedback */
+@media (hover: none) and (pointer: coarse) {
+    #clear-cache-btn:active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+    }
+}
+
+/* ===========================================
+   CONFIRMATION MODAL
+   =========================================== */
+
+.confirm-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3000;
+}
+
+.confirm-modal.hidden {
+    display: none;
+}
+
+.confirm-modal-content {
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    max-width: 400px;
+    width: calc(100% - 2rem);
+    text-align: center;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+}
+
+.confirm-modal-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.confirm-modal-content h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.confirm-modal-content p {
+    margin: 0 0 1.5rem 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.confirm-modal-buttons {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+}
+
+.confirm-modal-buttons .btn {
+    min-width: 100px;
+}
+
+.btn-danger {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}

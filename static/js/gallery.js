@@ -24,15 +24,7 @@ const Gallery = {
     },
 
     createGalleryItem(item) {
-        if (item.type === 'folder') {
-            console.log('FOLDER FOUND:', {
-                name: item.name,
-                type: item.type,
-                thumbnailUrl: item.thumbnailUrl,
-                path: item.path
-            });
-        }
-        
+
         const div = document.createElement('div');
         div.className = 'gallery-item';
         div.dataset.path = item.path;

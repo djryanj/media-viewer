@@ -19,12 +19,12 @@ type Handlers struct {
 }
 
 // New creates a new Handlers instance with the given dependencies.
-func New(db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, config *startup.Config) *Handlers {
+func New(db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, config *startup.Config) *Handlers {
 	return &Handlers{
 		db:         db,
 		indexer:    idx,
 		transcoder: trans,
-		thumbGen:   media.NewThumbnailGenerator(config.ThumbnailDir, config.MediaDir, config.ThumbnailsEnabled, db),
+		thumbGen:   thumbGen,
 		mediaDir:   config.MediaDir,
 		cacheDir:   config.CacheDir,
 	}
