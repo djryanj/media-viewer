@@ -24,13 +24,13 @@ echo -e "${GREEN}[SUCCESS] ffmpeg and sqlite installed${NC}"
 echo -e "${BLUE}[INFO] Setting up directories...${NC}"
 
 sudo mkdir -p /media /cache /database
-sudo chown -R vscode:vscode /cache
+sudo chown -R node:node /cache
 sudo chmod -R 755 /cache
-sudo chown -R vscode:vscode /database
+sudo chown -R node:node /database
 sudo chmod -R 755 /database
 
 if [ -d "/media" ]; then
-    sudo chown -R vscode:vscode /media 2>/dev/null || true
+    sudo chown -R node:node /media 2>/dev/null || true
     sudo chmod -R 755 /media 2>/dev/null || true
 fi
 
@@ -43,7 +43,7 @@ if touch /cache/.write-test 2>/dev/null; then
     echo -e "${GREEN}[SUCCESS] Cache directory is writable${NC}"
 else
     echo -e "${YELLOW}[WARN] Cache directory is not writable - attempting fix...${NC}"
-    sudo chown -R vscode:vscode /cache
+    sudo chown -R node:node /cache
     sudo chmod -R 777 /cache
     if touch /cache/.write-test 2>/dev/null; then
         rm /cache/.write-test
@@ -60,7 +60,7 @@ if touch /database/.write-test 2>/dev/null; then
     echo -e "${GREEN}[SUCCESS] database directory is writable${NC}"
 else
     echo -e "${YELLOW}[WARN] database directory is not writable - attempting fix...${NC}"
-    sudo chown -R vscode:vscode /database
+    sudo chown -R node:node /database
     sudo chmod -R 777 /database
     if touch /database/.write-test 2>/dev/null; then
         rm /database/.write-test
@@ -101,13 +101,21 @@ tmp_dir = "tmp"
   cmd = "go build -tags 'fts5' -o ./tmp/main ."
   bin = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
-  exclude_dir = ["tmp", "sample-media", "vendor"]
+  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules"]
   delay = 1000
 
 [misc]
   clean_on_exit = true
 EOF
     echo -e "${GREEN}[SUCCESS] air configuration created${NC}"
+fi
+
+# Install npm stuff for frontend (if applicable)
+if [ -f "static/package.json" ]; then
+    echo -e "${BLUE}[INFO] Installing npm dependencies...${NC}"
+    cd static
+    npm install
+    echo -e "${GREEN}[SUCCESS] npm dependencies installed${NC}"
 fi
 
 echo ""

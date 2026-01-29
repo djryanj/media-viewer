@@ -5,7 +5,7 @@ tmp_dir = "tmp"
   cmd = "go build -tags 'fts5' -o ./tmp/main ."
   entrypoint = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
-  exclude_dir = ["tmp", "sample-media", "vendor"]
+  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules"]
   delay = 1000
 
 [misc]
