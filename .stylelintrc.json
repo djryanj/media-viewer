@@ -1,0 +1,39 @@
+{
+    "extends": [
+        "stylelint-config-standard"
+    ],
+    "rules": {
+        "selector-class-pattern": null,
+        "custom-property-pattern": null,
+        "declaration-block-no-redundant-longhand-properties": null,
+        "no-descending-specificity": "warn",
+        "color-function-notation": "modern",
+        "alpha-value-notation": "percentage",
+        "property-no-vendor-prefix": [
+            true,
+            {
+                "ignoreProperties": [
+                    "backdrop-filter",
+                    "overflow-scrolling"
+                ]
+            }
+        ],
+        "selector-no-vendor-prefix": [
+            true,
+            {
+                "ignoreSelectors": [
+                    "::-webkit-scrollbar"
+                ]
+            }
+        ],
+        "declaration-property-value-no-unknown": true,
+        "font-family-no-missing-generic-family-keyword": [
+            true,
+            {
+                "ignoreFontFamilies": [
+                    "Material Icons"
+                ]
+            }
+        ]
+    }
+}

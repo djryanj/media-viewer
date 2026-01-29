@@ -24,28 +24,28 @@ A lightweight, containerized web application for browsing and viewing images and
 version: '3.8'
 
 services:
-  media-viewer:
-    image: ghcr.io/djryanj/media-viewer:latest
-    ports:
-      - "8080:8080"
-      - "9090:9090"  # Metrics port (optional)
-    volumes:
-      - /path/to/your/media:/media:ro
-      - media-cache:/cache
-      - media-database:/database
-    environment:
-      - MEDIA_DIR=/media
-      - CACHE_DIR=/cache
-      - DATABASE_DIR=/database
-      - PORT=8080
-      - METRICS_PORT=9090
-      - METRICS_ENABLED=true
-      - INDEX_INTERVAL=30m
-    restart: unless-stopped
+    media-viewer:
+        image: ghcr.io/djryanj/media-viewer:latest
+        ports:
+            - '8080:8080'
+            - '9090:9090' # Metrics port (optional)
+        volumes:
+            - /path/to/your/media:/media:ro
+            - media-cache:/cache
+            - media-database:/database
+        environment:
+            - MEDIA_DIR=/media
+            - CACHE_DIR=/cache
+            - DATABASE_DIR=/database
+            - PORT=8080
+            - METRICS_PORT=9090
+            - METRICS_ENABLED=true
+            - INDEX_INTERVAL=30m
+        restart: unless-stopped
 
 volumes:
-  media-cache:
-  media-database:
+    media-cache:
+    media-database:
 ```
 
 2. Update `/path/to/your/media` to point to your media directory.
@@ -89,23 +89,24 @@ docker run -d `
 
 ## Configuration
 
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `MEDIA_DIR` | `/media` | Path to media directory inside container |
-| `CACHE_DIR` | `/cache` | Path to cache directory (thumbnails, transcodes) |
-| `DATABASE_DIR` | `/database` | Path to database directory |
-| `PORT` | `8080` | HTTP server port |
-| `METRICS_PORT` | `9090` | Prometheus metrics server port |
-| `METRICS_ENABLED` | `true` | Enable or disable the metrics server |
-| `INDEX_INTERVAL` | `30m` | How often to re-scan the media directory |
-| `THUMBNAIL_INTERVAL` | `6h` | How often the thumbnail generator regenerates all thumbnails |
-| `LOG_LEVEL` | `info` | Server log level (`debug`, `info`, `warn`, `error`) |
-| `LOG_STATIC_FILES` | `false` | Log static file requests |
-| `LOG_HEALTH_CHECKS` | `true` | Log health check endpoint requests |
+| Environment Variable | Default     | Description                                                  |
+| -------------------- | ----------- | ------------------------------------------------------------ |
+| `MEDIA_DIR`          | `/media`    | Path to media directory inside container                     |
+| `CACHE_DIR`          | `/cache`    | Path to cache directory (thumbnails, transcodes)             |
+| `DATABASE_DIR`       | `/database` | Path to database directory                                   |
+| `PORT`               | `8080`      | HTTP server port                                             |
+| `METRICS_PORT`       | `9090`      | Prometheus metrics server port                               |
+| `METRICS_ENABLED`    | `true`      | Enable or disable the metrics server                         |
+| `INDEX_INTERVAL`     | `30m`       | How often to re-scan the media directory                     |
+| `THUMBNAIL_INTERVAL` | `6h`        | How often the thumbnail generator regenerates all thumbnails |
+| `LOG_LEVEL`          | `info`      | Server log level (`debug`, `info`, `warn`, `error`)          |
+| `LOG_STATIC_FILES`   | `false`     | Log static file requests                                     |
+| `LOG_HEALTH_CHECKS`  | `true`      | Log health check endpoint requests                           |
 
 ### Boolean Environment Variables
 
 Boolean environment variables accept the following values:
+
 - True: `true`, `1`, `t`, `T`, `TRUE`
 - False: `false`, `0`, `f`, `F`, `FALSE`
 
@@ -113,16 +114,17 @@ Boolean environment variables accept the following values:
 
 `INDEX_INTERVAL` and `THUMBNAIL_INTERVAL` use Go's duration format:
 
-| Unit | Suffix | Example |
-|------|--------|---------|
-| Nanoseconds | `ns` | `500ns` |
-| Microseconds | `us` | `100us` |
-| Milliseconds | `ms` | `500ms` |
-| Seconds | `s` | `30s` |
-| Minutes | `m` | `30m` |
-| Hours | `h` | `6h` |
+| Unit         | Suffix | Example |
+| ------------ | ------ | ------- |
+| Nanoseconds  | `ns`   | `500ns` |
+| Microseconds | `us`   | `100us` |
+| Milliseconds | `ms`   | `500ms` |
+| Seconds      | `s`    | `30s`   |
+| Minutes      | `m`    | `30m`   |
+| Hours        | `h`    | `6h`    |
 
 Examples:
+
 ```bash
 THUMBNAIL_INTERVAL=30m      # Every 30 minutes
 THUMBNAIL_INTERVAL=6h       # Every 6 hours (default)
@@ -131,6 +133,7 @@ THUMBNAIL_INTERVAL=1.5h     # Every 1.5 hours (90 minutes)
 ```
 
 Invalid formats:
+
 ```bash
 THUMBNAIL_INTERVAL=6        # Missing unit
 THUMBNAIL_INTERVAL=1d       # Days not supported
@@ -138,12 +141,12 @@ THUMBNAIL_INTERVAL=1d       # Days not supported
 
 #### Recommended Values
 
-| Use Case | Value |
-|----------|-------|
-| Development/Testing | `30m` or `1h` |
-| Small library (< 1000 files) | `6h` |
-| Medium library (1000-10000 files) | `12h` |
-| Large library (> 10000 files) | `24h` |
+| Use Case                          | Value         |
+| --------------------------------- | ------------- |
+| Development/Testing               | `30m` or `1h` |
+| Small library (< 1000 files)      | `6h`          |
+| Medium library (1000-10000 files) | `12h`         |
+| Large library (> 10000 files)     | `24h`         |
 
 ## Monitoring
 
@@ -151,29 +154,29 @@ Media Viewer exposes Prometheus metrics on a separate port (default: 9090) for m
 
 ### Endpoints
 
-| Endpoint | Port | Description |
-|----------|------|-------------|
-| `/metrics` | 9090 | Prometheus metrics |
-| `/health` | 9090 | Health check for metrics server |
-| `/health` | 8080 | Application health check |
-| `/healthz` | 8080 | Kubernetes liveness probe |
-| `/readyz` | 8080 | Kubernetes readiness probe |
-| `/livez` | 8080 | Kubernetes liveness probe (alias) |
+| Endpoint   | Port | Description                       |
+| ---------- | ---- | --------------------------------- |
+| `/metrics` | 9090 | Prometheus metrics                |
+| `/health`  | 9090 | Health check for metrics server   |
+| `/health`  | 8080 | Application health check          |
+| `/healthz` | 8080 | Kubernetes liveness probe         |
+| `/readyz`  | 8080 | Kubernetes readiness probe        |
+| `/livez`   | 8080 | Kubernetes liveness probe (alias) |
 
 ### Available Metrics
 
 The following metric categories are exposed:
 
-| Category | Prefix | Description |
-|----------|--------|-------------|
-| HTTP | `media_viewer_http_*` | Request counts, latency, in-flight requests |
-| Database | `media_viewer_db_*` | Query counts, latency, connection pool |
-| Indexer | `media_viewer_indexer_*` | Run counts, duration, files processed |
-| Thumbnails | `media_viewer_thumbnail_*` | Generation counts, cache hits/misses, cache size |
-| Scanner | `media_viewer_scanner_*` | File system operations, watcher events |
-| Transcoder | `media_viewer_transcoder_*` | Job counts, duration |
-| Authentication | `media_viewer_auth_*` | Login attempts, active sessions |
-| Media Library | `media_viewer_media_*` | File counts by type, folders, favorites, tags |
+| Category       | Prefix                      | Description                                      |
+| -------------- | --------------------------- | ------------------------------------------------ |
+| HTTP           | `media_viewer_http_*`       | Request counts, latency, in-flight requests      |
+| Database       | `media_viewer_db_*`         | Query counts, latency, connection pool           |
+| Indexer        | `media_viewer_indexer_*`    | Run counts, duration, files processed            |
+| Thumbnails     | `media_viewer_thumbnail_*`  | Generation counts, cache hits/misses, cache size |
+| Scanner        | `media_viewer_scanner_*`    | File system operations, watcher events           |
+| Transcoder     | `media_viewer_transcoder_*` | Job counts, duration                             |
+| Authentication | `media_viewer_auth_*`       | Login attempts, active sessions                  |
+| Media Library  | `media_viewer_media_*`      | File counts by type, folders, favorites, tags    |
 
 ### Prometheus Configuration
 
@@ -181,10 +184,10 @@ Add the following to your `prometheus.yml`:
 
 ```yaml
 scrape_configs:
-  - job_name: 'media-viewer'
-    static_configs:
-      - targets: ['media-viewer:9090']
-    scrape_interval: 15s
+    - job_name: 'media-viewer'
+      static_configs:
+          - targets: ['media-viewer:9090']
+      scrape_interval: 15s
 ```
 
 ### Example Queries
@@ -212,127 +215,128 @@ Example alerting rules for Prometheus Alertmanager:
 
 ```yaml
 groups:
-  - name: media-viewer
-    rules:
-      - alert: MediaViewerHighErrorRate
-        expr: |
-          sum(rate(media_viewer_http_requests_total{status=~"5.."}[5m])) 
-          / sum(rate(media_viewer_http_requests_total[5m])) > 0.05
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High HTTP error rate"
+    - name: media-viewer
+      rules:
+          - alert: MediaViewerHighErrorRate
+            expr: |
+                sum(rate(media_viewer_http_requests_total{status=~"5.."}[5m]))
+                / sum(rate(media_viewer_http_requests_total[5m])) > 0.05
+            for: 5m
+            labels:
+                severity: warning
+            annotations:
+                summary: 'High HTTP error rate'
 
-      - alert: MediaViewerHighLatency
-        expr: |
-          histogram_quantile(0.95, sum(rate(media_viewer_http_request_duration_seconds_bucket[5m])) by (le)) > 2
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High request latency"
+          - alert: MediaViewerHighLatency
+            expr: |
+                histogram_quantile(0.95, sum(rate(media_viewer_http_request_duration_seconds_bucket[5m])) by (le)) > 2
+            for: 5m
+            labels:
+                severity: warning
+            annotations:
+                summary: 'High request latency'
 
-      - alert: MediaViewerDown
-        expr: up{job="media-viewer"} == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Media Viewer is down"
+          - alert: MediaViewerDown
+            expr: up{job="media-viewer"} == 0
+            for: 1m
+            labels:
+                severity: critical
+            annotations:
+                summary: 'Media Viewer is down'
 ```
 
 ## API Endpoints
 
 ### Public Endpoints (No Authentication)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check |
-| GET | `/healthz` | Kubernetes health check |
-| GET | `/livez` | Kubernetes liveness probe |
-| GET | `/readyz` | Kubernetes readiness probe |
-| GET | `/version` | Application version information |
+| Method | Path       | Description                     |
+| ------ | ---------- | ------------------------------- |
+| GET    | `/health`  | Health check                    |
+| GET    | `/healthz` | Kubernetes health check         |
+| GET    | `/livez`   | Kubernetes liveness probe       |
+| GET    | `/readyz`  | Kubernetes readiness probe      |
+| GET    | `/version` | Application version information |
 
 ### Authentication Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/auth/setup-required` | Check if initial setup is needed |
-| POST | `/api/auth/setup` | Create initial user account |
-| POST | `/api/auth/login` | Authenticate user |
-| POST | `/api/auth/logout` | End user session |
-| GET | `/api/auth/check` | Verify authentication status |
+| Method | Path                       | Description                      |
+| ------ | -------------------------- | -------------------------------- |
+| GET    | `/api/auth/setup-required` | Check if initial setup is needed |
+| POST   | `/api/auth/setup`          | Create initial user account      |
+| POST   | `/api/auth/login`          | Authenticate user                |
+| POST   | `/api/auth/logout`         | End user session                 |
+| GET    | `/api/auth/check`          | Verify authentication status     |
 
 ### Protected API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/files` | List directory contents |
-| GET | `/api/media` | Get media files in directory |
-| GET | `/api/file/{path}` | Get file content |
-| GET | `/api/thumbnail/{path}` | Get file thumbnail |
-| GET | `/api/search` | Search media library |
-| GET | `/api/search/suggestions` | Get search autocomplete suggestions |
-| GET | `/api/stats` | Get library statistics |
-| POST | `/api/reindex` | Trigger media re-indexing |
+| Method | Path                      | Description                         |
+| ------ | ------------------------- | ----------------------------------- |
+| GET    | `/api/files`              | List directory contents             |
+| GET    | `/api/media`              | Get media files in directory        |
+| GET    | `/api/file/{path}`        | Get file content                    |
+| GET    | `/api/thumbnail/{path}`   | Get file thumbnail                  |
+| GET    | `/api/search`             | Search media library                |
+| GET    | `/api/search/suggestions` | Get search autocomplete suggestions |
+| GET    | `/api/stats`              | Get library statistics              |
+| POST   | `/api/reindex`            | Trigger media re-indexing           |
 
 ### Favorites
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/favorites` | List all favorites |
-| POST | `/api/favorites` | Add favorite |
-| DELETE | `/api/favorites` | Remove favorite |
-| GET | `/api/favorites/check` | Check if path is favorited |
+| Method | Path                   | Description                |
+| ------ | ---------------------- | -------------------------- |
+| GET    | `/api/favorites`       | List all favorites         |
+| POST   | `/api/favorites`       | Add favorite               |
+| DELETE | `/api/favorites`       | Remove favorite            |
+| GET    | `/api/favorites/check` | Check if path is favorited |
 
 ### Tags
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/tags` | List all tags |
-| GET | `/api/tags/file` | Get tags for a file |
-| POST | `/api/tags/file` | Add tag to file |
-| DELETE | `/api/tags/file` | Remove tag from file |
-| POST | `/api/tags/file/set` | Set all tags for a file |
-| POST | `/api/tags/batch` | Get tags for multiple files |
-| GET | `/api/tags/{tag}` | Get files with tag |
-| DELETE | `/api/tags/{tag}` | Delete tag |
-| PUT | `/api/tags/{tag}` | Rename tag |
+| Method | Path                 | Description                 |
+| ------ | -------------------- | --------------------------- |
+| GET    | `/api/tags`          | List all tags               |
+| GET    | `/api/tags/file`     | Get tags for a file         |
+| POST   | `/api/tags/file`     | Add tag to file             |
+| DELETE | `/api/tags/file`     | Remove tag from file        |
+| POST   | `/api/tags/file/set` | Set all tags for a file     |
+| POST   | `/api/tags/batch`    | Get tags for multiple files |
+| GET    | `/api/tags/{tag}`    | Get files with tag          |
+| DELETE | `/api/tags/{tag}`    | Delete tag                  |
+| PUT    | `/api/tags/{tag}`    | Rename tag                  |
 
 ### Thumbnails
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/thumbnail/{path}` | Get thumbnail |
-| DELETE | `/api/thumbnail/{path}` | Invalidate thumbnail |
-| POST | `/api/thumbnails/invalidate` | Invalidate all thumbnails |
-| POST | `/api/thumbnails/rebuild` | Rebuild all thumbnails |
-| GET | `/api/thumbnails/status` | Get thumbnail generator status |
+| Method | Path                         | Description                    |
+| ------ | ---------------------------- | ------------------------------ |
+| GET    | `/api/thumbnail/{path}`      | Get thumbnail                  |
+| DELETE | `/api/thumbnail/{path}`      | Invalidate thumbnail           |
+| POST   | `/api/thumbnails/invalidate` | Invalidate all thumbnails      |
+| POST   | `/api/thumbnails/rebuild`    | Rebuild all thumbnails         |
+| GET    | `/api/thumbnails/status`     | Get thumbnail generator status |
 
 ### Playlists
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/playlists` | List all playlists |
-| GET | `/api/playlist/{name}` | Get playlist contents |
+| Method | Path                   | Description           |
+| ------ | ---------------------- | --------------------- |
+| GET    | `/api/playlists`       | List all playlists    |
+| GET    | `/api/playlist/{name}` | Get playlist contents |
 
 ### Video Streaming
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/stream/{path}` | Stream video (with transcoding if needed) |
-| GET | `/api/stream-info/{path}` | Get stream information |
+| Method | Path                      | Description                               |
+| ------ | ------------------------- | ----------------------------------------- |
+| GET    | `/api/stream/{path}`      | Stream video (with transcoding if needed) |
+| GET    | `/api/stream-info/{path}` | Get stream information                    |
 
 ## Development Setup
 
 ### Prerequisites
 
 - Go 1.21 or later
+- Node.js 18 or later (for frontend tooling)
 - FFmpeg
 - GCC (for SQLite CGO compilation)
 
-### Running Locally
+### Initial Setup
 
 1. Clone the repository:
 
@@ -341,40 +345,133 @@ git clone https://github.com/djryanj/media-viewer.git
 cd media-viewer
 ```
 
-2. Install dependencies:
+2. Install all development dependencies:
 
 ```bash
-go mod download
+make setup
 ```
 
-3. Create a sample media directory:
+This installs:
+
+- Frontend dependencies (npm packages)
+- Go tools (air for hot reload, golangci-lint for linting)
+
+### Running the Development Server
+
+#### Full Development Environment (Recommended)
+
+Run both the Go backend with hot reload and the frontend with live reload:
 
 ```bash
-mkdir -p sample-media
+make dev-full
 ```
 
-4. Run the application:
+This starts:
+
+- Go server with hot reload on port 8080 (via air)
+- Browser-sync proxy on port 3000 with live reload for CSS/JS/HTML changes
+
+Open http://localhost:3000 in your browser. Press Ctrl+C to stop both servers.
+
+#### Backend Only
+
+Run just the Go server with hot reload:
 
 ```bash
-# Must include fts5 build tag for SQLite full-text search
-go run -tags 'fts5' .
+make dev
 ```
 
-5. Or use Air for hot reload:
+#### Frontend Only
+
+If the Go server is already running, start just the frontend live reload:
 
 ```bash
-# Install Air
-go install github.com/air-verse/air@latest
-
-# Run with hot reload
-air
+make dev-frontend
 ```
 
-The `.air.toml` configuration should include the fts5 build tag:
+#### Simple Run (No Hot Reload)
 
-```toml
-[build]
-  cmd = "go build -tags 'fts5' -o ./tmp/main ."
+```bash
+make run
+```
+
+### Available Make Targets
+
+Run `make help` to see all available targets:
+
+| Category            | Target                  | Description                                  |
+| ------------------- | ----------------------- | -------------------------------------------- |
+| **Build**           | `build`                 | Build the main application                   |
+|                     | `build-all`             | Build main application and resetpw tool      |
+|                     | `resetpw`               | Build the password reset tool                |
+|                     | `release-build`         | Build with release optimizations             |
+| **Development**     | `run`                   | Run the application                          |
+|                     | `dev`                   | Run with hot reload (air)                    |
+|                     | `dev-frontend`          | Run frontend with live reload (browser-sync) |
+|                     | `dev-full`              | Run both Go and frontend dev servers         |
+| **Test**            | `test`                  | Run all tests                                |
+|                     | `test-coverage`         | Run tests with coverage report               |
+| **Lint (Go)**       | `lint`                  | Lint Go code                                 |
+|                     | `lint-fix`              | Fix Go lint issues                           |
+| **Lint (Frontend)** | `frontend-lint`         | Lint JS and CSS                              |
+|                     | `frontend-lint-fix`     | Fix JS and CSS lint issues                   |
+|                     | `frontend-format`       | Format frontend code with Prettier           |
+|                     | `frontend-format-check` | Check frontend formatting                    |
+|                     | `frontend-check`        | Run all frontend checks                      |
+| **Combined**        | `lint-all`              | Lint Go and frontend code                    |
+|                     | `lint-fix-all`          | Fix all lint issues                          |
+|                     | `check-all`             | Run all checks                               |
+| **Clean**           | `clean`                 | Remove build artifacts                       |
+|                     | `clean-all`             | Remove all artifacts including node_modules  |
+| **Docker**          | `docker-build`          | Build Docker image                           |
+|                     | `docker-run`            | Run Docker container                         |
+| **Setup**           | `setup`                 | Install all development dependencies         |
+
+### Code Quality
+
+Before committing, run all checks:
+
+```bash
+make check-all
+```
+
+To automatically fix issues:
+
+```bash
+make lint-fix-all
+```
+
+### Frontend Development
+
+The frontend uses vanilla JavaScript and CSS with the following tooling:
+
+| Tool         | Purpose                        |
+| ------------ | ------------------------------ |
+| ESLint       | JavaScript linting             |
+| Stylelint    | CSS linting                    |
+| Prettier     | Code formatting                |
+| Browser-sync | Live reload during development |
+
+Frontend-specific commands:
+
+```bash
+# Install dependencies
+make frontend-install
+
+# Lint JavaScript and CSS
+make frontend-lint
+
+# Fix lint issues
+make frontend-lint-fix
+
+# Format code
+make frontend-format
+
+# Check formatting without changes
+make frontend-format-check
+
+# Run all frontend checks
+make frontend-check
 ```
 
 ### Using the Dev Container
@@ -383,39 +480,252 @@ If using VS Code with the Dev Containers extension:
 
 1. Open the project in VS Code.
 2. Click "Reopen in Container" when prompted.
-3. The container includes Go, FFmpeg, and SQLite.
-4. Run with `go run -tags 'fts5' .` or `air`.
+3. The container includes Go, Node.js, FFmpeg, and SQLite.
+4. Run `make setup` to install dependencies.
+5. Run `make dev-full` to start the development environment.
 
 ### Building
 
 #### Docker
 
 Build locally:
-```bash
-docker build -t media-viewer:local .
-```
-
-Build with cross-compilation optimization (faster multi-arch builds):
-```bash
-docker build -f Dockerfile.cross -t media-viewer:local .
-```
-
-#### Binary
 
 ```bash
-# Build the main application
-go build -tags 'fts5' -o media-viewer .
-
-# Build the password reset utility
-go build -o resetpw ./cmd/resetpw
+make docker-build
 ```
 
-#### Multi-architecture
+Run the container:
 
-The GitHub Actions workflow automatically builds for both amd64 and arm64:
-- PRs: Only amd64 (for speed)
-- Main branch: Both architectures
-- Tags: Both architectures + SBOM generation
+```bash
+make docker-run
+```
+
+### Testing
+
+Run all tests:
+
+```bash
+make test
+```
+
+Run tests with coverage report:
+
+```bash
+make test-coverage
+```
+
+This generates `coverage.html` which can be opened in a browser.
+
+### Project Structure
+
+```
+media-viewer/
+├── cmd/
+│   └── resetpw/          # Password reset utility
+├── internal/
+│   ├── database/         # Database operations
+│   ├── handlers/         # HTTP handlers
+│   ├── indexer/          # Media indexing
+│   ├── logging/          # Logging utilities
+│   ├── media/            # Thumbnail generation, scanning
+│   ├── metrics/          # Prometheus metrics
+│   ├── middleware/       # HTTP middleware
+│   ├── startup/          # Configuration and startup
+│   └── transcoder/       # Video transcoding
+├── static/
+│   ├── css/              # Stylesheets
+│   ├── js/               # JavaScript modules
+│   ├── index.html        # Main HTML file
+│   ├── package.json      # Frontend dependencies
+│   ├── eslint.config.js  # ESLint configuration
+│   └── .prettierrc       # Prettier configuration
+├── main.go               # Application entry point
+├── Makefile              # Build and development tasks
+└── README.md
+```
+
+````markdown
+### Environment Variables for Development
+
+When running locally, you may want to set these environment variables:
+
+| Variable             | Development Value | Description                     |
+| -------------------- | ----------------- | ------------------------------- |
+| `MEDIA_DIR`          | `./sample-media`  | Path to test media files        |
+| `CACHE_DIR`          | `./cache`         | Local cache directory           |
+| `DATABASE_DIR`       | `./database`      | Local database directory        |
+| `LOG_LEVEL`          | `debug`           | Verbose logging                 |
+| `LOG_STATIC_FILES`   | `true`            | Log static file requests        |
+| `LOG_HEALTH_CHECKS`  | `false`           | Reduce noise from health checks |
+| `METRICS_ENABLED`    | `true`            | Enable metrics endpoint         |
+| `METRICS_PORT`       | `9090`            | Metrics server port             |
+| `INDEX_INTERVAL`     | `5m`              | Faster re-indexing for testing  |
+| `THUMBNAIL_INTERVAL` | `30m`             | Faster thumbnail regeneration   |
+
+Example:
+
+```bash
+export MEDIA_DIR=./sample-media
+export CACHE_DIR=./cache
+export DATABASE_DIR=./database
+export LOG_LEVEL=debug
+make dev
+```
+````
+
+Or create a `.env` file (not committed to git):
+
+```bash
+MEDIA_DIR=./sample-media
+CACHE_DIR=./cache
+DATABASE_DIR=./database
+LOG_LEVEL=debug
+LOG_STATIC_FILES=true
+LOG_HEALTH_CHECKS=false
+INDEX_INTERVAL=5m
+THUMBNAIL_INTERVAL=30m
+```
+
+### Debugging
+
+#### Go Debugging with VS Code
+
+The dev container includes Go debugging support. Create or update `.vscode/launch.json`:
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Media Viewer",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "buildFlags": "-tags=fts5",
+            "env": {
+                "MEDIA_DIR": "./sample-media",
+                "CACHE_DIR": "./cache",
+                "DATABASE_DIR": "./database",
+                "LOG_LEVEL": "debug"
+            }
+        }
+    ]
+}
+```
+
+#### Viewing Metrics Locally
+
+With the development server running:
+
+```bash
+# View all metrics
+curl http://localhost:9090/metrics
+
+# Filter for specific metrics
+curl -s http://localhost:9090/metrics | grep media_viewer_http
+
+# Check metrics server health
+curl http://localhost:9090/health
+```
+
+#### Database Inspection
+
+The SQLite database can be inspected directly:
+
+```bash
+# Open database shell
+sqlite3 ./database/media.db
+
+# Useful queries
+.tables                              # List all tables
+SELECT COUNT(*) FROM files;          # Count indexed files
+SELECT * FROM users;                 # View users (passwords are hashed)
+SELECT * FROM tags;                  # View all tags
+SELECT * FROM favorites;             # View favorites
+.schema files                        # View table schema
+```
+
+#### Log Levels
+
+Set `LOG_LEVEL` to control verbosity:
+
+| Level   | Description                                |
+| ------- | ------------------------------------------ |
+| `debug` | All messages including detailed debugging  |
+| `info`  | Informational messages and above (default) |
+| `warn`  | Warnings and errors only                   |
+| `error` | Errors only                                |
+
+### Troubleshooting
+
+#### Build Fails with CGO Errors
+
+Ensure GCC is installed:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential
+
+# macOS
+xcode-select --install
+
+# Alpine (in Docker)
+apk add gcc musl-dev
+```
+
+#### FTS5 Search Not Working
+
+Ensure you're building with the `fts5` tag:
+
+```bash
+# Correct
+go build -tags 'fts5' .
+make build
+
+# Incorrect (missing tag)
+go build .
+```
+
+#### Air Hot Reload Not Working
+
+Check that `.air.toml` exists and includes the fts5 tag:
+
+```toml
+[build]
+  cmd = "go build -tags 'fts5' -o ./tmp/main ."
+```
+
+#### Frontend Changes Not Reflecting
+
+1. Clear browser cache (Ctrl+Shift+R or Cmd+Shift+R)
+2. Ensure browser-sync is running (`make dev-frontend`)
+3. Check browser-sync is proxying to the correct port
+
+#### Port Already in Use
+
+```bash
+# Find process using port 8080
+lsof -i :8080
+
+# Kill the process
+kill -9 <PID>
+
+# Or use a different port
+PORT=8081 make dev
+```
+
+#### Permission Denied on Media Directory
+
+Ensure the media directory is readable:
+
+```bash
+# Check permissions
+ls -la /path/to/media
+
+# Fix permissions if needed
+chmod -R 755 /path/to/media
+```
 
 ## Password Reset
 
@@ -480,14 +790,17 @@ sqlite3 /database/media.db "DELETE FROM sessions;"
 ## Supported Formats
 
 ### Images
+
 jpg, jpeg, png, gif, bmp, webp, svg, ico, tiff, heic, heif, avif, jxl, raw, cr2, nef, arw, dng
 
 ### Videos
+
 mp4, mkv, avi, mov, wmv, flv, webm, m4v, mpeg, mpg, 3gp, ts
 
 Videos not natively supported by browsers (such as mkv) are automatically transcoded to mp4 for playback.
 
 ### Playlists
+
 Windows Media Player playlists (.wpl)
 
 ## Installation
@@ -523,38 +836,25 @@ go build -tags 'fts5' -o media-viewer .
 
 ## Releases
 
-### Creating a Release
-
-To create a new release:
-
-1. Update version information (if needed)
-2. Create and push a tag:
-   ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
-   ```
-3. GitHub Actions will automatically:
-   - Build multi-platform Docker images (amd64, arm64)
-   - Push images to `ghcr.io/djryanj/media-viewer`
-   - Tag with version number and `latest`
-
 ### Available Tags
 
-| Tag | Description |
-|-----|-------------|
-| `latest` | Latest stable release from main branch |
-| `v1.0.0` | Specific version tag |
-| `v1.0` | Latest patch version of 1.0.x |
-| `v1` | Latest minor version of 1.x.x |
-| `sha-abc1234` | Specific commit build |
+| Tag           | Description                            |
+| ------------- | -------------------------------------- |
+| `latest`      | Latest stable release from main branch |
+| `v1.0.0`      | Specific version tag                   |
+| `v1.0`        | Latest patch version of 1.0.x          |
+| `v1`          | Latest minor version of 1.x.x          |
+| `sha-abc1234` | Specific commit build                  |
 
 ### Version Information
 
 The application includes build information accessible via:
+
 - API endpoint: `GET /version`
 - Startup logs
 
 Build information includes:
+
 - Version (from git tag or "dev")
 - Git commit hash
 - Build timestamp
