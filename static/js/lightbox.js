@@ -291,6 +291,9 @@ const Lightbox = {
         this.elements.image.classList.add('hidden');
         this.elements.video.classList.add('hidden');
 
+        // Toggle video mode class on lightbox for CSS adjustments
+        this.elements.lightbox.classList.toggle('video-mode', file.type === 'video');
+
         if (file.type === 'image') {
             this.loadImage(file, loadId);
         } else if (file.type === 'video') {
