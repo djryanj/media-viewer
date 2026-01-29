@@ -1,0 +1,35 @@
+name: Docker PR Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  cleanup:
+    name: Delete PR Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    
+    steps:
+      - name: Delete PR image from registry
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          # Delete the specific PR tag
+          delete-only-pre-release-versions: false
+          min-versions-to-keep: 0
+          # Target the PR-specific tag
+          version-pattern: pr-${{ github.event.pull_request.number }}
+        continue-on-error: true  # Don't fail if image doesn't exist
+
+      - name: Log cleanup result
+        run: |
+          echo "Cleaned up Docker image for PR #${{ github.event.pull_request.number }}"
+          echo "   Tag: pr-${{ github.event.pull_request.number }}"
+          echo "   PR was ${{ github.event.pull_request.merged && 'merged' || 'closed without merge' }}"
