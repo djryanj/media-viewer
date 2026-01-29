@@ -2403,3 +2403,40 @@ select:focus {
 .player-modal .video-wrapper video {
     transition: opacity 0.15s ease-in-out;
 }
+
+/* When displaying a video, adjust hot zones to avoid video controls */
+.lightbox.video-mode .lightbox-hot-zone {
+    /* Only cover the top 60% of the lightbox, leaving bottom for video controls */
+    bottom: 40%;
+}
+
+/* On mobile, make the adjustment more aggressive since controls are larger */
+@media (hover: none) and (pointer: coarse) {
+    .lightbox.video-mode .lightbox-hot-zone {
+        bottom: 50%;
+    }
+}
+
+/* Alternative: Make hot zones narrower in video mode to give more control access */
+.lightbox.video-mode .lightbox-hot-zone {
+    width: 15%;
+    min-width: 50px;
+    max-width: 100px;
+}
+
+/* Ensure video controls are always accessible */
+.lightbox.video-mode .lightbox-video {
+    z-index: 1;
+}
+
+/* Optional: Add a visual indicator that tapping center area controls video */
+.lightbox.video-mode .lightbox-content::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 15%;
+    right: 15%;
+    height: 80px;
+    pointer-events: none;
+    /* This is just a visual guide, doesn't block anything */
+}
