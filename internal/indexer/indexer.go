@@ -2,12 +2,15 @@ package indexer
 
 import (
 	"crypto/md5"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"media-viewer/internal/database"
@@ -42,6 +45,17 @@ var mimeTypes = map[string]string{
 	".wpl": "application/vnd.ms-wpl",
 }
 
+const (
+	// Number of files to process before committing a batch
+	batchSize = 500
+
+	// Minimum files to index before marking server as ready
+	minFilesForReady = 100
+
+	// Delay between batches to allow other operations
+	batchDelay = 10 * time.Millisecond
+)
+
 // Indexer manages the indexing of media files in the media directory.
 type Indexer struct {
 	db                   *database.Database
@@ -55,34 +69,46 @@ type Indexer struct {
 	initialIndexComplete bool
 	initialIndexError    error
 	startTime            time.Time
+
+	// Progress tracking
+	filesIndexed   atomic.Int64
+	foldersIndexed atomic.Int64
+	indexProgress  atomic.Value // stores IndexProgress
+}
+
+// IndexProgress tracks the current indexing progress
+type IndexProgress struct {
+	FilesIndexed   int64     `json:"filesIndexed"`
+	FoldersIndexed int64     `json:"foldersIndexed"`
+	IsIndexing     bool      `json:"isIndexing"`
+	StartedAt      time.Time `json:"startedAt,omitempty"`
 }
 
 // New creates a new Indexer instance.
 func New(db *database.Database, mediaDir string, indexInterval time.Duration) *Indexer {
-	return &Indexer{
+	idx := &Indexer{
 		db:            db,
 		mediaDir:      mediaDir,
 		indexInterval: indexInterval,
 		stopChan:      make(chan struct{}),
 		startTime:     time.Now(),
 	}
+	idx.indexProgress.Store(IndexProgress{})
+	return idx
 }
 
 // Start begins the indexing process.
 func (idx *Indexer) Start() error {
-	// Initial index
-	logging.Info("Starting initial index...")
-	if err := idx.Index(); err != nil {
-		logging.Error("Initial index error: %v", err)
-		idx.indexMu.Lock()
-		idx.initialIndexError = err
-		idx.indexMu.Unlock()
-	}
-
-	// Mark initial index as complete (even if it failed, we tried)
-	idx.indexMu.Lock()
-	idx.initialIndexComplete = true
-	idx.indexMu.Unlock()
+	// Start initial index in background
+	go func() {
+		logging.Info("Starting initial index in background...")
+		if err := idx.Index(); err != nil {
+			logging.Error("Initial index error: %v", err)
+			idx.indexMu.Lock()
+			idx.initialIndexError = err
+			idx.indexMu.Unlock()
+		}
+	}()
 
 	// Start file watcher
 	go idx.watchFiles()
@@ -103,11 +129,25 @@ func (idx *Indexer) Stop() {
 	}
 }
 
-// IsReady returns true if the initial index has completed
+// IsReady returns true if the server is ready to accept traffic
+// Now returns true early once minimum files are indexed
 func (idx *Indexer) IsReady() bool {
+	// Ready if we've indexed minimum files OR initial index is complete
+	if idx.filesIndexed.Load()+idx.foldersIndexed.Load() >= minFilesForReady {
+		return true
+	}
+
 	idx.indexMu.Lock()
 	defer idx.indexMu.Unlock()
 	return idx.initialIndexComplete
+}
+
+// getProgress safely retrieves the current IndexProgress
+func (idx *Indexer) getProgress() IndexProgress {
+	if progress, ok := idx.indexProgress.Load().(IndexProgress); ok {
+		return progress
+	}
+	return IndexProgress{}
 }
 
 // GetHealthStatus returns detailed health information
@@ -115,12 +155,20 @@ func (idx *Indexer) GetHealthStatus() HealthStatus {
 	idx.indexMu.Lock()
 	defer idx.indexMu.Unlock()
 
+	progress := idx.getProgress()
+
 	status := HealthStatus{
-		Ready:       idx.initialIndexComplete,
-		Indexing:    idx.isIndexing,
-		StartTime:   idx.startTime,
-		Uptime:      time.Since(idx.startTime).String(),
-		LastIndexed: idx.lastIndexTime,
+		Ready:          idx.initialIndexComplete || (idx.filesIndexed.Load()+idx.foldersIndexed.Load() >= minFilesForReady),
+		Indexing:       idx.isIndexing,
+		StartTime:      idx.startTime,
+		Uptime:         time.Since(idx.startTime).String(),
+		LastIndexed:    idx.lastIndexTime,
+		FilesIndexed:   idx.filesIndexed.Load(),
+		FoldersIndexed: idx.foldersIndexed.Load(),
+	}
+
+	if idx.isIndexing {
+		status.IndexProgress = &progress
 	}
 
 	if idx.initialIndexError != nil {
@@ -132,148 +180,247 @@ func (idx *Indexer) GetHealthStatus() HealthStatus {
 
 // HealthStatus contains health check information
 type HealthStatus struct {
-	Ready             bool      `json:"ready"`
-	Indexing          bool      `json:"indexing"`
-	StartTime         time.Time `json:"startTime"`
-	Uptime            string    `json:"uptime"`
-	LastIndexed       time.Time `json:"lastIndexed,omitempty"`
-	InitialIndexError string    `json:"initialIndexError,omitempty"`
+	Ready             bool           `json:"ready"`
+	Indexing          bool           `json:"indexing"`
+	StartTime         time.Time      `json:"startTime"`
+	Uptime            string         `json:"uptime"`
+	LastIndexed       time.Time      `json:"lastIndexed,omitempty"`
+	InitialIndexError string         `json:"initialIndexError,omitempty"`
+	FilesIndexed      int64          `json:"filesIndexed"`
+	FoldersIndexed    int64          `json:"foldersIndexed"`
+	IndexProgress     *IndexProgress `json:"indexProgress,omitempty"`
 }
 
 // Index performs a full index of the media directory.
+// Uses batched commits to avoid blocking other database operations.
 func (idx *Indexer) Index() error {
-	idx.indexMu.Lock()
-	if idx.isIndexing {
-		idx.indexMu.Unlock()
+	if !idx.tryStartIndexing() {
 		logging.Info("Index already in progress, skipping...")
 		return nil
 	}
-	idx.isIndexing = true
-	idx.indexMu.Unlock()
-
-	defer func() {
-		idx.indexMu.Lock()
-		idx.isIndexing = false
-		idx.indexMu.Unlock()
-	}()
+	defer idx.finishIndexing()
 
 	startTime := time.Now()
-	logging.Info("Starting file indexing. If this is the first time it has run and you have a lot of files, the server will not be available until after the index is complete. Be patient...")
+	logging.Info("Starting file indexing...")
 
-	logging.Debug("Acquiring database lock...")
-
-	tx, err := idx.db.BeginBatch()
-	if err != nil {
-		logging.Error("Failed to begin transaction: %v", err)
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-
-	logging.Debug("Database lock acquired, scanning files...")
+	idx.resetCounters(startTime)
 
 	indexTime := time.Now()
-	fileCount := 0
-	folderCount := 0
+	result, err := idx.walkAndIndex(startTime)
+	if err != nil {
+		return err
+	}
 
-	err = filepath.Walk(idx.mediaDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			logging.Warn("Error accessing path %s: %v", path, err)
-			return nil // Continue walking
-		}
+	// Delete files that no longer exist (in a separate transaction)
+	if err := idx.cleanupMissingFiles(indexTime); err != nil {
+		logging.Error("Error cleaning up missing files: %v", err)
+	}
 
-		// Skip hidden files and directories
-		if strings.HasPrefix(info.Name(), ".") {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	idx.finalizeIndex(startTime, result.totalFiles, result.totalFolders)
 
-		relPath, err := filepath.Rel(idx.mediaDir, path)
-		if err != nil {
-			return err
-		}
+	return nil
+}
 
-		// Skip root
-		if relPath == "." {
-			return nil
-		}
+// tryStartIndexing attempts to start indexing, returns false if already in progress
+func (idx *Indexer) tryStartIndexing() bool {
+	idx.indexMu.Lock()
+	defer idx.indexMu.Unlock()
 
-		// Determine parent path
-		parentPath := filepath.Dir(relPath)
-		if parentPath == "." {
-			parentPath = ""
-		}
+	if idx.isIndexing {
+		return false
+	}
+	idx.isIndexing = true
+	return true
+}
 
-		var file database.MediaFile
+// finishIndexing marks indexing as complete
+func (idx *Indexer) finishIndexing() {
+	idx.indexMu.Lock()
+	defer idx.indexMu.Unlock()
 
-		if info.IsDir() {
-			file = database.MediaFile{
-				Name:       info.Name(),
-				Path:       relPath,
-				ParentPath: parentPath,
-				Type:       database.FileTypeFolder,
-				Size:       0,
-				ModTime:    info.ModTime(),
-				FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(relPath+info.ModTime().String()))),
-			}
-			folderCount++
-		} else {
-			ext := strings.ToLower(filepath.Ext(info.Name()))
-			fileType := getFileType(ext)
+	idx.isIndexing = false
+	idx.initialIndexComplete = true
+}
 
-			// Skip unsupported files
-			if fileType == "" {
-				return nil
-			}
+// resetCounters resets the indexing counters
+func (idx *Indexer) resetCounters(startTime time.Time) {
+	idx.filesIndexed.Store(0)
+	idx.foldersIndexed.Store(0)
+	idx.indexProgress.Store(IndexProgress{
+		IsIndexing: true,
+		StartedAt:  startTime,
+	})
+}
 
-			file = database.MediaFile{
-				Name:       info.Name(),
-				Path:       relPath,
-				ParentPath: parentPath,
-				Type:       database.FileType(fileType),
-				Size:       info.Size(),
-				ModTime:    info.ModTime(),
-				MimeType:   mimeTypes[ext],
-				FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", relPath, info.Size(), info.ModTime().Unix())))),
-			}
-			fileCount++
-		}
+// indexResult holds the results of the walk and index operation
+type indexResult struct {
+	totalFiles   int64
+	totalFolders int64
+}
 
-		if err := idx.db.UpsertFile(tx, &file); err != nil {
-			logging.Error("Error upserting file %s: %v", relPath, err)
-		}
+// walkAndIndex walks the media directory and indexes files in batches
+func (idx *Indexer) walkAndIndex(startTime time.Time) (indexResult, error) {
+	var currentBatch []database.MediaFile
+	var result indexResult
 
-		// Log progress every 1000 items
-		if (fileCount+folderCount)%1000 == 0 {
-			logging.Info("Indexed %d files, %d folders...", fileCount, folderCount)
-		}
-
-		return nil
+	err := filepath.Walk(idx.mediaDir, func(path string, info os.FileInfo, err error) error {
+		return idx.processPath(path, info, err, &currentBatch, &result, startTime)
 	})
 
-	if err != nil {
-		if endErr := idx.db.EndBatch(tx, err); endErr != nil {
-			logging.Error("failed to end batch after walk error: %v", endErr)
+	if err != nil && !errors.Is(err, fs.SkipAll) {
+		return result, fmt.Errorf("walk error: %w", err)
+	}
+
+	// Process remaining files in the last batch
+	if len(currentBatch) > 0 {
+		if err := idx.processBatch(currentBatch); err != nil {
+			logging.Error("Error processing final batch: %v", err)
 		}
-		return fmt.Errorf("walk error: %w", err)
 	}
 
-	// Delete files that no longer exist
-	deleted, err := idx.db.DeleteMissingFiles(tx, indexTime)
+	return result, nil
+}
+
+// processPath processes a single path during the directory walk
+func (idx *Indexer) processPath(
+	path string,
+	info os.FileInfo,
+	err error,
+	currentBatch *[]database.MediaFile,
+	result *indexResult,
+	startTime time.Time,
+) error {
+	// Check for stop signal
+	select {
+	case <-idx.stopChan:
+		return fs.SkipAll
+	default:
+	}
+
 	if err != nil {
-		logging.Error("Error deleting missing files: %v", err)
-	} else if deleted > 0 {
-		logging.Info("Removed %d missing files from index", deleted)
+		logging.Warn("Error accessing path %s: %v", path, err)
+		return nil
 	}
 
-	if err := idx.db.EndBatch(tx, nil); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	// Skip hidden files and directories
+	if strings.HasPrefix(info.Name(), ".") {
+		if info.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
 	}
 
+	relPath, err := filepath.Rel(idx.mediaDir, path)
+	if err != nil {
+		return err
+	}
+
+	// Skip root
+	if relPath == "." {
+		return nil
+	}
+
+	file, ok := idx.createMediaFile(relPath, info)
+	if !ok {
+		return nil // Unsupported file type
+	}
+
+	// Update counters
+	if info.IsDir() {
+		result.totalFolders++
+		idx.foldersIndexed.Add(1)
+	} else {
+		result.totalFiles++
+		idx.filesIndexed.Add(1)
+	}
+
+	*currentBatch = append(*currentBatch, file)
+
+	// Process batch when it reaches the batch size
+	if len(*currentBatch) >= batchSize {
+		if err := idx.processBatch(*currentBatch); err != nil {
+			logging.Error("Error processing batch: %v", err)
+		}
+		*currentBatch = (*currentBatch)[:0] // Reset slice but keep capacity
+
+		idx.updateProgress(startTime)
+
+		// Small delay to allow other operations
+		time.Sleep(batchDelay)
+
+		// Log progress
+		total := result.totalFiles + result.totalFolders
+		if total%5000 == 0 {
+			logging.Info("Indexed %d files, %d folders...", result.totalFiles, result.totalFolders)
+		}
+	}
+
+	return nil
+}
+
+// createMediaFile creates a MediaFile struct from path and file info
+func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.MediaFile, bool) {
+	parentPath := filepath.Dir(relPath)
+	if parentPath == "." {
+		parentPath = ""
+	}
+
+	if info.IsDir() {
+		return database.MediaFile{
+			Name:       info.Name(),
+			Path:       relPath,
+			ParentPath: parentPath,
+			Type:       database.FileTypeFolder,
+			Size:       0,
+			ModTime:    info.ModTime(),
+			FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(relPath+info.ModTime().String()))),
+		}, true
+	}
+
+	ext := strings.ToLower(filepath.Ext(info.Name()))
+	fileType := getFileType(ext)
+
+	// Skip unsupported files
+	if fileType == "" {
+		return database.MediaFile{}, false
+	}
+
+	return database.MediaFile{
+		Name:       info.Name(),
+		Path:       relPath,
+		ParentPath: parentPath,
+		Type:       database.FileType(fileType),
+		Size:       info.Size(),
+		ModTime:    info.ModTime(),
+		MimeType:   mimeTypes[ext],
+		FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", relPath, info.Size(), info.ModTime().Unix())))),
+	}, true
+}
+
+// updateProgress updates the indexing progress
+func (idx *Indexer) updateProgress(startTime time.Time) {
+	idx.indexProgress.Store(IndexProgress{
+		FilesIndexed:   idx.filesIndexed.Load(),
+		FoldersIndexed: idx.foldersIndexed.Load(),
+		IsIndexing:     true,
+		StartedAt:      startTime,
+	})
+}
+
+// finalizeIndex completes the indexing process and updates stats
+func (idx *Indexer) finalizeIndex(startTime time.Time, totalFiles, totalFolders int64) {
 	duration := time.Since(startTime)
+
 	idx.indexMu.Lock()
 	idx.lastIndexTime = time.Now()
 	idx.indexMu.Unlock()
+
+	// Update progress to complete
+	idx.indexProgress.Store(IndexProgress{
+		FilesIndexed:   totalFiles,
+		FoldersIndexed: totalFolders,
+		IsIndexing:     false,
+	})
 
 	// Update stats
 	stats, _ := idx.db.CalculateStats()
@@ -281,7 +428,55 @@ func (idx *Indexer) Index() error {
 	stats.IndexDuration = duration.String()
 	idx.db.UpdateStats(stats)
 
-	logging.Info("Index complete: %d files, %d folders in %v", fileCount, folderCount, duration)
+	logging.Info("Index complete: %d files, %d folders in %v", totalFiles, totalFolders, duration)
+}
+
+// processBatch processes a batch of files in a single transaction
+func (idx *Indexer) processBatch(files []database.MediaFile) error {
+	if len(files) == 0 {
+		return nil
+	}
+
+	tx, err := idx.db.BeginBatch()
+	if err != nil {
+		return fmt.Errorf("failed to begin batch transaction: %w", err)
+	}
+
+	for i := range files {
+		if err := idx.db.UpsertFile(tx, &files[i]); err != nil {
+			logging.Warn("Error upserting file %s: %v", files[i].Path, err)
+		}
+	}
+
+	if err := idx.db.EndBatch(tx, nil); err != nil {
+		return fmt.Errorf("failed to commit batch: %w", err)
+	}
+
+	return nil
+}
+
+// cleanupMissingFiles removes files from the database that no longer exist on disk
+func (idx *Indexer) cleanupMissingFiles(indexTime time.Time) error {
+	tx, err := idx.db.BeginBatch()
+	if err != nil {
+		return fmt.Errorf("failed to begin cleanup transaction: %w", err)
+	}
+
+	deleted, err := idx.db.DeleteMissingFiles(tx, indexTime)
+	if err != nil {
+		if endErr := idx.db.EndBatch(tx, err); endErr != nil {
+			logging.Error("failed to end batch after cleanup error: %v", endErr)
+		}
+		return err
+	}
+
+	if err := idx.db.EndBatch(tx, nil); err != nil {
+		return fmt.Errorf("failed to commit cleanup: %w", err)
+	}
+
+	if deleted > 0 {
+		logging.Info("Removed %d missing files from index", deleted)
+	}
 
 	return nil
 }
@@ -465,6 +660,11 @@ func (idx *Indexer) TriggerIndex() {
 			logging.Error("manually triggered re-index failed: %v", err)
 		}
 	}()
+}
+
+// GetProgress returns the current indexing progress
+func (idx *Indexer) GetProgress() IndexProgress {
+	return idx.getProgress()
 }
 
 func getFileType(ext string) string {

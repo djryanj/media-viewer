@@ -17,6 +17,10 @@ type HealthResponse struct {
 	LastIndexed       string `json:"lastIndexed,omitempty"`
 	InitialIndexError string `json:"initialIndexError,omitempty"`
 
+	// Progress info
+	FilesIndexed   int64 `json:"filesIndexed"`
+	FoldersIndexed int64 `json:"foldersIndexed"`
+
 	// System info
 	GoVersion    string `json:"goVersion"`
 	NumCPU       int    `json:"numCpu"`
@@ -33,13 +37,15 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, _ *http.Request) {
 	stats := h.db.GetStats()
 
 	response := HealthResponse{
-		Ready:        healthStatus.Ready,
-		Version:      startup.Version,
-		Uptime:       healthStatus.Uptime,
-		Indexing:     healthStatus.Indexing,
-		GoVersion:    runtime.Version(),
-		NumCPU:       runtime.NumCPU(),
-		NumGoroutine: runtime.NumGoroutine(),
+		Ready:          healthStatus.Ready,
+		Version:        startup.Version,
+		Uptime:         healthStatus.Uptime,
+		Indexing:       healthStatus.Indexing,
+		FilesIndexed:   healthStatus.FilesIndexed,
+		FoldersIndexed: healthStatus.FoldersIndexed,
+		GoVersion:      runtime.Version(),
+		NumCPU:         runtime.NumCPU(),
+		NumGoroutine:   runtime.NumGoroutine(),
 	}
 
 	if healthStatus.Ready {
@@ -57,15 +63,15 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, _ *http.Request) {
 		response.Status = "degraded"
 	}
 
-	// Include stats if ready
-	if healthStatus.Ready {
+	// Include stats if available
+	if stats.TotalFiles > 0 || stats.TotalFolders > 0 {
 		response.TotalFiles = stats.TotalFiles
 		response.TotalFolders = stats.TotalFolders
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// Return 503 if not ready, 200 if ready
+	// Return 503 only if not ready at all
 	if !healthStatus.Ready {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {
