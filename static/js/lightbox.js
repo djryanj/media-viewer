@@ -7,10 +7,18 @@ const Lightbox = {
     touchStartY: 0,
     isSwiping: false,
     useAppMedia: true,
+    
+    // New properties for loading management
+    currentLoadId: 0,           // Tracks which load operation is current
+    preloadCache: new Map(),    // Cache for preloaded images
+    preloadQueue: [],           // Queue of preload operations
+    maxPreload: 3,              // Number of items to preload in each direction
+    isLoading: false,           // Current loading state
 
     init() {
         this.cacheElements();
         this.createHotZones();
+        this.createLoadingIndicator();
         this.bindEvents();
     },
 
@@ -55,6 +63,14 @@ const Lightbox = {
 
         this.elements.hotZoneLeft = leftZone;
         this.elements.hotZoneRight = rightZone;
+    },
+
+    createLoadingIndicator() {
+        const loader = document.createElement('div');
+        loader.className = 'lightbox-loader hidden';
+        loader.innerHTML = '<div class="lightbox-spinner"></div>';
+        this.elements.content.appendChild(loader);
+        this.elements.loader = loader;
     },
 
     bindEvents() {
@@ -150,6 +166,9 @@ const Lightbox = {
     },
 
     show() {
+        // Clear preload cache when opening fresh
+        this.clearPreloadCache();
+        
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
         this.showMedia();
@@ -164,8 +183,12 @@ const Lightbox = {
     close() {
         this.elements.lightbox.classList.add('hidden');
         document.body.style.overflow = '';
-        this.elements.video.pause();
-        this.elements.video.src = '';
+        
+        // Abort any in-progress loads
+        this.abortCurrentLoad();
+        
+        // Clear preload cache to free memory
+        this.clearPreloadCache();
     },
 
     closeWithHistory() {
@@ -208,40 +231,263 @@ const Lightbox = {
         }
     },
 
+    // ==================== NEW LOADING MANAGEMENT ====================
+
+    abortCurrentLoad() {
+        // Increment load ID to invalidate any in-progress loads
+        this.currentLoadId++;
+        
+        // Abort video loading
+        const video = this.elements.video;
+        if (video && !video.paused) {
+            video.pause();
+        }
+        if (video && video.src) {
+            video.removeAttribute('src');
+            video.load(); // Aborts the current download
+        }
+        
+        // Abort image loading by replacing with a new image element approach
+        // or simply disconnect it
+        const image = this.elements.image;
+        if (image) {
+            image.removeAttribute('src');
+        }
+    },
+
+    showLoading() {
+        this.isLoading = true;
+        this.elements.loader?.classList.remove('hidden');
+        this.elements.image.classList.add('loading');
+        this.elements.video.classList.add('loading');
+    },
+
+    hideLoading() {
+        this.isLoading = false;
+        this.elements.loader?.classList.add('hidden');
+        this.elements.image.classList.remove('loading');
+        this.elements.video.classList.remove('loading');
+    },
+
     showMedia() {
         if (this.items.length === 0) return;
 
         const file = this.items[this.currentIndex];
         if (!file) return;
 
+        // Abort any previous load operation
+        this.abortCurrentLoad();
+        
+        // Get a unique ID for this load operation
+        const loadId = ++this.currentLoadId;
+
         this.elements.counter.textContent = `${this.currentIndex + 1} / ${this.items.length}`;
         this.elements.title.textContent = file.name;
 
         this.updatePinButton(file);
+        this.updateTagButton(file);
 
+        // Hide both media elements initially
         this.elements.image.classList.add('hidden');
         this.elements.video.classList.add('hidden');
-        this.elements.video.pause();
 
         if (file.type === 'image') {
-            this.elements.image.src = `/api/file/${file.path}`;
-            this.elements.image.classList.remove('hidden');
+            this.loadImage(file, loadId);
         } else if (file.type === 'video') {
-            this.loadVideo(file);
+            this.loadVideo(file, loadId);
         }
-        this.updatePinButton(file);
-        this.updateTagButton(file);
+
+        // Start preloading adjacent items
+        this.preloadAdjacent();
     },
 
-    async loadVideo(file) {
-        try {
-            this.elements.video.src = `/api/stream/${file.path}`;
-            this.elements.video.classList.remove('hidden');
-            this.elements.video.load();
-        } catch (error) {
-            console.error('Error loading video:', error);
-            this.elements.video.src = `/api/file/${file.path}`;
-            this.elements.video.classList.remove('hidden');
+    loadImage(file, loadId) {
+        const imageUrl = `/api/file/${file.path}`;
+        
+        // Check if we have this image preloaded
+        if (this.preloadCache.has(imageUrl)) {
+            const cachedImg = this.preloadCache.get(imageUrl);
+            if (cachedImg.complete && cachedImg.naturalWidth > 0) {
+                // Use cached image immediately
+                this.elements.image.src = cachedImg.src;
+                this.elements.image.classList.remove('hidden');
+                this.hideLoading();
+                return;
+            }
+        }
+
+        // Show loading state
+        this.showLoading();
+
+        // Create a new image to load
+        const img = new Image();
+        
+        img.onload = () => {
+            // Check if this load is still current
+            if (loadId !== this.currentLoadId) {
+                return; // A newer load has been initiated, ignore this one
+            }
+            
+            this.elements.image.src = img.src;
+            this.elements.image.classList.remove('hidden');
+            this.hideLoading();
+            
+            // Add to cache
+            this.preloadCache.set(imageUrl, img);
+        };
+
+        img.onerror = () => {
+            if (loadId !== this.currentLoadId) {
+                return;
+            }
+            
+            this.hideLoading();
+            console.error('Failed to load image:', file.path);
+            // Optionally show an error state
+            this.elements.image.classList.remove('hidden');
+            this.elements.image.src = ''; // Or a placeholder error image
+        };
+
+        img.src = imageUrl;
+    },
+
+    loadVideo(file, loadId) {
+        this.showLoading();
+        
+        const video = this.elements.video;
+        const videoUrl = `/api/stream/${file.path}`;
+        
+        // Set up load handlers before setting src
+        const onCanPlay = () => {
+            if (loadId !== this.currentLoadId) {
+                return;
+            }
+            video.classList.remove('hidden');
+            this.hideLoading();
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('error', onError);
+        };
+
+        const onError = (e) => {
+            if (loadId !== this.currentLoadId) {
+                return;
+            }
+            console.error('Error loading video:', e);
+            this.hideLoading();
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('error', onError);
+        };
+
+        video.addEventListener('canplay', onCanPlay);
+        video.addEventListener('error', onError);
+
+        video.src = videoUrl;
+        video.classList.remove('hidden');
+        video.load();
+    },
+
+    // ==================== PRELOADING ====================
+
+    clearPreloadCache() {
+        // Clear all preloaded images to free memory
+        this.preloadCache.clear();
+        this.preloadQueue = [];
+    },
+
+    preloadAdjacent() {
+        if (this.items.length <= 1) return;
+
+        const indicesToPreload = [];
+        
+        // Get indices for items before and after current
+        for (let i = 1; i <= this.maxPreload; i++) {
+            // Next items (higher priority)
+            const nextIndex = (this.currentIndex + i) % this.items.length;
+            indicesToPreload.push(nextIndex);
+            
+            // Previous items
+            const prevIndex = (this.currentIndex - i + this.items.length) % this.items.length;
+            if (prevIndex !== nextIndex) {
+                indicesToPreload.push(prevIndex);
+            }
+        }
+
+        // Preload images only (videos are too large to preload)
+        indicesToPreload.forEach((index, priority) => {
+            const item = this.items[index];
+            if (item && item.type === 'image') {
+                this.preloadImage(item, priority);
+            }
+        });
+
+        // Clean up old cache entries to prevent memory bloat
+        this.cleanPreloadCache();
+    },
+
+    preloadImage(file, priority = 0) {
+        const imageUrl = `/api/file/${file.path}`;
+        
+        // Skip if already cached or loading
+        if (this.preloadCache.has(imageUrl)) {
+            return;
+        }
+
+        // Create preload image
+        const img = new Image();
+        
+        // Mark as loading in cache
+        this.preloadCache.set(imageUrl, img);
+
+        img.onload = () => {
+            // Image is now cached and ready
+            // The cache entry already exists, so nothing more to do
+        };
+
+        img.onerror = () => {
+            // Remove failed loads from cache
+            this.preloadCache.delete(imageUrl);
+        };
+
+        // Use lower fetch priority for preloads
+        img.fetchPriority = 'low';
+        img.loading = 'eager'; // We want to preload now, not lazy
+        img.src = imageUrl;
+    },
+
+    cleanPreloadCache() {
+        // Keep cache size reasonable - remove entries far from current position
+        const maxCacheSize = this.maxPreload * 2 + 5;
+        
+        if (this.preloadCache.size <= maxCacheSize) {
+            return;
+        }
+
+        // Build set of URLs we want to keep
+        const keepUrls = new Set();
+        
+        // Current item
+        const currentItem = this.items[this.currentIndex];
+        if (currentItem) {
+            keepUrls.add(`/api/file/${currentItem.path}`);
+        }
+
+        // Adjacent items
+        for (let i = 1; i <= this.maxPreload; i++) {
+            const nextIndex = (this.currentIndex + i) % this.items.length;
+            const prevIndex = (this.currentIndex - i + this.items.length) % this.items.length;
+            
+            const nextItem = this.items[nextIndex];
+            const prevItem = this.items[prevIndex];
+            
+            if (nextItem) keepUrls.add(`/api/file/${nextItem.path}`);
+            if (prevItem) keepUrls.add(`/api/file/${prevItem.path}`);
+        }
+
+        // Remove entries not in keep set
+        for (const url of this.preloadCache.keys()) {
+            if (!keepUrls.has(url)) {
+                this.preloadCache.delete(url);
+            }
         }
     },
 
