@@ -12,6 +12,7 @@ const Player = {
     playlistVisible: false,
     edgeSwipeStartX: null,
     edgeSwipeThreshold: 30,
+    itemTags: new Map(), // Cache for item tags
 
     init() {
         this.cacheElements();
@@ -402,6 +403,141 @@ const Player = {
             this.showControls();
         }
     },
+    /**
+     * Extract clean display name from a path
+     * Handles both UNC paths (\\server\share\...) and regular paths
+     * @param {string} fullPath - Full path or filename
+     * @returns {string} Clean name without path or extension
+     */
+    getDisplayName(fullPath) {
+        if (!fullPath) return 'Unknown';
+
+        // Handle both forward and back slashes
+        // Split on either type of slash
+        const parts = fullPath.split(/[/\\]/);
+        
+        // Get the last non-empty part (the filename)
+        let filename = '';
+        for (let i = parts.length - 1; i >= 0; i--) {
+            if (parts[i] && parts[i].trim()) {
+                filename = parts[i].trim();
+                break;
+            }
+        }
+
+        if (!filename) return 'Unknown';
+
+        // Remove file extension
+        const lastDotIndex = filename.lastIndexOf('.');
+        if (lastDotIndex > 0) {
+            filename = filename.substring(0, lastDotIndex);
+        }
+
+        return filename;
+    },
+
+    /**
+     * Load tags for all playlist items
+     * @param {Array} items - Playlist items
+     */
+    async loadPlaylistTags(items) {
+        this.itemTags.clear();
+
+        // Get unique paths that exist
+        const paths = items
+            .filter(item => item.exists && item.path)
+            .map(item => item.path);
+
+        if (paths.length === 0) return;
+
+        try {
+            // Batch request for tags - if your API supports it
+            // Otherwise, we'll fall back to individual requests
+            const response = await fetch('/api/tags/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths }),
+            });
+
+            if (response.ok) {
+                const tagsData = await response.json();
+                // Expecting format: { "path1": ["tag1", "tag2"], "path2": ["tag3"] }
+                for (const [path, tags] of Object.entries(tagsData)) {
+                    if (tags && tags.length > 0) {
+                        this.itemTags.set(path, tags);
+                    }
+                }
+            }
+        } catch (error) {
+            // Batch endpoint might not exist, fall back to individual requests
+            console.log('Batch tags not available, loading individually');
+            await this.loadTagsIndividually(paths);
+        }
+    },
+
+    /**
+     * Fallback: Load tags for each item individually
+     * @param {Array} paths - Array of file paths
+     */
+    async loadTagsIndividually(paths) {
+        // Limit concurrent requests
+        const batchSize = 5;
+        
+        for (let i = 0; i < paths.length; i += batchSize) {
+            const batch = paths.slice(i, i + batchSize);
+            
+            await Promise.all(batch.map(async (path) => {
+                try {
+                    const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
+                    if (response.ok) {
+                        const tags = await response.json();
+                        if (tags && tags.length > 0) {
+                            this.itemTags.set(path, tags);
+                        }
+                    }
+                } catch (error) {
+                    // Ignore individual failures
+                }
+            }));
+        }
+    },
+
+    /**
+     * Render tags HTML for a playlist item
+     * @param {Array} tags - Array of tag names
+     * @returns {string} HTML string
+     */
+    renderItemTags(tags) {
+        if (!tags || tags.length === 0) return '';
+
+        const maxDisplay = 2; // Limit tags shown in playlist to save space
+        const displayTags = tags.slice(0, maxDisplay);
+        const moreCount = tags.length - maxDisplay;
+
+        let html = '<span class="playlist-item-tags">';
+        displayTags.forEach(tag => {
+            html += `<span class="playlist-tag">${this.escapeHtml(tag)}</span>`;
+        });
+        if (moreCount > 0) {
+            html += `<span class="playlist-tag more">+${moreCount}</span>`;
+        }
+        html += '</span>';
+
+        return html;
+    },
+
+    /**
+     * Escape HTML for safe display
+     * @param {string} text 
+     * @returns {string}
+     */
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+
 
     async loadPlaylist(name) {
         App.showLoading();
@@ -409,8 +545,29 @@ const Player = {
             const response = await fetch(`/api/playlist/${encodeURIComponent(name)}`);
             if (!response.ok) throw new Error('Failed to load playlist');
 
-            this.playlist = await response.json();
+            const data = await response.json();
+            
+            // Handle both array and object formats from server
+            let items;
+            if (Array.isArray(data)) {
+                items = data;
+            } else if (data.items) {
+                items = data.items;
+            } else {
+                // Convert object with numeric keys to array
+                items = Object.values(data);
+            }
+
+            this.playlist = {
+                name: name,
+                items: items,
+            };
+            
             this.currentIndex = 0;
+            
+            // Load tags for all items
+            await this.loadPlaylistTags(items);
+            
             this.open();
         } catch (error) {
             console.error('Error loading playlist:', error);
@@ -483,8 +640,20 @@ const Player = {
 
         this.playlist.items.forEach((item, index) => {
             const li = document.createElement('li');
-            li.textContent = item.name;
             li.dataset.index = index;
+
+            // Get clean display name
+            const displayName = this.getDisplayName(item.name || item.path);
+            
+            // Get tags for this item
+            const tags = this.itemTags.get(item.path) || [];
+            const tagsHtml = this.renderItemTags(tags);
+
+            // Build the list item content
+            li.innerHTML = `
+                <span class="playlist-item-name">${this.escapeHtml(displayName)}</span>
+                ${tagsHtml}
+            `;
 
             if (!item.exists) {
                 li.classList.add('unavailable');
@@ -516,15 +685,24 @@ const Player = {
             return;
         }
 
+        // Update active state in list
         this.elements.items.querySelectorAll('li').forEach((li, i) => {
             li.classList.toggle('active', i === this.currentIndex);
         });
 
+        // Update header with clean name
+        const displayName = this.getDisplayName(item.name || item.path);
+        this.elements.title.textContent = displayName;
+
         this.elements.video.src = `/api/stream/${item.path}`;
         this.elements.video.load();
-        this.elements.video.play().catch(err => {
-            console.log('Autoplay prevented:', err);
-        });
+        
+        // Check autoplay preference
+        if (typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled()) {
+            this.elements.video.play().catch(err => {
+                console.log('Autoplay prevented:', err);
+            });
+        }
 
         const activeItem = this.elements.items.querySelector('.active');
         if (activeItem) {
