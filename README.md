@@ -41,6 +41,7 @@ services:
 
 volumes:
   media-cache:
+  media-database:
 ```
 
 2. Update `/path/to/your/media` to point to your media directory.
@@ -91,6 +92,8 @@ docker run -d `
 | `PORT` | `8080` | HTTP server port |
 | `INDEX_INTERVAL` | `30m` | How often to re-scan the media directory |
 | `LOG_STATIC_FILES` | `false` | Set to `true` to log static file requests |
+| `LOG_LEVEL` | `info` | Server log level. Valid values are `info`, `warn`, `warning`, `error`, `debug`. |
+| `LOG_HEALTH_CHECKS` | `true` | Whether or not to log http requests on the `/healthz`, `/health`, `/livez`, `/readyz` endpoints. |
 
 ## Development Setup
 
