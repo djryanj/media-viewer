@@ -9,36 +9,91 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"math/rand"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
 
-	_ "image/gif" // GIF image support
-	_ "image/png"
+	// Image format decoders - required for image.Decode to support these formats
+	_ "image/gif"
 
 	"github.com/disintegration/imaging"
-	_ "golang.org/x/image/webp" // WebP image support
+	_ "golang.org/x/image/webp" // WebP format support
 )
 
 // ThumbnailGenerator generates and caches thumbnail images for media files.
 type ThumbnailGenerator struct {
-	cacheDir string
-	mediaDir string
-	enabled  bool
-	db       *database.Database
-	mu       sync.Mutex
+	cacheDir           string
+	mediaDir           string
+	enabled            bool
+	db                 *database.Database
+	mu                 sync.Mutex
+	generationInterval time.Duration
+
+	// Background generation state
+	stopChan        chan struct{}
+	generationMu    sync.RWMutex
+	isGenerating    atomic.Bool
+	generationStats GenerationStats
 }
 
+// RebuildProgress tracks thumbnail rebuild progress
+type RebuildProgress struct {
+	InProgress  bool      `json:"inProgress"`
+	StartedAt   time.Time `json:"startedAt,omitempty"`
+	TotalFiles  int       `json:"totalFiles"`
+	Processed   int       `json:"processed"`
+	Succeeded   int       `json:"succeeded"`
+	Failed      int       `json:"failed"`
+	CurrentFile string    `json:"currentFile,omitempty"`
+}
+
+// ThumbnailStatus represents the current thumbnail system status
+type ThumbnailStatus struct {
+	Enabled        bool             `json:"enabled"`
+	CacheDir       string           `json:"cacheDir"`
+	CacheCount     int              `json:"cacheCount"`
+	CacheSize      int64            `json:"cacheSize"`
+	CacheSizeHuman string           `json:"cacheSizeHuman"`
+	Generation     *GenerationStats `json:"generation,omitempty"`
+}
+
+// GenerationStats tracks thumbnail generation progress
+type GenerationStats struct {
+	InProgress    bool      `json:"inProgress"`
+	StartedAt     time.Time `json:"startedAt,omitempty"`
+	LastCompleted time.Time `json:"lastCompleted,omitempty"`
+	TotalFiles    int       `json:"totalFiles"`
+	Processed     int       `json:"processed"`
+	Generated     int       `json:"generated"`
+	Skipped       int       `json:"skipped"`
+	Failed        int       `json:"failed"`
+	CurrentFile   string    `json:"currentFile,omitempty"`
+}
+
+const (
+	folderThumbSize    = 200
+	folderGridCellSize = 80
+	folderGridGap      = 4
+	folderGridPadding  = 20
+	folderTabHeight    = 25
+	maxSearchDepth     = 3
+
+	// Background generation settings
+	generationBatchSize  = 50                     // Files per batch
+	generationBatchDelay = 100 * time.Millisecond // Delay between batches
+	generationInterval   = 6 * time.Hour          // How often to run full generation
+)
+
 // NewThumbnailGenerator creates a new ThumbnailGenerator instance.
-func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database.Database) *ThumbnailGenerator {
+func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database.Database, generationInterval time.Duration) *ThumbnailGenerator {
 	if enabled {
 		logging.Debug("ThumbnailGenerator: enabled, cache dir: %s", cacheDir)
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
@@ -47,11 +102,19 @@ func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database
 	} else {
 		logging.Debug("ThumbnailGenerator: disabled")
 	}
+
+	// Default to 6 hours if not specified
+	if generationInterval <= 0 {
+		generationInterval = 6 * time.Hour
+	}
+
 	return &ThumbnailGenerator{
-		cacheDir: cacheDir,
-		mediaDir: mediaDir,
-		enabled:  enabled,
-		db:       db,
+		cacheDir:           cacheDir,
+		mediaDir:           mediaDir,
+		enabled:            enabled,
+		db:                 db,
+		generationInterval: generationInterval,
+		stopChan:           make(chan struct{}),
 	}
 }
 
@@ -73,26 +136,27 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 		}
 	}
 
+	// Use PNG extension for folders (transparency support), JPG for others
 	hash := md5.Sum([]byte(filePath))
-	cacheKey := fmt.Sprintf("%x.jpg", hash)
+	var cacheKey string
+	if fileType == database.FileTypeFolder {
+		cacheKey = fmt.Sprintf("%x.png", hash)
+	} else {
+		cacheKey = fmt.Sprintf("%x.jpg", hash)
+	}
 	cachePath := filepath.Join(t.cacheDir, cacheKey)
 
-	// Skip cache for folders (contents may change) or check cache for files
-	if fileType != database.FileTypeFolder {
-		if data, err := os.ReadFile(cachePath); err == nil {
-			logging.Debug("Thumbnail cache hit: %s", filePath)
-			return data, nil
-		}
+	// Check cache (for all types now, including folders during background generation)
+	if data, err := os.ReadFile(cachePath); err == nil {
+		return data, nil
 	}
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Double-check cache after acquiring lock (for non-folders)
-	if fileType != database.FileTypeFolder {
-		if data, err := os.ReadFile(cachePath); err == nil {
-			return data, nil
-		}
+	// Double-check cache after acquiring lock
+	if data, err := os.ReadFile(cachePath); err == nil {
+		return data, nil
 	}
 
 	logging.Debug("Thumbnail generating: %s (type: %s)", filePath, fileType)
@@ -119,298 +183,458 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 		return nil, fmt.Errorf("thumbnail generation returned nil image")
 	}
 
-	// For folders, we already have the composite image at the right size
-	var thumb image.Image
-	if fileType == database.FileTypeFolder {
-		thumb = img
-	} else {
-		thumb = imaging.Fit(img, 200, 200, imaging.Lanczos)
-	}
-
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 80}); err != nil {
-		return nil, fmt.Errorf("failed to encode thumbnail: %w", err)
+
+	if fileType == database.FileTypeFolder {
+		// Folders use PNG for transparency
+		if err := png.Encode(&buf, img); err != nil {
+			return nil, fmt.Errorf("failed to encode thumbnail as PNG: %w", err)
+		}
+	} else {
+		// Other types use JPEG
+		thumb := imaging.Fit(img, 200, 200, imaging.Lanczos)
+		if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 85}); err != nil {
+			return nil, fmt.Errorf("failed to encode thumbnail as JPEG: %w", err)
+		}
 	}
 
-	// Cache the result (including folders - accept potential staleness)
+	// Cache the result
 	if err := os.WriteFile(cachePath, buf.Bytes(), 0o644); err != nil {
 		logging.Warn("Failed to cache thumbnail %s: %v", cachePath, err)
-	} else {
-		logging.Debug("Thumbnail cached: %s", cachePath)
 	}
 
 	return buf.Bytes(), nil
 }
 
-func (t *ThumbnailGenerator) generateFolderThumbnail(folderPath string) (image.Image, error) {
-	logging.Debug("=== generateFolderThumbnail START ===")
-	logging.Debug("folderPath (raw): %s", folderPath)
-	logging.Debug("mediaDir: %s", t.mediaDir)
+// =============================================================================
+// FOLDER THUMBNAIL GENERATION
+// =============================================================================
 
-	// Strip mediaDir prefix to get the relative path for database queries
+// Folder colors
+var (
+	folderBodyColor  = color.RGBA{R: 240, G: 200, B: 100, A: 255} // Main folder body
+	folderTabColor   = color.RGBA{R: 220, G: 180, B: 80, A: 255}  // Folder tab (darker)
+	folderInnerColor = color.RGBA{R: 250, G: 235, B: 180, A: 255} // Inner area (lighter)
+)
+
+func (t *ThumbnailGenerator) generateFolderThumbnail(folderPath string) (image.Image, error) {
+	logging.Debug("Generating folder thumbnail: %s", folderPath)
+
+	// Get relative path for database queries
 	relativePath := folderPath
 	if strings.HasPrefix(folderPath, t.mediaDir) {
 		relativePath = strings.TrimPrefix(folderPath, t.mediaDir)
-		relativePath = strings.TrimPrefix(relativePath, "/") // Remove leading slash
+		relativePath = strings.TrimPrefix(relativePath, "/")
 	}
-	logging.Debug("folderPath (relative): %s", relativePath)
+
+	// Find images for the grid
+	images := t.findImagesForFolder(relativePath, 4)
+	logging.Debug("Found %d images for folder thumbnail", len(images))
+
+	// Create the folder thumbnail
+	return t.createFolderThumbnailImage(images)
+}
+
+// findImagesForFolder finds up to maxImages images in the folder and its subdirectories
+func (t *ThumbnailGenerator) findImagesForFolder(relativePath string, maxImages int) []image.Image {
+	// Pre-allocate with expected capacity
+	images := make([]image.Image, 0, maxImages)
 
 	if t.db == nil {
-		logging.Error("database is nil")
-		return nil, fmt.Errorf("database not available for folder thumbnail generation")
+		logging.Debug("Database not available for folder thumbnail")
+		return images
 	}
 
-	// Query for images and videos in this folder using relative path
-	mediaFiles, err := t.db.GetMediaFilesInFolder(relativePath, 15) // Increased limit
+	// First, try to get images directly from this folder
+	mediaFiles, err := t.db.GetMediaFilesInFolder(relativePath, maxImages)
 	if err != nil {
 		logging.Error("GetMediaFilesInFolder failed: %v", err)
-		return nil, fmt.Errorf("failed to query folder contents: %w", err)
+		return images
 	}
 
-	logging.Debug("GetMediaFilesInFolder returned %d files", len(mediaFiles))
-
-	// Filter to only images and videos
+	// Filter to only images
 	var candidates []database.MediaFile
 	for _, f := range mediaFiles {
-		if f.Type == database.FileTypeImage || f.Type == database.FileTypeVideo {
+		if f.Type == database.FileTypeImage {
 			candidates = append(candidates, f)
 		}
 	}
 
-	logging.Debug("After filtering: %d candidates", len(candidates))
+	logging.Debug("Found %d images directly in folder %s", len(candidates), relativePath)
 
-	if len(candidates) == 0 {
-		logging.Debug("No candidates, returning empty folder thumbnail")
-		return t.generateEmptyFolderThumbnail()
+	// If we don't have enough, search subdirectories
+	if len(candidates) < maxImages {
+		additionalNeeded := maxImages - len(candidates)
+		subImages := t.findImagesInSubdirectories(relativePath, additionalNeeded, maxSearchDepth)
+		candidates = append(candidates, subImages...)
+		logging.Debug("Found %d additional images from subdirectories", len(subImages))
 	}
 
-	// Select up to 6 files deterministically
-	selected := t.selectFilesForStack(candidates, relativePath, 6)
-	logging.Debug("Selected %d files for stack", len(selected))
+	// Limit to maxImages
+	if len(candidates) > maxImages {
+		candidates = candidates[:maxImages]
+	}
 
-	// Generate thumbnails for selected files
-	var thumbnails []image.Image
-	for _, f := range selected {
+	// Generate thumbnails for each candidate
+	for _, f := range candidates {
 		fullPath := filepath.Join(t.mediaDir, f.Path)
-		logging.Debug("Processing: %s -> %s", f.Path, fullPath)
 
-		if _, err := os.Stat(fullPath); err != nil {
-			logging.Error("File not accessible: %s - %v", fullPath, err)
-			continue
-		}
-
-		var thumb image.Image
-		var err error
-
-		switch f.Type {
-		case database.FileTypeImage:
-			thumb, err = t.generateImageThumbnail(fullPath)
-		case database.FileTypeVideo:
-			thumb, err = t.generateVideoThumbnail(fullPath)
-		case database.FileTypeFolder, database.FileTypePlaylist, database.FileTypeOther:
-			// Skip non-media types (shouldn't happen due to earlier filtering)
-			continue
-		}
-
+		img, err := t.generateImageThumbnail(fullPath)
 		if err != nil {
-			logging.Error("Thumbnail generation failed for %s: %v", fullPath, err)
+			logging.Debug("Failed to generate thumbnail for %s: %v", f.Path, err)
 			continue
 		}
 
-		if thumb != nil {
-			thumb = imaging.Fit(thumb, 120, 120, imaging.Lanczos)
-			thumbnails = append(thumbnails, thumb)
-			logging.Debug("Successfully added thumbnail for: %s", f.Name)
+		// Crop to square
+		squareImg := t.cropToSquare(img)
+		// Resize to cell size
+		resizedImg := imaging.Resize(squareImg, folderGridCellSize, folderGridCellSize, imaging.Lanczos)
+		images = append(images, resizedImg)
+
+		if len(images) >= maxImages {
+			break
 		}
 	}
 
-	logging.Debug("Total thumbnails generated: %d", len(thumbnails))
-
-	if len(thumbnails) == 0 {
-		logging.Debug("No thumbnails generated, returning empty folder thumbnail")
-		return t.generateEmptyFolderThumbnail()
-	}
-
-	logging.Debug("=== generateFolderThumbnail END - compositing %d thumbnails ===", len(thumbnails))
-	return t.compositeStackedThumbnails(thumbnails)
+	return images
 }
 
-func (t *ThumbnailGenerator) selectFilesForStack(files []database.MediaFile, seed string, count int) []database.MediaFile {
-	if len(files) <= count {
-		return files
+// findImagesInSubdirectories recursively searches for images in subdirectories
+func (t *ThumbnailGenerator) findImagesInSubdirectories(parentPath string, maxImages, maxDepth int) []database.MediaFile {
+	if maxDepth <= 0 || maxImages <= 0 {
+		return nil
 	}
 
-	// Sort for deterministic ordering first
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Path < files[j].Path
-	})
+	var results []database.MediaFile
 
-	// Create a seeded random generator for consistent selection
-	h := md5.Sum([]byte(seed))
-	seedInt := int64(h[0])<<56 | int64(h[1])<<48 | int64(h[2])<<40 | int64(h[3])<<32 |
-		int64(h[4])<<24 | int64(h[5])<<16 | int64(h[6])<<8 | int64(h[7])
-	rng := rand.New(rand.NewSource(seedInt))
+	// Get subdirectories using the database
+	subfolders, err := t.db.GetSubfolders(parentPath)
+	if err != nil {
+		logging.Debug("Failed to get subfolders for %s: %v", parentPath, err)
+		return results
+	}
 
-	// Shuffle and take first 'count'
-	rng.Shuffle(len(files), func(i, j int) {
-		files[i], files[j] = files[j], files[i]
-	})
+	for _, subfolder := range subfolders {
+		if len(results) >= maxImages {
+			break
+		}
 
-	return files[:count]
+		// Get images from this subfolder
+		remaining := maxImages - len(results)
+		mediaFiles, err := t.db.GetMediaFilesInFolder(subfolder.Path, remaining)
+		if err != nil {
+			logging.Debug("Failed to get media files from %s: %v", subfolder.Path, err)
+			continue
+		}
+
+		for _, f := range mediaFiles {
+			if f.Type == database.FileTypeImage {
+				results = append(results, f)
+				if len(results) >= maxImages {
+					break
+				}
+			}
+		}
+
+		// If still need more, recurse into this subfolder
+		if len(results) < maxImages {
+			remaining = maxImages - len(results)
+			subResults := t.findImagesInSubdirectories(subfolder.Path, remaining, maxDepth-1)
+			results = append(results, subResults...)
+		}
+	}
+
+	return results
 }
 
-func (t *ThumbnailGenerator) compositeStackedThumbnails(thumbnails []image.Image) (image.Image, error) {
-	canvasSize := 200
-	canvas := image.NewRGBA(image.Rect(0, 0, canvasSize, canvasSize))
+// cropToSquare crops an image to a centered square
+func (t *ThumbnailGenerator) cropToSquare(img image.Image) image.Image {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
 
-	// Manila folder background color
-	manilaColor := color.RGBA{R: 240, G: 220, B: 180, A: 255}
-	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{manilaColor}, image.Point{}, draw.Src)
-
-	// Draw folder tab at top
-	tabColor := color.RGBA{R: 220, G: 195, B: 150, A: 255}
-	for y := 0; y < 25; y++ {
-		for x := 10; x < 80; x++ {
-			canvas.Set(x, y, tabColor)
-		}
-	}
-	// Rounded corner for tab
-	for y := 20; y < 25; y++ {
-		for x := 75; x < 85; x++ {
-			canvas.Set(x, y, tabColor)
-		}
+	if width == height {
+		return img
 	}
 
-	// Stack positions for up to 6 images - spread across the folder
-	type stackPosition struct {
-		angle   float64
-		offsetX int
-		offsetY int
+	var cropRect image.Rectangle
+	if width > height {
+		// Landscape - crop sides
+		offset := (width - height) / 2
+		cropRect = image.Rect(offset, 0, offset+height, height)
+	} else {
+		// Portrait - crop top and bottom
+		offset := (height - width) / 2
+		cropRect = image.Rect(0, offset, width, offset+width)
 	}
 
-	positions := []stackPosition{
-		{angle: -15, offsetX: 5, offsetY: 35}, // Back left
-		{angle: 12, offsetX: 85, offsetY: 30}, // Back right
-		{angle: -8, offsetX: 15, offsetY: 50}, // Middle left
-		{angle: 10, offsetX: 70, offsetY: 45}, // Middle right
-		{angle: -4, offsetX: 35, offsetY: 55}, // Front left
-		{angle: 5, offsetX: 55, offsetY: 60},  // Front center-right
+	return imaging.Crop(img, cropRect)
+}
+
+// createFolderThumbnailImage creates the final folder thumbnail with the grid of images
+func (t *ThumbnailGenerator) createFolderThumbnailImage(images []image.Image) (image.Image, error) {
+	canvas := image.NewRGBA(image.Rect(0, 0, folderThumbSize, folderThumbSize))
+
+	// Start with fully transparent background
+	draw.Draw(canvas, canvas.Bounds(), image.Transparent, image.Point{}, draw.Src)
+
+	// Draw folder background
+	t.drawFolderBackground(canvas)
+
+	// Draw the image grid based on how many images we have
+	switch len(images) {
+	case 0:
+		t.drawEmptyFolderIcon(canvas)
+	case 1:
+		t.drawSingleImage(canvas, images[0])
+	case 2:
+		t.drawTwoImages(canvas, images)
+	case 3:
+		t.drawThreeImages(canvas, images)
+	default:
+		t.drawFourImages(canvas, images)
 	}
-
-	// Shadow color
-	shadowColor := color.RGBA{R: 180, G: 160, B: 120, A: 80}
-
-	// Draw thumbnails - first ones at back, last ones on top
-	numThumbs := len(thumbnails)
-	for i := 0; i < numThumbs && i < len(positions); i++ {
-		pos := positions[i]
-		thumb := thumbnails[i]
-
-		// Add white border around thumbnail
-		bordered := t.addBorder(thumb, color.White, 3)
-
-		// Rotate the thumbnail
-		rotated := imaging.Rotate(bordered, pos.angle, color.Transparent)
-
-		bounds := rotated.Bounds()
-		x := pos.offsetX
-		y := pos.offsetY
-
-		// Draw shadow
-		shadowRect := image.Rect(x+3, y+3, x+bounds.Dx()+3, y+bounds.Dy()+3)
-		draw.Draw(canvas, shadowRect, &image.Uniform{shadowColor}, image.Point{}, draw.Over)
-
-		// Draw the rotated thumbnail
-		destRect := image.Rect(x, y, x+bounds.Dx(), y+bounds.Dy())
-		draw.Draw(canvas, destRect, rotated, bounds.Min, draw.Over)
-	}
-
-	// Add subtle folder edge/border
-	folderEdge := color.RGBA{R: 200, G: 175, B: 130, A: 255}
-	t.drawBorder(canvas, folderEdge, 2)
 
 	return canvas, nil
 }
 
-func (t *ThumbnailGenerator) addBorder(img image.Image, borderColor color.Color, width int) image.Image {
-	bounds := img.Bounds()
-	newWidth := bounds.Dx() + (width * 2)
-	newHeight := bounds.Dy() + (width * 2)
+// drawFolderBackground draws the folder shape on a transparent background
+func (t *ThumbnailGenerator) drawFolderBackground(canvas *image.RGBA) {
+	bounds := canvas.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
 
-	bordered := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+	// Draw shadow first (semi-transparent)
+	shadowColor := color.RGBA{R: 0, G: 0, B: 0, A: 50}
+	shadowOffset := 3
 
-	// Fill with border color
-	draw.Draw(bordered, bordered.Bounds(), &image.Uniform{borderColor}, image.Point{}, draw.Src)
-
-	// Draw original image centered
-	destRect := image.Rect(width, width, width+bounds.Dx(), width+bounds.Dy())
-	draw.Draw(bordered, destRect, img, bounds.Min, draw.Over)
-
-	return bordered
-}
-
-func (t *ThumbnailGenerator) drawBorder(img *image.RGBA, c color.Color, width int) {
-	bounds := img.Bounds()
-	for i := 0; i < width; i++ {
-		// Top and bottom
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			img.Set(x, bounds.Min.Y+i, c)
-			img.Set(x, bounds.Max.Y-1-i, c)
-		}
-		// Left and right
-		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-			img.Set(bounds.Min.X+i, y, c)
-			img.Set(bounds.Max.X-1-i, y, c)
-		}
-	}
-}
-
-func (t *ThumbnailGenerator) generateEmptyFolderThumbnail() (image.Image, error) {
-	size := 200
-	canvas := image.NewRGBA(image.Rect(0, 0, size, size))
-
-	// Manila folder background
-	manilaColor := color.RGBA{R: 240, G: 220, B: 180, A: 255}
-	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{manilaColor}, image.Point{}, draw.Src)
-
-	// Folder tab
-	tabColor := color.RGBA{R: 220, G: 195, B: 150, A: 255}
-	for y := 0; y < 25; y++ {
-		for x := 10; x < 80; x++ {
-			canvas.Set(x, y, tabColor)
-		}
-	}
-	for y := 20; y < 25; y++ {
-		for x := 75; x < 85; x++ {
-			canvas.Set(x, y, tabColor)
+	// Shadow for main body
+	for y := folderTabHeight + shadowOffset; y < height; y++ {
+		for x := shadowOffset; x < width; x++ {
+			canvas.Set(x, y, shadowColor)
 		}
 	}
 
-	// Draw "empty" indicator - a subtle folder icon in center
-	emptyColor := color.RGBA{R: 200, G: 175, B: 130, A: 255}
-
-	// Simple folder outline in center
-	for y := 70; y < 140; y++ {
-		for x := 50; x < 150; x++ {
-			// Border only
-			if y < 75 || y > 135 || x < 55 || x > 145 {
-				canvas.Set(x, y, emptyColor)
+	// Draw folder tab (top left portion)
+	tabWidth := width * 2 / 5
+	for y := 0; y < folderTabHeight; y++ {
+		for x := 0; x < tabWidth+y/2; x++ {
+			if x < width {
+				canvas.Set(x, y, folderTabColor)
 			}
 		}
 	}
-	// Inner folder tab
-	for y := 60; y < 70; y++ {
-		for x := 50; x < 90; x++ {
-			canvas.Set(x, y, emptyColor)
+
+	// Draw main folder body
+	for y := folderTabHeight - 2; y < height-shadowOffset; y++ {
+		for x := 0; x < width-shadowOffset; x++ {
+			canvas.Set(x, y, folderBodyColor)
 		}
 	}
 
-	// Add folder edge border
-	folderEdge := color.RGBA{R: 200, G: 175, B: 130, A: 255}
-	t.drawBorder(canvas, folderEdge, 2)
-
-	return canvas, nil
+	// Draw inner area (where images go)
+	innerMargin := 8
+	for y := folderTabHeight + innerMargin - 2; y < height-innerMargin-shadowOffset; y++ {
+		for x := innerMargin; x < width-innerMargin-shadowOffset; x++ {
+			canvas.Set(x, y, folderInnerColor)
+		}
+	}
 }
+
+// getGridArea returns the rectangle where the image grid should be drawn
+func (t *ThumbnailGenerator) getGridArea() image.Rectangle {
+	margin := 12
+	return image.Rect(
+		margin,
+		folderTabHeight+margin,
+		folderThumbSize-margin-4,
+		folderThumbSize-margin-4,
+	)
+}
+
+// drawSingleImage draws a single centered image
+func (t *ThumbnailGenerator) drawSingleImage(canvas *image.RGBA, img image.Image) {
+	gridArea := t.getGridArea()
+	gridWidth := gridArea.Dx()
+	gridHeight := gridArea.Dy()
+
+	// Size the image to fit nicely (not too big)
+	imgSize := min(gridWidth, gridHeight) * 3 / 4
+	resized := imaging.Resize(img, imgSize, imgSize, imaging.Lanczos)
+
+	// Center it
+	x := gridArea.Min.X + (gridWidth-imgSize)/2
+	y := gridArea.Min.Y + (gridHeight-imgSize)/2
+
+	t.drawImageWithBorder(canvas, resized, x, y)
+}
+
+// drawTwoImages draws two images side by side
+func (t *ThumbnailGenerator) drawTwoImages(canvas *image.RGBA, images []image.Image) {
+	gridArea := t.getGridArea()
+	gridWidth := gridArea.Dx()
+	gridHeight := gridArea.Dy()
+
+	// Calculate image size (fit two with a gap)
+	imgSize := (gridWidth - folderGridGap) / 2
+	if imgSize > gridHeight*3/4 {
+		imgSize = gridHeight * 3 / 4
+	}
+
+	// Resize images
+	img1 := imaging.Resize(images[0], imgSize, imgSize, imaging.Lanczos)
+	img2 := imaging.Resize(images[1], imgSize, imgSize, imaging.Lanczos)
+
+	// Center vertically
+	y := gridArea.Min.Y + (gridHeight-imgSize)/2
+
+	// Position horizontally with gap
+	totalWidth := imgSize*2 + folderGridGap
+	startX := gridArea.Min.X + (gridWidth-totalWidth)/2
+
+	t.drawImageWithBorder(canvas, img1, startX, y)
+	t.drawImageWithBorder(canvas, img2, startX+imgSize+folderGridGap, y)
+}
+
+// drawThreeImages draws three images (2 on top, 1 centered below)
+func (t *ThumbnailGenerator) drawThreeImages(canvas *image.RGBA, images []image.Image) {
+	gridArea := t.getGridArea()
+	gridWidth := gridArea.Dx()
+	gridHeight := gridArea.Dy()
+
+	// Calculate image size for 2x2 grid layout
+	imgSize := (min(gridWidth, gridHeight) - folderGridGap) / 2
+
+	// Resize all images
+	resized := make([]image.Image, 3)
+	for i := 0; i < 3; i++ {
+		resized[i] = imaging.Resize(images[i], imgSize, imgSize, imaging.Lanczos)
+	}
+
+	// Calculate positions
+	totalWidth := imgSize*2 + folderGridGap
+	totalHeight := imgSize*2 + folderGridGap
+	startX := gridArea.Min.X + (gridWidth-totalWidth)/2
+	startY := gridArea.Min.Y + (gridHeight-totalHeight)/2
+
+	// Top row - 2 images
+	t.drawImageWithBorder(canvas, resized[0], startX, startY)
+	t.drawImageWithBorder(canvas, resized[1], startX+imgSize+folderGridGap, startY)
+
+	// Bottom row - 1 centered image
+	bottomY := startY + imgSize + folderGridGap
+	centerX := gridArea.Min.X + (gridWidth-imgSize)/2
+	t.drawImageWithBorder(canvas, resized[2], centerX, bottomY)
+}
+
+// drawFourImages draws four images in a 2x2 grid
+func (t *ThumbnailGenerator) drawFourImages(canvas *image.RGBA, images []image.Image) {
+	gridArea := t.getGridArea()
+	gridWidth := gridArea.Dx()
+	gridHeight := gridArea.Dy()
+
+	// Calculate image size for 2x2 grid
+	imgSize := (min(gridWidth, gridHeight) - folderGridGap) / 2
+
+	// Resize all images
+	resized := make([]image.Image, 4)
+	for i := 0; i < 4; i++ {
+		resized[i] = imaging.Resize(images[i], imgSize, imgSize, imaging.Lanczos)
+	}
+
+	// Calculate starting position to center the grid
+	totalWidth := imgSize*2 + folderGridGap
+	totalHeight := imgSize*2 + folderGridGap
+	startX := gridArea.Min.X + (gridWidth-totalWidth)/2
+	startY := gridArea.Min.Y + (gridHeight-totalHeight)/2
+
+	// Draw 2x2 grid
+	// Top left
+	t.drawImageWithBorder(canvas, resized[0], startX, startY)
+	// Top right
+	t.drawImageWithBorder(canvas, resized[1], startX+imgSize+folderGridGap, startY)
+	// Bottom left
+	t.drawImageWithBorder(canvas, resized[2], startX, startY+imgSize+folderGridGap)
+	// Bottom right
+	t.drawImageWithBorder(canvas, resized[3], startX+imgSize+folderGridGap, startY+imgSize+folderGridGap)
+}
+
+// drawImageWithBorder draws an image with a subtle border/shadow
+func (t *ThumbnailGenerator) drawImageWithBorder(canvas *image.RGBA, img image.Image, x, y int) {
+	bounds := img.Bounds()
+	imgWidth := bounds.Dx()
+	imgHeight := bounds.Dy()
+
+	// Draw shadow (1 pixel offset)
+	shadowColor := color.RGBA{R: 100, G: 80, B: 40, A: 80}
+	shadowRect := image.Rect(x+2, y+2, x+imgWidth+2, y+imgHeight+2)
+	draw.Draw(canvas, shadowRect, &image.Uniform{shadowColor}, image.Point{}, draw.Over)
+
+	// Draw white border
+	borderWidth := 2
+	borderRect := image.Rect(x-borderWidth, y-borderWidth, x+imgWidth+borderWidth, y+imgHeight+borderWidth)
+	draw.Draw(canvas, borderRect, &image.Uniform{color.White}, image.Point{}, draw.Over)
+
+	// Draw the image
+	destRect := image.Rect(x, y, x+imgWidth, y+imgHeight)
+	draw.Draw(canvas, destRect, img, bounds.Min, draw.Over)
+}
+
+// drawEmptyFolderIcon draws an icon indicating an empty folder
+func (t *ThumbnailGenerator) drawEmptyFolderIcon(canvas *image.RGBA) {
+	gridArea := t.getGridArea()
+	centerX := gridArea.Min.X + gridArea.Dx()/2
+	centerY := gridArea.Min.Y + gridArea.Dy()/2
+
+	// Draw a simple "empty" indicator - a small folder outline
+	iconSize := 40
+	iconColor := color.RGBA{R: 180, G: 150, B: 100, A: 220}
+
+	// Folder outline
+	x := centerX - iconSize/2
+	y := centerY - iconSize/2
+
+	// Draw folder shape outline
+	// Tab
+	for i := 0; i < iconSize/3; i++ {
+		canvas.Set(x+i, y, iconColor)
+		canvas.Set(x+i, y+1, iconColor)
+	}
+	// Tab diagonal
+	canvas.Set(x+iconSize/3, y+2, iconColor)
+	canvas.Set(x+iconSize/3+1, y+3, iconColor)
+
+	// Body outline
+	for i := 0; i < iconSize; i++ {
+		// Top
+		canvas.Set(x+i, y+4, iconColor)
+		// Bottom
+		canvas.Set(x+i, y+iconSize-1, iconColor)
+	}
+	for i := 4; i < iconSize; i++ {
+		// Left
+		canvas.Set(x, y+i, iconColor)
+		// Right
+		canvas.Set(x+iconSize-1, y+i, iconColor)
+	}
+
+	// Draw "empty" dots
+	dotY := centerY + 5
+	dotSpacing := 8
+	dotColor := color.RGBA{R: 150, G: 120, B: 80, A: 200}
+	for i := -1; i <= 1; i++ {
+		dotX := centerX + i*dotSpacing
+		for dy := -1; dy <= 1; dy++ {
+			for dx := -1; dx <= 1; dx++ {
+				canvas.Set(dotX+dx, dotY+dy, dotColor)
+			}
+		}
+	}
+}
+
+// =============================================================================
+// IMAGE THUMBNAIL GENERATION
+// =============================================================================
 
 func (t *ThumbnailGenerator) generateImageThumbnail(filePath string) (image.Image, error) {
 	logging.Debug("Opening image: %s", filePath)
@@ -509,6 +733,10 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(filePath string) (image.Ima
 	return img, nil
 }
 
+// =============================================================================
+// VIDEO THUMBNAIL GENERATION
+// =============================================================================
+
 func (t *ThumbnailGenerator) generateVideoThumbnail(filePath string) (image.Image, error) {
 	logging.Debug("Extracting video frame: %s", filePath)
 
@@ -569,6 +797,10 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(filePath string) (image.Imag
 
 	return img, nil
 }
+
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
 
 // GetFileType determines the file type based on the file extension.
 func (t *ThumbnailGenerator) GetFileType(path string) database.FileType {
@@ -657,21 +889,343 @@ func detectFileType(filePath string) (string, error) {
 	return "unknown", nil
 }
 
-// InvalidateFolderThumbnail removes the cached thumbnail for a folder
-// Call this when folder contents change
-func (t *ThumbnailGenerator) InvalidateFolderThumbnail(folderPath string) error {
+// InvalidateThumbnail removes the cached thumbnail for a specific path
+func (t *ThumbnailGenerator) InvalidateThumbnail(filePath string) error {
 	if !t.enabled {
 		return nil
 	}
 
-	hash := md5.Sum([]byte(folderPath))
-	cacheKey := fmt.Sprintf("%x.jpg", hash)
-	cachePath := filepath.Join(t.cacheDir, cacheKey)
+	hash := md5.Sum([]byte(filePath))
 
-	if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to invalidate folder thumbnail: %w", err)
+	extensions := []string{".jpg", ".png"}
+	deleted := false
+
+	for _, ext := range extensions {
+		cacheKey := fmt.Sprintf("%x%s", hash, ext)
+		cachePath := filepath.Join(t.cacheDir, cacheKey)
+
+		err := os.Remove(cachePath)
+		if err == nil {
+			deleted = true
+			logging.Debug("Deleted cached thumbnail: %s", cachePath)
+		} else if !os.IsNotExist(err) {
+			logging.Warn("Failed to delete thumbnail %s: %v", cachePath, err)
+		}
 	}
 
-	logging.Debug("Invalidated folder thumbnail cache: %s", folderPath)
+	if deleted {
+		logging.Debug("Invalidated thumbnail cache for: %s", filePath)
+	}
+
 	return nil
+}
+
+// InvalidateAll removes all cached thumbnails and returns the count of deleted files
+func (t *ThumbnailGenerator) InvalidateAll() (int, error) {
+	if !t.enabled {
+		return 0, nil
+	}
+
+	entries, err := os.ReadDir(t.cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to read cache directory: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".jpg") && !strings.HasSuffix(name, ".png") {
+			continue
+		}
+
+		cachePath := filepath.Join(t.cacheDir, name)
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
+			logging.Warn("Failed to delete cached thumbnail %s: %v", name, err)
+			continue
+		}
+		count++
+	}
+
+	logging.Info("Invalidated %d cached thumbnails", count)
+	return count, nil
+}
+
+// Start begins background thumbnail generation
+func (t *ThumbnailGenerator) Start() {
+	if !t.enabled {
+		logging.Info("Thumbnail generation disabled, skipping background generation")
+		return
+	}
+
+	go t.backgroundGenerationLoop()
+}
+
+// Stop stops background thumbnail generation
+func (t *ThumbnailGenerator) Stop() {
+	if t.stopChan != nil {
+		close(t.stopChan)
+	}
+}
+
+// backgroundGenerationLoop runs periodic thumbnail generation
+func (t *ThumbnailGenerator) backgroundGenerationLoop() {
+	// Wait a bit for initial indexing to complete
+	initialDelay := 30 * time.Second
+	logging.Info("Thumbnail generator will start in %v (regeneration interval: %v)", initialDelay, t.generationInterval)
+
+	select {
+	case <-time.After(initialDelay):
+	case <-t.stopChan:
+		return
+	}
+
+	// Run initial generation
+	t.runGeneration()
+
+	// Set up periodic regeneration using configured interval
+	ticker := time.NewTicker(t.generationInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			logging.Info("Starting periodic thumbnail generation")
+			t.runGeneration()
+		case <-t.stopChan:
+			logging.Info("Thumbnail generator stopped")
+			return
+		}
+	}
+}
+
+// runGeneration performs a full thumbnail generation pass
+func (t *ThumbnailGenerator) runGeneration() {
+	if !t.enabled || t.db == nil {
+		return
+	}
+
+	// Check if already running
+	if t.isGenerating.Load() {
+		logging.Info("Thumbnail generation already in progress, skipping")
+		return
+	}
+
+	t.isGenerating.Store(true)
+	defer t.isGenerating.Store(false)
+
+	startTime := time.Now()
+	logging.Info("Starting background thumbnail generation...")
+
+	// Reset stats
+	t.generationMu.Lock()
+	t.generationStats = GenerationStats{
+		InProgress: true,
+		StartedAt:  startTime,
+	}
+	t.generationMu.Unlock()
+
+	// Get all files that need thumbnails, ordered by path depth (root first)
+	files, err := t.db.GetAllMediaFilesForThumbnails()
+	if err != nil {
+		logging.Error("Failed to get files for thumbnail generation: %v", err)
+		t.generationMu.Lock()
+		t.generationStats.InProgress = false
+		t.generationMu.Unlock()
+		return
+	}
+
+	t.generationMu.Lock()
+	t.generationStats.TotalFiles = len(files)
+	t.generationMu.Unlock()
+
+	logging.Info("Processing %d files for thumbnail generation", len(files))
+
+	// Process in batches
+	for i := 0; i < len(files); i += generationBatchSize {
+		// Check for stop signal
+		select {
+		case <-t.stopChan:
+			logging.Info("Thumbnail generation stopped by signal")
+			t.generationMu.Lock()
+			t.generationStats.InProgress = false
+			t.generationMu.Unlock()
+			return
+		default:
+		}
+
+		end := i + generationBatchSize
+		if end > len(files) {
+			end = len(files)
+		}
+
+		batch := files[i:end]
+		t.processBatch(batch)
+
+		// Small delay between batches to avoid overwhelming the system
+		time.Sleep(generationBatchDelay)
+
+		// Log progress periodically
+		if (i+generationBatchSize)%500 == 0 || end == len(files) {
+			t.generationMu.RLock()
+			logging.Info("Thumbnail generation progress: %d/%d (generated: %d, skipped: %d, failed: %d)",
+				t.generationStats.Processed,
+				t.generationStats.TotalFiles,
+				t.generationStats.Generated,
+				t.generationStats.Skipped,
+				t.generationStats.Failed)
+			t.generationMu.RUnlock()
+		}
+	}
+
+	// Mark complete
+	t.generationMu.Lock()
+	t.generationStats.InProgress = false
+	t.generationStats.LastCompleted = time.Now()
+	t.generationStats.CurrentFile = ""
+	t.generationMu.Unlock()
+
+	duration := time.Since(startTime)
+	t.generationMu.RLock()
+	logging.Info("Thumbnail generation complete in %v: generated %d, skipped %d, failed %d",
+		duration,
+		t.generationStats.Generated,
+		t.generationStats.Skipped,
+		t.generationStats.Failed)
+	t.generationMu.RUnlock()
+}
+
+// processBatch processes a batch of files for thumbnail generation
+func (t *ThumbnailGenerator) processBatch(files []database.MediaFile) {
+	for _, file := range files {
+		t.generationMu.Lock()
+		t.generationStats.Processed++
+		t.generationStats.CurrentFile = file.Path
+		t.generationMu.Unlock()
+
+		// Check if thumbnail already exists
+		if t.thumbnailExists(file.Path, file.Type) {
+			t.generationMu.Lock()
+			t.generationStats.Skipped++
+			t.generationMu.Unlock()
+			continue
+		}
+
+		// Generate thumbnail
+		fullPath := filepath.Join(t.mediaDir, file.Path)
+		_, err := t.GetThumbnail(fullPath, file.Type)
+
+		t.generationMu.Lock()
+		if err != nil {
+			t.generationStats.Failed++
+			logging.Debug("Failed to generate thumbnail for %s: %v", file.Path, err)
+		} else {
+			t.generationStats.Generated++
+		}
+		t.generationMu.Unlock()
+	}
+}
+
+// thumbnailExists checks if a thumbnail already exists in the cache
+func (t *ThumbnailGenerator) thumbnailExists(filePath string, fileType database.FileType) bool {
+	fullPath := filepath.Join(t.mediaDir, filePath)
+	hash := md5.Sum([]byte(fullPath))
+
+	var ext string
+	if fileType == database.FileTypeFolder {
+		ext = ".png"
+	} else {
+		ext = ".jpg"
+	}
+
+	cacheKey := fmt.Sprintf("%x%s", hash, ext)
+	cachePath := filepath.Join(t.cacheDir, cacheKey)
+
+	_, err := os.Stat(cachePath)
+	return err == nil
+}
+
+// IsGenerating returns whether background generation is in progress
+func (t *ThumbnailGenerator) IsGenerating() bool {
+	return t.isGenerating.Load()
+}
+
+// GetStatus returns the current status of the thumbnail generator
+func (t *ThumbnailGenerator) GetStatus() ThumbnailStatus {
+	status := ThumbnailStatus{
+		Enabled:  t.enabled,
+		CacheDir: t.cacheDir,
+	}
+
+	if !t.enabled {
+		return status
+	}
+
+	// Count cache files and size
+	entries, err := os.ReadDir(t.cacheDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".png") {
+				status.CacheCount++
+				if info, err := entry.Info(); err == nil {
+					status.CacheSize += info.Size()
+				}
+			}
+		}
+	}
+
+	status.CacheSizeHuman = formatBytes(status.CacheSize)
+
+	// Include generation stats
+	t.generationMu.RLock()
+	stats := t.generationStats
+	t.generationMu.RUnlock()
+	status.Generation = &stats
+
+	return status
+}
+
+// TriggerGeneration manually triggers a thumbnail generation run
+func (t *ThumbnailGenerator) TriggerGeneration() {
+	go t.runGeneration()
+}
+
+// formatBytes formats bytes into human-readable string
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// RebuildAll clears the cache and triggers a full regeneration
+func (t *ThumbnailGenerator) RebuildAll() {
+	if !t.enabled {
+		return
+	}
+
+	count, err := t.InvalidateAll()
+	if err != nil {
+		logging.Error("Failed to clear cache before rebuild: %v", err)
+	} else {
+		logging.Info("Cleared %d thumbnails, starting rebuild", count)
+	}
+
+	t.TriggerGeneration()
 }

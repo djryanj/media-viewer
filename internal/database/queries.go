@@ -944,3 +944,191 @@ func (d *Database) CalculateStats() (IndexStats, error) {
 
 	return stats, nil
 }
+
+// GetSubfolders returns all immediate subfolders of a given path
+func (d *Database) GetSubfolders(parentPath string) ([]MediaFile, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	query := `
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
+		FROM files
+		WHERE parent_path = ? AND type = ?
+		ORDER BY name COLLATE NOCASE
+	`
+
+	rows, err := d.db.QueryContext(ctx, query, parentPath, FileTypeFolder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query subfolders: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
+
+	var folders []MediaFile
+	for rows.Next() {
+		var f MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&f.ID,
+			&f.Name,
+			&f.Path,
+			&f.ParentPath,
+			&f.Type,
+			&f.Size,
+			&modTime,
+			&mimeType,
+		)
+		if err != nil {
+			logging.Warn("error scanning subfolder row: %v", err)
+			continue
+		}
+
+		f.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			f.MimeType = mimeType.String
+		}
+
+		folders = append(folders, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating subfolder rows: %w", err)
+	}
+
+	return folders, nil
+}
+
+// GetAllMediaFiles returns all media files (images, videos, folders) for thumbnail rebuilding
+func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
+		FROM files
+		WHERE type IN (?, ?, ?)
+		ORDER BY path
+	`
+
+	rows, err := d.db.QueryContext(ctx, query, FileTypeImage, FileTypeVideo, FileTypeFolder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query media files: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
+
+	var files []MediaFile
+	for rows.Next() {
+		var f MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&f.ID,
+			&f.Name,
+			&f.Path,
+			&f.ParentPath,
+			&f.Type,
+			&f.Size,
+			&modTime,
+			&mimeType,
+		)
+		if err != nil {
+			logging.Warn("error scanning media file row: %v", err)
+			continue
+		}
+
+		f.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			f.MimeType = mimeType.String
+		}
+
+		files = append(files, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating media file rows: %w", err)
+	}
+
+	return files, nil
+}
+
+// GetAllMediaFilesForThumbnails returns all media files ordered by path depth (root first)
+// This ensures parent folders are processed before children
+func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Order by path depth (fewer slashes = closer to root) then by path
+	// This ensures folders are processed before their contents
+	query := `
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
+		FROM files
+		WHERE type IN (?, ?, ?)
+		ORDER BY 
+			(LENGTH(path) - LENGTH(REPLACE(path, '/', ''))) ASC,
+			path ASC
+	`
+
+	rows, err := d.db.QueryContext(ctx, query, FileTypeFolder, FileTypeImage, FileTypeVideo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query media files: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
+
+	var files []MediaFile
+	for rows.Next() {
+		var f MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&f.ID,
+			&f.Name,
+			&f.Path,
+			&f.ParentPath,
+			&f.Type,
+			&f.Size,
+			&modTime,
+			&mimeType,
+		)
+		if err != nil {
+			logging.Warn("error scanning media file row: %v", err)
+			continue
+		}
+
+		f.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			f.MimeType = mimeType.String
+		}
+
+		files = append(files, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating media file rows: %w", err)
+	}
+
+	return files, nil
+}

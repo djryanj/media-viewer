@@ -91,9 +91,71 @@ docker run -d `
 | `DATABASE_DIR` | `/database` | Path to database directory |
 | `PORT` | `8080` | HTTP server port |
 | `INDEX_INTERVAL` | `30m` | How often to re-scan the media directory |
+| `THUMBNAIL_INTERVAL` | `6h` | How often the thumbnail generator regenerates all thumbnails. Example values are `12h` (every 12 hours), `30m` (every 30 minutes) |
 | `LOG_STATIC_FILES` | `false` | Set to `true` to log static file requests |
 | `LOG_LEVEL` | `info` | Server log level. Valid values are `info`, `warn`, `warning`, `error`, `debug`. |
 | `LOG_HEALTH_CHECKS` | `true` | Whether or not to log http requests on the `/healthz`, `/health`, `/livez`, `/readyz` endpoints. |
+
+### Acceptable Interval Values
+
+Both `INDEX_INTERVAL` and `THUMBNAIL_INTERVAL` use Go's `time.ParseDuration` function, which accepts the following format:
+
+A duration string is a sequence of decimal numbers, each with an optional fraction and a unit suffix.
+
+**Valid unit suffixes:**
+
+| Unit | Suffix | Example |
+|------|--------|---------|
+| Nanoseconds | `ns` | `500ns` |
+| Microseconds | `µs` or `us` | `100us` |
+| Milliseconds | `ms` | `500ms` |
+| Seconds | `s` | `30s` |
+| Minutes | `m` | `30m` |
+| Hours | `h` | `6h` |
+
+#### Examples
+
+```bash
+# Practical examples for thumbnail regeneration:
+THUMBNAIL_INTERVAL=30m      # Every 30 minutes
+THUMBNAIL_INTERVAL=1h       # Every 1 hour
+THUMBNAIL_INTERVAL=2h       # Every 2 hours
+THUMBNAIL_INTERVAL=6h       # Every 6 hours (default)
+THUMBNAIL_INTERVAL=12h      # Every 12 hours
+THUMBNAIL_INTERVAL=24h      # Every 24 hours (once a day)
+
+# Combined units:
+THUMBNAIL_INTERVAL=1h30m    # Every 1 hour and 30 minutes
+THUMBNAIL_INTERVAL=2h30m    # Every 2 hours and 30 minutes
+
+# With fractions:
+THUMBNAIL_INTERVAL=1.5h     # Every 1.5 hours (90 minutes)
+THUMBNAIL_INTERVAL=0.5h     # Every 30 minutes
+
+# Technically valid but not practical for this use case:
+THUMBNAIL_INTERVAL=3600s    # Every 3600 seconds (1 hour)
+THUMBNAIL_INTERVAL=86400s   # Every 86400 seconds (24 hours)
+```
+
+#### Invalid Examples
+
+```bash
+# These will NOT work:
+THUMBNAIL_INTERVAL=6        # Missing unit
+THUMBNAIL_INTERVAL=6hours   # Invalid unit (must be 'h')
+THUMBNAIL_INTERVAL=1d       # Days not supported
+THUMBNAIL_INTERVAL=1w       # Weeks not supported
+```
+
+#### Recommended Values
+
+| Use Case | Value |
+|----------|-------|
+| Development/Testing | `30m` or `1h` |
+| Small library (< 1000 files) | `6h` |
+| Medium library (1000-10000 files) | `12h` |
+| Large library (> 10000 files) | `24h` |
+| Disable periodic regeneration | Set very high like `8760h` (1 year) |
 
 ## Development Setup
 

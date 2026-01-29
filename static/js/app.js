@@ -33,6 +33,13 @@ const App = {
             statsInfo: document.getElementById('stats-info'),
             currentUser: document.getElementById('current-user'),
             logoutBtn: document.getElementById('logout-btn'),
+            clearCacheBtn: document.getElementById('clear-cache-btn'),
+            confirmModal: document.getElementById('confirm-modal'),
+            confirmModalCancel: document.getElementById('confirm-modal-cancel'),
+            confirmModalConfirm: document.getElementById('confirm-modal-confirm'),
+            confirmModalTitle: document.getElementById('confirm-modal-title'),
+            confirmModalMessage: document.getElementById('confirm-modal-message'),
+            confirmModalIcon: document.getElementById('confirm-modal-icon'),
         };
     },
 
@@ -43,6 +50,8 @@ const App = {
         this.elements.pagePrev.addEventListener('click', () => this.prevPage());
         this.elements.pageNext.addEventListener('click', () => this.nextPage());
         this.elements.logoutBtn.addEventListener('click', () => this.logout());
+        this.elements.clearCacheBtn.addEventListener('click', () => this.clearThumbnailCache());
+
 
         window.addEventListener('popstate', (e) => {
             const path = e.state?.path || '';
@@ -327,4 +336,133 @@ const App = {
     getMediaIndex(path) {
         return this.state.mediaFiles.findIndex(f => f.path === path);
     },
+
+    showConfirmModal(options) {
+        return new Promise((resolve) => {
+            if (this.elements.confirmModalIcon) {
+                this.elements.confirmModalIcon.textContent = options.icon || '⚠️';
+            }
+            if (this.elements.confirmModalTitle) {
+                this.elements.confirmModalTitle.textContent = options.title || 'Confirm';
+            }
+            if (this.elements.confirmModalMessage) {
+                this.elements.confirmModalMessage.textContent = options.message || 'Are you sure?';
+            }
+            if (this.elements.confirmModalConfirm) {
+                this.elements.confirmModalConfirm.textContent = options.confirmText || 'Confirm';
+                
+                // Remove old listeners by cloning the button
+                const oldBtn = this.elements.confirmModalConfirm;
+                const newBtn = oldBtn.cloneNode(true);
+                oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+                this.elements.confirmModalConfirm = newBtn;
+                
+                // Add new click handler
+                newBtn.addEventListener('click', () => {
+                    this.elements.confirmModal.classList.add('hidden');
+                    resolve(true);
+                });
+            }
+            if (this.elements.confirmModalCancel) {
+                // Remove old listeners by cloning the button
+                const oldBtn = this.elements.confirmModalCancel;
+                const newBtn = oldBtn.cloneNode(true);
+                oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+                this.elements.confirmModalCancel = newBtn;
+                
+                // Add new click handler
+                newBtn.addEventListener('click', () => {
+                    this.elements.confirmModal.classList.add('hidden');
+                    resolve(false);
+                });
+            }
+
+            // Handle clicking outside the modal
+            const handleBackdropClick = (e) => {
+                if (e.target === this.elements.confirmModal) {
+                    this.elements.confirmModal.classList.add('hidden');
+                    this.elements.confirmModal.removeEventListener('click', handleBackdropClick);
+                    resolve(false);
+                }
+            };
+            this.elements.confirmModal.addEventListener('click', handleBackdropClick);
+
+            this.elements.confirmModal.classList.remove('hidden');
+        });
+    },
+
+    // Remove the hideConfirmModal method or simplify it:
+    hideConfirmModal() {
+        if (this.elements.confirmModal) {
+            this.elements.confirmModal.classList.add('hidden');
+        }
+    },
+
+    // Update clearThumbnailCache:
+    async clearThumbnailCache() {
+        const confirmed = await this.showConfirmModal({
+            icon: '🗑️',
+            title: 'Clear & Rebuild Thumbnails?',
+            message: 'This will delete all cached thumbnails and regenerate them in the background. The page will reload after clearing.',
+            confirmText: 'Clear & Rebuild',
+        });
+
+        console.log('Confirmation result:', confirmed); // Debug log
+
+        if (!confirmed) {
+            return;
+        }
+
+        this.showLoading();
+
+        try {
+            const response = await fetch('/api/thumbnails/rebuild', {
+                method: 'POST',
+                credentials: 'same-origin',
+            });
+
+            console.log('Response status:', response.status); // Debug log
+
+            if (response.status === 401) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Failed to clear cache');
+            }
+
+            const result = await response.json();
+            console.log('Result:', result); // Debug log
+
+            // Handle "already running" case
+            if (result.status === 'already_running') {
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast('Thumbnail rebuild already in progress');
+                }
+                this.hideLoading();
+                return;
+            }
+
+            // Show success message briefly before reload
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast(`Cleared ${result.cleared || 0} thumbnails. Rebuilding...`);
+            }
+
+            // Force reload after a short delay
+            console.log('Reloading page in 1.5 seconds...'); // Debug log
+            setTimeout(() => {
+                console.log('Reloading now'); // Debug log
+                window.location.reload(true); // true forces reload from server
+            }, 1500);
+
+        } catch (error) {
+            console.error('Error clearing thumbnail cache:', error);
+            this.showError('Failed to clear thumbnail cache');
+            this.hideLoading();
+        }
+    },
+
+
 };

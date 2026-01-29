@@ -55,13 +55,14 @@ type RouteInfo struct {
 
 // Config holds all application configuration
 type Config struct {
-	MediaDir        string
-	CacheDir        string
-	DatabaseDir     string
-	Port            string
-	IndexInterval   time.Duration
-	LogStaticFiles  bool
-	LogHealthChecks bool
+	MediaDir          string
+	CacheDir          string
+	DatabaseDir       string
+	Port              string
+	IndexInterval     time.Duration
+	ThumbnailInterval time.Duration // Add this field
+	LogStaticFiles    bool
+	LogHealthChecks   bool
 
 	// Derived paths
 	DatabasePath string
@@ -87,22 +88,30 @@ func LoadConfig() (*Config, error) {
 	databaseDir := getEnv("DATABASE_DIR", "/database")
 	port := getEnv("PORT", "8080")
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
+	thumbnailIntervalStr := getEnv("THUMBNAIL_INTERVAL", "6h") // Add this
 	logStaticFiles := getEnv("LOG_STATIC_FILES", "false") == "true"
 	logHealthChecks := getEnv("LOG_HEALTH_CHECKS", "true") == "true"
 
-	logging.Info("  MEDIA_DIR:         %s", mediaDir)
-	logging.Info("  CACHE_DIR:         %s", cacheDir)
-	logging.Info("  DATABASE_DIR:      %s", databaseDir)
-	logging.Info("  PORT:              %s", port)
-	logging.Info("  INDEX_INTERVAL:    %s", indexIntervalStr)
-	logging.Info("  LOG_STATIC_FILES:  %v", logStaticFiles)
-	logging.Info("  LOG_HEALTH_CHECKS: %v", logHealthChecks)
-	logging.Info("  LOG_LEVEL:         %s", logging.GetLevel())
+	logging.Info("  MEDIA_DIR:           %s", mediaDir)
+	logging.Info("  CACHE_DIR:           %s", cacheDir)
+	logging.Info("  DATABASE_DIR:        %s", databaseDir)
+	logging.Info("  PORT:                %s", port)
+	logging.Info("  INDEX_INTERVAL:      %s", indexIntervalStr)
+	logging.Info("  THUMBNAIL_INTERVAL:  %s", thumbnailIntervalStr) // Add this
+	logging.Info("  LOG_STATIC_FILES:    %v", logStaticFiles)
+	logging.Info("  LOG_HEALTH_CHECKS:   %v", logHealthChecks)
+	logging.Info("  LOG_LEVEL:           %s", logging.GetLevel())
 
 	indexInterval, err := time.ParseDuration(indexIntervalStr)
 	if err != nil {
 		logging.Warn("  Invalid INDEX_INTERVAL, using default: 30m")
 		indexInterval = 30 * time.Minute
+	}
+
+	thumbnailInterval, err := time.ParseDuration(thumbnailIntervalStr)
+	if err != nil {
+		logging.Warn("  Invalid THUMBNAIL_INTERVAL, using default: 6h")
+		thumbnailInterval = 6 * time.Hour
 	}
 
 	// Resolve paths
@@ -134,18 +143,18 @@ func LoadConfig() (*Config, error) {
 		logging.Warn("  Media directory issue: %v", err)
 	}
 
-	// Check/create cache directory structure
 	config := &Config{
-		MediaDir:        mediaDir,
-		CacheDir:        cacheDir,
-		DatabaseDir:     databaseDir,
-		Port:            port,
-		IndexInterval:   indexInterval,
-		LogStaticFiles:  logStaticFiles,
-		LogHealthChecks: logHealthChecks,
-		DatabasePath:    filepath.Join(databaseDir, "media.db"),
-		ThumbnailDir:    filepath.Join(cacheDir, "thumbnails"),
-		TranscodeDir:    filepath.Join(cacheDir, "transcoded"),
+		MediaDir:          mediaDir,
+		CacheDir:          cacheDir,
+		DatabaseDir:       databaseDir,
+		Port:              port,
+		IndexInterval:     indexInterval,
+		ThumbnailInterval: thumbnailInterval,
+		LogStaticFiles:    logStaticFiles,
+		LogHealthChecks:   logHealthChecks,
+		DatabasePath:      filepath.Join(databaseDir, "media.db"),
+		ThumbnailDir:      filepath.Join(cacheDir, "thumbnails"),
+		TranscodeDir:      filepath.Join(cacheDir, "transcoded"),
 	}
 
 	// Ensure base database directory exists (required for database)

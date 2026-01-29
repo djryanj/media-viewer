@@ -296,3 +296,108 @@ func isSubPath(parent, child string) bool {
 	child, _ = filepath.Abs(child)
 	return len(child) >= len(parent) && child[:len(parent)] == parent
 }
+
+// InvalidateThumbnail invalidates (deletes) the cached thumbnail for a specific file or folder
+func (h *Handlers) InvalidateThumbnail(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	filePath := vars["path"]
+
+	if filePath == "" {
+		http.Error(w, "Path is required", http.StatusBadRequest)
+		return
+	}
+
+	fullPath := filepath.Join(h.mediaDir, filePath)
+
+	absPath, err := filepath.Abs(fullPath)
+	if err != nil || !isSubPath(h.mediaDir, absPath) {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
+	if !h.thumbGen.IsEnabled() {
+		http.Error(w, "Thumbnails disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := h.thumbGen.InvalidateThumbnail(fullPath); err != nil {
+		logging.Error("Failed to invalidate thumbnail for %s: %v", filePath, err)
+		http.Error(w, "Failed to invalidate thumbnail", http.StatusInternalServerError)
+		return
+	}
+
+	logging.Info("Invalidated thumbnail for: %s", filePath)
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, map[string]string{
+		"status":  "ok",
+		"message": fmt.Sprintf("Thumbnail invalidated for %s", filePath),
+	})
+}
+
+// InvalidateAllThumbnails clears the entire thumbnail cache
+func (h *Handlers) InvalidateAllThumbnails(w http.ResponseWriter, _ *http.Request) {
+	if !h.thumbGen.IsEnabled() {
+		http.Error(w, "Thumbnails disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	count, err := h.thumbGen.InvalidateAll()
+	if err != nil {
+		logging.Error("Failed to invalidate all thumbnails: %v", err)
+		http.Error(w, "Failed to invalidate thumbnails", http.StatusInternalServerError)
+		return
+	}
+
+	logging.Info("Invalidated %d thumbnails", count)
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, map[string]interface{}{
+		"status":  "ok",
+		"message": "All thumbnails invalidated",
+		"count":   count,
+	})
+}
+
+// RebuildAllThumbnails clears the cache and regenerates all thumbnails in the background
+func (h *Handlers) RebuildAllThumbnails(w http.ResponseWriter, _ *http.Request) {
+	if !h.thumbGen.IsEnabled() {
+		http.Error(w, "Thumbnails disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Check if generation is already in progress
+	if h.thumbGen.IsGenerating() {
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(w, map[string]string{
+			"status":  "already_running",
+			"message": "Thumbnail generation is already in progress",
+		})
+		return
+	}
+
+	// Start rebuild (clears cache and triggers generation)
+	h.thumbGen.RebuildAll()
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, map[string]string{
+		"status":  "started",
+		"message": "Thumbnail rebuild started in background",
+	})
+}
+
+// GetThumbnailStatus returns the current status of thumbnail generation
+func (h *Handlers) GetThumbnailStatus(w http.ResponseWriter, _ *http.Request) {
+	if !h.thumbGen.IsEnabled() {
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(w, map[string]interface{}{
+			"enabled": false,
+		})
+		return
+	}
+
+	status := h.thumbGen.GetStatus()
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, status)
+}
