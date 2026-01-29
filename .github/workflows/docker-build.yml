@@ -13,11 +13,14 @@ on:
         required: false
         default: 'linux/amd64,linux/arm64'
         type: string
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    outputs:
+      digest:
+        description: 'Image digest'
+        value: ${{ jobs.build.outputs.digest }}
+      tags:
+        description: 'Image tags'
+        value: ${{ jobs.build.outputs.tags }}
+
   pull_request:
     branches:
       - main
@@ -110,19 +113,3 @@ jobs:
           # Disable for faster builds
           provenance: false
           sbom: false
-
-      - name: Generate SBOM
-        if: github.event_name != 'pull_request' && github.ref_type == 'tag'
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
-          format: spdx-json
-          output-file: sbom.spdx.json
-
-      - name: Upload SBOM
-        if: github.event_name != 'pull_request' && github.ref_type == 'tag'
-        uses: actions/upload-artifact@v6
-        with:
-          name: sbom-${{ github.sha }}
-          path: sbom.spdx.json
-          retention-days: 90
