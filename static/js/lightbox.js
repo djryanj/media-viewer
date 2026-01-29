@@ -135,6 +135,20 @@ const Lightbox = {
         document.addEventListener('keydown', (e) => {
             if (this.elements.lightbox.classList.contains('hidden')) return;
 
+            // Ignore keyboard shortcuts when typing in an input or textarea
+            if (e.target.matches('input, textarea, [contenteditable="true"]')) {
+                // Only allow Escape to close modals when in input fields
+                if (e.key === 'Escape') {
+                    // Check if tag modal is open first
+                    if (!document.getElementById('tag-modal')?.classList.contains('hidden')) {
+                        Tags.closeModalWithHistory();
+                        return;
+                    }
+                    this.closeWithHistory();
+                }
+                return;
+            }
+
             switch (e.key) {
                 case 'Escape':
                     this.closeWithHistory();
@@ -155,7 +169,6 @@ const Lightbox = {
                     break;
                 case 'a':
                 case 'A':
-                    // NEW: Toggle autoplay with 'A' key
                     this.toggleAutoplay();
                     break;
             }

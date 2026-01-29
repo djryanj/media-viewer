@@ -49,14 +49,6 @@ const Tags = {
         if (this.elements.addTagBtn) {
             this.elements.addTagBtn.addEventListener('click', () => this.addTagFromInput());
         }
-
-        // Keyboard shortcut to open tag modal
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 't' && !e.target.matches('input, textarea') && 
-                !this.elements.tagModal?.classList.contains('hidden')) {
-                return;
-            }
-        });
     },
 
     async loadAllTags() {
