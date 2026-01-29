@@ -173,6 +173,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/tags/file", h.AddTagToFile).Methods("POST")
 	api.HandleFunc("/tags/file", h.RemoveTagFromFile).Methods("DELETE")
 	api.HandleFunc("/tags/file/set", h.SetFileTags).Methods("POST")
+	api.HandleFunc("/tags/batch", h.GetBatchFileTags).Methods("POST")
 	api.HandleFunc("/tags/{tag}", h.GetFilesByTag).Methods("GET")
 	api.HandleFunc("/tags/{tag}", h.DeleteTag).Methods("DELETE")
 	api.HandleFunc("/tags/{tag}", h.RenameTag).Methods("PUT")

@@ -18,6 +18,11 @@ type TagRequest struct {
 	Color   string   `json:"color,omitempty"`
 }
 
+// BatchTagsRequest represents a request to get tags for multiple files
+type BatchTagsRequest struct {
+	Paths []string `json:"paths"`
+}
+
 // GetAllTags returns all tags
 func (h *Handlers) GetAllTags(w http.ResponseWriter, _ *http.Request) {
 	tags, err := h.db.GetAllTags()
@@ -54,6 +59,49 @@ func (h *Handlers) GetFileTags(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, tags)
+}
+
+// GetBatchFileTags returns tags for multiple files at once
+func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
+	var req BatchTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Paths) == 0 {
+		http.Error(w, "Paths array is required", http.StatusBadRequest)
+		return
+	}
+
+	// Limit the number of paths to prevent abuse
+	maxPaths := 100
+	if len(req.Paths) > maxPaths {
+		req.Paths = req.Paths[:maxPaths]
+	}
+
+	// Build result map
+	result := make(map[string][]string)
+
+	for _, path := range req.Paths {
+		if path == "" {
+			continue
+		}
+
+		tags, err := h.db.GetFileTags(path)
+		if err != nil {
+			// Log error but continue with other paths
+			continue
+		}
+
+		// Only include paths that have tags
+		if len(tags) > 0 {
+			result[path] = tags
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, result)
 }
 
 // AddTagToFile adds a tag to a file
