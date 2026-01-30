@@ -58,14 +58,17 @@ const Search = {
             switch (e.key) {
                 case 'Enter':
                     e.preventDefault();
-                    
-                    if (this.selectedSuggestionIndex >= 0 && suggestions[this.selectedSuggestionIndex]) {
+
+                    if (
+                        this.selectedSuggestionIndex >= 0 &&
+                        suggestions[this.selectedSuggestionIndex]
+                    ) {
                         // Get data from the selected suggestion and handle it directly
                         const selected = suggestions[this.selectedSuggestionIndex];
                         const path = selected.dataset.path;
                         const type = selected.dataset.type;
                         const name = selected.dataset.name;
-                        
+
                         this.hideDropdown();
                         this.handleSuggestionAction(path, type, name);
                     } else {
@@ -88,7 +91,10 @@ const Search = {
                 case 'ArrowUp':
                     e.preventDefault();
                     if (!this.elements.dropdown.classList.contains('hidden')) {
-                        this.selectedSuggestionIndex = Math.max(this.selectedSuggestionIndex - 1, -1);
+                        this.selectedSuggestionIndex = Math.max(
+                            this.selectedSuggestionIndex - 1,
+                            -1
+                        );
                         this.highlightSuggestion(suggestions);
                     }
                     break;
@@ -139,7 +145,7 @@ const Search = {
             if (e.target.matches('input, textarea')) {
                 return;
             }
-            
+
             if ((e.ctrlKey && e.key === 'k') || e.key === '/') {
                 e.preventDefault();
                 this.elements.input.focus();
@@ -150,7 +156,9 @@ const Search = {
 
     async loadSuggestions(query) {
         try {
-            const response = await fetch(`/api/search/suggestions?q=${encodeURIComponent(query)}&limit=8`);
+            const response = await fetch(
+                `/api/search/suggestions?q=${encodeURIComponent(query)}&limit=8`
+            );
             if (!response.ok) throw new Error('Failed to load suggestions');
 
             const suggestions = await response.json();
@@ -169,14 +177,15 @@ const Search = {
 
         this.selectedSuggestionIndex = -1;
 
-        let html = suggestions.map((item, index) => {
-            // Handle tag suggestions differently
-            if (item.type === 'tag') {
-                return `
-                    <div class="search-dropdown-item search-dropdown-tag" 
-                         data-path="${this.escapeAttr(item.path)}" 
-                         data-type="${this.escapeAttr(item.type)}" 
-                         data-name="${this.escapeAttr(item.name)}" 
+        let html = suggestions
+            .map((item, index) => {
+                // Handle tag suggestions differently
+                if (item.type === 'tag') {
+                    return `
+                    <div class="search-dropdown-item search-dropdown-tag"
+                         data-path="${this.escapeAttr(item.path)}"
+                         data-type="${this.escapeAttr(item.type)}"
+                         data-name="${this.escapeAttr(item.name)}"
                          data-index="${index}">
                         <span class="search-dropdown-item-icon">🏷</span>
                         <div class="search-dropdown-item-info">
@@ -185,16 +194,18 @@ const Search = {
                         </div>
                     </div>
                 `;
-            }
+                }
 
-            const isPinned = Favorites.isPinned(item.path);
-            const pinIndicator = isPinned ? '<span class="search-dropdown-item-pin">★</span>' : '';
+                const isPinned = Favorites.isPinned(item.path);
+                const pinIndicator = isPinned
+                    ? '<span class="search-dropdown-item-pin">★</span>'
+                    : '';
 
-            return `
-                <div class="search-dropdown-item" 
-                     data-path="${this.escapeAttr(item.path)}" 
-                     data-type="${this.escapeAttr(item.type)}" 
-                     data-name="${this.escapeAttr(item.name)}" 
+                return `
+                <div class="search-dropdown-item"
+                     data-path="${this.escapeAttr(item.path)}"
+                     data-type="${this.escapeAttr(item.type)}"
+                     data-name="${this.escapeAttr(item.name)}"
                      data-index="${index}">
                     <span class="search-dropdown-item-icon">${Gallery.getIcon(item.type)}</span>
                     <div class="search-dropdown-item-info">
@@ -203,7 +214,8 @@ const Search = {
                     </div>
                 </div>
             `;
-        }).join('');
+            })
+            .join('');
 
         html += `
             <div class="search-dropdown-footer">
@@ -215,26 +227,28 @@ const Search = {
         this.elements.dropdown.classList.remove('hidden');
 
         // Bind click handlers to suggestion items
-        this.elements.dropdown.querySelectorAll('.search-dropdown-item').forEach(item => {
+        this.elements.dropdown.querySelectorAll('.search-dropdown-item').forEach((item) => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 const path = item.dataset.path;
                 const type = item.dataset.type;
                 const name = item.dataset.name;
-                
+
                 this.hideDropdown();
                 this.handleSuggestionAction(path, type, name);
             });
         });
 
         // Bind click handler to footer
-        this.elements.dropdown.querySelector('.search-dropdown-footer').addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.performSearch(query);
-        });
+        this.elements.dropdown
+            .querySelector('.search-dropdown-footer')
+            .addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.performSearch(query);
+            });
     },
 
     highlightSuggestion(suggestions) {
@@ -271,7 +285,7 @@ const Search = {
         if (type === 'folder') {
             clearInput();
             this.hideResults();
-            App.navigateTo(path);
+            MediaApp.navigateTo(path);
             return;
         }
 
@@ -284,7 +298,12 @@ const Search = {
         // Handle playlist
         if (type === 'playlist') {
             clearInput();
-            const playlistName = name ? name.replace(/\.[^/.]+$/, '') : path.split('/').pop().replace(/\.[^/.]+$/, '');
+            const playlistName = name
+                ? name.replace(/\.[^/.]+$/, '')
+                : path
+                      .split('/')
+                      .pop()
+                      .replace(/\.[^/.]+$/, '');
             Player.loadPlaylist(playlistName);
             return;
         }
@@ -301,7 +320,7 @@ const Search = {
             const response = await fetch(`/api/media?path=${encodeURIComponent(parentPath)}`);
             if (response.ok) {
                 const mediaFiles = await response.json();
-                const index = mediaFiles.findIndex(f => f.path === path);
+                const index = mediaFiles.findIndex((f) => f.path === path);
                 if (index >= 0) {
                     Lightbox.openWithItems(mediaFiles, index);
                     return;
@@ -331,7 +350,7 @@ const Search = {
     },
 
     async search(query) {
-        App.showLoading();
+        MediaApp.showLoading();
 
         try {
             const params = new URLSearchParams({
@@ -352,9 +371,9 @@ const Search = {
             this.showResults();
         } catch (error) {
             console.error('Search error:', error);
-            App.showError('Search failed');
+            MediaApp.showError('Search failed');
         } finally {
-            App.hideLoading();
+            MediaApp.hideLoading();
         }
     },
 
@@ -372,7 +391,7 @@ const Search = {
                 </div>
             `;
         } else {
-            this.results.items.forEach(item => {
+            this.results.items.forEach((item) => {
                 const element = Gallery.createGalleryItem(item);
                 this.elements.resultsGallery.appendChild(element);
             });
@@ -380,14 +399,14 @@ const Search = {
 
         this.renderPagination();
         this.elements.results.classList.remove('hidden');
-        
+
         // Push history state for back button support
         HistoryManager.pushState('search');
-        
+
         this.elements.input.blur();
     },
 
-// Update hideResults to not push history when called by HistoryManager
+    // Update hideResults to not push history when called by HistoryManager
     hideResults() {
         this.elements.results.classList.add('hidden');
         this.lastQuery = '';

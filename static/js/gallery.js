@@ -4,7 +4,7 @@ const Gallery = {
     scrollThreshold: 10, // pixels - movement beyond this is considered a scroll
 
     render(items) {
-        const gallery = App.elements.gallery;
+        const gallery = MediaApp.elements.gallery;
         gallery.innerHTML = '';
 
         if (!items || items.length === 0) {
@@ -17,14 +17,13 @@ const Gallery = {
             return;
         }
 
-        items.forEach(item => {
+        items.forEach((item) => {
             const element = this.createGalleryItem(item);
             gallery.appendChild(element);
         });
     },
 
     createGalleryItem(item) {
-
         const div = document.createElement('div');
         div.className = 'gallery-item';
         div.dataset.path = item.path;
@@ -68,7 +67,7 @@ const Gallery = {
         if (item.type !== 'folder') {
             const meta = document.createElement('div');
             meta.className = 'gallery-item-meta';
-            meta.textContent = App.formatFileSize(item.size);
+            meta.textContent = MediaApp.formatFileSize(item.size);
             info.appendChild(meta);
         } else if (item.itemCount !== undefined) {
             const meta = document.createElement('div');
@@ -98,8 +97,6 @@ const Gallery = {
         return div;
     },
 
-
-
     attachTapHandler(element, item) {
         // Touch state tracking
         let touchStartX = 0;
@@ -110,101 +107,117 @@ const Gallery = {
         let isTouchMove = false;
 
         // Touch start - record position
-        element.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-                touchStartTime = Date.now();
-                isTouchMove = false;
-            }
-        }, { passive: true });
+        element.addEventListener(
+            'touchstart',
+            (e) => {
+                if (e.touches.length === 1) {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    touchStartTime = Date.now();
+                    isTouchMove = false;
+                }
+            },
+            { passive: true }
+        );
 
         // Touch move - detect scrolling
-        element.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 1) {
-                const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                
-                // If moved beyond threshold, it's a scroll
-                if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
-                    isTouchMove = true;
-                    
-                    // Cancel any pending tap
-                    if (tapTimeout) {
-                        clearTimeout(tapTimeout);
-                        tapTimeout = null;
+        element.addEventListener(
+            'touchmove',
+            (e) => {
+                if (e.touches.length === 1) {
+                    const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+                    const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+
+                    // If moved beyond threshold, it's a scroll
+                    if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
+                        isTouchMove = true;
+
+                        // Cancel any pending tap
+                        if (tapTimeout) {
+                            clearTimeout(tapTimeout);
+                            tapTimeout = null;
+                        }
                     }
                 }
-            }
-        }, { passive: true });
+            },
+            { passive: true }
+        );
 
         // Touch end - handle tap if not scrolling
-        element.addEventListener('touchend', (e) => {
-            // Ignore if it was a scroll gesture
-            if (isTouchMove) {
-                isTouchMove = false;
-                return;
-            }
+        element.addEventListener(
+            'touchend',
+            (e) => {
+                // Ignore if it was a scroll gesture
+                if (isTouchMove) {
+                    isTouchMove = false;
+                    return;
+                }
 
-            // Ignore if clicking on buttons
-            if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
-                return;
-            }
+                // Ignore if clicking on buttons
+                if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
+                    return;
+                }
 
-            // Ignore multi-touch
-            if (e.changedTouches.length !== 1) {
-                return;
-            }
+                // Ignore multi-touch
+                if (e.changedTouches.length !== 1) {
+                    return;
+                }
 
-            // Final position check
-            const touch = e.changedTouches[0];
-            const deltaX = Math.abs(touch.clientX - touchStartX);
-            const deltaY = Math.abs(touch.clientY - touchStartY);
-            
-            if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
-                return;
-            }
+                // Final position check
+                const touch = e.changedTouches[0];
+                const deltaX = Math.abs(touch.clientX - touchStartX);
+                const deltaY = Math.abs(touch.clientY - touchStartY);
 
-            // Check touch duration - very long touches might be long-press
-            const touchDuration = Date.now() - touchStartTime;
-            if (touchDuration > 500) {
-                // Long press - don't treat as tap (context menu handles this)
-                return;
-            }
+                if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
+                    return;
+                }
 
-            e.preventDefault();
+                // Check touch duration - very long touches might be long-press
+                const touchDuration = Date.now() - touchStartTime;
+                if (touchDuration > 500) {
+                    // Long press - don't treat as tap (context menu handles this)
+                    return;
+                }
 
-            const currentTime = Date.now();
-            const tapInterval = currentTime - lastTapTime;
+                e.preventDefault();
 
-            if (tapInterval < this.doubleTapDelay && tapInterval > 0) {
-                // Double tap detected
-                clearTimeout(tapTimeout);
-                tapTimeout = null;
-                lastTapTime = 0;
-                this.handleDoubleTap(element, item);
-            } else {
-                // Potential single tap - wait to see if double tap follows
-                lastTapTime = currentTime;
-                tapTimeout = setTimeout(() => {
-                    if (lastTapTime !== 0) {
-                        this.handleSingleTap(item);
-                        lastTapTime = 0;
-                    }
+                const currentTime = Date.now();
+                const tapInterval = currentTime - lastTapTime;
+
+                if (tapInterval < this.doubleTapDelay && tapInterval > 0) {
+                    // Double tap detected
+                    clearTimeout(tapTimeout);
                     tapTimeout = null;
-                }, this.doubleTapDelay);
-            }
-        }, { passive: false });
+                    lastTapTime = 0;
+                    this.handleDoubleTap(element, item);
+                } else {
+                    // Potential single tap - wait to see if double tap follows
+                    lastTapTime = currentTime;
+                    tapTimeout = setTimeout(() => {
+                        if (lastTapTime !== 0) {
+                            this.handleSingleTap(item);
+                            lastTapTime = 0;
+                        }
+                        tapTimeout = null;
+                    }, this.doubleTapDelay);
+                }
+            },
+            { passive: false }
+        );
 
         // Touch cancel - reset state
-        element.addEventListener('touchcancel', () => {
-            isTouchMove = false;
-            if (tapTimeout) {
-                clearTimeout(tapTimeout);
-                tapTimeout = null;
-            }
-            lastTapTime = 0;
-        }, { passive: true });
+        element.addEventListener(
+            'touchcancel',
+            () => {
+                isTouchMove = false;
+                if (tapTimeout) {
+                    clearTimeout(tapTimeout);
+                    tapTimeout = null;
+                }
+                lastTapTime = 0;
+            },
+            { passive: true }
+        );
 
         // Mouse click for desktop (immediate, no double-tap delay)
         element.addEventListener('click', (e) => {
@@ -239,9 +252,9 @@ const Gallery = {
 
     handleSingleTap(item) {
         if (item.type === 'folder') {
-            App.navigateTo(item.path);
+            MediaApp.navigateTo(item.path);
         } else if (item.type === 'image' || item.type === 'video') {
-            const index = App.getMediaIndex(item.path);
+            const index = MediaApp.getMediaIndex(item.path);
             if (index >= 0) {
                 Lightbox.open(index);
             }
@@ -253,7 +266,7 @@ const Gallery = {
 
     handleDoubleTap(element, item) {
         // Toggle favorite
-        Favorites.toggleFavorite(item.path, item.name, item.type).then(isPinned => {
+        Favorites.toggleFavorite(item.path, item.name, item.type).then((isPinned) => {
             // Visual feedback
             element.classList.add('favorite-flash');
             setTimeout(() => {
@@ -371,7 +384,7 @@ const Gallery = {
         } else {
             metaContent = `
                 <span class="gallery-item-type ${item.type}">${item.type}</span>
-                <span>${App.formatFileSize(item.size)}</span>
+                <span>${MediaApp.formatFileSize(item.size)}</span>
             `;
         }
 
@@ -401,14 +414,16 @@ const Gallery = {
     },
 
     updatePinState(path, isPinned) {
-        document.querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`).forEach(item => {
-            item.classList.toggle('is-favorite', isPinned);
-            const pinButton = item.querySelector('.pin-button');
-            if (pinButton) {
-                pinButton.classList.toggle('pinned', isPinned);
-                pinButton.innerHTML = isPinned ? '★' : '☆';
-                pinButton.title = isPinned ? 'Remove from favorites' : 'Add to favorites';
-            }
-        });
+        document
+            .querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`)
+            .forEach((item) => {
+                item.classList.toggle('is-favorite', isPinned);
+                const pinButton = item.querySelector('.pin-button');
+                if (pinButton) {
+                    pinButton.classList.toggle('pinned', isPinned);
+                    pinButton.innerHTML = isPinned ? '★' : '☆';
+                    pinButton.title = isPinned ? 'Remove from favorites' : 'Add to favorites';
+                }
+            });
     },
 };

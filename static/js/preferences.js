@@ -73,7 +73,7 @@ const Preferences = {
 
     /**
      * Set multiple preferences at once
-     * @param {Object} prefs - Object of key-value pairs
+     * @param {object} prefs - Object of key-value pairs
      */
     setMultiple(prefs) {
         Object.assign(this.current, prefs);
@@ -94,9 +94,9 @@ const Preferences = {
      */
     applyToUI() {
         // Apply sort preferences to App state and UI
-        if (typeof App !== 'undefined' && App.state) {
-            App.state.currentSort.field = this.get('sortField');
-            App.state.currentSort.order = this.get('sortOrder');
+        if (typeof App !== 'undefined' && MediaApp.state) {
+            MediaApp.state.currentSort.field = this.get('sortField');
+            MediaApp.state.currentSort.order = this.get('sortOrder');
         }
 
         // Update sort field dropdown
@@ -125,7 +125,7 @@ const Preferences = {
         }
 
         // Listen for sort order changes (we'll need to hook into the existing toggle)
-        // This is handled in the modified App.toggleSortOrder method
+        // This is handled in the modified MediaApp.toggleSortOrder method
     },
 
     /**

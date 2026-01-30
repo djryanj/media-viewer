@@ -93,27 +93,39 @@ const Player = {
         const swipeZone = document.createElement('div');
         swipeZone.className = 'playlist-swipe-zone';
 
-        swipeZone.addEventListener('touchstart', (e) => {
-            this.edgeSwipeStartX = e.touches[0].clientX;
-            this.edgeSwipeStartY = e.touches[0].clientY;
-        }, { passive: true });
+        swipeZone.addEventListener(
+            'touchstart',
+            (e) => {
+                this.edgeSwipeStartX = e.touches[0].clientX;
+                this.edgeSwipeStartY = e.touches[0].clientY;
+            },
+            { passive: true }
+        );
 
-        swipeZone.addEventListener('touchmove', (e) => {
-            if (this.edgeSwipeStartX === null) return;
-            
-            const deltaX = this.edgeSwipeStartX - e.touches[0].clientX;
-            const deltaY = Math.abs(e.touches[0].clientY - this.edgeSwipeStartY);
-            
-            // If swiping left (into the screen) and more horizontal than vertical
-            if (deltaX > this.edgeSwipeThreshold && deltaX > deltaY) {
-                this.showPlaylist();
+        swipeZone.addEventListener(
+            'touchmove',
+            (e) => {
+                if (this.edgeSwipeStartX === null) return;
+
+                const deltaX = this.edgeSwipeStartX - e.touches[0].clientX;
+                const deltaY = Math.abs(e.touches[0].clientY - this.edgeSwipeStartY);
+
+                // If swiping left (into the screen) and more horizontal than vertical
+                if (deltaX > this.edgeSwipeThreshold && deltaX > deltaY) {
+                    this.showPlaylist();
+                    this.edgeSwipeStartX = null;
+                }
+            },
+            { passive: true }
+        );
+
+        swipeZone.addEventListener(
+            'touchend',
+            () => {
                 this.edgeSwipeStartX = null;
-            }
-        }, { passive: true });
-
-        swipeZone.addEventListener('touchend', () => {
-            this.edgeSwipeStartX = null;
-        }, { passive: true });
+            },
+            { passive: true }
+        );
 
         this.elements.videoWrapper.appendChild(swipeZone);
         this.elements.swipeZone = swipeZone;
@@ -215,42 +227,59 @@ const Player = {
         });
 
         // Swipe support for video navigation
-        this.elements.videoWrapper.addEventListener('touchstart', (e) => {
-            if (e.target.closest('.player-hot-zone') || 
-                e.target.closest('.playlist-toggle') ||
-                e.target.closest('.playlist-swipe-zone')) return;
-            
-            this.touchStartX = e.changedTouches[0].screenX;
-            this.touchStartY = e.changedTouches[0].screenY;
-            this.isSwiping = false;
-        }, { passive: true });
+        this.elements.videoWrapper.addEventListener(
+            'touchstart',
+            (e) => {
+                if (
+                    e.target.closest('.player-hot-zone') ||
+                    e.target.closest('.playlist-toggle') ||
+                    e.target.closest('.playlist-swipe-zone')
+                )
+                    return;
 
-        this.elements.videoWrapper.addEventListener('touchmove', (e) => {
-            if (e.target.closest('.playlist-swipe-zone')) return;
-            
-            const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
-            const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
-            
-            if (deltaX > deltaY && deltaX > 10) {
-                this.isSwiping = true;
-            }
-        }, { passive: true });
+                this.touchStartX = e.changedTouches[0].screenX;
+                this.touchStartY = e.changedTouches[0].screenY;
+                this.isSwiping = false;
+            },
+            { passive: true }
+        );
 
-        this.elements.videoWrapper.addEventListener('touchend', (e) => {
-            if (e.target.closest('.playlist-swipe-zone')) return;
-            
-            if (this.isSwiping) {
-                this.touchEndX = e.changedTouches[0].screenX;
-                this.handleSwipe();
-            }
-        }, { passive: true });
+        this.elements.videoWrapper.addEventListener(
+            'touchmove',
+            (e) => {
+                if (e.target.closest('.playlist-swipe-zone')) return;
+
+                const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
+                const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
+
+                if (deltaX > deltaY && deltaX > 10) {
+                    this.isSwiping = true;
+                }
+            },
+            { passive: true }
+        );
+
+        this.elements.videoWrapper.addEventListener(
+            'touchend',
+            (e) => {
+                if (e.target.closest('.playlist-swipe-zone')) return;
+
+                if (this.isSwiping) {
+                    this.touchEndX = e.changedTouches[0].screenX;
+                    this.handleSwipe();
+                }
+            },
+            { passive: true }
+        );
 
         // Show controls on tap in landscape mode
         this.elements.videoWrapper.addEventListener('click', (e) => {
-            if (this.isLandscape && 
-                !e.target.closest('.player-hot-zone') && 
+            if (
+                this.isLandscape &&
+                !e.target.closest('.player-hot-zone') &&
                 !e.target.closest('.playlist-toggle') &&
-                !e.target.closest('.playlist-swipe-zone')) {
+                !e.target.closest('.playlist-swipe-zone')
+            ) {
                 this.showControls();
             }
         });
@@ -274,25 +303,37 @@ const Player = {
         if (this.elements.sidebar) {
             let sidebarTouchStartX = null;
 
-            this.elements.sidebar.addEventListener('touchstart', (e) => {
-                sidebarTouchStartX = e.touches[0].clientX;
-            }, { passive: true });
+            this.elements.sidebar.addEventListener(
+                'touchstart',
+                (e) => {
+                    sidebarTouchStartX = e.touches[0].clientX;
+                },
+                { passive: true }
+            );
 
-            this.elements.sidebar.addEventListener('touchmove', (e) => {
-                if (sidebarTouchStartX === null || !this.isLandscape) return;
+            this.elements.sidebar.addEventListener(
+                'touchmove',
+                (e) => {
+                    if (sidebarTouchStartX === null || !this.isLandscape) return;
 
-                const deltaX = e.touches[0].clientX - sidebarTouchStartX;
-                
-                // Swiping right (away from screen) closes playlist
-                if (deltaX > 50) {
-                    this.hidePlaylist();
+                    const deltaX = e.touches[0].clientX - sidebarTouchStartX;
+
+                    // Swiping right (away from screen) closes playlist
+                    if (deltaX > 50) {
+                        this.hidePlaylist();
+                        sidebarTouchStartX = null;
+                    }
+                },
+                { passive: true }
+            );
+
+            this.elements.sidebar.addEventListener(
+                'touchend',
+                () => {
                     sidebarTouchStartX = null;
-                }
-            }, { passive: true });
-
-            this.elements.sidebar.addEventListener('touchend', () => {
-                sidebarTouchStartX = null;
-            }, { passive: true });
+                },
+                { passive: true }
+            );
         }
     },
 
@@ -312,7 +353,7 @@ const Player = {
     checkOrientation() {
         const isLandscape = window.innerWidth > window.innerHeight;
         const isSmallScreen = window.innerHeight < 500;
-        
+
         const shouldBeLandscape = isLandscape && isSmallScreen;
 
         if (shouldBeLandscape !== this.isLandscape) {
@@ -327,7 +368,7 @@ const Player = {
             this.playlistVisible = false;
             this.elements.sidebar?.classList.remove('visible');
             this.elements.playlistToggle?.classList.remove('active');
-            
+
             // Show hint briefly when entering landscape
             this.showHint();
         } else {
@@ -372,7 +413,7 @@ const Player = {
         this.elements.sidebar?.classList.add('visible');
         this.elements.playlistToggle?.classList.add('active');
         this.elements.modal.classList.add('controls-visible');
-        
+
         // Keep controls visible while playlist is open
         if (this.controlsTimeout) {
             clearTimeout(this.controlsTimeout);
@@ -383,7 +424,7 @@ const Player = {
         this.playlistVisible = false;
         this.elements.sidebar?.classList.remove('visible');
         this.elements.playlistToggle?.classList.remove('active');
-        
+
         // Start hiding controls after delay
         if (this.isLandscape) {
             this.controlsTimeout = setTimeout(() => {
@@ -398,7 +439,7 @@ const Player = {
         } else {
             this.showPlaylist();
         }
-        
+
         if (this.isLandscape) {
             this.showControls();
         }
@@ -415,7 +456,7 @@ const Player = {
         // Handle both forward and back slashes
         // Split on either type of slash
         const parts = fullPath.split(/[/\\]/);
-        
+
         // Get the last non-empty part (the filename)
         let filename = '';
         for (let i = parts.length - 1; i >= 0; i--) {
@@ -444,9 +485,7 @@ const Player = {
         this.itemTags.clear();
 
         // Get unique paths that exist
-        const paths = items
-            .filter(item => item.exists && item.path)
-            .map(item => item.path);
+        const paths = items.filter((item) => item.exists && item.path).map((item) => item.path);
 
         if (paths.length === 0) return;
 
@@ -482,23 +521,27 @@ const Player = {
     async loadTagsIndividually(paths) {
         // Limit concurrent requests
         const batchSize = 5;
-        
+
         for (let i = 0; i < paths.length; i += batchSize) {
             const batch = paths.slice(i, i + batchSize);
-            
-            await Promise.all(batch.map(async (path) => {
-                try {
-                    const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
-                    if (response.ok) {
-                        const tags = await response.json();
-                        if (tags && tags.length > 0) {
-                            this.itemTags.set(path, tags);
+
+            await Promise.all(
+                batch.map(async (path) => {
+                    try {
+                        const response = await fetch(
+                            `/api/tags/file?path=${encodeURIComponent(path)}`
+                        );
+                        if (response.ok) {
+                            const tags = await response.json();
+                            if (tags && tags.length > 0) {
+                                this.itemTags.set(path, tags);
+                            }
                         }
+                    } catch (error) {
+                        // Ignore individual failures
                     }
-                } catch (error) {
-                    // Ignore individual failures
-                }
-            }));
+                })
+            );
         }
     },
 
@@ -515,7 +558,7 @@ const Player = {
         const moreCount = tags.length - maxDisplay;
 
         let html = '<span class="playlist-item-tags">';
-        displayTags.forEach(tag => {
+        displayTags.forEach((tag) => {
             html += `<span class="playlist-tag">${this.escapeHtml(tag)}</span>`;
         });
         if (moreCount > 0) {
@@ -528,7 +571,7 @@ const Player = {
 
     /**
      * Escape HTML for safe display
-     * @param {string} text 
+     * @param {string} text
      * @returns {string}
      */
     escapeHtml(text) {
@@ -538,15 +581,14 @@ const Player = {
         return div.innerHTML;
     },
 
-
     async loadPlaylist(name) {
-        App.showLoading();
+        MediaApp.showLoading();
         try {
             const response = await fetch(`/api/playlist/${encodeURIComponent(name)}`);
             if (!response.ok) throw new Error('Failed to load playlist');
 
             const data = await response.json();
-            
+
             // Handle both array and object formats from server
             let items;
             if (Array.isArray(data)) {
@@ -562,18 +604,18 @@ const Player = {
                 name: name,
                 items: items,
             };
-            
+
             this.currentIndex = 0;
-            
+
             // Load tags for all items
             await this.loadPlaylistTags(items);
-            
+
             this.open();
         } catch (error) {
             console.error('Error loading playlist:', error);
-            App.showError('Failed to load playlist');
+            MediaApp.showError('Failed to load playlist');
         } finally {
-            App.hideLoading();
+            MediaApp.hideLoading();
         }
     },
 
@@ -607,7 +649,7 @@ const Player = {
         this.playlistVisible = false;
         this.elements.sidebar?.classList.remove('visible');
         this.elements.playlistToggle?.classList.remove('active');
-        
+
         if (this.controlsTimeout) {
             clearTimeout(this.controlsTimeout);
         }
@@ -626,7 +668,7 @@ const Player = {
 
     updateNavigation() {
         const hasMultiple = this.playlist && this.playlist.items.length > 1;
-        
+
         if (this.elements.hotZoneLeft) {
             this.elements.hotZoneLeft.style.display = hasMultiple ? '' : 'none';
         }
@@ -644,7 +686,7 @@ const Player = {
 
             // Get clean display name
             const displayName = this.getDisplayName(item.name || item.path);
-            
+
             // Get tags for this item
             const tags = this.itemTags.get(item.path) || [];
             const tagsHtml = this.renderItemTags(tags);
@@ -662,7 +704,7 @@ const Player = {
                 li.addEventListener('click', () => {
                     this.currentIndex = index;
                     this.playCurrentVideo();
-                    
+
                     if (this.isLandscape) {
                         this.hidePlaylist();
                     }
@@ -696,10 +738,10 @@ const Player = {
 
         this.elements.video.src = `/api/stream/${item.path}`;
         this.elements.video.load();
-        
+
         // Check autoplay preference
         if (typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled()) {
-            this.elements.video.play().catch(err => {
+            this.elements.video.play().catch((err) => {
                 console.log('Autoplay prevented:', err);
             });
         }
@@ -715,12 +757,13 @@ const Player = {
 
         let attempts = this.playlist.items.length;
         do {
-            this.currentIndex = (this.currentIndex - 1 + this.playlist.items.length) % this.playlist.items.length;
+            this.currentIndex =
+                (this.currentIndex - 1 + this.playlist.items.length) % this.playlist.items.length;
             attempts--;
         } while (!this.playlist.items[this.currentIndex].exists && attempts > 0);
 
         this.playCurrentVideo();
-        
+
         if (this.isLandscape) {
             this.showControls();
         }
@@ -736,7 +779,7 @@ const Player = {
         } while (!this.playlist.items[this.currentIndex].exists && attempts > 0);
 
         this.playCurrentVideo();
-        
+
         if (this.isLandscape) {
             this.showControls();
         }

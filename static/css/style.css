@@ -325,7 +325,6 @@ select:focus {
     }
 }
 
-
 /* ===========================================
    BREADCRUMB - MOBILE FIRST
    =========================================== */
@@ -407,7 +406,9 @@ select:focus {
     border-radius: var(--radius);
     overflow: hidden;
     cursor: pointer;
-    transition: transform var(--transition), box-shadow var(--transition);
+    transition:
+        transform var(--transition),
+        box-shadow var(--transition);
     border: 1px solid var(--border-color);
     -webkit-user-select: none;
     user-select: none;
@@ -534,7 +535,10 @@ select:focus {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity var(--transition), background var(--transition), color var(--transition);
+    transition:
+        opacity var(--transition),
+        background var(--transition),
+        color var(--transition);
     z-index: 10;
     opacity: 0.8;
     /* Always visible on mobile */
@@ -566,7 +570,9 @@ select:focus {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity var(--transition), background var(--transition);
+    transition:
+        opacity var(--transition),
+        background var(--transition);
     z-index: 10;
     opacity: 0.8;
 }
@@ -903,7 +909,9 @@ select:focus {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background var(--transition), color var(--transition);
+    transition:
+        background var(--transition),
+        color var(--transition);
 }
 
 .lightbox-pin {
@@ -1717,7 +1725,6 @@ select:focus {
    =========================================== */
 
 @media (hover: none) and (pointer: coarse) {
-
     /* Increase touch targets */
     .btn {
         min-height: 44px;
@@ -1750,7 +1757,6 @@ select:focus {
    =========================================== */
 
 @media (prefers-reduced-motion: reduce) {
-
     *,
     *::before,
     *::after {
@@ -1778,7 +1784,9 @@ select:focus {
     box-shadow: var(--shadow);
     z-index: 3000;
     opacity: 0;
-    transition: transform 0.3s ease, opacity 0.3s ease;
+    transition:
+        transform 0.3s ease,
+        opacity 0.3s ease;
     pointer-events: none;
     font-size: 0.875rem;
     white-space: nowrap;
@@ -1862,7 +1870,6 @@ select:focus {
 
 /* Hide original prev/next buttons on mobile since we have hot zones */
 @media (max-width: 899px) {
-
     .lightbox-prev,
     .lightbox-next {
         display: none;
@@ -2056,7 +2063,7 @@ select:focus {
     justify-content: center;
 }
 
-.player-modal.landscape-mode .playlist-sidebar.visible+.playlist-toggle,
+.player-modal.landscape-mode .playlist-sidebar.visible + .playlist-toggle,
 .player-modal.landscape-mode .playlist-toggle.active {
     right: 260px;
 }
@@ -2118,13 +2125,12 @@ select:focus {
     display: block;
 }
 
-.player-modal.landscape-mode .playlist-sidebar.visible~.playlist-edge-hint,
+.player-modal.landscape-mode .playlist-sidebar.visible ~ .playlist-edge-hint,
 .player-modal.landscape-mode.controls-visible .playlist-edge-hint {
     opacity: 0;
 }
 
 @keyframes edgeHintPulse {
-
     0%,
     100% {
         opacity: 0.3;
@@ -2179,7 +2185,6 @@ select:focus {
 }
 
 @keyframes togglePulse {
-
     0%,
     100% {
         box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4);
@@ -2191,7 +2196,7 @@ select:focus {
 }
 
 /* Move toggle button when playlist is visible */
-.player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper .playlist-toggle,
+.player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
 .player-modal.landscape-mode .playlist-toggle.active {
     right: 260px;
 }
@@ -2211,7 +2216,7 @@ select:focus {
     display: block;
 }
 
-.player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper .playlist-swipe-zone {
+.player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-swipe-zone {
     display: none;
 }
 
@@ -2282,7 +2287,7 @@ select:focus {
     display: block;
 }
 
-.player-modal.landscape-mode .playlist-sidebar.visible~.playlist-overlay {
+.player-modal.landscape-mode .playlist-sidebar.visible ~ .playlist-overlay {
     opacity: 1;
     pointer-events: auto;
 }
@@ -2315,7 +2320,7 @@ select:focus {
 }
 
 /* Adjust video wrapper when playlist is visible */
-.player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper {
+.player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper {
     margin-right: 280px;
 }
 
@@ -2324,11 +2329,11 @@ select:focus {
         width: 250px;
     }
 
-    .player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper {
+    .player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper {
         margin-right: 0;
     }
 
-    .player-modal.landscape-mode .playlist-sidebar.visible~.video-wrapper .playlist-toggle {
+    .player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle {
         right: 260px;
     }
 }
@@ -2404,7 +2409,6 @@ select:focus {
     transition: opacity 0.15s ease-in-out;
 }
 
-
 /* When displaying a video, adjust hot zones to avoid video controls */
 .lightbox.video-mode .lightbox-hot-zone {
     /* Only cover the top portion, leaving bottom for video controls */
@@ -2458,7 +2462,9 @@ select:focus {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background var(--transition), color var(--transition);
+    transition:
+        background var(--transition),
+        color var(--transition);
 }
 
 .lightbox-autoplay:hover,
@@ -2667,4 +2673,170 @@ select:focus {
 .btn-danger:hover {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
+}
+
+/* ===========================================
+   PASSWORD CHANGE BUTTON
+   =========================================== */
+
+#change-password-btn {
+    font-size: 1rem;
+    width: 36px;
+    height: 36px;
+}
+
+#change-password-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+@media (hover: hover) {
+    #change-password-btn:hover {
+        color: white;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    #change-password-btn:active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+    }
+}
+
+/* ===========================================
+   PASSWORD MODAL
+   =========================================== */
+
+.modal-small {
+    max-width: 400px;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header span {
+    font-size: 1.5rem;
+}
+
+.modal-header h3 {
+    flex: 1;
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 500;
+}
+
+#password-form .form-group {
+    margin-bottom: 1rem;
+}
+
+#password-form .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+#password-form .form-group input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 1rem;
+    transition: border-color var(--transition);
+}
+
+#password-form .form-group input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+#password-form .form-group input::placeholder {
+    color: var(--text-secondary);
+}
+
+#password-form .form-group .hint {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+#password-form .error-message {
+    background: rgba(233, 69, 96, 0.1);
+    border: 1px solid var(--error);
+    color: var(--error);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+#password-form .error-message.hidden {
+    display: none;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+}
+
+.modal-actions .btn {
+    min-width: 100px;
+}
+
+.btn-secondary {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-secondary);
+    border-color: var(--text-secondary);
+}
+
+.btn-primary {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+    background: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+}
+
+/* Mobile adjustments for password modal */
+@media (max-width: 599px) {
+    .modal-small {
+        max-width: 100%;
+        margin: 1rem;
+        border-radius: var(--radius);
+    }
+
+    .modal-actions {
+        flex-direction: column-reverse;
+    }
+
+    .modal-actions .btn {
+        width: 100%;
+    }
 }

@@ -215,6 +215,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	auth.HandleFunc("/login", h.Login).Methods("POST")
 	auth.HandleFunc("/logout", h.Logout).Methods("POST")
 	auth.HandleFunc("/check", h.CheckAuth).Methods("GET")
+	auth.HandleFunc("/password", h.ChangePassword).Methods("PUT")
 
 	// Protected API routes
 	api := r.PathPrefix("/api").Subrouter()
