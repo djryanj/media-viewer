@@ -182,18 +182,18 @@ const Search = {
                 // Handle tag suggestions differently
                 if (item.type === 'tag') {
                     return `
-                    <div class="search-dropdown-item search-dropdown-tag"
-                         data-path="${this.escapeAttr(item.path)}"
-                         data-type="${this.escapeAttr(item.type)}"
-                         data-name="${this.escapeAttr(item.name)}"
-                         data-index="${index}">
-                        <span class="search-dropdown-item-icon">🏷</span>
-                        <div class="search-dropdown-item-info">
-                            <div class="search-dropdown-item-name">${item.highlight}</div>
-                            <div class="search-dropdown-item-path">Search by tag</div>
-                        </div>
+                <div class="search-dropdown-item search-dropdown-tag"
+                     data-path="${this.escapeAttr(item.path)}"
+                     data-type="${this.escapeAttr(item.type)}"
+                     data-name="${this.escapeAttr(item.name)}"
+                     data-index="${index}">
+                    <span class="search-dropdown-item-icon">🏷</span>
+                    <div class="search-dropdown-item-info">
+                        <div class="search-dropdown-item-name">${item.highlight}</div>
+                        <div class="search-dropdown-item-path">Search by tag</div>
                     </div>
-                `;
+                </div>
+            `;
                 }
 
                 const isPinned = Favorites.isPinned(item.path);
@@ -201,27 +201,55 @@ const Search = {
                     ? '<span class="search-dropdown-item-pin">★</span>'
                     : '';
 
-                return `
-                <div class="search-dropdown-item"
-                     data-path="${this.escapeAttr(item.path)}"
-                     data-type="${this.escapeAttr(item.type)}"
-                     data-name="${this.escapeAttr(item.name)}"
-                     data-index="${index}">
-                    <span class="search-dropdown-item-icon">${Gallery.getIcon(item.type)}</span>
-                    <div class="search-dropdown-item-info">
-                        <div class="search-dropdown-item-name">${item.highlight}${pinIndicator}</div>
-                        <div class="search-dropdown-item-path">${this.escapeHtml(item.path)}</div>
-                    </div>
+                // Determine if this item type supports thumbnails
+                const hasThumbnail =
+                    item.type === 'image' || item.type === 'video' || item.type === 'folder';
+                const thumbnailUrl = hasThumbnail
+                    ? `/api/thumbnail/${encodeURIComponent(item.path)}`
+                    : '';
+                const fallbackIcon = this.getIcon(item.type);
+
+                // Build thumbnail HTML with fallback
+                let thumbnailHtml;
+                if (hasThumbnail) {
+                    thumbnailHtml = `
+                <div class="search-dropdown-item-thumb">
+                    <img src="${thumbnailUrl}"
+                         alt=""
+                         loading="lazy"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <span class="search-dropdown-item-icon" style="display: none;">${fallbackIcon}</span>
                 </div>
             `;
+                } else {
+                    thumbnailHtml = `
+                <div class="search-dropdown-item-thumb">
+                    <span class="search-dropdown-item-icon">${fallbackIcon}</span>
+                </div>
+            `;
+                }
+
+                return `
+            <div class="search-dropdown-item"
+                 data-path="${this.escapeAttr(item.path)}"
+                 data-type="${this.escapeAttr(item.type)}"
+                 data-name="${this.escapeAttr(item.name)}"
+                 data-index="${index}">
+                ${thumbnailHtml}
+                <div class="search-dropdown-item-info">
+                    <div class="search-dropdown-item-name">${item.highlight}${pinIndicator}</div>
+                    <div class="search-dropdown-item-path">${this.escapeHtml(item.path)}</div>
+                </div>
+            </div>
+        `;
             })
             .join('');
 
         html += `
-            <div class="search-dropdown-footer">
-                Press Enter to view all results for "${this.escapeHtml(query)}"
-            </div>
-        `;
+        <div class="search-dropdown-footer">
+            Press Enter to view all results for "${this.escapeHtml(query)}"
+        </div>
+    `;
 
         this.elements.dropdown.innerHTML = html;
         this.elements.dropdown.classList.remove('hidden');
@@ -249,6 +277,17 @@ const Search = {
                 e.stopPropagation();
                 this.performSearch(query);
             });
+    },
+
+    getIcon(type) {
+        const icons = {
+            folder: '📁',
+            image: '🖼️',
+            video: '🎬',
+            playlist: '📋',
+            other: '📄',
+        };
+        return icons[type] || icons.other;
     },
 
     highlightSuggestion(suggestions) {

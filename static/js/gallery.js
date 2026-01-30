@@ -1,7 +1,7 @@
 const Gallery = {
     // Double-tap detection
-    doubleTapDelay: 300, // milliseconds
-    scrollThreshold: 10, // pixels - movement beyond this is considered a scroll
+    doubleTapDelay: 300,
+    scrollThreshold: 10,
 
     render(items) {
         const gallery = MediaApp.elements.gallery;
@@ -25,80 +25,155 @@ const Gallery = {
 
     createGalleryItem(item) {
         const div = document.createElement('div');
-        div.className = 'gallery-item';
+        div.className = `gallery-item ${item.type}`;
         div.dataset.path = item.path;
         div.dataset.type = item.type;
+        div.dataset.name = item.name;
 
-        const preview = document.createElement('div');
-        preview.className = 'gallery-item-preview';
-
-        if (item.type === 'image' || item.type === 'video' || item.type === 'folder') {
-            const img = document.createElement('img');
-            img.src = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
-            img.alt = item.name;
-            img.loading = 'lazy';
-            img.onerror = () => {
-                preview.innerHTML = `<span class="gallery-item-icon">${this.getIcon(item.type)}</span>`;
-            };
-            preview.appendChild(img);
-
-            if (item.type === 'video') {
-                const indicator = document.createElement('span');
-                indicator.className = 'video-indicator';
-                indicator.textContent = '▶';
-                preview.appendChild(indicator);
-            }
-        } else {
-            preview.innerHTML = `<span class="gallery-item-icon">${this.getIcon(item.type)}</span>`;
-        }
-
-        div.appendChild(preview);
-
-        const info = document.createElement('div');
-        info.className = 'gallery-item-info';
-
-        const name = document.createElement('div');
-        name.className = 'gallery-item-name';
-        name.textContent = item.name;
-        name.title = item.name;
-
-        info.appendChild(name);
-
-        if (item.type !== 'folder') {
-            const meta = document.createElement('div');
-            meta.className = 'gallery-item-meta';
-            meta.textContent = MediaApp.formatFileSize(item.size);
-            info.appendChild(meta);
-        } else if (item.itemCount !== undefined) {
-            const meta = document.createElement('div');
-            meta.className = 'gallery-item-meta';
-            meta.textContent = `${item.itemCount} items`;
-            info.appendChild(meta);
-        }
-
-        div.appendChild(info);
-
-        // Add tags if present
-        if (item.tags && item.tags.length > 0) {
-            const tagsHtml = Tags.renderItemTags(item.tags);
-            if (tagsHtml) {
-                div.insertAdjacentHTML('beforeend', tagsHtml);
-            }
-        }
-
-        // Add favorite indicator
         if (item.isFavorite) {
             div.classList.add('is-favorite');
         }
 
-        // Bind tap/click handlers using existing method
+        // Create thumbnail
+        const thumb = this.createThumbnail(item);
+        div.appendChild(thumb);
+
+        // Create info overlay
+        const info = this.createInfo(item);
+        div.appendChild(info);
+
+        // Bind tap/click handlers
         this.attachTapHandler(div, item);
 
         return div;
     },
 
+    createThumbnail(item) {
+        const thumb = document.createElement('div');
+        thumb.className = 'gallery-item-thumb';
+
+        // Tag button
+        const tagButton = document.createElement('button');
+        tagButton.className = 'tag-button' + (item.tags && item.tags.length > 0 ? ' has-tags' : '');
+        tagButton.innerHTML = '🏷';
+        tagButton.title = 'Manage tags';
+        tagButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            Tags.openModal(item.path, item.name);
+        });
+        thumb.appendChild(tagButton);
+
+        // Pin button
+        const pinButton = document.createElement('button');
+        pinButton.className = 'pin-button' + (item.isFavorite ? ' pinned' : '');
+        pinButton.innerHTML = item.isFavorite ? '★' : '☆';
+        pinButton.title = item.isFavorite ? 'Remove from favorites' : 'Add to favorites';
+        pinButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            Favorites.toggleFavorite(item.path, item.name, item.type);
+        });
+        thumb.appendChild(pinButton);
+
+        // Thumbnail image or icon
+        if (item.type === 'folder' || item.type === 'image' || item.type === 'video') {
+            const img = document.createElement('img');
+            img.loading = 'lazy';
+            img.alt = item.name;
+            img.draggable = false;
+
+            img.onerror = () => {
+                img.style.display = 'none';
+                const icon = document.createElement('span');
+                icon.className = 'gallery-item-icon';
+                icon.textContent = this.getIcon(item.type);
+                thumb.appendChild(icon);
+            };
+
+            img.onload = () => {
+                img.classList.add('loaded');
+            };
+
+            img.src = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
+            thumb.appendChild(img);
+
+            // Video play indicator
+            if (item.type === 'video') {
+                const indicator = document.createElement('span');
+                indicator.className = 'video-indicator';
+                indicator.textContent = '▶';
+                thumb.appendChild(indicator);
+            }
+        } else {
+            const icon = document.createElement('span');
+            icon.className = 'gallery-item-icon';
+            icon.textContent = this.getIcon(item.type);
+            thumb.appendChild(icon);
+        }
+
+        return thumb;
+    },
+
+    createInfo(item) {
+        const info = document.createElement('div');
+        info.className = 'gallery-item-info';
+
+        // Filename
+        const name = document.createElement('div');
+        name.className = 'gallery-item-name';
+        name.textContent = item.name;
+        name.title = item.name;
+        info.appendChild(name);
+
+        // Meta info (hidden on mobile via CSS)
+        const meta = document.createElement('div');
+        meta.className = 'gallery-item-meta';
+
+        if (item.type === 'folder') {
+            const count = item.itemCount || 0;
+            const itemText = count === 1 ? 'item' : 'items';
+            meta.innerHTML = `
+                <span class="gallery-item-type ${item.type}">${item.type}</span>
+                <span>${count} ${itemText}</span>
+            `;
+        } else {
+            meta.innerHTML = `
+                <span class="gallery-item-type ${item.type}">${item.type}</span>
+                <span>${MediaApp.formatFileSize(item.size)}</span>
+            `;
+        }
+        info.appendChild(meta);
+
+        // Tags
+        if (item.tags && item.tags.length > 0) {
+            const tagsContainer = document.createElement('div');
+            tagsContainer.className = 'gallery-item-tags';
+
+            const displayTags = item.tags.slice(0, 3);
+            const moreCount = item.tags.length - 3;
+
+            displayTags.forEach((tag) => {
+                const tagEl = document.createElement('span');
+                tagEl.className = 'item-tag';
+                tagEl.textContent = tag;
+                tagsContainer.appendChild(tagEl);
+            });
+
+            if (moreCount > 0) {
+                const moreEl = document.createElement('span');
+                moreEl.className = 'item-tag more';
+                moreEl.textContent = `+${moreCount}`;
+                tagsContainer.appendChild(moreEl);
+            }
+
+            info.appendChild(tagsContainer);
+        }
+
+        return info;
+    },
+
     attachTapHandler(element, item) {
-        // Touch state tracking
         let touchStartX = 0;
         let touchStartY = 0;
         let touchStartTime = 0;
@@ -106,7 +181,6 @@ const Gallery = {
         let tapTimeout = null;
         let isTouchMove = false;
 
-        // Touch start - record position
         element.addEventListener(
             'touchstart',
             (e) => {
@@ -120,7 +194,6 @@ const Gallery = {
             { passive: true }
         );
 
-        // Touch move - detect scrolling
         element.addEventListener(
             'touchmove',
             (e) => {
@@ -128,11 +201,9 @@ const Gallery = {
                     const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
                     const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
 
-                    // If moved beyond threshold, it's a scroll
                     if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
                         isTouchMove = true;
 
-                        // Cancel any pending tap
                         if (tapTimeout) {
                             clearTimeout(tapTimeout);
                             tapTimeout = null;
@@ -143,27 +214,22 @@ const Gallery = {
             { passive: true }
         );
 
-        // Touch end - handle tap if not scrolling
         element.addEventListener(
             'touchend',
             (e) => {
-                // Ignore if it was a scroll gesture
                 if (isTouchMove) {
                     isTouchMove = false;
                     return;
                 }
 
-                // Ignore if clicking on buttons
                 if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
                     return;
                 }
 
-                // Ignore multi-touch
                 if (e.changedTouches.length !== 1) {
                     return;
                 }
 
-                // Final position check
                 const touch = e.changedTouches[0];
                 const deltaX = Math.abs(touch.clientX - touchStartX);
                 const deltaY = Math.abs(touch.clientY - touchStartY);
@@ -172,10 +238,8 @@ const Gallery = {
                     return;
                 }
 
-                // Check touch duration - very long touches might be long-press
                 const touchDuration = Date.now() - touchStartTime;
                 if (touchDuration > 500) {
-                    // Long press - don't treat as tap (context menu handles this)
                     return;
                 }
 
@@ -185,13 +249,11 @@ const Gallery = {
                 const tapInterval = currentTime - lastTapTime;
 
                 if (tapInterval < this.doubleTapDelay && tapInterval > 0) {
-                    // Double tap detected
                     clearTimeout(tapTimeout);
                     tapTimeout = null;
                     lastTapTime = 0;
                     this.handleDoubleTap(element, item);
                 } else {
-                    // Potential single tap - wait to see if double tap follows
                     lastTapTime = currentTime;
                     tapTimeout = setTimeout(() => {
                         if (lastTapTime !== 0) {
@@ -205,7 +267,6 @@ const Gallery = {
             { passive: false }
         );
 
-        // Touch cancel - reset state
         element.addEventListener(
             'touchcancel',
             () => {
@@ -219,14 +280,11 @@ const Gallery = {
             { passive: true }
         );
 
-        // Mouse click for desktop (immediate, no double-tap delay)
         element.addEventListener('click', (e) => {
-            // Skip if this is a touch device and touch already handled it
             if ('ontouchstart' in window && e.sourceCapabilities?.firesTouchEvents) {
                 return;
             }
 
-            // Ignore if clicking on buttons
             if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
                 return;
             }
@@ -234,9 +292,7 @@ const Gallery = {
             this.handleSingleTap(item);
         });
 
-        // Mouse double-click for desktop
         element.addEventListener('dblclick', (e) => {
-            // Skip if this is a touch device
             if ('ontouchstart' in window && e.sourceCapabilities?.firesTouchEvents) {
                 return;
             }
@@ -265,21 +321,17 @@ const Gallery = {
     },
 
     handleDoubleTap(element, item) {
-        // Toggle favorite
         Favorites.toggleFavorite(item.path, item.name, item.type).then((isPinned) => {
-            // Visual feedback
             element.classList.add('favorite-flash');
             setTimeout(() => {
                 element.classList.remove('favorite-flash');
             }, 300);
 
-            // Show toast notification
             this.showToast(isPinned ? 'Added to favorites' : 'Removed from favorites');
         });
     },
 
     showToast(message) {
-        // Create or reuse toast element
         let toast = document.getElementById('toast-notification');
         if (!toast) {
             toast = document.createElement('div');
@@ -294,112 +346,6 @@ const Gallery = {
         setTimeout(() => {
             toast.classList.remove('show');
         }, 2000);
-    },
-
-    createThumbnail(item) {
-        const thumb = document.createElement('div');
-        thumb.className = 'gallery-item-thumb';
-
-        // Add tag button
-        const tagButton = document.createElement('button');
-        tagButton.className = 'tag-button' + (item.tags && item.tags.length > 0 ? ' has-tags' : '');
-        tagButton.innerHTML = '🏷';
-        tagButton.title = 'Manage tags';
-        tagButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            Tags.openModal(item.path, item.name);
-        });
-        thumb.appendChild(tagButton);
-
-        // Add pin button
-        const pinButton = document.createElement('button');
-        pinButton.className = 'pin-button' + (item.isFavorite ? ' pinned' : '');
-        pinButton.innerHTML = item.isFavorite ? '★' : '☆';
-        pinButton.title = item.isFavorite ? 'Remove from favorites' : 'Add to favorites';
-        pinButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            Favorites.toggleFavorite(item.path, item.name, item.type);
-        });
-        thumb.appendChild(pinButton);
-
-        if (item.type === 'folder') {
-            const icon = document.createElement('span');
-            icon.className = 'gallery-item-icon';
-            icon.textContent = '📁';
-            thumb.appendChild(icon);
-        } else if ((item.type === 'image' || item.type === 'video') && item.thumbnailUrl) {
-            const img = document.createElement('img');
-            img.loading = 'lazy';
-            img.alt = item.name;
-
-            let retryCount = 0;
-            const maxRetries = 1;
-
-            img.onerror = () => {
-                if (retryCount < maxRetries) {
-                    retryCount++;
-                    setTimeout(() => {
-                        img.src = item.thumbnailUrl + '?retry=' + retryCount;
-                    }, 500);
-                } else {
-                    img.style.display = 'none';
-                    const icon = document.createElement('span');
-                    icon.className = 'gallery-item-icon';
-                    icon.textContent = this.getIcon(item.type);
-                    icon.title = 'Thumbnail unavailable';
-                    thumb.appendChild(icon);
-                }
-            };
-
-            img.onload = () => {
-                img.classList.add('loaded');
-            };
-
-            img.src = item.thumbnailUrl;
-            thumb.appendChild(img);
-        } else {
-            const icon = document.createElement('span');
-            icon.className = 'gallery-item-icon';
-            icon.textContent = this.getIcon(item.type);
-            thumb.appendChild(icon);
-        }
-
-        return thumb;
-    },
-
-    createInfo(item) {
-        const info = document.createElement('div');
-        info.className = 'gallery-item-info';
-
-        let metaContent;
-        if (item.type === 'folder') {
-            const count = item.itemCount || 0;
-            const itemText = count === 1 ? 'item' : 'items';
-            metaContent = `
-                <span class="gallery-item-type ${item.type}">${item.type}</span>
-                <span>${count} ${itemText}</span>
-            `;
-        } else {
-            metaContent = `
-                <span class="gallery-item-type ${item.type}">${item.type}</span>
-                <span>${MediaApp.formatFileSize(item.size)}</span>
-            `;
-        }
-
-        info.innerHTML = `
-            <div class="gallery-item-name" title="${item.name}">${item.name}</div>
-            <div class="gallery-item-meta">
-                ${metaContent}
-            </div>
-        `;
-
-        if (item.tags && item.tags.length > 0) {
-            info.innerHTML += Tags.renderItemTags(item.tags);
-        }
-
-        return info;
     },
 
     getIcon(type) {
