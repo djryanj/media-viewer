@@ -31,9 +31,15 @@ const MediaApp = {
             pagePrev: document.getElementById('page-prev'),
             pageNext: document.getElementById('page-next'),
             statsInfo: document.getElementById('stats-info'),
+            // Desktop buttons
             logoutBtn: document.getElementById('logout-btn'),
             clearCacheBtn: document.getElementById('clear-cache-btn'),
             changePasswordBtn: document.getElementById('change-password-btn'),
+            // Mobile buttons
+            logoutBtnMobile: document.getElementById('logout-btn-mobile'),
+            clearCacheBtnMobile: document.getElementById('clear-cache-btn-mobile'),
+            changePasswordBtnMobile: document.getElementById('change-password-btn-mobile'),
+            // Modals
             confirmModal: document.getElementById('confirm-modal'),
             confirmModalCancel: document.getElementById('confirm-modal-cancel'),
             confirmModalConfirm: document.getElementById('confirm-modal-confirm'),
@@ -59,9 +65,20 @@ const MediaApp = {
         this.elements.filterType.addEventListener('change', () => this.handleFilterChange());
         this.elements.pagePrev.addEventListener('click', () => this.prevPage());
         this.elements.pageNext.addEventListener('click', () => this.nextPage());
+
+        // Desktop buttons
         this.elements.logoutBtn.addEventListener('click', () => this.logout());
         this.elements.clearCacheBtn.addEventListener('click', () => this.clearThumbnailCache());
         this.elements.changePasswordBtn.addEventListener('click', () => this.showPasswordModal());
+
+        // Mobile buttons
+        this.elements.logoutBtnMobile.addEventListener('click', () => this.logout());
+        this.elements.clearCacheBtnMobile.addEventListener('click', () =>
+            this.clearThumbnailCache()
+        );
+        this.elements.changePasswordBtnMobile.addEventListener('click', () =>
+            this.showPasswordModal()
+        );
 
         // Password modal events
         this.elements.passwordModalClose.addEventListener('click', () => this.hidePasswordModal());
@@ -73,12 +90,28 @@ const MediaApp = {
             }
         });
 
+        // Use bubble phase (default) so HistoryManager's capture phase handler runs first
         window.addEventListener('popstate', (e) => {
-            // If HistoryManager is handling an overlay close, don't reload the directory
+            console.debug(
+                'MediaApp: popstate fired, isHandlingPopState:',
+                HistoryManager.isHandlingPopState,
+                'currentStateType:',
+                HistoryManager.getCurrentStateType()
+            );
+
+            // If HistoryManager is handling an overlay/modal/selection close, don't navigate
             if (typeof HistoryManager !== 'undefined' && HistoryManager.isHandlingPopState) {
+                console.debug('MediaApp: skipping - HistoryManager is handling');
                 return;
             }
 
+            // If HistoryManager has any overlay states, it should handle the popstate
+            if (typeof HistoryManager !== 'undefined' && HistoryManager.getCurrentStateType()) {
+                console.debug('MediaApp: skipping - HistoryManager has states');
+                return;
+            }
+
+            console.debug('MediaApp: handling navigation');
             const path = e.state?.path || '';
             this.state.currentPath = path;
             this.state.currentPage = 1;
@@ -244,8 +277,8 @@ const MediaApp = {
                 path: path,
                 sort: this.state.currentSort.field,
                 order: this.state.currentSort.order,
-                page: this.state.currentPage,
-                pageSize: this.state.pageSize,
+                page: String(this.state.currentPage),
+                pageSize: String(this.state.pageSize),
             });
 
             if (this.state.currentFilter) {
@@ -477,7 +510,9 @@ const MediaApp = {
     showConfirmModal(options) {
         return new Promise((resolve) => {
             if (this.elements.confirmModalIcon) {
-                this.elements.confirmModalIcon.textContent = options.icon || '⚠️';
+                const iconName = options.icon || 'alert-triangle';
+                this.elements.confirmModalIcon.innerHTML = `<i data-lucide="${iconName}"></i>`;
+                lucide.createIcons();
             }
             if (this.elements.confirmModalTitle) {
                 this.elements.confirmModalTitle.textContent = options.title || 'Confirm';
@@ -531,7 +566,7 @@ const MediaApp = {
 
     async clearThumbnailCache() {
         const confirmed = await this.showConfirmModal({
-            icon: '🗑️',
+            icon: 'trash-2',
             title: 'Clear & Rebuild Thumbnails?',
             message:
                 'This will delete all cached thumbnails and regenerate them in the background. The page will reload after clearing.',

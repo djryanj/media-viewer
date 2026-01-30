@@ -23,6 +23,19 @@ type BatchTagsRequest struct {
 	Paths []string `json:"paths"`
 }
 
+// BulkTagRequest represents a request to add/remove a tag from multiple files
+type BulkTagRequest struct {
+	Paths []string `json:"paths"`
+	Tag   string   `json:"tag"`
+}
+
+// BulkTagResponse represents the response from a bulk tag operation
+type BulkTagResponse struct {
+	Success int      `json:"success"`
+	Failed  int      `json:"failed"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
 // GetAllTags returns all tags
 func (h *Handlers) GetAllTags(w http.ResponseWriter, _ *http.Request) {
 	tags, err := h.db.GetAllTags()
@@ -144,6 +157,116 @@ func (h *Handlers) RemoveTagFromFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONStatus(w, "ok")
+}
+
+// BulkAddTag adds a tag to multiple files at once
+func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
+	var req BulkTagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Paths) == 0 {
+		http.Error(w, "Paths array is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Tag == "" {
+		http.Error(w, "Tag is required", http.StatusBadRequest)
+		return
+	}
+
+	// Limit the number of paths to prevent abuse
+	maxPaths := 100
+	if len(req.Paths) > maxPaths {
+		req.Paths = req.Paths[:maxPaths]
+	}
+
+	response := BulkTagResponse{
+		Success: 0,
+		Failed:  0,
+		Errors:  []string{},
+	}
+
+	for _, path := range req.Paths {
+		if path == "" {
+			continue
+		}
+
+		if err := h.db.AddTagToFile(path, req.Tag); err != nil {
+			response.Failed++
+			// Optionally collect error details (limit to prevent response bloat)
+			if len(response.Errors) < 10 {
+				response.Errors = append(response.Errors, path+": "+err.Error())
+			}
+		} else {
+			response.Success++
+		}
+	}
+
+	// Clear errors if empty to keep response clean
+	if len(response.Errors) == 0 {
+		response.Errors = nil
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, response)
+}
+
+// BulkRemoveTag removes a tag from multiple files at once
+func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
+	var req BulkTagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Paths) == 0 {
+		http.Error(w, "Paths array is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Tag == "" {
+		http.Error(w, "Tag is required", http.StatusBadRequest)
+		return
+	}
+
+	// Limit the number of paths to prevent abuse
+	maxPaths := 100
+	if len(req.Paths) > maxPaths {
+		req.Paths = req.Paths[:maxPaths]
+	}
+
+	response := BulkTagResponse{
+		Success: 0,
+		Failed:  0,
+		Errors:  []string{},
+	}
+
+	for _, path := range req.Paths {
+		if path == "" {
+			continue
+		}
+
+		if err := h.db.RemoveTagFromFile(path, req.Tag); err != nil {
+			response.Failed++
+			// Optionally collect error details (limit to prevent response bloat)
+			if len(response.Errors) < 10 {
+				response.Errors = append(response.Errors, path+": "+err.Error())
+			}
+		} else {
+			response.Success++
+		}
+	}
+
+	// Clear errors if empty to keep response clean
+	if len(response.Errors) == 0 {
+		response.Errors = nil
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, response)
 }
 
 // SetFileTags replaces all tags for a file

@@ -10,6 +10,6 @@
             "/*": ["./*"]
         }
     },
-    "include": ["js/**/*.js"],
+    "include": ["*.js", "*.d.ts"],
     "exclude": ["node_modules"]
 }

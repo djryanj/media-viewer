@@ -1,85 +1,112 @@
 const HistoryManager = {
     states: [],
     isHandlingPopState: false,
+    initialized: false,
 
     init() {
-        window.addEventListener('popstate', (e) => this.handlePopState(e));
+        if (this.initialized) return;
+        this.initialized = true;
+
+        window.addEventListener('popstate', (e) => this.handlePopState(e), true);
     },
 
-    // Push a state for an overlay/modal
     pushState(type, data = {}) {
         const state = {
             type,
             data,
             id: Date.now(),
-            path: MediaApp.state?.currentPath || '',
+            path: typeof MediaApp !== 'undefined' ? MediaApp.state?.currentPath || '' : '',
         };
         this.states.push(state);
         history.pushState(state, '', window.location.href);
+        console.debug(
+            'HistoryManager: pushed state',
+            type,
+            'states:',
+            this.states.map((s) => s.type)
+        );
     },
 
-    // Remove the current state without triggering popstate
     removeState(type) {
         const index = this.states.findIndex((s) => s.type === type);
         if (index !== -1) {
             this.states.splice(index, 1);
         }
+        console.debug(
+            'HistoryManager: removed state',
+            type,
+            'states:',
+            this.states.map((s) => s.type)
+        );
     },
 
-    // Check if a state type is active
     hasState(type) {
         return this.states.some((s) => s.type === type);
     },
 
-    // Get the most recent state type
     getCurrentStateType() {
         if (this.states.length === 0) return null;
         return this.states[this.states.length - 1].type;
     },
 
-    // Handle back button - only close the most recent overlay
-    handlePopState(e) {
-        // Check our internal state stack to see what should be closed
-        // This is more reliable than checking DOM visibility
+    handlePopState(_e) {
         const currentType = this.getCurrentStateType();
 
+        console.debug(
+            'HistoryManager: popstate fired, currentType:',
+            currentType,
+            'states:',
+            this.states.map((s) => s.type)
+        );
+
         if (!currentType) {
-            // No overlay states, let MediaApp handle navigation
+            this.isHandlingPopState = false;
             return;
         }
 
         this.isHandlingPopState = true;
 
-        // Close only the current (most recent) overlay
+        console.debug('HistoryManager: closing', currentType);
+
         switch (currentType) {
+            case 'selection':
+                if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+                    ItemSelection.exitSelectionMode();
+                }
+                break;
             case 'tag-modal':
-                Tags.closeModal();
+                if (typeof Tags !== 'undefined') {
+                    Tags.closeModal();
+                }
                 break;
             case 'lightbox':
-                Lightbox.close();
+                if (typeof Lightbox !== 'undefined') {
+                    Lightbox.close();
+                }
                 break;
             case 'player':
-                Player.close();
+                if (typeof Player !== 'undefined') {
+                    Player.close();
+                }
                 break;
             case 'search':
-                Search.hideResults();
-                break;
-            case 'context-menu':
-                Favorites.hideContextMenu();
+                if (typeof Search !== 'undefined') {
+                    Search.hideResults();
+                }
                 break;
         }
 
-        // Remove from our tracking
         this.removeState(currentType);
 
-        // Reset flag after a microtask
-        Promise.resolve().then(() => {
+        setTimeout(() => {
             this.isHandlingPopState = false;
-        });
+        }, 50);
     },
 
-    // Close all overlays
     closeAll() {
+        if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+            ItemSelection.exitSelectionMode();
+        }
         if (!document.getElementById('tag-modal')?.classList.contains('hidden')) {
             Tags.closeModal();
         }
@@ -92,14 +119,8 @@ const HistoryManager = {
         if (!document.getElementById('search-results')?.classList.contains('hidden')) {
             Search.hideResults();
         }
-        if (!document.getElementById('context-menu')?.classList.contains('hidden')) {
-            Favorites.hideContextMenu();
-        }
         this.states = [];
     },
 };
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    HistoryManager.init();
-});
+HistoryManager.init();

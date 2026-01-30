@@ -14,6 +14,26 @@ type FavoriteRequest struct {
 	Type database.FileType `json:"type"`
 }
 
+// BulkFavoriteItem represents a single item in a bulk favorite request
+type BulkFavoriteItem struct {
+	Path string            `json:"path"`
+	Name string            `json:"name"`
+	Type database.FileType `json:"type"`
+}
+
+// BulkFavoriteRequest represents a request to add/remove multiple favorites
+type BulkFavoriteRequest struct {
+	Items []BulkFavoriteItem `json:"items"`
+	Paths []string           `json:"paths"` // For remove operations (only paths needed)
+}
+
+// BulkFavoriteResponse represents the response from a bulk favorite operation
+type BulkFavoriteResponse struct {
+	Success int      `json:"success"`
+	Failed  int      `json:"failed"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
 // GetFavorites returns all favorite media files
 func (h *Handlers) GetFavorites(w http.ResponseWriter, _ *http.Request) {
 	favorites, err := h.db.GetFavorites()
@@ -70,6 +90,102 @@ func (h *Handlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONStatus(w, "ok")
+}
+
+// BulkAddFavorites adds multiple items to favorites at once
+func (h *Handlers) BulkAddFavorites(w http.ResponseWriter, r *http.Request) {
+	var req BulkFavoriteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Items) == 0 {
+		http.Error(w, "Items array is required", http.StatusBadRequest)
+		return
+	}
+
+	// Limit the number of items to prevent abuse
+	maxItems := 100
+	if len(req.Items) > maxItems {
+		req.Items = req.Items[:maxItems]
+	}
+
+	response := BulkFavoriteResponse{
+		Success: 0,
+		Failed:  0,
+		Errors:  []string{},
+	}
+
+	for _, item := range req.Items {
+		if item.Path == "" {
+			continue
+		}
+
+		if err := h.db.AddFavorite(item.Path, item.Name, item.Type); err != nil {
+			response.Failed++
+			if len(response.Errors) < 10 {
+				response.Errors = append(response.Errors, item.Path+": "+err.Error())
+			}
+		} else {
+			response.Success++
+		}
+	}
+
+	if len(response.Errors) == 0 {
+		response.Errors = nil
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, response)
+}
+
+// BulkRemoveFavorites removes multiple items from favorites at once
+func (h *Handlers) BulkRemoveFavorites(w http.ResponseWriter, r *http.Request) {
+	var req BulkFavoriteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Paths) == 0 {
+		http.Error(w, "Paths array is required", http.StatusBadRequest)
+		return
+	}
+
+	// Limit the number of paths to prevent abuse
+	maxPaths := 100
+	if len(req.Paths) > maxPaths {
+		req.Paths = req.Paths[:maxPaths]
+	}
+
+	response := BulkFavoriteResponse{
+		Success: 0,
+		Failed:  0,
+		Errors:  []string{},
+	}
+
+	for _, path := range req.Paths {
+		if path == "" {
+			continue
+		}
+
+		if err := h.db.RemoveFavorite(path); err != nil {
+			response.Failed++
+			if len(response.Errors) < 10 {
+				response.Errors = append(response.Errors, path+": "+err.Error())
+			}
+		} else {
+			response.Success++
+		}
+	}
+
+	if len(response.Errors) == 0 {
+		response.Errors = nil
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, response)
 }
 
 // CheckFavorite checks if a media file is in favorites

@@ -1,7 +1,29 @@
 const Gallery = {
-    // Double-tap detection
     doubleTapDelay: 300,
     scrollThreshold: 10,
+
+    // Icon mappings for Lucide
+    icons: {
+        folder: 'folder',
+        image: 'image',
+        video: 'film',
+        playlist: 'list-music',
+        other: 'file',
+        star: 'star',
+        starFilled: 'star',
+        tag: 'tag',
+        play: 'play',
+        check: 'check',
+    },
+
+    createIcon(name, className = '') {
+        const icon = document.createElement('i');
+        icon.setAttribute('data-lucide', name);
+        if (className) {
+            icon.className = className;
+        }
+        return icon;
+    },
 
     render(items) {
         const gallery = MediaApp.elements.gallery;
@@ -10,10 +32,13 @@ const Gallery = {
         if (!items || items.length === 0) {
             gallery.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">📂</div>
+                    <div class="empty-state-icon">
+                        <i data-lucide="folder-open"></i>
+                    </div>
                     <p>This folder is empty</p>
                 </div>
             `;
+            lucide.createIcons();
             return;
         }
 
@@ -21,6 +46,24 @@ const Gallery = {
             const element = this.createGalleryItem(item);
             gallery.appendChild(element);
         });
+
+        // Initialize Lucide icons for new elements
+        lucide.createIcons();
+
+        if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+            ItemSelection.addCheckboxesToGallery();
+            ItemSelection.selectedItems.forEach((data, path) => {
+                const element = gallery.querySelector(
+                    `.gallery-item[data-path="${CSS.escape(path)}"]`
+                );
+                if (element) {
+                    element.classList.add('selected');
+                    data.element = element;
+                    const checkbox = element.querySelector('.select-checkbox');
+                    if (checkbox) checkbox.checked = true;
+                }
+            });
+        }
     },
 
     createGalleryItem(item) {
@@ -34,49 +77,51 @@ const Gallery = {
             div.classList.add('is-favorite');
         }
 
-        // Create thumbnail
-        const thumb = this.createThumbnail(item);
-        div.appendChild(thumb);
+        const thumbArea = this.createThumbArea(item);
+        div.appendChild(thumbArea);
 
-        // Create info overlay
         const info = this.createInfo(item);
         div.appendChild(info);
 
-        // Bind tap/click handlers
-        this.attachTapHandler(div, item);
+        const selectArea = this.createSelectArea(item);
+        div.appendChild(selectArea);
+
+        this.attachTapHandler(thumbArea, item);
 
         return div;
     },
 
-    createThumbnail(item) {
-        const thumb = document.createElement('div');
-        thumb.className = 'gallery-item-thumb';
+    createThumbArea(item) {
+        const thumbArea = document.createElement('div');
+        thumbArea.className = 'gallery-item-thumb';
 
-        // Tag button
-        const tagButton = document.createElement('button');
-        tagButton.className = 'tag-button' + (item.tags && item.tags.length > 0 ? ' has-tags' : '');
-        tagButton.innerHTML = '🏷';
-        tagButton.title = 'Manage tags';
-        tagButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            Tags.openModal(item.path, item.name);
-        });
-        thumb.appendChild(tagButton);
+        if (item.type !== 'folder') {
+            const tagButton = document.createElement('button');
+            tagButton.className =
+                'tag-button' + (item.tags && item.tags.length > 0 ? ' has-tags' : '');
+            tagButton.title = 'Manage tags';
+            tagButton.appendChild(this.createIcon('tag'));
+            tagButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) return;
+                Tags.openModal(item.path, item.name);
+            });
+            thumbArea.appendChild(tagButton);
+        }
 
-        // Pin button
         const pinButton = document.createElement('button');
         pinButton.className = 'pin-button' + (item.isFavorite ? ' pinned' : '');
-        pinButton.innerHTML = item.isFavorite ? '★' : '☆';
         pinButton.title = item.isFavorite ? 'Remove from favorites' : 'Add to favorites';
+        pinButton.appendChild(this.createIcon('star'));
         pinButton.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
+            if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) return;
             Favorites.toggleFavorite(item.path, item.name, item.type);
         });
-        thumb.appendChild(pinButton);
+        thumbArea.appendChild(pinButton);
 
-        // Thumbnail image or icon
         if (item.type === 'folder' || item.type === 'image' || item.type === 'video') {
             const img = document.createElement('img');
             img.loading = 'lazy';
@@ -85,10 +130,11 @@ const Gallery = {
 
             img.onerror = () => {
                 img.style.display = 'none';
-                const icon = document.createElement('span');
-                icon.className = 'gallery-item-icon';
-                icon.textContent = this.getIcon(item.type);
-                thumb.appendChild(icon);
+                const iconWrapper = document.createElement('span');
+                iconWrapper.className = 'gallery-item-icon';
+                iconWrapper.appendChild(this.createIcon(this.icons[item.type] || this.icons.other));
+                thumbArea.appendChild(iconWrapper);
+                lucide.createIcons();
             };
 
             img.onload = () => {
@@ -96,59 +142,33 @@ const Gallery = {
             };
 
             img.src = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
-            thumb.appendChild(img);
+            thumbArea.appendChild(img);
 
-            // Video play indicator
             if (item.type === 'video') {
                 const indicator = document.createElement('span');
                 indicator.className = 'video-indicator';
-                indicator.textContent = '▶';
-                thumb.appendChild(indicator);
+                indicator.appendChild(this.createIcon('play'));
+                thumbArea.appendChild(indicator);
             }
         } else {
-            const icon = document.createElement('span');
-            icon.className = 'gallery-item-icon';
-            icon.textContent = this.getIcon(item.type);
-            thumb.appendChild(icon);
+            const iconWrapper = document.createElement('span');
+            iconWrapper.className = 'gallery-item-icon';
+            iconWrapper.appendChild(this.createIcon(this.icons[item.type] || this.icons.other));
+            thumbArea.appendChild(iconWrapper);
         }
 
-        return thumb;
-    },
+        const mobileInfo = document.createElement('div');
+        mobileInfo.className = 'gallery-item-mobile-info';
 
-    createInfo(item) {
-        const info = document.createElement('div');
-        info.className = 'gallery-item-info';
-
-        // Filename
         const name = document.createElement('div');
         name.className = 'gallery-item-name';
         name.textContent = item.name;
-        name.title = item.name;
-        info.appendChild(name);
+        mobileInfo.appendChild(name);
 
-        // Meta info (hidden on mobile via CSS)
-        const meta = document.createElement('div');
-        meta.className = 'gallery-item-meta';
-
-        if (item.type === 'folder') {
-            const count = item.itemCount || 0;
-            const itemText = count === 1 ? 'item' : 'items';
-            meta.innerHTML = `
-                <span class="gallery-item-type ${item.type}">${item.type}</span>
-                <span>${count} ${itemText}</span>
-            `;
-        } else {
-            meta.innerHTML = `
-                <span class="gallery-item-type ${item.type}">${item.type}</span>
-                <span>${MediaApp.formatFileSize(item.size)}</span>
-            `;
-        }
-        info.appendChild(meta);
-
-        // Tags
         if (item.tags && item.tags.length > 0) {
             const tagsContainer = document.createElement('div');
             tagsContainer.className = 'gallery-item-tags';
+            tagsContainer.dataset.allTags = JSON.stringify(item.tags);
 
             const displayTags = item.tags.slice(0, 3);
             const moreCount = item.tags.length - 3;
@@ -157,6 +177,8 @@ const Gallery = {
                 const tagEl = document.createElement('span');
                 tagEl.className = 'item-tag';
                 tagEl.textContent = tag;
+                tagEl.title = `Search for "${tag}"`;
+                tagEl.dataset.tag = tag;
                 tagsContainer.appendChild(tagEl);
             });
 
@@ -167,13 +189,147 @@ const Gallery = {
                 tagsContainer.appendChild(moreEl);
             }
 
-            info.appendChild(tagsContainer);
+            mobileInfo.appendChild(tagsContainer);
         }
+
+        thumbArea.appendChild(mobileInfo);
+
+        return thumbArea;
+    },
+
+    createInfo(item) {
+        const info = document.createElement('div');
+        info.className = 'gallery-item-info';
+
+        const name = document.createElement('div');
+        name.className = 'gallery-item-name';
+        name.textContent = item.name;
+        name.title = item.name;
+        info.appendChild(name);
+
+        const meta = document.createElement('div');
+        meta.className = 'gallery-item-meta';
+
+        if (item.type === 'folder') {
+            const count = item.itemCount || 0;
+            const itemText = count === 1 ? 'item' : 'items';
+            meta.innerHTML = `
+            <span class="gallery-item-type ${item.type}">${item.type}</span>
+            <span>${count} ${itemText}</span>
+        `;
+        } else if (item.type === 'playlist') {
+            meta.innerHTML = `
+            <span class="gallery-item-type ${item.type}">${item.type}</span>
+            <span>Playlist</span>
+        `;
+        } else {
+            meta.innerHTML = `
+            <span class="gallery-item-type ${item.type}">${item.type}</span>
+            <span>${MediaApp.formatFileSize(item.size)}</span>
+        `;
+        }
+        info.appendChild(meta);
+
+        // ALWAYS create tags container for consistent height
+        const tagsContainer = document.createElement('div');
+        tagsContainer.className = 'gallery-item-tags';
+
+        if (item.tags && item.tags.length > 0) {
+            tagsContainer.dataset.allTags = JSON.stringify(item.tags);
+
+            const displayTags = item.tags.slice(0, 3);
+            const moreCount = item.tags.length - 3;
+
+            displayTags.forEach((tag) => {
+                const tagEl = this.createRemovableTag(tag, item.path);
+                tagsContainer.appendChild(tagEl);
+            });
+
+            if (moreCount > 0) {
+                const moreEl = document.createElement('span');
+                moreEl.className = 'item-tag more';
+                moreEl.textContent = `+${moreCount}`;
+                moreEl.title = 'Click to see all tags';
+                tagsContainer.appendChild(moreEl);
+            }
+        }
+
+        // Always append the container, even if empty
+        info.appendChild(tagsContainer);
 
         return info;
     },
 
-    attachTapHandler(element, item) {
+    createRemovableTag(tagName, itemPath) {
+        const tagEl = document.createElement('span');
+        tagEl.className = 'item-tag';
+        tagEl.dataset.tag = tagName;
+        tagEl.dataset.path = itemPath;
+        tagEl.title = `Search for "${tagName}"`;
+
+        const tagText = document.createElement('span');
+        tagText.className = 'item-tag-text';
+        tagText.textContent = tagName;
+        tagEl.appendChild(tagText);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'item-tag-remove';
+        removeBtn.title = `Remove "${tagName}" tag`;
+        removeBtn.innerHTML =
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+        tagEl.appendChild(removeBtn);
+
+        return tagEl;
+    },
+
+    createSelectArea(_item) {
+        const selectArea = document.createElement('div');
+        selectArea.className = 'gallery-item-select';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'select-checkbox';
+        checkbox.tabIndex = -1;
+
+        const customCheckbox = document.createElement('span');
+        customCheckbox.className = 'select-checkbox-custom';
+        customCheckbox.appendChild(this.createIcon('check'));
+
+        const label = document.createElement('span');
+        label.className = 'select-checkbox-text';
+        label.textContent = 'Select';
+
+        selectArea.appendChild(checkbox);
+        selectArea.appendChild(customCheckbox);
+        selectArea.appendChild(label);
+
+        selectArea.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+
+            const galleryItem = selectArea.closest('.gallery-item');
+            if (!galleryItem || typeof ItemSelection === 'undefined') return;
+
+            const path = galleryItem.dataset.path;
+            const isSelected = ItemSelection.isItemSelected(path);
+
+            if (isSelected) {
+                ItemSelection.deselectItem(galleryItem);
+            } else {
+                if (!ItemSelection.isActive) {
+                    ItemSelection.enterSelectionMode(galleryItem);
+                } else {
+                    ItemSelection.selectItem(galleryItem);
+                }
+            }
+        });
+
+        return selectArea;
+    },
+
+    attachTapHandler(thumbArea, item) {
+        const galleryItem = () => thumbArea.closest('.gallery-item');
+
         let touchStartX = 0;
         let touchStartY = 0;
         let touchStartTime = 0;
@@ -181,9 +337,20 @@ const Gallery = {
         let tapTimeout = null;
         let isTouchMove = false;
 
-        element.addEventListener(
+        thumbArea.addEventListener(
             'touchstart',
             (e) => {
+                // Ignore if touching interactive elements
+                if (
+                    e.target.closest('.pin-button') ||
+                    e.target.closest('.tag-button') ||
+                    e.target.closest('.selection-checkbox') ||
+                    e.target.closest('.item-tag') ||
+                    e.target.closest('.gallery-item-tags')
+                ) {
+                    return;
+                }
+
                 if (e.touches.length === 1) {
                     touchStartX = e.touches[0].clientX;
                     touchStartY = e.touches[0].clientY;
@@ -194,7 +361,7 @@ const Gallery = {
             { passive: true }
         );
 
-        element.addEventListener(
+        thumbArea.addEventListener(
             'touchmove',
             (e) => {
                 if (e.touches.length === 1) {
@@ -203,7 +370,6 @@ const Gallery = {
 
                     if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
                         isTouchMove = true;
-
                         if (tapTimeout) {
                             clearTimeout(tapTimeout);
                             tapTimeout = null;
@@ -214,36 +380,47 @@ const Gallery = {
             { passive: true }
         );
 
-        element.addEventListener(
+        thumbArea.addEventListener(
             'touchend',
             (e) => {
+                // Ignore if touching interactive elements
+                if (
+                    e.target.closest('.pin-button') ||
+                    e.target.closest('.tag-button') ||
+                    e.target.closest('.selection-checkbox') ||
+                    e.target.closest('.item-tag') ||
+                    e.target.closest('.gallery-item-tags')
+                ) {
+                    return;
+                }
+
+                if (typeof ItemSelection !== 'undefined' && ItemSelection.wasLongPressTriggered()) {
+                    ItemSelection.resetLongPressTriggered();
+                    return;
+                }
+
                 if (isTouchMove) {
                     isTouchMove = false;
                     return;
                 }
 
-                if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
-                    return;
-                }
-
-                if (e.changedTouches.length !== 1) {
-                    return;
-                }
+                if (e.changedTouches.length !== 1) return;
 
                 const touch = e.changedTouches[0];
                 const deltaX = Math.abs(touch.clientX - touchStartX);
                 const deltaY = Math.abs(touch.clientY - touchStartY);
 
-                if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) {
-                    return;
-                }
+                if (deltaX > this.scrollThreshold || deltaY > this.scrollThreshold) return;
 
                 const touchDuration = Date.now() - touchStartTime;
-                if (touchDuration > 500) {
-                    return;
-                }
+                if (touchDuration > 500) return;
 
                 e.preventDefault();
+
+                if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+                    ItemSelection.toggleItem(galleryItem());
+                    return;
+                }
 
                 const currentTime = Date.now();
                 const tapInterval = currentTime - lastTapTime;
@@ -252,7 +429,7 @@ const Gallery = {
                     clearTimeout(tapTimeout);
                     tapTimeout = null;
                     lastTapTime = 0;
-                    this.handleDoubleTap(element, item);
+                    this.handleDoubleTap(galleryItem(), item);
                 } else {
                     lastTapTime = currentTime;
                     tapTimeout = setTimeout(() => {
@@ -267,7 +444,7 @@ const Gallery = {
             { passive: false }
         );
 
-        element.addEventListener(
+        thumbArea.addEventListener(
             'touchcancel',
             () => {
                 isTouchMove = false;
@@ -280,29 +457,46 @@ const Gallery = {
             { passive: true }
         );
 
-        element.addEventListener('click', (e) => {
+        thumbArea.addEventListener('click', (e) => {
             if ('ontouchstart' in window && e.sourceCapabilities?.firesTouchEvents) {
                 return;
             }
 
-            if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
+            // Ignore if clicking interactive elements
+            if (
+                e.target.closest('.pin-button') ||
+                e.target.closest('.tag-button') ||
+                e.target.closest('.item-tag') ||
+                e.target.closest('.gallery-item-tags')
+            ) {
+                return;
+            }
+
+            if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+                ItemSelection.toggleItem(galleryItem());
                 return;
             }
 
             this.handleSingleTap(item);
         });
 
-        element.addEventListener('dblclick', (e) => {
+        thumbArea.addEventListener('dblclick', (e) => {
             if ('ontouchstart' in window && e.sourceCapabilities?.firesTouchEvents) {
                 return;
             }
 
-            if (e.target.closest('.pin-button') || e.target.closest('.tag-button')) {
+            // Ignore if clicking interactive elements
+            if (
+                e.target.closest('.pin-button') ||
+                e.target.closest('.tag-button') ||
+                e.target.closest('.item-tag') ||
+                e.target.closest('.gallery-item-tags')
+            ) {
                 return;
             }
 
             e.preventDefault();
-            this.handleDoubleTap(element, item);
+            this.handleDoubleTap(galleryItem(), item);
         });
     },
 
@@ -349,14 +543,7 @@ const Gallery = {
     },
 
     getIcon(type) {
-        const icons = {
-            folder: '📁',
-            image: '🖼️',
-            video: '🎬',
-            playlist: '📋',
-            other: '📄',
-        };
-        return icons[type] || icons.other;
+        return this.icons[type] || this.icons.other;
     },
 
     updatePinState(path, isPinned) {
@@ -367,9 +554,10 @@ const Gallery = {
                 const pinButton = item.querySelector('.pin-button');
                 if (pinButton) {
                     pinButton.classList.toggle('pinned', isPinned);
-                    pinButton.innerHTML = isPinned ? '★' : '☆';
                     pinButton.title = isPinned ? 'Remove from favorites' : 'Add to favorites';
                 }
             });
     },
 };
+
+window.Gallery = Gallery;

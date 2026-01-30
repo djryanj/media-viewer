@@ -1,11 +1,9 @@
 const Favorites = {
     elements: {},
-    contextTarget: null,
     pinnedPaths: new Set(),
 
     init() {
         this.cacheElements();
-        this.bindEvents();
         this.loadPinnedPaths();
     },
 
@@ -13,136 +11,7 @@ const Favorites = {
         this.elements = {
             section: document.getElementById('favorites-section'),
             gallery: document.getElementById('favorites-gallery'),
-            contextMenu: document.getElementById('context-menu'),
-            ctxAddFavorite: document.getElementById('ctx-add-favorite'),
-            ctxRemoveFavorite: document.getElementById('ctx-remove-favorite'),
-            ctxOpenFolder: document.getElementById('ctx-open-folder'),
         };
-    },
-
-    bindEvents() {
-        // Context menu actions
-        this.elements.ctxAddFavorite.addEventListener('click', () => {
-            if (this.contextTarget) {
-                this.addFavorite(
-                    this.contextTarget.path,
-                    this.contextTarget.name,
-                    this.contextTarget.type
-                );
-            }
-            this.hideContextMenu();
-        });
-
-        this.elements.ctxRemoveFavorite.addEventListener('click', () => {
-            if (this.contextTarget) {
-                this.removeFavorite(this.contextTarget.path);
-            }
-            this.hideContextMenu();
-        });
-
-        this.elements.ctxOpenFolder.addEventListener('click', () => {
-            if (this.contextTarget) {
-                const parentPath =
-                    this.contextTarget.path.substring(
-                        0,
-                        this.contextTarget.path.lastIndexOf('/')
-                    ) || '';
-                MediaApp.navigateTo(parentPath);
-                Search.hideResults();
-            }
-            this.hideContextMenu();
-        });
-
-        // Hide context menu on click outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.context-menu')) {
-                this.hideContextMenu();
-            }
-        });
-
-        // Hide context menu on scroll
-        document.addEventListener('scroll', () => {
-            this.hideContextMenu();
-        });
-
-        // Context menu on long-press (mobile) or right-click (desktop)
-        document.addEventListener('contextmenu', (e) => {
-            const galleryItem = e.target.closest('.gallery-item');
-            if (galleryItem) {
-                e.preventDefault();
-                this.showContextMenu(e, galleryItem);
-            }
-        });
-
-        // Long-press detection for mobile
-        this.setupLongPress();
-    },
-
-    setupLongPress() {
-        let longPressTimer = null;
-        let longPressTarget = null;
-        const longPressDuration = 500; // ms
-
-        document.addEventListener(
-            'touchstart',
-            (e) => {
-                const galleryItem = e.target.closest('.gallery-item');
-                if (galleryItem) {
-                    longPressTarget = galleryItem;
-                    longPressTimer = setTimeout(() => {
-                        // Trigger context menu on long press
-                        const touch = e.touches[0];
-                        this.showContextMenu(
-                            {
-                                pageX: touch.pageX,
-                                pageY: touch.pageY,
-                                preventDefault: () => {},
-                            },
-                            galleryItem
-                        );
-
-                        // Vibrate if supported
-                        if (navigator.vibrate) {
-                            navigator.vibrate(50);
-                        }
-                    }, longPressDuration);
-                }
-            },
-            { passive: true }
-        );
-
-        document.addEventListener(
-            'touchmove',
-            () => {
-                if (longPressTimer) {
-                    clearTimeout(longPressTimer);
-                    longPressTimer = null;
-                }
-            },
-            { passive: true }
-        );
-
-        document.addEventListener(
-            'touchend',
-            () => {
-                if (longPressTimer) {
-                    clearTimeout(longPressTimer);
-                    longPressTimer = null;
-                }
-            },
-            { passive: true }
-        );
-
-        document.addEventListener(
-            'touchcancel',
-            () => {
-                if (longPressTimer) {
-                    clearTimeout(longPressTimer);
-                    longPressTimer = null;
-                }
-            },
-            { passive: true }
-        );
     },
 
     async loadPinnedPaths() {
@@ -243,60 +112,6 @@ const Favorites = {
         }
     },
 
-    showContextMenu(event, galleryItem) {
-        const path = galleryItem.dataset.path;
-        const type = galleryItem.dataset.type;
-        const name =
-            galleryItem.dataset.name ||
-            galleryItem.querySelector('.gallery-item-name')?.textContent ||
-            path.split('/').pop();
-
-        this.contextTarget = { path, type, name };
-
-        const isPinned = this.isPinned(path);
-
-        this.elements.ctxAddFavorite.classList.toggle('hidden', isPinned);
-        this.elements.ctxRemoveFavorite.classList.toggle('hidden', !isPinned);
-
-        const isInSearchOrFavorites = galleryItem.closest(
-            '.search-results-gallery, .favorites-gallery'
-        );
-        this.elements.ctxOpenFolder.classList.toggle(
-            'hidden',
-            !isInSearchOrFavorites || type === 'folder'
-        );
-
-        const menu = this.elements.contextMenu;
-
-        // Position menu
-        const x = event.pageX;
-        const y = event.pageY;
-
-        menu.style.left = `${x}px`;
-        menu.style.top = `${y}px`;
-        menu.classList.remove('hidden');
-
-        // Adjust if off-screen
-        const rect = menu.getBoundingClientRect();
-        if (rect.right > window.innerWidth) {
-            menu.style.left = `${x - rect.width}px`;
-        }
-        if (rect.bottom > window.innerHeight) {
-            menu.style.top = `${y - rect.height}px`;
-        }
-        if (rect.left < 0) {
-            menu.style.left = '0.5rem';
-        }
-        if (rect.top < 0) {
-            menu.style.top = '0.5rem';
-        }
-    },
-
-    hideContextMenu() {
-        this.elements.contextMenu.classList.add('hidden');
-        this.contextTarget = null;
-    },
-
     async loadFavorites() {
         try {
             const response = await fetch('/api/favorites');
@@ -328,6 +143,9 @@ const Favorites = {
             this.elements.gallery.appendChild(element);
         });
 
+        // Initialize Lucide icons for the new elements
+        lucide.createIcons();
+
         this.elements.section.classList.remove('hidden');
     },
 
@@ -350,3 +168,5 @@ const Favorites = {
         }
     },
 };
+
+window.Favorites = Favorites;

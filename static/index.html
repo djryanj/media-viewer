@@ -2,124 +2,164 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+        />
         <title>Media Viewer</title>
         <link rel="stylesheet" href="/css/style.css" />
+        <!-- Lucide Icons -->
+        <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     </head>
     <body>
+        <!-- Header -->
         <header class="header">
-            <div class="header-top">
-                <h1>Media Viewer</h1>
+            <div class="header-inner">
+                <div class="header-top">
+                    <h1>Media</h1>
+                    <!-- User controls for mobile/tablet - inside header-top -->
+                    <div class="user-controls">
+                        <button
+                            class="btn-icon"
+                            id="change-password-btn-mobile"
+                            title="Change password"
+                        >
+                            <i data-lucide="key-round"></i>
+                        </button>
+                        <button
+                            class="btn-icon"
+                            id="clear-cache-btn-mobile"
+                            title="Clear thumbnail cache"
+                        >
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                        <button class="btn-icon" id="logout-btn-mobile" title="Logout">
+                            <i data-lucide="log-out"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="search-container">
+                    <div class="search-box">
+                        <input
+                            type="text"
+                            id="search-input"
+                            placeholder="Search files..."
+                            autocomplete="off"
+                        />
+                        <button class="search-clear hidden" id="search-clear">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                    <div class="search-dropdown hidden" id="search-dropdown"></div>
+                </div>
+
+                <div class="controls">
+                    <div class="sort-controls">
+                        <label>Sort:</label>
+                        <select id="sort-field">
+                            <option value="name">Name</option>
+                            <option value="date">Date</option>
+                            <option value="size">Size</option>
+                            <option value="type">Type</option>
+                        </select>
+                        <button class="btn-icon" id="sort-order" title="Toggle sort order">
+                            <i data-lucide="arrow-up" class="sort-icon"></i>
+                        </button>
+                    </div>
+
+                    <div class="filter-controls">
+                        <label>Show:</label>
+                        <select id="filter-type">
+                            <option value="">All</option>
+                            <option value="image">Images</option>
+                            <option value="video">Videos</option>
+                            <option value="playlist">Playlists</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- User controls for desktop - direct child of header-inner -->
                 <div class="user-controls">
-                    <button id="change-password-btn" class="btn-icon" title="Change password">
-                        🔑
+                    <button class="btn-icon" id="change-password-btn" title="Change password">
+                        <i data-lucide="key-round"></i>
                     </button>
-                    <button id="clear-cache-btn" class="btn-icon" title="Clear thumbnail cache">
-                        🗑️
+                    <button class="btn-icon" id="clear-cache-btn" title="Clear thumbnail cache">
+                        <i data-lucide="trash-2"></i>
                     </button>
-                    <button id="logout-btn" class="btn-icon" title="Logout">⏻</button>
-                </div>
-            </div>
-
-            <div class="search-container">
-                <div class="search-box">
-                    <input
-                        type="text"
-                        id="search-input"
-                        placeholder="Search files..."
-                        autocomplete="off"
-                    />
-                    <button class="search-clear hidden" id="search-clear">×</button>
-                </div>
-                <div id="search-dropdown" class="search-dropdown hidden"></div>
-            </div>
-
-            <div class="controls">
-                <div class="sort-controls">
-                    <label>Sort:</label>
-                    <select id="sort-field">
-                        <option value="name">Name</option>
-                        <option value="date">Date</option>
-                        <option value="size">Size</option>
-                        <option value="type">Type</option>
-                    </select>
-                    <button id="sort-order" class="btn-icon">
-                        <span class="sort-icon">↑</span>
+                    <button class="btn-icon" id="logout-btn" title="Logout">
+                        <i data-lucide="log-out"></i>
                     </button>
-                </div>
-
-                <div class="filter-controls">
-                    <label>Show:</label>
-                    <select id="filter-type">
-                        <option value="">All</option>
-                        <option value="image">Images</option>
-                        <option value="video">Videos</option>
-                        <option value="playlist">Playlists</option>
-                    </select>
                 </div>
             </div>
         </header>
 
         <!-- Breadcrumb -->
-        <nav class="breadcrumb" id="breadcrumb">
-            <span class="breadcrumb-item current">Media</span>
+        <nav class="breadcrumb">
+            <div class="breadcrumb-inner" id="breadcrumb"></div>
         </nav>
 
         <!-- Favorites Section -->
         <section class="favorites-section hidden" id="favorites-section">
-            <div class="section-header">
-                <h2>★ Favorites</h2>
+            <div class="favorites-inner">
+                <div class="section-header">
+                    <h2><i data-lucide="star"></i> Favorites</h2>
+                </div>
+                <div class="favorites-gallery" id="favorites-gallery"></div>
             </div>
-            <div class="favorites-gallery" id="favorites-gallery"></div>
         </section>
 
         <!-- Main Content -->
         <main class="main-content">
             <div class="gallery" id="gallery"></div>
 
-            <!-- Pagination -->
             <div class="pagination hidden" id="pagination">
-                <button class="btn" id="page-prev">← Previous</button>
+                <button class="btn" id="page-prev">
+                    <i data-lucide="chevron-left"></i> Previous
+                </button>
                 <span id="page-info"></span>
-                <button class="btn" id="page-next">Next →</button>
+                <button class="btn" id="page-next">Next <i data-lucide="chevron-right"></i></button>
             </div>
         </main>
 
         <!-- Search Results -->
-        <div class="search-results hidden" id="search-results">
+        <section class="search-results hidden" id="search-results">
             <div class="search-results-header">
                 <h2>Search Results: <span id="search-query"></span></h2>
                 <button class="btn" id="search-results-close">Close</button>
             </div>
             <div class="search-results-gallery" id="search-results-gallery"></div>
             <div class="pagination hidden" id="search-pagination">
-                <button class="btn" id="search-page-prev">← Previous</button>
+                <button class="btn" id="search-page-prev">
+                    <i data-lucide="chevron-left"></i> Previous
+                </button>
                 <span id="search-page-info"></span>
-                <button class="btn" id="search-page-next">Next →</button>
+                <button class="btn" id="search-page-next">
+                    Next <i data-lucide="chevron-right"></i>
+                </button>
             </div>
-        </div>
-
-        <!-- Context Menu -->
-        <div class="context-menu hidden" id="context-menu">
-            <button class="context-menu-item" id="ctx-add-favorite">Add to Favorites</button>
-            <button class="context-menu-item" id="ctx-remove-favorite">
-                Remove from Favorites
-            </button>
-            <button class="context-menu-item" id="ctx-open-folder">Open Containing Folder</button>
-        </div>
+        </section>
 
         <!-- Lightbox -->
         <div class="lightbox hidden" id="lightbox">
-            <button class="lightbox-pin" id="lightbox-pin" title="Add to favorites (F)">☆</button>
-            <button class="lightbox-tag" id="lightbox-tag" title="Manage tags (T)">🏷</button>
-            <button class="lightbox-close">×</button>
-            <button class="lightbox-prev">&lt;</button>
-            <button class="lightbox-next">&gt;</button>
+            <button class="lightbox-pin" id="lightbox-pin" title="Add to favorites (F)">
+                <i data-lucide="star"></i>
+            </button>
+            <button class="lightbox-tag" id="lightbox-tag" title="Manage tags (T)">
+                <i data-lucide="tag"></i>
+            </button>
+            <button class="lightbox-close" title="Close (Esc)">
+                <i data-lucide="x"></i>
+            </button>
+            <button class="lightbox-prev" title="Previous">
+                <i data-lucide="chevron-left"></i>
+            </button>
+            <button class="lightbox-next" title="Next">
+                <i data-lucide="chevron-right"></i>
+            </button>
             <div class="lightbox-content">
                 <img id="lightbox-image" class="lightbox-image" src="" alt="" />
-                <video id="lightbox-video" class="lightbox-video hidden" controls>
-                    <source src="" type="" />
-                </video>
+                <video id="lightbox-video" class="lightbox-video hidden" controls></video>
             </div>
             <div class="lightbox-info">
                 <span id="lightbox-title"></span>
@@ -132,41 +172,45 @@
             <div class="player-container">
                 <div class="player-header">
                     <h2 id="playlist-title">Playlist</h2>
-                    <button class="player-close">×</button>
+                    <button class="player-close">
+                        <i data-lucide="x"></i>
+                    </button>
                 </div>
                 <div class="player-body">
                     <div class="video-wrapper">
                         <video id="playlist-video" controls></video>
                     </div>
-                    <div class="playlist-sidebar">
-                        <h3 id="playlist-name">Playlist</h3>
+                    <aside class="playlist-sidebar">
+                        <h3>Playlist</h3>
                         <ul id="playlist-items"></ul>
-                    </div>
+                    </aside>
                 </div>
                 <div class="player-controls">
-                    <button class="btn" id="prev-video">Previous</button>
-                    <button class="btn" id="next-video">Next</button>
+                    <button class="btn" id="prev-video">
+                        <i data-lucide="skip-back"></i> Previous
+                    </button>
+                    <button class="btn" id="next-video">
+                        Next <i data-lucide="skip-forward"></i>
+                    </button>
                 </div>
             </div>
-        </div>
-
-        <!-- Loading -->
-        <div class="loading hidden" id="loading">
-            <div class="spinner"></div>
         </div>
 
         <!-- Tag Modal -->
         <div class="modal hidden" id="tag-modal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>Manage Tags</h2>
-                    <button class="modal-close" id="tag-modal-close">×</button>
+                    <span><i data-lucide="tag"></i></span>
+                    <h3>Manage Tags</h3>
+                    <button class="modal-close" id="tag-modal-close">
+                        <i data-lucide="x"></i>
+                    </button>
                 </div>
                 <div class="modal-body">
                     <p class="tag-modal-file" id="tag-modal-path"></p>
                     <div class="tag-input-container">
                         <input type="text" id="tag-input" placeholder="Add a tag..." />
-                        <button class="btn" id="add-tag-btn">Add</button>
+                        <button class="btn btn-primary" id="add-tag-btn">Add</button>
                     </div>
                     <div class="tag-suggestions hidden" id="tag-suggestions"></div>
                     <div class="current-tags-section">
@@ -182,58 +226,44 @@
         <!-- Confirm Modal -->
         <div class="confirm-modal hidden" id="confirm-modal">
             <div class="confirm-modal-content">
-                <div class="confirm-modal-icon" id="confirm-modal-icon">🗑️</div>
-                <h3 id="confirm-modal-title">Clear Thumbnail Cache?</h3>
-                <p id="confirm-modal-message">
-                    This will delete all generated thumbnails. They will be regenerated as you
-                    browse.
-                </p>
+                <div class="confirm-modal-icon" id="confirm-modal-icon">
+                    <i data-lucide="alert-triangle"></i>
+                </div>
+                <h3 id="confirm-modal-title">Confirm</h3>
+                <p id="confirm-modal-message">Are you sure?</p>
                 <div class="confirm-modal-buttons">
-                    <button class="btn" id="confirm-modal-cancel">Cancel</button>
-                    <button class="btn btn-danger" id="confirm-modal-confirm">Clear Cache</button>
+                    <button class="btn btn-secondary" id="confirm-modal-cancel">Cancel</button>
+                    <button class="btn btn-danger" id="confirm-modal-confirm">Confirm</button>
                 </div>
             </div>
         </div>
 
-        <!-- Password Change Modal -->
+        <!-- Password Modal -->
         <div class="modal hidden" id="password-modal">
             <div class="modal-content modal-small">
                 <div class="modal-header">
-                    <span>🔑</span>
+                    <span><i data-lucide="key"></i></span>
                     <h3>Change Password</h3>
-                    <button class="modal-close" id="password-modal-close">×</button>
+                    <button class="modal-close" id="password-modal-close">
+                        <i data-lucide="x"></i>
+                    </button>
                 </div>
                 <div class="modal-body">
                     <form id="password-form">
                         <div class="form-group">
                             <label for="current-password">Current Password</label>
-                            <input
-                                type="password"
-                                id="current-password"
-                                placeholder="Enter current password"
-                                autocomplete="current-password"
-                            />
+                            <input type="password" id="current-password" required />
                         </div>
                         <div class="form-group">
                             <label for="new-password">New Password</label>
-                            <input
-                                type="password"
-                                id="new-password"
-                                placeholder="Enter new password"
-                                autocomplete="new-password"
-                            />
+                            <input type="password" id="new-password" required minlength="6" />
                             <span class="hint">At least 6 characters</span>
                         </div>
                         <div class="form-group">
                             <label for="confirm-password">Confirm New Password</label>
-                            <input
-                                type="password"
-                                id="confirm-password"
-                                placeholder="Confirm new password"
-                                autocomplete="new-password"
-                            />
+                            <input type="password" id="confirm-password" required />
                         </div>
-                        <div id="password-error" class="error-message hidden"></div>
+                        <div class="error-message hidden" id="password-error"></div>
                         <div class="modal-actions">
                             <button type="button" class="btn btn-secondary" id="password-cancel">
                                 Cancel
@@ -247,22 +277,33 @@
             </div>
         </div>
 
+        <!-- Loading -->
+        <div class="loading hidden" id="loading">
+            <div class="spinner"></div>
+        </div>
+
         <!-- Stats Bar -->
         <footer class="stats-bar">
-            <span id="stats-info"></span>
+            <div class="stats-bar-inner" id="stats-info"></div>
         </footer>
 
         <!-- Scripts -->
         <script src="/js/history.js"></script>
         <script src="/js/preferences.js"></script>
         <script src="/js/gallery.js"></script>
+        <script src="/js/favorites.js"></script>
+        <script src="/js/search.js"></script>
+        <script src="/js/tags.js"></script>
         <script src="/js/lightbox.js"></script>
         <script src="/js/player.js"></script>
-        <script src="/js/search.js"></script>
-        <script src="/js/favorites.js"></script>
-        <script src="/js/tags.js"></script>
+        <script src="/js/selection.js"></script>
+        <script src="/js/tag-tooltip.js"></script>
         <script src="/js/app.js"></script>
         <script>
+            // Initialize Lucide icons
+            lucide.createIcons();
+
+            // Initialize app
             document.addEventListener('DOMContentLoaded', () => {
                 MediaApp.init();
             });

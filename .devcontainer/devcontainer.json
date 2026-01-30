@@ -47,7 +47,7 @@
         }
     },
 
-    "forwardPorts": [3000, 3001, 8080, 9090],
+    // "forwardPorts": ["3000:3000", "3001:3001", "8080:8080", "9090:9090"],
 
     "postCreateCommand": "bash .devcontainer/post-create.sh",
 

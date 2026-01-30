@@ -13,16 +13,20 @@ export default [
             sourceType: 'script',
             globals: {
                 ...globals.browser,
-                // Your global objects
+                // External libraries
+                lucide: 'readonly',
+                // Your global objects - all writable since each file defines one
                 MediaApp: 'writable',
-                Gallery: 'readonly',
-                Lightbox: 'readonly',
-                Player: 'readonly',
-                Search: 'readonly',
-                Favorites: 'readonly',
-                Tags: 'readonly',
-                Preferences: 'readonly',
-                HistoryManager: 'readonly',
+                Gallery: 'writable',
+                Lightbox: 'writable',
+                Player: 'writable',
+                Search: 'writable',
+                Favorites: 'writable',
+                Tags: 'writable',
+                TagTooltip: 'writable',
+                Preferences: 'writable',
+                HistoryManager: 'writable',
+                ItemSelection: 'writable',
             },
         },
         plugins: {
