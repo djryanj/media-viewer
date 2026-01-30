@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -88,16 +87,6 @@ var healthCheckPaths = map[string]bool{
 	"/readyz":  true,
 }
 
-// writeHeader writes the W3C log file header directives
-func (l *W3CLogger) writeHeader() {
-	// W3C Extended Log File Format header
-	// Errors writing to stdout are not recoverable, so we ignore them
-	_, _ = fmt.Fprintf(os.Stdout, "#Version: 1.0\n")
-	_, _ = fmt.Fprintf(os.Stdout, "#Software: %s\n", l.serviceName)
-	_, _ = fmt.Fprintf(os.Stdout, "#Start-Date: %s\n", time.Now().UTC().Format("2006-01-02 15:04:05"))
-	_, _ = fmt.Fprintf(os.Stdout, "#Fields: date time c-ip cs-method cs-uri-stem cs-uri-query sc-status sc-bytes time-taken cs(Content-Encoding) cs(User-Agent) cs(Referer)\n")
-}
-
 // Logger returns HTTP logging middleware using W3C Extended Log Format
 func Logger(config LoggingConfig) func(http.Handler) http.Handler {
 	logger := NewW3CLogger(config, "MediaViewer/1.0")
@@ -108,9 +97,6 @@ func Logger(config LoggingConfig) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			// Write header on first request
-			logger.headerOnce.Do(logger.writeHeader)
 
 			start := time.Now()
 			wrapped := newResponseWriter(w)

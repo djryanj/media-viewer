@@ -232,3 +232,4 @@ func (h *Handlers) RenameTag(w http.ResponseWriter, r *http.Request) {
 
 	writeJSONStatus(w, "ok")
 }
+

@@ -8,6 +8,7 @@ const App = {
         currentPage: 1,
         pageSize: 100,
         username: '',
+        version: null,
     },
 
     elements: {},
@@ -52,7 +53,6 @@ const App = {
         this.elements.logoutBtn.addEventListener('click', () => this.logout());
         this.elements.clearCacheBtn.addEventListener('click', () => this.clearThumbnailCache());
 
-
         window.addEventListener('popstate', (e) => {
             const path = e.state?.path || '';
             this.state.currentPath = path;
@@ -78,12 +78,13 @@ const App = {
 
             // Initialize preferences BEFORE loading directory
             Preferences.init();
-            
+
             // Apply sort preferences to state
             this.state.currentSort = Preferences.getSort();
 
             // Continue with initialization
             this.handleInitialPath();
+            this.loadVersion(); // Load version first (or in parallel)
             this.loadStats();
             Search.init();
             Favorites.init();
@@ -103,7 +104,6 @@ const App = {
         window.location.href = '/login.html';
     },
 
-    // ... rest of existing methods remain the same
     handleInitialPath() {
         const urlParams = new URLSearchParams(window.location.search);
         const path = urlParams.get('path') || '';
@@ -127,12 +127,12 @@ const App = {
             }
 
             const response = await fetch(`/api/files?${params}`);
-            
+
             if (response.status === 401) {
                 window.location.href = '/login.html';
                 return;
             }
-            
+
             if (!response.ok) throw new Error('Failed to load directory');
 
             this.state.listing = await response.json();
@@ -151,7 +151,6 @@ const App = {
             this.renderPagination();
 
             Favorites.updateFromListing(this.state.listing);
-
         } catch (error) {
             console.error('Error loading directory:', error);
             this.showError('Failed to load directory');
@@ -182,6 +181,17 @@ const App = {
         }
     },
 
+    async loadVersion() {
+        try {
+            const response = await fetch('/version');
+            if (response.ok) {
+                this.state.version = await response.json();
+            }
+        } catch (error) {
+            console.error('Error loading version:', error);
+            this.state.version = null;
+        }
+    },
 
     async loadStats() {
         try {
@@ -206,13 +216,22 @@ const App = {
         if (stats.totalFolders) parts.push(`${stats.totalFolders.toLocaleString()} folders`);
         if (stats.totalFavorites) parts.push(`${stats.totalFavorites.toLocaleString()} favorites`);
 
-        let text = parts.join(' | ');
         if (stats.lastIndexed) {
             const date = new Date(stats.lastIndexed);
-            text += ` | Last indexed: ${date.toLocaleString()}`;
+            parts.push(`Last indexed: ${date.toLocaleString()}`);
         }
 
-        this.elements.statsInfo.textContent = text;
+        // Add version info if available
+        if (this.state.version) {
+            const v = this.state.version;
+            const shortCommit = v.commit ? v.commit.substring(0, 7) : '';
+            const versionText = shortCommit ? `${v.version} (${shortCommit})` : v.version || '';
+            if (versionText) {
+                parts.push(versionText);
+            }
+        }
+
+        this.elements.statsInfo.textContent = parts.join(' | ');
     },
 
     renderBreadcrumb() {
@@ -282,10 +301,10 @@ const App = {
 
     handleSortChange() {
         this.state.currentSort.field = this.elements.sortField.value;
-        
+
         // Save preference
         Preferences.set('sortField', this.state.currentSort.field);
-        
+
         this.state.currentPage = 1;
         this.loadDirectory(this.state.currentPath);
     },
@@ -299,10 +318,10 @@ const App = {
             this.state.currentSort.order = 'asc';
             icon.classList.remove('desc');
         }
-        
+
         // Save preference
         Preferences.set('sortOrder', this.state.currentSort.order);
-        
+
         this.state.currentPage = 1;
         this.loadDirectory(this.state.currentPath);
     },
@@ -334,7 +353,7 @@ const App = {
     },
 
     getMediaIndex(path) {
-        return this.state.mediaFiles.findIndex(f => f.path === path);
+        return this.state.mediaFiles.findIndex((f) => f.path === path);
     },
 
     showConfirmModal(options) {
@@ -350,13 +369,13 @@ const App = {
             }
             if (this.elements.confirmModalConfirm) {
                 this.elements.confirmModalConfirm.textContent = options.confirmText || 'Confirm';
-                
+
                 // Remove old listeners by cloning the button
                 const oldBtn = this.elements.confirmModalConfirm;
                 const newBtn = oldBtn.cloneNode(true);
                 oldBtn.parentNode.replaceChild(newBtn, oldBtn);
                 this.elements.confirmModalConfirm = newBtn;
-                
+
                 // Add new click handler
                 newBtn.addEventListener('click', () => {
                     this.elements.confirmModal.classList.add('hidden');
@@ -369,7 +388,7 @@ const App = {
                 const newBtn = oldBtn.cloneNode(true);
                 oldBtn.parentNode.replaceChild(newBtn, oldBtn);
                 this.elements.confirmModalCancel = newBtn;
-                
+
                 // Add new click handler
                 newBtn.addEventListener('click', () => {
                     this.elements.confirmModal.classList.add('hidden');
@@ -391,23 +410,20 @@ const App = {
         });
     },
 
-    // Remove the hideConfirmModal method or simplify it:
     hideConfirmModal() {
         if (this.elements.confirmModal) {
             this.elements.confirmModal.classList.add('hidden');
         }
     },
 
-    // Update clearThumbnailCache:
     async clearThumbnailCache() {
         const confirmed = await this.showConfirmModal({
             icon: '🗑️',
             title: 'Clear & Rebuild Thumbnails?',
-            message: 'This will delete all cached thumbnails and regenerate them in the background. The page will reload after clearing.',
+            message:
+                'This will delete all cached thumbnails and regenerate them in the background. The page will reload after clearing.',
             confirmText: 'Clear & Rebuild',
         });
-
-        console.log('Confirmation result:', confirmed); // Debug log
 
         if (!confirmed) {
             return;
@@ -421,8 +437,6 @@ const App = {
                 credentials: 'same-origin',
             });
 
-            console.log('Response status:', response.status); // Debug log
-
             if (response.status === 401) {
                 window.location.href = '/login.html';
                 return;
@@ -434,8 +448,6 @@ const App = {
             }
 
             const result = await response.json();
-            console.log('Result:', result); // Debug log
-
             // Handle "already running" case
             if (result.status === 'already_running') {
                 if (typeof Gallery !== 'undefined' && Gallery.showToast) {
@@ -451,18 +463,13 @@ const App = {
             }
 
             // Force reload after a short delay
-            console.log('Reloading page in 1.5 seconds...'); // Debug log
             setTimeout(() => {
-                console.log('Reloading now'); // Debug log
-                window.location.reload(true); // true forces reload from server
+                window.location.reload();
             }, 1500);
-
         } catch (error) {
             console.error('Error clearing thumbnail cache:', error);
             this.showError('Failed to clear thumbnail cache');
             this.hideLoading();
         }
     },
-
-
 };
