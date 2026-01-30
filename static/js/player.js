@@ -659,10 +659,11 @@ const Player = {
     },
 
     closeWithHistory() {
-        this.close();
         if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('player')) {
-            HistoryManager.removeState('player');
+            // Let handlePopState close it
             history.back();
+        } else {
+            this.close();
         }
     },
 

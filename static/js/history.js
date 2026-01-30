@@ -1,5 +1,6 @@
 const HistoryManager = {
     states: [],
+    isHandlingPopState: false,
 
     init() {
         window.addEventListener('popstate', (e) => this.handlePopState(e));
@@ -7,14 +8,19 @@ const HistoryManager = {
 
     // Push a state for an overlay/modal
     pushState(type, data = {}) {
-        const state = { type, data, id: Date.now() };
+        const state = {
+            type,
+            data,
+            id: Date.now(),
+            path: MediaApp.state?.currentPath || '',
+        };
         this.states.push(state);
         history.pushState(state, '', window.location.href);
     },
 
     // Remove the current state without triggering popstate
     removeState(type) {
-        const index = this.states.findIndex(s => s.type === type);
+        const index = this.states.findIndex((s) => s.type === type);
         if (index !== -1) {
             this.states.splice(index, 1);
         }
@@ -22,50 +28,54 @@ const HistoryManager = {
 
     // Check if a state type is active
     hasState(type) {
-        return this.states.some(s => s.type === type);
+        return this.states.some((s) => s.type === type);
     },
 
-    // Handle back button
+    // Get the most recent state type
+    getCurrentStateType() {
+        if (this.states.length === 0) return null;
+        return this.states[this.states.length - 1].type;
+    },
+
+    // Handle back button - only close the most recent overlay
     handlePopState(e) {
-        // Check what needs to be closed (in reverse order of opening)
-        
-        // Tag modal has highest priority
-        if (!document.getElementById('tag-modal')?.classList.contains('hidden')) {
-            Tags.closeModal();
-            this.removeState('tag-modal');
+        // Check our internal state stack to see what should be closed
+        // This is more reliable than checking DOM visibility
+        const currentType = this.getCurrentStateType();
+
+        if (!currentType) {
+            // No overlay states, let MediaApp handle navigation
             return;
         }
 
-        // Lightbox
-        if (!document.getElementById('lightbox')?.classList.contains('hidden')) {
-            Lightbox.close();
-            this.removeState('lightbox');
-            return;
+        this.isHandlingPopState = true;
+
+        // Close only the current (most recent) overlay
+        switch (currentType) {
+            case 'tag-modal':
+                Tags.closeModal();
+                break;
+            case 'lightbox':
+                Lightbox.close();
+                break;
+            case 'player':
+                Player.close();
+                break;
+            case 'search':
+                Search.hideResults();
+                break;
+            case 'context-menu':
+                Favorites.hideContextMenu();
+                break;
         }
 
-        // Player modal
-        if (!document.getElementById('player-modal')?.classList.contains('hidden')) {
-            Player.close();
-            this.removeState('player');
-            return;
-        }
+        // Remove from our tracking
+        this.removeState(currentType);
 
-        // Search results
-        if (!document.getElementById('search-results')?.classList.contains('hidden')) {
-            Search.hideResults();
-            this.removeState('search');
-            return;
-        }
-
-        // Context menu
-        if (!document.getElementById('context-menu')?.classList.contains('hidden')) {
-            Favorites.hideContextMenu();
-            this.removeState('context-menu');
-            return;
-        }
-
-        // If nothing was open, let the default behavior happen
-        // (this handles actual navigation)
+        // Reset flag after a microtask
+        Promise.resolve().then(() => {
+            this.isHandlingPopState = false;
+        });
     },
 
     // Close all overlays
@@ -86,7 +96,7 @@ const HistoryManager = {
             Favorites.hideContextMenu();
         }
         this.states = [];
-    }
+    },
 };
 
 // Initialize when DOM is ready

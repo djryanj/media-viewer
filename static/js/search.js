@@ -453,10 +453,11 @@ const Search = {
     },
 
     hideResultsWithHistory() {
-        this.hideResults();
         if (HistoryManager.hasState('search')) {
-            HistoryManager.removeState('search');
+            // Let handlePopState close it
             history.back();
+        } else {
+            this.hideResults();
         }
     },
 

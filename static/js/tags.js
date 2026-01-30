@@ -22,7 +22,9 @@ const Tags = {
 
     bindEvents() {
         if (this.elements.tagModalClose) {
-            this.elements.tagModalClose.addEventListener('click', () => this.closeModalWithHistory());
+            this.elements.tagModalClose.addEventListener('click', () =>
+                this.closeModalWithHistory()
+            );
         }
 
         if (this.elements.tagModal) {
@@ -77,7 +79,7 @@ const Tags = {
 
         this.elements.tagModal.classList.remove('hidden');
         this.elements.tagInput.focus();
-        
+
         // Push history state for back button support
         HistoryManager.pushState('tag-modal');
     },
@@ -90,15 +92,17 @@ const Tags = {
         this.currentName = null;
     },
 
-    // Add new method for UI-triggered close:
+    // Called when user clicks X or clicks outside
     closeModalWithHistory() {
-        this.closeModal();
         if (HistoryManager.hasState('tag-modal')) {
-            HistoryManager.removeState('tag-modal');
+            // Don't close here - let handlePopState do it
+            // This ensures proper sequencing
             history.back();
+        } else {
+            // No history state, just close directly
+            this.closeModal();
         }
     },
-
 
     async loadFileTags(path) {
         try {
@@ -120,7 +124,7 @@ const Tags = {
             return;
         }
 
-        tags.forEach(tag => {
+        tags.forEach((tag) => {
             const tagEl = document.createElement('span');
             tagEl.className = 'tag-chip';
             tagEl.innerHTML = `
@@ -145,23 +149,27 @@ const Tags = {
         }
 
         // Filter existing tags that match
-        const matches = this.allTags.filter(tag => 
-            tag.name.toLowerCase().includes(query)
-        ).slice(0, 5);
+        const matches = this.allTags
+            .filter((tag) => tag.name.toLowerCase().includes(query))
+            .slice(0, 5);
 
         if (matches.length === 0) {
             this.elements.tagSuggestions.classList.add('hidden');
             return;
         }
 
-        this.elements.tagSuggestions.innerHTML = matches.map(tag => `
+        this.elements.tagSuggestions.innerHTML = matches
+            .map(
+                (tag) => `
             <div class="tag-suggestion" data-tag="${this.escapeHtml(tag.name)}">
                 ${this.highlightMatch(tag.name, query)}
                 <span class="tag-count">(${tag.itemCount})</span>
             </div>
-        `).join('');
+        `
+            )
+            .join('');
 
-        this.elements.tagSuggestions.querySelectorAll('.tag-suggestion').forEach(el => {
+        this.elements.tagSuggestions.querySelectorAll('.tag-suggestion').forEach((el) => {
             el.addEventListener('click', () => {
                 this.elements.tagInput.value = el.dataset.tag;
                 this.addTagFromInput();
@@ -176,9 +184,13 @@ const Tags = {
         const idx = lowerText.indexOf(query);
         if (idx === -1) return this.escapeHtml(text);
 
-        return this.escapeHtml(text.substring(0, idx)) +
-            '<mark>' + this.escapeHtml(text.substring(idx, idx + query.length)) + '</mark>' +
-            this.escapeHtml(text.substring(idx + query.length));
+        return (
+            this.escapeHtml(text.substring(0, idx)) +
+            '<mark>' +
+            this.escapeHtml(text.substring(idx, idx + query.length)) +
+            '</mark>' +
+            this.escapeHtml(text.substring(idx + query.length))
+        );
     },
 
     async addTagFromInput() {
@@ -238,15 +250,17 @@ const Tags = {
 
     updateGalleryItemTags(path) {
         // Update tags display on gallery items if visible
-        document.querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`).forEach(item => {
-            // Trigger a refresh of the item's tags display
-            const tagsContainer = item.querySelector('.gallery-item-tags');
-            if (tagsContainer) {
-                this.loadFileTags(path).then(tags => {
-                    // Tags will be refreshed on next directory load
-                });
-            }
-        });
+        document
+            .querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`)
+            .forEach((item) => {
+                // Trigger a refresh of the item's tags display
+                const tagsContainer = item.querySelector('.gallery-item-tags');
+                if (tagsContainer) {
+                    this.loadFileTags(path).then((tags) => {
+                        // Tags will be refreshed on next directory load
+                    });
+                }
+            });
     },
 
     // Search by tag
@@ -269,7 +283,7 @@ const Tags = {
         const moreCount = tags.length - 3;
 
         let html = '<div class="gallery-item-tags">';
-        displayTags.forEach(tag => {
+        displayTags.forEach((tag) => {
             html += `<span class="item-tag">${this.escapeHtml(tag)}</span>`;
         });
         if (moreCount > 0) {
