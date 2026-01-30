@@ -24,7 +24,11 @@ const Favorites = {
         // Context menu actions
         this.elements.ctxAddFavorite.addEventListener('click', () => {
             if (this.contextTarget) {
-                this.addFavorite(this.contextTarget.path, this.contextTarget.name, this.contextTarget.type);
+                this.addFavorite(
+                    this.contextTarget.path,
+                    this.contextTarget.name,
+                    this.contextTarget.type
+                );
             }
             this.hideContextMenu();
         });
@@ -38,8 +42,12 @@ const Favorites = {
 
         this.elements.ctxOpenFolder.addEventListener('click', () => {
             if (this.contextTarget) {
-                const parentPath = this.contextTarget.path.substring(0, this.contextTarget.path.lastIndexOf('/')) || '';
-                App.navigateTo(parentPath);
+                const parentPath =
+                    this.contextTarget.path.substring(
+                        0,
+                        this.contextTarget.path.lastIndexOf('/')
+                    ) || '';
+                MediaApp.navigateTo(parentPath);
                 Search.hideResults();
             }
             this.hideContextMenu();
@@ -75,47 +83,66 @@ const Favorites = {
         let longPressTarget = null;
         const longPressDuration = 500; // ms
 
-        document.addEventListener('touchstart', (e) => {
-            const galleryItem = e.target.closest('.gallery-item');
-            if (galleryItem) {
-                longPressTarget = galleryItem;
-                longPressTimer = setTimeout(() => {
-                    // Trigger context menu on long press
-                    const touch = e.touches[0];
-                    this.showContextMenu({
-                        pageX: touch.pageX,
-                        pageY: touch.pageY,
-                        preventDefault: () => {}
-                    }, galleryItem);
+        document.addEventListener(
+            'touchstart',
+            (e) => {
+                const galleryItem = e.target.closest('.gallery-item');
+                if (galleryItem) {
+                    longPressTarget = galleryItem;
+                    longPressTimer = setTimeout(() => {
+                        // Trigger context menu on long press
+                        const touch = e.touches[0];
+                        this.showContextMenu(
+                            {
+                                pageX: touch.pageX,
+                                pageY: touch.pageY,
+                                preventDefault: () => {},
+                            },
+                            galleryItem
+                        );
 
-                    // Vibrate if supported
-                    if (navigator.vibrate) {
-                        navigator.vibrate(50);
-                    }
-                }, longPressDuration);
-            }
-        }, { passive: true });
+                        // Vibrate if supported
+                        if (navigator.vibrate) {
+                            navigator.vibrate(50);
+                        }
+                    }, longPressDuration);
+                }
+            },
+            { passive: true }
+        );
 
-        document.addEventListener('touchmove', () => {
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-        }, { passive: true });
+        document.addEventListener(
+            'touchmove',
+            () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            },
+            { passive: true }
+        );
 
-        document.addEventListener('touchend', () => {
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-        }, { passive: true });
+        document.addEventListener(
+            'touchend',
+            () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            },
+            { passive: true }
+        );
 
-        document.addEventListener('touchcancel', () => {
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-        }, { passive: true });
+        document.addEventListener(
+            'touchcancel',
+            () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            },
+            { passive: true }
+        );
     },
 
     async loadPinnedPaths() {
@@ -124,7 +151,7 @@ const Favorites = {
             if (response.ok) {
                 const favorites = await response.json();
                 this.pinnedPaths.clear();
-                favorites.forEach(f => this.pinnedPaths.add(f.path));
+                favorites.forEach((f) => this.pinnedPaths.add(f.path));
             }
         } catch (error) {
             console.error('Error loading pinned paths:', error);
@@ -160,7 +187,7 @@ const Favorites = {
             this.pinnedPaths.add(path);
             this.updateAllPinStates(path, true);
 
-            if (App.state.currentPath === '') {
+            if (MediaApp.state.currentPath === '') {
                 this.loadFavorites();
             }
 
@@ -185,7 +212,7 @@ const Favorites = {
             this.pinnedPaths.delete(path);
             this.updateAllPinStates(path, false);
 
-            if (App.state.currentPath === '') {
+            if (MediaApp.state.currentPath === '') {
                 this.loadFavorites();
             }
 
@@ -201,15 +228,15 @@ const Favorites = {
         Gallery.updatePinState(path, isPinned);
         Lightbox.onFavoriteChanged(path, isPinned);
 
-        if (App.state.listing?.items) {
-            const item = App.state.listing.items.find(i => i.path === path);
+        if (MediaApp.state.listing?.items) {
+            const item = MediaApp.state.listing.items.find((i) => i.path === path);
             if (item) {
                 item.isFavorite = isPinned;
             }
         }
 
-        if (App.state.mediaFiles) {
-            const mediaItem = App.state.mediaFiles.find(i => i.path === path);
+        if (MediaApp.state.mediaFiles) {
+            const mediaItem = MediaApp.state.mediaFiles.find((i) => i.path === path);
             if (mediaItem) {
                 mediaItem.isFavorite = isPinned;
             }
@@ -219,7 +246,10 @@ const Favorites = {
     showContextMenu(event, galleryItem) {
         const path = galleryItem.dataset.path;
         const type = galleryItem.dataset.type;
-        const name = galleryItem.dataset.name || galleryItem.querySelector('.gallery-item-name')?.textContent || path.split('/').pop();
+        const name =
+            galleryItem.dataset.name ||
+            galleryItem.querySelector('.gallery-item-name')?.textContent ||
+            path.split('/').pop();
 
         this.contextTarget = { path, type, name };
 
@@ -228,14 +258,19 @@ const Favorites = {
         this.elements.ctxAddFavorite.classList.toggle('hidden', isPinned);
         this.elements.ctxRemoveFavorite.classList.toggle('hidden', !isPinned);
 
-        const isInSearchOrFavorites = galleryItem.closest('.search-results-gallery, .favorites-gallery');
-        this.elements.ctxOpenFolder.classList.toggle('hidden', !isInSearchOrFavorites || type === 'folder');
+        const isInSearchOrFavorites = galleryItem.closest(
+            '.search-results-gallery, .favorites-gallery'
+        );
+        this.elements.ctxOpenFolder.classList.toggle(
+            'hidden',
+            !isInSearchOrFavorites || type === 'folder'
+        );
 
         const menu = this.elements.contextMenu;
-        
+
         // Position menu
-        let x = event.pageX;
-        let y = event.pageY;
+        const x = event.pageX;
+        const y = event.pageY;
 
         menu.style.left = `${x}px`;
         menu.style.top = `${y}px`;
@@ -270,7 +305,7 @@ const Favorites = {
             const favorites = await response.json();
 
             this.pinnedPaths.clear();
-            favorites.forEach(f => this.pinnedPaths.add(f.path));
+            favorites.forEach((f) => this.pinnedPaths.add(f.path));
 
             this.renderFavorites(favorites);
         } catch (error) {
@@ -287,7 +322,7 @@ const Favorites = {
 
         this.elements.gallery.innerHTML = '';
 
-        favorites.forEach(item => {
+        favorites.forEach((item) => {
             item.isFavorite = true;
             const element = Gallery.createGalleryItem(item);
             this.elements.gallery.appendChild(element);
@@ -298,7 +333,7 @@ const Favorites = {
 
     updateFromListing(listing) {
         if (listing.path === '' && listing.favorites && listing.favorites.length > 0) {
-            listing.favorites.forEach(f => this.pinnedPaths.add(f.path));
+            listing.favorites.forEach((f) => this.pinnedPaths.add(f.path));
             this.renderFavorites(listing.favorites);
         } else if (listing.path === '') {
             this.elements.section.classList.add('hidden');
@@ -307,7 +342,7 @@ const Favorites = {
         }
 
         if (listing.items) {
-            listing.items.forEach(item => {
+            listing.items.forEach((item) => {
                 if (item.isFavorite) {
                     this.pinnedPaths.add(item.path);
                 }

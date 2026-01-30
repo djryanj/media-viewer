@@ -10,23 +10,27 @@ import (
 	"media-viewer/internal/metrics"
 )
 
-// LoginRequest represents a login request with username and password
+// LoginRequest represents a login request with password only
 type LoginRequest struct {
-	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// SetupRequest represents an initial setup request to create the first user
+// SetupRequest represents an initial setup request to create the password
 type SetupRequest struct {
-	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+// PasswordChangeRequest represents a request to change the password
+type PasswordChangeRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
 }
 
 // AuthResponse represents the response from authentication endpoints
 type AuthResponse struct {
 	Success  bool   `json:"success"`
 	Message  string `json:"message,omitempty"`
-	Username string `json:"username,omitempty"`
+	Username string `json:"username,omitempty"` // Kept for API compatibility, always empty
 }
 
 const (
@@ -44,7 +48,7 @@ func (h *Handlers) CheckSetupRequired(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// Setup creates the initial user account
+// Setup creates the initial password
 func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 	// Only allow setup if no users exist
 	if h.db.HasUsers() {
@@ -59,32 +63,28 @@ func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate input
-	if len(req.Username) < 3 {
-		http.Error(w, "Username must be at least 3 characters", http.StatusBadRequest)
-		return
-	}
 	if len(req.Password) < 6 {
 		http.Error(w, "Password must be at least 6 characters", http.StatusBadRequest)
 		return
 	}
 
 	// Create user
-	if err := h.db.CreateUser(req.Username, req.Password); err != nil {
+	if err := h.db.CreateUser(req.Password); err != nil {
 		logging.Error("Failed to create user: %v", err)
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
 
-	logging.Info("Initial user created: %s", req.Username)
+	logging.Info("Initial password configured")
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, AuthResponse{
 		Success: true,
-		Message: "User created successfully",
+		Message: "Password configured successfully",
 	})
 }
 
-// Login authenticates a user
+// Login authenticates with password
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -92,12 +92,12 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate user
-	user, err := h.db.ValidateUser(req.Username, req.Password)
+	// Validate password
+	user, err := h.db.ValidatePassword(req.Password)
 	if err != nil {
-		logging.Warn("Failed login attempt for user: %s", req.Username)
+		logging.Warn("Failed login attempt")
 		metrics.AuthAttemptsTotal.WithLabelValues("failure").Inc()
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		http.Error(w, "Invalid password", http.StatusUnauthorized)
 		return
 	}
 
@@ -121,12 +121,12 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	logging.Info("User logged in: %s", user.Username)
+	logging.Info("User logged in")
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, AuthResponse{
 		Success:  true,
-		Username: user.Username,
+		Username: "", // Empty for single-user app
 	})
 }
 
@@ -168,7 +168,7 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.db.ValidateSession(cookie.Value)
+	_, err = h.db.ValidateSession(cookie.Value)
 	if err != nil {
 		// Clear invalid cookie
 		http.SetCookie(w, &http.Cookie{
@@ -189,7 +189,7 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, AuthResponse{
 		Success:  true,
-		Username: user.Username,
+		Username: "", // Empty for single-user app
 	})
 }
 
@@ -243,5 +243,43 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// ChangePassword handles password change requests
+func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req PasswordChangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate current password
+	_, err := h.db.ValidatePassword(req.CurrentPassword)
+	if err != nil {
+		logging.Warn("Failed password change attempt - invalid current password")
+		http.Error(w, "Current password is incorrect", http.StatusUnauthorized)
+		return
+	}
+
+	// Validate new password
+	if len(req.NewPassword) < 6 {
+		http.Error(w, "New password must be at least 6 characters", http.StatusBadRequest)
+		return
+	}
+
+	// Update password
+	if err := h.db.UpdatePassword(req.NewPassword); err != nil {
+		logging.Error("Failed to update password: %v", err)
+		http.Error(w, "Failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	logging.Info("Password changed successfully")
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, AuthResponse{
+		Success: true,
+		Message: "Password updated successfully",
 	})
 }

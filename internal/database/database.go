@@ -151,10 +151,9 @@ func (d *Database) initialize() error {
 	CREATE INDEX IF NOT EXISTS idx_file_tags_path ON file_tags(file_path);
 	CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(tag_id);
 
-	-- Users table
+	-- Users table (single user, password only)
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL UNIQUE,
 		password_hash TEXT NOT NULL,
 		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
 		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))

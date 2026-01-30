@@ -1,65 +1,77 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Media Viewer - Login</title>
+        <link rel="stylesheet" href="/css/login.css" />
+    </head>
+    <body>
+        <div class="login-container">
+            <div class="login-box">
+                <h1>Media Viewer</h1>
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Media Viewer - Login</title>
-    <link rel="stylesheet" href="/css/login.css">
-</head>
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form hidden">
+                    <h2>Login</h2>
 
-<body>
-    <div class="login-container">
-        <div class="login-box">
-            <h1>Media Viewer</h1>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input
+                            type="password"
+                            id="login-password"
+                            placeholder="Enter your password"
+                            autocomplete="current-password"
+                        />
+                    </div>
 
-            <!-- Login Form -->
-            <form id="login-form" class="auth-form">
-                <h2>Login</h2>
-                <div class="form-group">
-                    <label for="login-username">Username</label>
-                    <input type="text" id="login-username" name="username" required autocomplete="username">
-                </div>
-                <div class="form-group">
-                    <label for="login-password">Password</label>
-                    <input type="password" id="login-password" name="password" required autocomplete="current-password">
-                </div>
-                <div id="login-error" class="error-message hidden"></div>
-                <button type="submit" class="btn btn-primary">Login</button>
-            </form>
+                    <div id="login-error" class="error-message hidden"></div>
 
-            <!-- Setup Form (shown on first run) -->
-            <form id="setup-form" class="auth-form hidden">
-                <h2>Create Account</h2>
-                <p class="setup-info">Welcome! Create your account to get started.</p>
-                <div class="form-group">
-                    <label for="setup-username">Username</label>
-                    <input type="text" id="setup-username" name="username" required minlength="3"
-                        autocomplete="username">
-                    <span class="hint">At least 3 characters</span>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+
+                <!-- Setup Form (first time) -->
+                <form id="setup-form" class="auth-form hidden">
+                    <h2>Create Password</h2>
+
+                    <p class="setup-info">
+                        Welcome! Create a password to protect your media library.
+                    </p>
+
+                    <div class="form-group">
+                        <label for="setup-password">Password</label>
+                        <input
+                            type="password"
+                            id="setup-password"
+                            placeholder="Choose a password"
+                            autocomplete="new-password"
+                        />
+                        <span class="hint">At least 6 characters</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="setup-confirm">Confirm Password</label>
+                        <input
+                            type="password"
+                            id="setup-confirm"
+                            placeholder="Confirm your password"
+                            autocomplete="new-password"
+                        />
+                    </div>
+
+                    <div id="setup-error" class="error-message hidden"></div>
+
+                    <button type="submit" class="btn btn-primary">Create Password</button>
+                </form>
+
+                <!-- Loading State -->
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading...</p>
                 </div>
-                <div class="form-group">
-                    <label for="setup-password">Password</label>
-                    <input type="password" id="setup-password" name="password" required minlength="6"
-                        autocomplete="new-password">
-                    <span class="hint">At least 6 characters</span>
-                </div>
-                <div class="form-group">
-                    <label for="setup-confirm">Confirm Password</label>
-                    <input type="password" id="setup-confirm" name="confirm" required autocomplete="new-password">
-                </div>
-                <div id="setup-error" class="error-message hidden"></div>
-                <button type="submit" class="btn btn-primary">Create Account</button>
-            </form>
-            <!-- Loading state -->
-            <div id="loading" class="loading hidden">
-                <div class="spinner"></div>
-                <p>Loading...</p>
             </div>
         </div>
-    </div>
 
-    <script src="/js/login.js"></script>
-</body>
-
+        <script src="/js/login.js"></script>
+    </body>
 </html>
