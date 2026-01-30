@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -68,7 +67,6 @@ func DefaultLoggingConfig() LoggingConfig {
 // W3CLogger handles W3C Extended Log Format logging
 type W3CLogger struct {
 	config      LoggingConfig
-	headerOnce  sync.Once
 	serviceName string
 }
 
