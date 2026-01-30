@@ -236,6 +236,8 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/favorites", h.GetFavorites).Methods("GET")
 	api.HandleFunc("/favorites", h.AddFavorite).Methods("POST")
 	api.HandleFunc("/favorites", h.RemoveFavorite).Methods("DELETE")
+	api.HandleFunc("/favorites/bulk", h.BulkAddFavorites).Methods("POST")
+	api.HandleFunc("/favorites/bulk", h.BulkRemoveFavorites).Methods("DELETE")
 	api.HandleFunc("/favorites/check", h.CheckFavorite).Methods("GET")
 
 	// Tags
@@ -245,6 +247,8 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/tags/file", h.RemoveTagFromFile).Methods("DELETE")
 	api.HandleFunc("/tags/file/set", h.SetFileTags).Methods("POST")
 	api.HandleFunc("/tags/batch", h.GetBatchFileTags).Methods("POST")
+	api.HandleFunc("/tags/bulk", h.BulkAddTag).Methods("POST")
+	api.HandleFunc("/tags/bulk", h.BulkRemoveTag).Methods("DELETE")
 	api.HandleFunc("/tags/{tag}", h.GetFilesByTag).Methods("GET")
 	api.HandleFunc("/tags/{tag}", h.DeleteTag).Methods("DELETE")
 	api.HandleFunc("/tags/{tag}", h.RenameTag).Methods("PUT")

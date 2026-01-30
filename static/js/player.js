@@ -50,7 +50,7 @@ const Player = {
 
         const leftZone = document.createElement('div');
         leftZone.className = 'player-hot-zone player-hot-zone-left';
-        leftZone.innerHTML = '<span class="player-hot-zone-icon">‹</span>';
+        leftZone.innerHTML = '<i data-lucide="chevron-left" class="player-hot-zone-icon"></i>';
         leftZone.addEventListener('click', (e) => {
             e.stopPropagation();
             this.prev();
@@ -58,7 +58,7 @@ const Player = {
 
         const rightZone = document.createElement('div');
         rightZone.className = 'player-hot-zone player-hot-zone-right';
-        rightZone.innerHTML = '<span class="player-hot-zone-icon">›</span>';
+        rightZone.innerHTML = '<i data-lucide="chevron-right" class="player-hot-zone-icon"></i>';
         rightZone.addEventListener('click', (e) => {
             e.stopPropagation();
             this.next();
@@ -69,6 +69,8 @@ const Player = {
 
         this.elements.hotZoneLeft = leftZone;
         this.elements.hotZoneRight = rightZone;
+
+        lucide.createIcons();
     },
 
     createPlaylistToggle() {
@@ -76,7 +78,7 @@ const Player = {
 
         const toggle = document.createElement('button');
         toggle.className = 'playlist-toggle';
-        toggle.innerHTML = '☰';
+        toggle.innerHTML = '<i data-lucide="list"></i>';
         toggle.title = 'Toggle playlist (P)';
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -85,6 +87,8 @@ const Player = {
 
         this.elements.videoWrapper.appendChild(toggle);
         this.elements.playlistToggle = toggle;
+
+        lucide.createIcons();
     },
 
     createEdgeSwipeZone() {
@@ -155,7 +159,7 @@ const Player = {
 
         const closeBtn = document.createElement('button');
         closeBtn.className = 'playlist-close-btn';
-        closeBtn.innerHTML = '×';
+        closeBtn.innerHTML = '<i data-lucide="x"></i>';
         closeBtn.title = 'Close playlist';
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -164,6 +168,8 @@ const Player = {
 
         this.elements.sidebar.insertBefore(closeBtn, this.elements.sidebar.firstChild);
         this.elements.playlistCloseBtn = closeBtn;
+
+        lucide.createIcons();
     },
 
     createEdgeHint() {
@@ -181,10 +187,12 @@ const Player = {
 
         const hintText = document.createElement('div');
         hintText.className = 'playlist-hint-text';
-        hintText.textContent = '← Swipe for playlist';
+        hintText.innerHTML = '<i data-lucide="chevron-left"></i> Swipe for playlist';
 
         this.elements.videoWrapper.appendChild(hintText);
         this.elements.hintText = hintText;
+
+        lucide.createIcons();
     },
 
     bindEvents() {
@@ -489,28 +497,20 @@ const Player = {
 
         if (paths.length === 0) return;
 
-        try {
-            // Batch request for tags - if your API supports it
-            // Otherwise, we'll fall back to individual requests
-            const response = await fetch('/api/tags/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths }),
-            });
+        const response = await fetch('/api/tags/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths }),
+        });
 
-            if (response.ok) {
-                const tagsData = await response.json();
-                // Expecting format: { "path1": ["tag1", "tag2"], "path2": ["tag3"] }
-                for (const [path, tags] of Object.entries(tagsData)) {
-                    if (tags && tags.length > 0) {
-                        this.itemTags.set(path, tags);
-                    }
+        if (response.ok) {
+            const tagsData = await response.json();
+            // Expecting format: { "path1": ["tag1", "tag2"], "path2": ["tag3"] }
+            for (const [path, tags] of Object.entries(tagsData)) {
+                if (tags && tags.length > 0) {
+                    this.itemTags.set(path, tags);
                 }
             }
-        } catch (error) {
-            // Batch endpoint might not exist, fall back to individual requests
-            console.log('Batch tags not available, loading individually');
-            await this.loadTagsIndividually(paths);
         }
     },
 
@@ -537,7 +537,7 @@ const Player = {
                                 this.itemTags.set(path, tags);
                             }
                         }
-                    } catch (error) {
+                    } catch {
                         // Ignore individual failures
                     }
                 })
@@ -743,7 +743,7 @@ const Player = {
         // Check autoplay preference
         if (typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled()) {
             this.elements.video.play().catch((err) => {
-                console.log('Autoplay prevented:', err);
+                console.debug('Autoplay prevented:', err);
             });
         }
 

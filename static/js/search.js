@@ -7,6 +7,8 @@ const Search = {
     lastQuery: '',
     results: null,
     selectedSuggestionIndex: -1,
+    previousState: null,
+    savedScrollPosition: 0,
 
     init() {
         this.cacheElements();
@@ -51,7 +53,7 @@ const Search = {
             }, 150);
         });
 
-        // Handle keyboard navigation
+        // Handle keyboard navigation in search input
         this.elements.input.addEventListener('keydown', (e) => {
             const suggestions = this.elements.dropdown.querySelectorAll('.search-dropdown-item');
 
@@ -63,7 +65,6 @@ const Search = {
                         this.selectedSuggestionIndex >= 0 &&
                         suggestions[this.selectedSuggestionIndex]
                     ) {
-                        // Get data from the selected suggestion and handle it directly
                         const selected = suggestions[this.selectedSuggestionIndex];
                         const path = selected.dataset.path;
                         const type = selected.dataset.type;
@@ -72,7 +73,6 @@ const Search = {
                         this.hideDropdown();
                         this.handleSuggestionAction(path, type, name);
                     } else {
-                        // No suggestion selected, perform full search
                         this.performSearch(this.elements.input.value.trim());
                     }
                     break;
@@ -101,16 +101,24 @@ const Search = {
 
                 case 'Escape':
                     this.hideDropdown();
-                    if (!this.elements.results.classList.contains('hidden')) {
-                        this.hideResults();
-                    }
                     this.elements.input.blur();
                     break;
 
                 case 'Tab':
-                    // Close dropdown on tab
                     this.hideDropdown();
                     break;
+            }
+        });
+
+        // Global Escape handler for search results screen
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !this.elements.results.classList.contains('hidden')) {
+                // Don't handle if user is in an input field (let the input handle it)
+                if (e.target.matches('input, textarea')) {
+                    return;
+                }
+                e.preventDefault();
+                this.hideResultsWithHistory();
             }
         });
 
@@ -153,6 +161,44 @@ const Search = {
             }
         });
     },
+    saveCurrentState() {
+        this.savedScrollPosition = window.scrollY;
+
+        // Check if lightbox is open
+        if (
+            typeof Lightbox !== 'undefined' &&
+            !Lightbox.elements.lightbox.classList.contains('hidden')
+        ) {
+            this.previousState = {
+                type: 'lightbox',
+                items: Lightbox.items,
+                index: Lightbox.currentIndex,
+                useAppMedia: Lightbox.useAppMedia,
+            };
+        } else {
+            this.previousState = {
+                type: 'gallery',
+            };
+        }
+    },
+
+    restorePreviousState() {
+        if (!this.previousState) {
+            window.scrollTo(0, this.savedScrollPosition);
+            return;
+        }
+
+        if (this.previousState.type === 'lightbox') {
+            if (typeof Lightbox !== 'undefined') {
+                // Use special method that handles history correctly
+                Lightbox.openWithItemsNoHistory(this.previousState.items, this.previousState.index);
+            }
+        } else {
+            window.scrollTo(0, this.savedScrollPosition);
+        }
+
+        this.previousState = null;
+    },
 
     async loadSuggestions(query) {
         try {
@@ -179,7 +225,6 @@ const Search = {
 
         let html = suggestions
             .map((item, index) => {
-                // Handle tag suggestions differently
                 if (item.type === 'tag') {
                     return `
                 <div class="search-dropdown-item search-dropdown-tag"
@@ -187,7 +232,7 @@ const Search = {
                      data-type="${this.escapeAttr(item.type)}"
                      data-name="${this.escapeAttr(item.name)}"
                      data-index="${index}">
-                    <span class="search-dropdown-item-icon">🏷</span>
+                    <span class="search-dropdown-item-icon"><i data-lucide="tag"></i></span>
                     <div class="search-dropdown-item-info">
                         <div class="search-dropdown-item-name">${item.highlight}</div>
                         <div class="search-dropdown-item-path">Search by tag</div>
@@ -198,10 +243,9 @@ const Search = {
 
                 const isPinned = Favorites.isPinned(item.path);
                 const pinIndicator = isPinned
-                    ? '<span class="search-dropdown-item-pin">★</span>'
+                    ? '<span class="search-dropdown-item-pin"><i data-lucide="star"></i></span>'
                     : '';
 
-                // Determine if this item type supports thumbnails
                 const hasThumbnail =
                     item.type === 'image' || item.type === 'video' || item.type === 'folder';
                 const thumbnailUrl = hasThumbnail
@@ -209,7 +253,6 @@ const Search = {
                     : '';
                 const fallbackIcon = this.getIcon(item.type);
 
-                // Build thumbnail HTML with fallback
                 let thumbnailHtml;
                 if (hasThumbnail) {
                     thumbnailHtml = `
@@ -218,13 +261,13 @@ const Search = {
                          alt=""
                          loading="lazy"
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                    <span class="search-dropdown-item-icon" style="display: none;">${fallbackIcon}</span>
+                    <span class="search-dropdown-item-icon" style="display: none;"><i data-lucide="${fallbackIcon}"></i></span>
                 </div>
             `;
                 } else {
                     thumbnailHtml = `
                 <div class="search-dropdown-item-thumb">
-                    <span class="search-dropdown-item-icon">${fallbackIcon}</span>
+                    <span class="search-dropdown-item-icon"><i data-lucide="${fallbackIcon}"></i></span>
                 </div>
             `;
                 }
@@ -254,7 +297,8 @@ const Search = {
         this.elements.dropdown.innerHTML = html;
         this.elements.dropdown.classList.remove('hidden');
 
-        // Bind click handlers to suggestion items
+        lucide.createIcons();
+
         this.elements.dropdown.querySelectorAll('.search-dropdown-item').forEach((item) => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -269,7 +313,6 @@ const Search = {
             });
         });
 
-        // Bind click handler to footer
         this.elements.dropdown
             .querySelector('.search-dropdown-footer')
             .addEventListener('click', (e) => {
@@ -281,11 +324,11 @@ const Search = {
 
     getIcon(type) {
         const icons = {
-            folder: '📁',
-            image: '🖼️',
-            video: '🎬',
-            playlist: '📋',
-            other: '📄',
+            folder: 'folder',
+            image: 'image',
+            video: 'film',
+            playlist: 'list-music',
+            other: 'file',
         };
         return icons[type] || icons.other;
     },
@@ -382,6 +425,21 @@ const Search = {
     performSearch(query) {
         if (!query || query.length < 2) return;
 
+        // Save state before searching
+        this.saveCurrentState();
+
+        // Close lightbox if open (without history, we'll restore it later)
+        if (
+            typeof Lightbox !== 'undefined' &&
+            !Lightbox.elements.lightbox.classList.contains('hidden')
+        ) {
+            Lightbox.close();
+            // Remove lightbox state from history manager since we're handling restoration ourselves
+            if (typeof HistoryManager !== 'undefined') {
+                HistoryManager.removeState('lightbox');
+            }
+        }
+
         this.hideDropdown();
         this.lastQuery = query;
         this.currentPage = 1;
@@ -425,36 +483,41 @@ const Search = {
         if (this.results.items.length === 0) {
             this.elements.resultsGallery.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">🔍</div>
+                    <div class="empty-state-icon"><i data-lucide="search"></i></div>
                     <p>No results found for "${this.escapeHtml(this.results.query)}"</p>
                 </div>
             `;
+            lucide.createIcons();
         } else {
             this.results.items.forEach((item) => {
                 const element = Gallery.createGalleryItem(item);
                 this.elements.resultsGallery.appendChild(element);
             });
+            lucide.createIcons();
         }
 
         this.renderPagination();
         this.elements.results.classList.remove('hidden');
 
-        // Push history state for back button support
+        // Scroll to top of results
+        this.elements.results.scrollTop = 0;
+
         HistoryManager.pushState('search');
 
         this.elements.input.blur();
     },
 
-    // Update hideResults to not push history when called by HistoryManager
     hideResults() {
         this.elements.results.classList.add('hidden');
         this.lastQuery = '';
         this.results = null;
+
+        // Restore previous state
+        this.restorePreviousState();
     },
 
     hideResultsWithHistory() {
         if (HistoryManager.hasState('search')) {
-            // Let handlePopState close it
             history.back();
         } else {
             this.hideResults();
@@ -506,3 +569,5 @@ const Search = {
             .replace(/>/g, '&gt;');
     },
 };
+
+window.Search = Search;

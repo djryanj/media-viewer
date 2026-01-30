@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## Version 0.3.0 - 2026-01-30
+
+### New Features
+
+#### Enhanced Tag Management
+
+- Tags are now clickable throughout the application to search for items with that tag
+- Added tag overflow tooltip: clicking the "+n" indicator on items with many tags displays a popup showing all tags
+- Tags can now be removed directly from gallery items on desktop by hovering and clicking the X button
+- Added tag display in lightbox view with gradient overlay at the bottom of images
+- Lightbox tags support both search (click tag) and removal (click X button) actions
+
+#### Improved Navigation and State Management
+
+- Search results now preserve previous state: closing search returns to the lightbox at the same position if one was open
+- Gallery scroll position is now preserved when returning from search results
+- Browser back button properly navigates through search, lightbox, and gallery states
+
+#### Selection Mode Improvements
+
+- "Select All" button now toggles between selecting all and deselecting all items
+- Button text updates to indicate current action ("All" or "None")
+
+### User Interface Improvements
+
+#### Layout Consistency
+
+- Header, breadcrumb, favorites, and footer sections now respect the same maximum width as the gallery content
+- User control buttons (password, cache, logout) moved to the right side of the header on all screen sizes
+- Consistent padding and spacing across all breakpoints
+
+#### Mobile Improvements
+
+- Tags in gallery items are now properly tappable for search on mobile devices
+- Tag removal buttons hidden on mobile to prevent accidental taps; tags can still be managed via the tag modal
+- Improved touch targets for tag interactions
+
+#### Favorites Section
+
+- Fixed favorites display on desktop to show compact thumbnails instead of full card layout
+- Star icons now render correctly in favorites section
+
+### Performance Improvements
+
+- Replaced universal CSS selector (`*`) with explicit element reset for improved rendering performance
+- Optimized image preloading in lightbox with priority-based loading (adjacent images load with higher priority)
+
+### Bug Fixes
+
+- Fixed Escape key not closing search results when viewing full search gallery
+- Fixed tag click events propagating to gallery item handlers, causing both search and lightbox to trigger
+- Fixed inconsistent card heights in gallery when some items have tags and others do not
+- Fixed mobile filename overlay being too prominent
+- Resolved various linting errors related to undefined globals and unused variables
+
 ## [Unreleased] - 2026-01-30
 
 ### Changed
