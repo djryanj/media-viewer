@@ -275,10 +275,11 @@ const Lightbox = {
     },
 
     closeWithHistory() {
-        this.close();
         if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox')) {
-            HistoryManager.removeState('lightbox');
+            // Let handlePopState close it
             history.back();
+        } else {
+            this.close();
         }
     },
 

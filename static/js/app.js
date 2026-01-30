@@ -74,6 +74,11 @@ const MediaApp = {
         });
 
         window.addEventListener('popstate', (e) => {
+            // If HistoryManager is handling an overlay close, don't reload the directory
+            if (typeof HistoryManager !== 'undefined' && HistoryManager.isHandlingPopState) {
+                return;
+            }
+
             const path = e.state?.path || '';
             this.state.currentPath = path;
             this.state.currentPage = 1;
