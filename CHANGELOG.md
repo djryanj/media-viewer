@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Videos use native HTML5 loop attribute
     - Animated images use canvas-based detection to force continuous playback
 
+### Fixes
+
+- **Playlist View Hotzones** - previously, these were blocking the video controls in the playlist. ([#56](https://github.com/djryanj/media-viewer/issues/56))
+
 ## [v0.4.0] - January 31, 2026
 
 ### Added
