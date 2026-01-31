@@ -217,7 +217,12 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 			r.URL.Path == "/health" ||
 			r.URL.Path == "/healthz" ||
 			r.URL.Path == "/livez" ||
-			r.URL.Path == "/readyz" {
+			r.URL.Path == "/readyz" ||
+			// PWA endpoints
+			r.URL.Path == "/manifest.json" ||
+			r.URL.Path == "/sw.js" ||
+			strings.HasPrefix(r.URL.Path, "/icons/") ||
+			r.URL.Path == "/favicon.ico" {
 			next.ServeHTTP(w, r)
 			return
 		}

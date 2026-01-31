@@ -16,6 +16,15 @@ const MediaApp = {
         this.cacheElements();
         this.bindEvents();
         this.checkAuth();
+        this.registerServiceWorker();
+
+        // Initialize Wake Lock
+        if (typeof WakeLock !== 'undefined') {
+            WakeLock.init();
+        }
+
+        // Check if running as installed PWA
+        this.checkPWAStatus();
     },
 
     cacheElements() {
@@ -617,7 +626,70 @@ const MediaApp = {
             this.hideLoading();
         }
     },
+
+    checkPWAStatus() {
+        // Check if running in standalone mode (installed PWA)
+        const isStandalone =
+            window.matchMedia('(display-mode: standalone)').matches ||
+            window.navigator.standalone || // iOS Safari
+            document.referrer.includes('android-app://');
+
+        if (isStandalone) {
+            document.body.classList.add('pwa-standalone');
+            console.debug('Running as installed PWA');
+        }
+
+        // Listen for display mode changes
+        window.matchMedia('(display-mode: standalone)').addEventListener('change', (e) => {
+            if (e.matches) {
+                document.body.classList.add('pwa-standalone');
+            } else {
+                document.body.classList.remove('pwa-standalone');
+            }
+        });
+    },
+
+    registerServiceWorker() {
+        // Check secure context first
+        if (!window.isSecureContext) {
+            console.warn(
+                'Service Worker requires a secure context (HTTPS or localhost).',
+                '\nCurrent origin:',
+                window.location.origin,
+                '\nTo fix: access via https:// or http://localhost'
+            );
+            return;
+        }
+
+        if (!('serviceWorker' in navigator)) {
+            console.warn('Service Workers not supported in this browser');
+            return;
+        }
+
+        navigator.serviceWorker
+            .register('/js/sw.js')
+            .then((registration) => {
+                console.debug('Service Worker registered:', registration.scope);
+
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            this.showUpdateNotification();
+                        }
+                    });
+                });
+            })
+            .catch((error) => {
+                console.error('Service Worker registration failed:', error);
+            });
+    },
 };
 
 // Export to global scope for use in HTML and other scripts
 window.MediaApp = MediaApp;
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    MediaApp.init();
+});

@@ -7,13 +7,11 @@ const Lightbox = {
     touchStartY: 0,
     isSwiping: false,
     useAppMedia: true,
-
-    // New properties for loading management
-    currentLoadId: 0, // Tracks which load operation is current
-    preloadCache: new Map(), // Cache for preloaded images
-    preloadQueue: [], // Queue of preload operations
-    maxPreload: 3, // Number of items to preload in each direction
-    isLoading: false, // Current loading state
+    currentLoadId: 0,
+    preloadCache: new Map(),
+    preloadQueue: [],
+    maxPreload: 3,
+    isLoading: false,
 
     init() {
         this.cacheElements();
@@ -282,6 +280,7 @@ const Lightbox = {
         if (typeof HistoryManager !== 'undefined') {
             HistoryManager.pushState('lightbox');
         }
+        this.acquireWakeLock();
     },
 
     close() {
@@ -293,6 +292,28 @@ const Lightbox = {
 
         // Clear preload cache to free memory
         this.clearPreloadCache();
+
+        // Release wake lock if held
+        this.releaseWakeLock();
+    },
+
+    async acquireWakeLock() {
+        if (typeof WakeLock !== 'undefined') {
+            await WakeLock.acquire('lightbox media viewing');
+        }
+    },
+
+    releaseWakeLock() {
+        // Only release if player isn't also open
+        if (typeof WakeLock !== 'undefined') {
+            const playerOpen =
+                typeof Player !== 'undefined' &&
+                !Player.elements?.modal?.classList.contains('hidden');
+
+            if (!playerOpen) {
+                WakeLock.release();
+            }
+        }
     },
 
     closeWithHistory() {

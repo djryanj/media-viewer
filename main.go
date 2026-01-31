@@ -205,7 +205,6 @@ func startMetricsServer(h *handlers.Handlers, port string) *http.Server {
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", h.MetricsHandler())
 
-	// Also add a simple health check on the metrics server
 	metricsMux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
@@ -237,6 +236,15 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	r.HandleFunc("/livez", h.LivenessCheck).Methods("GET")
 	r.HandleFunc("/readyz", h.ReadinessCheck).Methods("GET")
 	r.HandleFunc("/version", h.GetVersion).Methods("GET")
+
+	// PWA assets (must be accessible without auth for install prompts)
+	r.HandleFunc("/manifest.json", serveStaticFile("./static/manifest.json", "application/manifest+json")).Methods("GET")
+	r.HandleFunc("/favicon.ico", serveStaticFile("./static/icons/favicon.ico", "image/x-icon")).Methods("GET")
+	r.PathPrefix("/icons/").Handler(http.StripPrefix("/icons/", http.FileServer(http.Dir("./static/icons"))))
+	r.HandleFunc("/sw.js", serveStaticFile("./static/sw.js", "application/javascript")).Methods("GET")
+
+	// Login page (needs to be accessible without auth)
+	r.HandleFunc("/login.html", serveStaticFile("./static/login.html", "text/html; charset=utf-8")).Methods("GET")
 
 	// Auth routes
 	auth := r.PathPrefix("/api/auth").Subrouter()
@@ -353,4 +361,12 @@ func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *in
 	}
 
 	startup.LogShutdownComplete()
+}
+
+// serveStaticFile returns a handler that serves a specific static file with the given content type
+func serveStaticFile(filepath, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		http.ServeFile(w, r, filepath)
+	}
 }

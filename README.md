@@ -1,5 +1,9 @@
 # Media Viewer
 
+<div style="text-align: center;">
+  ![Media Viewer](./static/icons/icon-512x512.png)
+</div>
+
 A lightweight, containerized web application for browsing and viewing images and videos from a mounted directory.
 
 ## Features
@@ -13,6 +17,7 @@ A lightweight, containerized web application for browsing and viewing images and
 - Pin favorites to the home page
 - Single-user authentication
 - Prometheus metrics endpoint for monitoring
+- Progressive Web App (PWA) for native app-like feel
 
 ## Quick Start with Docker
 
@@ -28,7 +33,7 @@ services:
         image: ghcr.io/djryanj/media-viewer:latest
         ports:
             - '8080:8080'
-            - '9090:9090' # Metrics port (optional)
+            - '9090:9090'
         volumes:
             - /path/to/your/media:/media:ro
             - media-cache:/cache
@@ -41,6 +46,15 @@ services:
             - METRICS_PORT=9090
             - METRICS_ENABLED=true
             - INDEX_INTERVAL=30m
+        # Memory limits (optional but recommended)
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+        # Note: For docker-compose, set GOMEMLIMIT directly
+        # since Downward API is not available
+        # environment:
+        #     - GOMEMLIMIT=400MiB
         restart: unless-stopped
 
 volumes:
@@ -155,6 +169,12 @@ THUMBNAIL_INTERVAL=1d       # Days not supported
 
 When running in Kubernetes or other container environments, the application can be configured to respect memory limits and avoid OOM (Out of Memory) kills.
 
+#### Recommended Values
+
+Use approximately a 4:1 ratio of CPU:Memory, e.g.:
+
+During testing on a system with 4 cores (8 threads) and a library of ~40,000 items, a minimum 2Gb memory limit was required to prevent OOMKills.
+
 #### Kubernetes Configuration
 
 To enable memory-aware operation in Kubernetes, pass the container's memory limit using the Downward API:
@@ -231,262 +251,48 @@ media_viewer_go_memalloc_bytes / media_viewer_go_memlimit_bytes
 
 Values approaching 1.0 indicate the application is under memory pressure.
 
-````
+## Progressive Web App (PWA)
 
-**5. Update the docker-compose example in README.md:**
+Media Viewer can be installed as a PWA on mobile devices for a native app-like experience:
 
-Find the existing docker-compose example and add the memory configuration:
+- **No browser UI** when launched from home screen
+- **Home screen icon** with custom app icon
+- **Offline support** for cached app shell
+- **Screen wake lock** keeps display on during media viewing
 
-```yaml
-version: '3.8'
+#### Installing the PWA
 
-services:
-    media-viewer:
-        image: ghcr.io/djryanj/media-viewer:latest
-        ports:
-            - '8080:8080'
-            - '9090:9090'
-        volumes:
-            - /path/to/your/media:/media:ro
-            - media-cache:/cache
-            - media-database:/database
-        environment:
-            - MEDIA_DIR=/media
-            - CACHE_DIR=/cache
-            - DATABASE_DIR=/database
-            - PORT=8080
-            - METRICS_PORT=9090
-            - METRICS_ENABLED=true
-            - INDEX_INTERVAL=30m
-        # Memory limits (optional but recommended)
-        deploy:
-            resources:
-                limits:
-                    memory: 512M
-        # Note: For docker-compose, set GOMEMLIMIT directly
-        # since Downward API is not available
-        # environment:
-        #     - GOMEMLIMIT=400MiB
-        restart: unless-stopped
+**Android (Chrome, Edge, Firefox, Samsung Internet):**
 
-volumes:
-    media-cache:
-    media-database:
-````
+1. Open the app in your browser
+2. Tap the three-dot menu (⋮)
+3. Tap "Add to Home Screen" or "Install App"
+4. Launch from the home screen icon
 
-### Expected Startup Output
+**iOS (Safari):**
 
-When the application starts with memory configuration, you'll see:
+1. Open the app in Safari
+2. Tap the Share button (square with arrow)
+3. Tap "Add to Home Screen"
+4. Launch from the home screen icon
 
-```
-------------------------------------------------------------
-MEMORY CONFIGURATION
-------------------------------------------------------------
-  Source:              MEMORY_LIMIT (Kubernetes Downward API)
-  Container Limit:     512.0 MiB
-  Memory Ratio:        75.0%
-  GOMEMLIMIT:          384.0 MiB
-  Reserved for OS/FFmpeg: 128.0 MiB
-```
+#### PWA Browser Support
 
-Or if using `GOMEMLIMIT` directly:
+| Browser          | Add to Home Screen | Standalone Mode | Wake Lock |
+| ---------------- | ------------------ | --------------- | --------- |
+| Chrome Android   | ✅                 | ✅              | ✅        |
+| Safari iOS       | ✅                 | ✅              | ❌        |
+| Firefox Android  | ✅                 | ⚠️ minimal-ui   | ✅        |
+| Samsung Internet | ✅                 | ✅              | ✅        |
+| Edge Android     | ✅                 | ✅              | ✅        |
 
-```
-------------------------------------------------------------
-MEMORY CONFIGURATION
-------------------------------------------------------------
-  Source:              GOMEMLIMIT environment variable
-  GOMEMLIMIT:          400.0 MiB
-```
+Firefox Android does not support true standalone mode but will use `minimal-ui` (reduced browser chrome) as a fallback.
 
-Or if not configured:
-
-```
-------------------------------------------------------------
-MEMORY CONFIGURATION
-------------------------------------------------------------
-  GOMEMLIMIT:          not configured
-  (Set MEMORY_LIMIT or GOMEMLIMIT to enable memory limits)
-```
+**_NOTE_**: PWA has only been tested on Firefox Android but the above table should be accurate. If you want to provide test results from other mobile browsers those are welcome!
 
 ## Monitoring
 
-Media Viewer exposes Prometheus metrics on a separate port (default: 9090) for monitoring application health and performance.
-
-### Endpoints
-
-| Endpoint   | Port | Description                       |
-| ---------- | ---- | --------------------------------- |
-| `/metrics` | 9090 | Prometheus metrics                |
-| `/health`  | 9090 | Health check for metrics server   |
-| `/health`  | 8080 | Application health check          |
-| `/healthz` | 8080 | Kubernetes liveness probe         |
-| `/readyz`  | 8080 | Kubernetes readiness probe        |
-| `/livez`   | 8080 | Kubernetes liveness probe (alias) |
-
-### Available Metrics
-
-The following metric categories are exposed:
-
-| Category       | Prefix                      | Description                                      |
-| -------------- | --------------------------- | ------------------------------------------------ |
-| HTTP           | `media_viewer_http_*`       | Request counts, latency, in-flight requests      |
-| Database       | `media_viewer_db_*`         | Query counts, latency, connection pool           |
-| Indexer        | `media_viewer_indexer_*`    | Run counts, duration, files processed            |
-| Thumbnails     | `media_viewer_thumbnail_*`  | Generation counts, cache hits/misses, cache size |
-| Scanner        | `media_viewer_scanner_*`    | File system operations, watcher events           |
-| Transcoder     | `media_viewer_transcoder_*` | Job counts, duration                             |
-| Authentication | `media_viewer_auth_*`       | Login attempts, active sessions                  |
-| Media Library  | `media_viewer_media_*`      | File counts by type, folders, favorites, tags    |
-
-### Prometheus Configuration
-
-Add the following to your `prometheus.yml`:
-
-```yaml
-scrape_configs:
-    - job_name: 'media-viewer'
-      static_configs:
-          - targets: ['media-viewer:9090']
-      scrape_interval: 15s
-```
-
-### Example Queries
-
-```promql
-# Request rate by endpoint
-sum(rate(media_viewer_http_requests_total[5m])) by (path)
-
-# P95 response time
-histogram_quantile(0.95, sum(rate(media_viewer_http_request_duration_seconds_bucket[5m])) by (le))
-
-# HTTP error rate
-sum(rate(media_viewer_http_requests_total{status=~"5.."}[5m])) / sum(rate(media_viewer_http_requests_total[5m]))
-
-# Thumbnail cache hit rate
-media_viewer_thumbnail_cache_hits_total / (media_viewer_thumbnail_cache_hits_total + media_viewer_thumbnail_cache_misses_total)
-
-# Database query latency by operation
-histogram_quantile(0.95, sum(rate(media_viewer_db_query_duration_seconds_bucket[5m])) by (le, operation))
-```
-
-### Alerting
-
-Example alerting rules for Prometheus Alertmanager:
-
-```yaml
-groups:
-    - name: media-viewer
-      rules:
-          - alert: MediaViewerHighErrorRate
-            expr: |
-                sum(rate(media_viewer_http_requests_total{status=~"5.."}[5m]))
-                / sum(rate(media_viewer_http_requests_total[5m])) > 0.05
-            for: 5m
-            labels:
-                severity: warning
-            annotations:
-                summary: 'High HTTP error rate'
-
-          - alert: MediaViewerHighLatency
-            expr: |
-                histogram_quantile(0.95, sum(rate(media_viewer_http_request_duration_seconds_bucket[5m])) by (le)) > 2
-            for: 5m
-            labels:
-                severity: warning
-            annotations:
-                summary: 'High request latency'
-
-          - alert: MediaViewerDown
-            expr: up{job="media-viewer"} == 0
-            for: 1m
-            labels:
-                severity: critical
-            annotations:
-                summary: 'Media Viewer is down'
-```
-
-## API Endpoints
-
-### Public Endpoints (No Authentication)
-
-| Method | Path       | Description                     |
-| ------ | ---------- | ------------------------------- |
-| GET    | `/health`  | Health check                    |
-| GET    | `/healthz` | Kubernetes health check         |
-| GET    | `/livez`   | Kubernetes liveness probe       |
-| GET    | `/readyz`  | Kubernetes readiness probe      |
-| GET    | `/version` | Application version information |
-
-### Authentication Endpoints
-
-| Method | Path                       | Description                      |
-| ------ | -------------------------- | -------------------------------- |
-| GET    | `/api/auth/setup-required` | Check if initial setup is needed |
-| POST   | `/api/auth/setup`          | Create initial user account      |
-| POST   | `/api/auth/login`          | Authenticate user                |
-| POST   | `/api/auth/logout`         | End user session                 |
-| GET    | `/api/auth/check`          | Verify authentication status     |
-
-### Protected API Endpoints
-
-| Method | Path                      | Description                         |
-| ------ | ------------------------- | ----------------------------------- |
-| GET    | `/api/files`              | List directory contents             |
-| GET    | `/api/media`              | Get media files in directory        |
-| GET    | `/api/file/{path}`        | Get file content                    |
-| GET    | `/api/thumbnail/{path}`   | Get file thumbnail                  |
-| GET    | `/api/search`             | Search media library                |
-| GET    | `/api/search/suggestions` | Get search autocomplete suggestions |
-| GET    | `/api/stats`              | Get library statistics              |
-| POST   | `/api/reindex`            | Trigger media re-indexing           |
-
-### Favorites
-
-| Method | Path                   | Description                |
-| ------ | ---------------------- | -------------------------- |
-| GET    | `/api/favorites`       | List all favorites         |
-| POST   | `/api/favorites`       | Add favorite               |
-| DELETE | `/api/favorites`       | Remove favorite            |
-| GET    | `/api/favorites/check` | Check if path is favorited |
-
-### Tags
-
-| Method | Path                 | Description                 |
-| ------ | -------------------- | --------------------------- |
-| GET    | `/api/tags`          | List all tags               |
-| GET    | `/api/tags/file`     | Get tags for a file         |
-| POST   | `/api/tags/file`     | Add tag to file             |
-| DELETE | `/api/tags/file`     | Remove tag from file        |
-| POST   | `/api/tags/file/set` | Set all tags for a file     |
-| POST   | `/api/tags/batch`    | Get tags for multiple files |
-| GET    | `/api/tags/{tag}`    | Get files with tag          |
-| DELETE | `/api/tags/{tag}`    | Delete tag                  |
-| PUT    | `/api/tags/{tag}`    | Rename tag                  |
-
-### Thumbnails
-
-| Method | Path                         | Description                    |
-| ------ | ---------------------------- | ------------------------------ |
-| GET    | `/api/thumbnail/{path}`      | Get thumbnail                  |
-| DELETE | `/api/thumbnail/{path}`      | Invalidate thumbnail           |
-| POST   | `/api/thumbnails/invalidate` | Invalidate all thumbnails      |
-| POST   | `/api/thumbnails/rebuild`    | Rebuild all thumbnails         |
-| GET    | `/api/thumbnails/status`     | Get thumbnail generator status |
-
-### Playlists
-
-| Method | Path                   | Description           |
-| ------ | ---------------------- | --------------------- |
-| GET    | `/api/playlists`       | List all playlists    |
-| GET    | `/api/playlist/{name}` | Get playlist contents |
-
-### Video Streaming
-
-| Method | Path                      | Description                               |
-| ------ | ------------------------- | ----------------------------------------- |
-| GET    | `/api/stream/{path}`      | Stream video (with transcoding if needed) |
-| GET    | `/api/stream-info/{path}` | Get stream information                    |
+Media Viewer exposes Prometheus metrics on a separate port (default: 9090) for monitoring application health and performance. The port can be configured with the `METRICS_PORT` environment variable.
 
 ## Development Setup
 
@@ -556,38 +362,6 @@ make dev-frontend
 make run
 ```
 
-### Available Make Targets
-
-Run `make help` to see all available targets:
-
-| Category            | Target                  | Description                                  |
-| ------------------- | ----------------------- | -------------------------------------------- |
-| **Build**           | `build`                 | Build the main application                   |
-|                     | `build-all`             | Build main application and resetpw tool      |
-|                     | `resetpw`               | Build the password reset tool                |
-|                     | `release-build`         | Build with release optimizations             |
-| **Development**     | `run`                   | Run the application                          |
-|                     | `dev`                   | Run with hot reload (air)                    |
-|                     | `dev-frontend`          | Run frontend with live reload (browser-sync) |
-|                     | `dev-full`              | Run both Go and frontend dev servers         |
-| **Test**            | `test`                  | Run all tests                                |
-|                     | `test-coverage`         | Run tests with coverage report               |
-| **Lint (Go)**       | `lint`                  | Lint Go code                                 |
-|                     | `lint-fix`              | Fix Go lint issues                           |
-| **Lint (Frontend)** | `frontend-lint`         | Lint JS and CSS                              |
-|                     | `frontend-lint-fix`     | Fix JS and CSS lint issues                   |
-|                     | `frontend-format`       | Format frontend code with Prettier           |
-|                     | `frontend-format-check` | Check frontend formatting                    |
-|                     | `frontend-check`        | Run all frontend checks                      |
-| **Combined**        | `lint-all`              | Lint Go and frontend code                    |
-|                     | `lint-fix-all`          | Fix all lint issues                          |
-|                     | `check-all`             | Run all checks                               |
-| **Clean**           | `clean`                 | Remove build artifacts                       |
-|                     | `clean-all`             | Remove all artifacts including node_modules  |
-| **Docker**          | `docker-build`          | Build Docker image                           |
-|                     | `docker-run`            | Run Docker container                         |
-| **Setup**           | `setup`                 | Install all development dependencies         |
-
 ### Code Quality
 
 Before committing, run all checks:
@@ -612,28 +386,6 @@ The frontend uses vanilla JavaScript and CSS with the following tooling:
 | Stylelint    | CSS linting                    |
 | Prettier     | Code formatting                |
 | Browser-sync | Live reload during development |
-
-Frontend-specific commands:
-
-```bash
-# Install dependencies
-make frontend-install
-
-# Lint JavaScript and CSS
-make frontend-lint
-
-# Fix lint issues
-make frontend-lint-fix
-
-# Format code
-make frontend-format
-
-# Check formatting without changes
-make frontend-format-check
-
-# Run all frontend checks
-make frontend-check
-```
 
 ### Using the Dev Container
 
@@ -677,35 +429,6 @@ make test-coverage
 
 This generates `coverage.html` which can be opened in a browser.
 
-### Project Structure
-
-```
-media-viewer/
-├── cmd/
-│   └── resetpw/          # Password reset utility
-├── internal/
-│   ├── database/         # Database operations
-│   ├── handlers/         # HTTP handlers
-│   ├── indexer/          # Media indexing
-│   ├── logging/          # Logging utilities
-│   ├── media/            # Thumbnail generation, scanning
-│   ├── metrics/          # Prometheus metrics
-│   ├── middleware/       # HTTP middleware
-│   ├── startup/          # Configuration and startup
-│   └── transcoder/       # Video transcoding
-├── static/
-│   ├── css/              # Stylesheets
-│   ├── js/               # JavaScript modules
-│   ├── index.html        # Main HTML file
-│   ├── package.json      # Frontend dependencies
-│   ├── eslint.config.js  # ESLint configuration
-│   └── .prettierrc       # Prettier configuration
-├── main.go               # Application entry point
-├── Makefile              # Build and development tasks
-└── README.md
-```
-
-````markdown
 ### Environment Variables for Development
 
 When running locally, you may want to set these environment variables:
@@ -732,7 +455,6 @@ export DATABASE_DIR=./database
 export LOG_LEVEL=debug
 make dev
 ```
-````
 
 Or create a `.env` file (not committed to git):
 
@@ -818,7 +540,53 @@ Set `LOG_LEVEL` to control verbosity:
 | `warn`  | Warnings and errors only                   |
 | `error` | Errors only                                |
 
-### Troubleshooting
+### Testing PWA Features
+
+PWA features (service worker, installation prompts, standalone mode) require a **secure context**:
+
+- ✅ `https://` URLs
+- ✅ `http://localhost` (special browser exception)
+- ❌ `http://` with IP addresses (e.g., `http://192.168.1.50:8080`)
+
+**To test on mobile devices**, you need HTTPS. Options include:
+
+#### Testing PWA on Mobile Devices
+
+PWA features require HTTPS (except `localhost`). To test on mobile devices during development:
+
+**Option 1: ngrok (Recommended)**
+
+```bash
+# Install: https://ngrok.com/download
+ngrok http 8080
+
+# Open the https://xxxxx.ngrok-free.app URL on your mobile device
+```
+
+**Option 2: Cloudflare Tunnel**
+
+```bash
+# Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
+cloudflared tunnel --url http://localhost:8080
+```
+
+**Option 3: Local HTTPS with mkcert**
+
+```bash
+# Install mkcert and generate certificates
+mkcert -install
+mkcert localhost 127.0.0.1 192.168.1.50  # Your local IP
+
+# Update Go server to use ListenAndServeTLS with the generated certificates
+```
+
+**Option 4: Chrome Android flags (development only)**
+
+- Open `chrome://flags`
+- Search for "unsafely-treat-insecure-origin-as-secure"
+- Add your origin (e.g., `http://192.168.1.50:8080`)
+
+### Developer sTroubleshooting
 
 #### Build Fails with CGO Errors
 

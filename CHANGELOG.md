@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [v0.4.0] - January 31, 2026
+
+### Added
+
+- **We have an icon now!**
+
+- **Progressive Web App (PWA) Support**
+    - Web App Manifest (`manifest.json`) enabling "Add to Home Screen" functionality
+    - Service Worker (`sw.js`) for PWA installability and offline caching of app shell
+    - Standalone display mode removes browser UI when installed
+    - `display_override` with `minimal-ui` fallback for Firefox Android
+    - iOS Safari PWA meta tags for full-screen experience
+    - Android adaptive icon support with maskable icons
+
+- **Screen Wake Lock**
+    - Screen stays awake during media viewing in lightbox
+    - Screen stays awake during video playback in player
+    - Automatically re-acquires lock when app regains focus
+    - New `wake-lock.js` module for wake lock management
+
+- **Safe Area Support**
+    - CSS updates for devices with notches (iPhone X+, Android phones with cutouts)
+    - Proper padding for status bars and home indicators
+    - Improved landscape mode handling for fullscreen media viewing
+
+- **App Icons**
+    - New lock-themed icon representing private/secure media
+    - Icons generated in all required sizes for PWA (16px to 512px)
+    - Maskable icons for Android adaptive icon support
+    - Simplified favicon optimized for small sizes
+    - Developer tooling for icon generation (`static/generate-icons.js`)
+
+### Changed
+
+- Updated `index.html` with PWA meta tags, manifest link, and iOS-specific tags
+- Updated `app.js` to register service worker and check PWA status
+- Updated `lightbox.js` to acquire/release wake lock during media viewing
+- Updated `player.js` to acquire/release wake lock during video playback
+- Updated `style.css` with safe area insets, overscroll behavior, and PWA-specific styles
+
+### Fixed
+
+- Proper Content-Type headers for PWA assets (`application/manifest+json`, `application/javascript`)
+
+### Developer Notes
+
+#### Icon Generation
+
+Icons are pre-generated and committed to the repository. Regeneration is only needed when modifying the icon design.
+
+```bash
+make icons
+```
+
+See README.md for detailed icon generation instructions.
+
 ## Version 0.3.1 - 2026-01-30
 
 ### New Features
