@@ -1,4 +1,4 @@
-package media
+package mediatypes
 
 // FileType represents the type of a media file.
 type FileType string
@@ -62,7 +62,7 @@ var VideoExtensions = map[string]bool{
 	".mov":  true,
 	".wmv":  true,
 	".flv":  true,
-	".webm": true,
+	".webp": true,
 	".m4v":  true,
 	".mpeg": true,
 	".mpg":  true,
@@ -138,14 +138,4 @@ func GetMimeType(ext string) string {
 // IsMediaFile returns true if the extension represents a supported media file.
 func IsMediaFile(ext string) bool {
 	return GetFileType(ext) != FileTypeOther
-}
-
-// IsSupportedImage returns true if the extension is a supported image format.
-func IsSupportedImage(ext string) bool {
-	return ImageExtensions[ext]
-}
-
-// IsSupportedVideo returns true if the extension is a supported video format.
-func IsSupportedVideo(ext string) bool {
-	return VideoExtensions[ext]
 }

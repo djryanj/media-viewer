@@ -15,36 +15,11 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
+	"media-viewer/internal/mediatypes"
 	"media-viewer/internal/metrics"
 
 	"github.com/fsnotify/fsnotify"
 )
-
-var imageExtensions = map[string]bool{
-	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
-	".bmp": true, ".webp": true, ".svg": true, ".ico": true,
-	".tiff": true, ".tif": true, ".heic": true, ".heif": true,
-}
-
-var videoExtensions = map[string]bool{
-	".mp4": true, ".mkv": true, ".avi": true, ".mov": true,
-	".wmv": true, ".flv": true, ".webm": true, ".m4v": true,
-	".mpeg": true, ".mpg": true, ".3gp": true, ".ts": true,
-}
-
-var playlistExtensions = map[string]bool{
-	".wpl": true,
-}
-
-var mimeTypes = map[string]string{
-	".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-	".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
-	".svg": "image/svg+xml", ".ico": "image/x-icon",
-	".mp4": "video/mp4", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo",
-	".mov": "video/quicktime", ".wmv": "video/x-ms-wmv", ".flv": "video/x-flv",
-	".webm": "video/webm", ".m4v": "video/x-m4v",
-	".wpl": "application/vnd.ms-wpl",
-}
 
 const (
 	// Number of files to process before committing a batch
@@ -502,10 +477,10 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 	}
 
 	ext := strings.ToLower(filepath.Ext(info.Name()))
-	fileType := getFileType(ext)
+	fileType := mediatypes.GetFileType(ext)
 
 	// Skip unsupported files
-	if fileType == "" {
+	if fileType == mediatypes.FileTypeOther {
 		return database.MediaFile{}, false
 	}
 
@@ -513,10 +488,10 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 		Name:       info.Name(),
 		Path:       relPath,
 		ParentPath: parentPath,
-		Type:       database.FileType(fileType),
+		Type:       fileType,
 		Size:       info.Size(),
 		ModTime:    info.ModTime(),
-		MimeType:   mimeTypes[ext],
+		MimeType:   mediatypes.GetMimeType(ext),
 		FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", relPath, info.Size(), info.ModTime().Unix())))),
 	}, true
 }
@@ -789,17 +764,4 @@ func (idx *Indexer) TriggerIndex() {
 // GetProgress returns the current indexing progress
 func (idx *Indexer) GetProgress() IndexProgress {
 	return idx.getProgress()
-}
-
-func getFileType(ext string) string {
-	if imageExtensions[ext] {
-		return "image"
-	}
-	if videoExtensions[ext] {
-		return "video"
-	}
-	if playlistExtensions[ext] {
-		return "playlist"
-	}
-	return ""
 }

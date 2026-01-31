@@ -1,21 +1,28 @@
 package database
 
-import "time"
+import (
+	"time"
 
-// FileType represents the type of a media file.
-type FileType string
+	"media-viewer/internal/mediatypes"
+)
 
+// FileType re-exported for convenience
+type FileType = mediatypes.FileType
+
+// Re-exported FileType constants from mediatypes package for convenience.
+// These allow consumers of the database package to use FileType constants
+// without importing mediatypes directly.
 const (
 	// FileTypeFolder represents a directory.
-	FileTypeFolder FileType = "folder"
+	FileTypeFolder = mediatypes.FileTypeFolder
 	// FileTypeImage represents an image file.
-	FileTypeImage FileType = "image"
+	FileTypeImage = mediatypes.FileTypeImage
 	// FileTypeVideo represents a video file.
-	FileTypeVideo FileType = "video"
+	FileTypeVideo = mediatypes.FileTypeVideo
 	// FileTypePlaylist represents a playlist file.
-	FileTypePlaylist FileType = "playlist"
+	FileTypePlaylist = mediatypes.FileTypePlaylist
 	// FileTypeOther represents an unknown or unsupported file type.
-	FileTypeOther FileType = "other"
+	FileTypeOther = mediatypes.FileTypeOther
 )
 
 // MediaFile represents a file or folder in the media library.

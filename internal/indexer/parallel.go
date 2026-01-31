@@ -14,6 +14,7 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
+	"media-viewer/internal/mediatypes"
 	"media-viewer/internal/workers"
 )
 
@@ -246,7 +247,6 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 		parentPath = ""
 	}
 
-	// Handle directories
 	if job.info.IsDir() {
 		return fileResult{
 			file: &database.MediaFile{
@@ -256,19 +256,17 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 				Type:       database.FileTypeFolder,
 				Size:       0,
 				ModTime:    job.info.ModTime(),
-				FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(job.relPath+job.info.ModTime().String()))), //nolint:gosec // MD5 for cache key, not security
+				FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(job.relPath+job.info.ModTime().String()))), //nolint:gosec // MD5 used for cache key generation, not security
 			},
 			isDir: true,
 		}
 	}
 
-	// Handle files
 	ext := strings.ToLower(filepath.Ext(job.info.Name()))
-	fileType := getFileType(ext)
+	fileType := mediatypes.GetFileType(ext)
 
-	// Skip unsupported files
-	if fileType == "" {
-		return fileResult{} // Empty result, will be filtered out
+	if fileType == mediatypes.FileTypeOther {
+		return fileResult{}
 	}
 
 	return fileResult{
@@ -276,11 +274,11 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 			Name:       job.info.Name(),
 			Path:       job.relPath,
 			ParentPath: parentPath,
-			Type:       database.FileType(fileType),
+			Type:       fileType,
 			Size:       job.info.Size(),
 			ModTime:    job.info.ModTime(),
-			MimeType:   mimeTypes[ext],
-			FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", job.relPath, job.info.Size(), job.info.ModTime().Unix())))), //nolint:gosec // MD5 for cache key, not security
+			MimeType:   mediatypes.GetMimeType(ext),
+			FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", job.relPath, job.info.Size(), job.info.ModTime().Unix())))), //nolint:gosec // MD5 used for cache key generation, not security
 		},
 		isDir: false,
 	}

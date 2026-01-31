@@ -291,65 +291,6 @@ var (
 	)
 )
 
-// Scanner metrics
-var (
-	ScannerOperationsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "media_viewer_scanner_operations_total",
-			Help: "Total number of scanner operations",
-		},
-		[]string{"operation", "status"},
-	)
-
-	ScannerOperationDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "media_viewer_scanner_operation_duration_seconds",
-			Help:    "Scanner operation duration in seconds",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
-		},
-		[]string{"operation"},
-	)
-
-	ScannerItemsReturned = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "media_viewer_scanner_items_returned",
-			Help:    "Number of items returned by scanner operations",
-			Buckets: []float64{0, 1, 5, 10, 25, 50, 100, 250, 500, 1000},
-		},
-		[]string{"operation"},
-	)
-
-	ScannerFilesScanned = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "media_viewer_scanner_files_scanned_total",
-			Help: "Total number of files scanned during recursive operations",
-		},
-		[]string{"operation"},
-	)
-
-	ScannerWatcherEventsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "media_viewer_scanner_watcher_events_total",
-			Help: "Total number of filesystem watcher events",
-		},
-		[]string{"event_type"},
-	)
-
-	ScannerWatcherErrors = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "media_viewer_scanner_watcher_errors_total",
-			Help: "Total number of filesystem watcher errors",
-		},
-	)
-
-	ScannerWatchedDirectories = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "media_viewer_scanner_watched_directories",
-			Help: "Number of directories currently being watched",
-		},
-	)
-)
-
 // SetAppInfo sets the application info metric
 func SetAppInfo(version, commit, goVersion string) {
 	AppInfo.WithLabelValues(version, commit, goVersion).Set(1)
