@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Select All" button now toggles between selecting all and deselecting all items
 - Button text updates to indicate current action ("All" or "None")
 
+#### New Metrics
+
+- **Database Size Metrics**: Added Prometheus metrics to track SQLite database file sizes
+    - `media_viewer_db_size_bytes{file="main"}` - Main database file size
+    - `media_viewer_db_size_bytes{file="wal"}` - Write-ahead log file size
+    - `media_viewer_db_size_bytes{file="shm"}` - Shared memory file size
+- **Grafana Dashboard Updates**: Added new "Database Storage" section with:
+    - Total database size stat panel with threshold alerts (yellow >100MB, red >500MB)
+    - Individual panels for main DB and WAL file sizes
+    - Storage distribution pie chart
+    - Database size over time graph
+    - Database growth rate trend analysis
+
 ### User Interface Improvements
 
 #### Layout Consistency
@@ -64,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Timeout-Protected Video Streaming**: Added chunked streaming with per-write timeouts to prevent slow/disconnected clients from holding server resources indefinitely
 - **Idle Connection Detection**: Streams are automatically terminated if no data flows for a configurable period
 - **Client Disconnect Handling**: Proper detection and cleanup when clients disconnect during video streaming
+
+#### Metrics Improvements
+
+- **Reduced Metrics Cardinality**: Fixed high-cardinality issue where individual file paths under `/api/file/`, `/api/thumbnail/`, `/api/stream/`, and `/api/stream-info/` were creating separate metric labels
+    - Paths are now normalized to `/api/file/{path}`, `/api/thumbnail/{path}`, etc.
+    - Prevents Prometheus memory bloat from thousands of unique metric labels
 
 #### Other Performance Improvements
 
