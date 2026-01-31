@@ -75,22 +75,33 @@ func Metrics(config MetricsConfig) func(http.Handler) http.Handler {
 
 // normalizePath normalizes the path for metrics to avoid high cardinality
 func normalizePath(path string) string {
-	// Replace dynamic segments with placeholders
-	parts := strings.Split(path, "/")
-	for i, part := range parts {
-		// Skip empty parts
-		if part == "" {
-			continue
-		}
+	// Define prefixes that have wildcard path parameters
+	// These routes capture arbitrary file paths and should be collapsed
+	wildcardPrefixes := []string{
+		"/api/file/",
+		"/api/thumbnail/",
+		"/api/stream/",
+		"/api/stream-info/",
+	}
 
-		// Check if this looks like a dynamic segment (file path, ID, etc.)
-		// Keep the first few path segments for context
-		if i > 3 {
-			parts[i] = "{path}"
-			// Join remaining parts and break
-			return strings.Join(parts[:i+1], "/")
+	// Check if this path matches a known wildcard route
+	for _, prefix := range wildcardPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			// Return just the prefix (without trailing slash) + placeholder
+			return strings.TrimSuffix(prefix, "/") + "/{path}"
 		}
+	}
+
+	// For other paths, keep reasonable granularity but still protect against
+	// unexpected high cardinality (e.g., query params leaking into path)
+	parts := strings.Split(path, "/")
+
+	// If path has more than 5 segments, truncate to prevent cardinality issues
+	// This handles any routes we might have missed
+	if len(parts) > 5 {
+		return strings.Join(parts[:5], "/") + "/{path}"
 	}
 
 	return path
 }
+
