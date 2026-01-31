@@ -3,10 +3,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const setupForm = document.getElementById('setup-form');
     const loading = document.getElementById('loading');
     const loginError = document.getElementById('login-error');
+    const loginErrorText = document.getElementById('login-error-text');
     const setupError = document.getElementById('setup-error');
+    const setupErrorText = document.getElementById('setup-error-text');
+
+    // Setup password visibility toggles
+    setupPasswordToggles();
 
     // Check if setup is required
     checkSetupRequired();
+
+    /**
+     * Setup password visibility toggle buttons
+     */
+    function setupPasswordToggles() {
+        const toggles = document.querySelectorAll('.password-toggle');
+
+        toggles.forEach((toggle) => {
+            toggle.addEventListener('click', () => {
+                const wrapper = toggle.closest('.password-input-wrapper');
+                const input = wrapper.querySelector('input');
+                const eyeIcon = toggle.querySelector('.icon-eye');
+                const eyeOffIcon = toggle.querySelector('.icon-eye-off');
+
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    eyeIcon.style.display = 'none';
+                    eyeOffIcon.style.display = 'block';
+                    toggle.setAttribute('aria-label', 'Hide password');
+                } else {
+                    input.type = 'password';
+                    eyeIcon.style.display = 'block';
+                    eyeOffIcon.style.display = 'none';
+                    toggle.setAttribute('aria-label', 'Show password');
+                }
+
+                // Keep focus on the input for better UX
+                input.focus();
+            });
+        });
+    }
 
     async function checkSetupRequired() {
         showLoading();
@@ -61,13 +97,29 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('setup-password').focus();
     }
 
-    function showError(element, message) {
-        element.textContent = message;
-        element.classList.remove('hidden');
+    function showError(errorElement, textElement, message) {
+        textElement.textContent = message;
+        errorElement.classList.remove('hidden');
+
+        // Add shake animation to the relevant input(s)
+        const form = errorElement.closest('form');
+        const inputs = form.querySelectorAll('input');
+        inputs.forEach((input) => {
+            input.classList.add('error');
+            setTimeout(() => input.classList.remove('error'), 400);
+        });
     }
 
-    function hideError(element) {
-        element.classList.add('hidden');
+    function hideError(errorElement) {
+        errorElement.classList.add('hidden');
+    }
+
+    function selectPasswordText(inputId) {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.focus();
+            input.select();
+        }
     }
 
     // Login form submission
@@ -75,10 +127,12 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         hideError(loginError);
 
-        const password = document.getElementById('login-password').value;
+        const passwordInput = document.getElementById('login-password');
+        const password = passwordInput.value;
 
         if (!password) {
-            showError(loginError, 'Please enter your password');
+            showError(loginError, loginErrorText, 'Please enter your password');
+            passwordInput.focus();
             return;
         }
 
@@ -97,11 +151,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.location.href = '/';
             } else {
                 const errorText = await response.text();
-                showError(loginError, errorText || 'Invalid password');
+                showError(loginError, loginErrorText, errorText || 'Invalid password');
+                // Select the password text so user can easily retype or see it
+                selectPasswordText('login-password');
             }
         } catch (error) {
             console.error('Login error:', error);
-            showError(loginError, 'An error occurred. Please try again.');
+            showError(loginError, loginErrorText, 'An error occurred. Please try again.');
+            selectPasswordText('login-password');
         } finally {
             submitBtn.disabled = false;
             submitBtn.textContent = 'Login';
@@ -118,12 +175,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Validation
         if (password.length < 6) {
-            showError(setupError, 'Password must be at least 6 characters');
+            showError(setupError, setupErrorText, 'Password must be at least 6 characters');
+            selectPasswordText('setup-password');
             return;
         }
 
         if (password !== confirm) {
-            showError(setupError, 'Passwords do not match');
+            showError(setupError, setupErrorText, 'Passwords do not match');
+            selectPasswordText('setup-confirm');
             return;
         }
 
@@ -154,14 +213,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                 const errorText = await response.text();
-                showError(setupError, errorText || 'Failed to create password');
+                showError(setupError, setupErrorText, errorText || 'Failed to create password');
             }
         } catch (error) {
             console.error('Setup error:', error);
-            showError(setupError, 'An error occurred. Please try again.');
+            showError(setupError, setupErrorText, 'An error occurred. Please try again.');
         } finally {
             submitBtn.disabled = false;
             submitBtn.textContent = 'Create Password';
         }
+    });
+
+    // Clear error when user starts typing
+    document.getElementById('login-password').addEventListener('input', () => {
+        hideError(loginError);
+    });
+
+    document.getElementById('setup-password').addEventListener('input', () => {
+        hideError(setupError);
+    });
+
+    document.getElementById('setup-confirm').addEventListener('input', () => {
+        hideError(setupError);
     });
 });

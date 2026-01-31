@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Playlist View Hotzones** - previously, these were blocking the video controls in the playlist. ([#56](https://github.com/djryanj/media-viewer/issues/56))
 
+### Changed
+
+- **Login Page UX Improvements**
+    - Added show/hide password toggle (eye icon) for all password fields
+    - Password text is now selected on login failure, allowing easy correction
+    - Added shake animation on invalid password for visual feedback
+    - Error messages auto-clear when user starts typing
+    - Improved accessibility with proper ARIA labels
+    - Better focus management after password visibility toggle
+
 ## [v0.4.0] - January 31, 2026
 
 ### Added
