@@ -1,10 +1,8 @@
 # Media Viewer
 
-<div style="text-align: center;">
-  ![Media Viewer](./static/icons/icon-512x512.png)
-</div>
+<div style="text-align:center"><img src="static/icons/icon-192x192.png" /></div>
 
-A lightweight, containerized web application for browsing and viewing images and videos from a mounted directory.
+A lightweight, containerized, single-user web application for browsing and viewing images and videos from a mounted directory.
 
 ## Features
 
