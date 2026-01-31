@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Error messages auto-clear when user starts typing
     - Improved accessibility with proper ARIA labels
     - Better focus management after password visibility toggle
+- Consolidated duplicate media type definitions into new `mediatypes` package
+
+### Removed
+
+- Removed unused `media/scanner.go` and `media/types.go` (superseded by database-backed indexer)
 
 ## [v0.4.0] - January 31, 2026
 

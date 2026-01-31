@@ -47,17 +47,6 @@
 //   - ThumbnailGenerationLastDuration: Gauge of last generation run duration
 //   - ThumbnailGenerationLastTimestamp: Gauge of last generation completion time
 //
-// ## Scanner Metrics
-//
-// Track filesystem scanning and watching:
-//   - ScannerOperationsTotal: Counter by operation and status
-//   - ScannerOperationDuration: Histogram of operation duration
-//   - ScannerItemsReturned: Histogram of items returned per operation
-//   - ScannerFilesScanned: Counter of files scanned
-//   - ScannerWatcherEventsTotal: Counter of filesystem events by type
-//   - ScannerWatcherErrors: Counter of watcher errors
-//   - ScannerWatchedDirectories: Gauge of directories being watched
-//
 // ## Media Library Metrics
 //
 // Track media library contents:
