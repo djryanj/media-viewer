@@ -2,6 +2,8 @@ package metrics
 
 import (
 	"os"
+	"runtime"
+	"runtime/debug"
 	"time"
 
 	"media-viewer/internal/logging"
@@ -29,6 +31,7 @@ type Collector struct {
 	dbPath        string
 	interval      time.Duration
 	stopChan      chan struct{}
+	lastGCCount   uint32
 }
 
 // NewCollector creates a new metrics collector
@@ -69,6 +72,9 @@ func (c *Collector) collectLoop() {
 }
 
 func (c *Collector) collect() {
+	// Collect memory metrics
+	c.collectMemoryMetrics()
+
 	// Collect database file size
 	c.collectDBSize()
 
@@ -90,6 +96,25 @@ func (c *Collector) collect() {
 		stats.TotalFiles, stats.TotalFolders, stats.TotalFavorites, stats.TotalTags)
 }
 
+func (c *Collector) collectMemoryMetrics() {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+
+	GoMemAllocBytes.Set(float64(memStats.Alloc))
+	GoMemSysBytes.Set(float64(memStats.Sys))
+
+	// Track GC runs (as a counter, we need to track the delta)
+	if memStats.NumGC > c.lastGCCount {
+		GoGCRuns.Add(float64(memStats.NumGC - c.lastGCCount))
+		c.lastGCCount = memStats.NumGC
+	}
+
+	// Report GOMEMLIMIT
+	if limit := debug.SetMemoryLimit(-1); limit > 0 && limit < 1<<62 {
+		GoMemLimit.Set(float64(limit))
+	}
+}
+
 func (c *Collector) collectDBSize() {
 	if c.dbPath == "" {
 		return
@@ -99,7 +124,7 @@ func (c *Collector) collectDBSize() {
 	if fileInfo, err := os.Stat(c.dbPath); err == nil {
 		DBSizeBytes.WithLabelValues("main").Set(float64(fileInfo.Size()))
 	} else {
-		logging.Warn("Failed to get database file size: %v", err)
+		logging.Debug("Failed to get database file size: %v", err)
 	}
 
 	// WAL file (Write-Ahead Log)

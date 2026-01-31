@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## Version 0.3.1 - 2026-01-30
+
+### New Features
+
+#### Memory Management for Kubernetes
+
+- **Automatic GOMEMLIMIT Configuration**: Added support for configuring Go's memory limit from Kubernetes container limits via the Downward API
+    - Set `MEMORY_LIMIT` environment variable using `resourceFieldRef` to pass container memory limits
+    - `MEMORY_RATIO` environment variable controls what percentage of container memory is allocated to Go heap (default: 85%)
+    - Remaining memory is reserved for FFmpeg subprocesses, image processing, and OS buffers
+    - Direct `GOMEMLIMIT` override supported for non-Kubernetes deployments
+
+- **Memory Metrics**: Added Prometheus metrics for monitoring memory usage
+    - `media_viewer_go_memlimit_bytes` - Configured GOMEMLIMIT value
+    - `media_viewer_go_memalloc_bytes` - Current Go heap allocation
+    - `media_viewer_go_memsys_bytes` - Total memory obtained from OS
+    - `media_viewer_go_gc_runs_total` - Garbage collection cycle count
+
+- **Startup Memory Reporting**: Memory configuration is now logged at startup, showing container limit, ratio, calculated GOMEMLIMIT, and memory reserved for external processes
+
+#### New Environment Variables
+
+| Variable       | Default | Description                                                    |
+| -------------- | ------- | -------------------------------------------------------------- |
+| `MEMORY_LIMIT` | (none)  | Container memory limit in bytes (from Kubernetes Downward API) |
+| `MEMORY_RATIO` | `0.85`  | Percentage of container memory for Go heap (0.0-1.0)           |
+| `GOMEMLIMIT`   | (none)  | Direct Go memory limit override (e.g., `400MiB`)               |
+
 ## Version 0.3.0 - 2026-01-30
 
 ### New Features

@@ -601,3 +601,52 @@ func getEnvBool(key string, defaultValue bool) bool {
 	}
 	return parsed
 }
+
+// LogMemoryConfig logs the memory configuration
+func LogMemoryConfig(memConfig MemoryConfig) {
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("MEMORY CONFIGURATION")
+	logging.Info("------------------------------------------------------------")
+
+	if !memConfig.Configured {
+		logging.Info("  GOMEMLIMIT:          not configured")
+		logging.Info("  (Set MEMORY_LIMIT or GOMEMLIMIT to enable memory limits)")
+		return
+	}
+
+	switch memConfig.Source {
+	case "GOMEMLIMIT":
+		logging.Info("  Source:              GOMEMLIMIT environment variable")
+		logging.Info("  GOMEMLIMIT:          %s", formatBytesStartup(memConfig.GoMemLimit))
+	case "MEMORY_LIMIT":
+		logging.Info("  Source:              MEMORY_LIMIT (Kubernetes Downward API)")
+		logging.Info("  Container Limit:     %s", formatBytesStartup(memConfig.ContainerLimit))
+		logging.Info("  Memory Ratio:        %.1f%%", memConfig.Ratio*100)
+		logging.Info("  GOMEMLIMIT:          %s", formatBytesStartup(memConfig.GoMemLimit))
+		logging.Info("  Reserved for OS/FFmpeg: %s", formatBytesStartup(memConfig.ContainerLimit-memConfig.GoMemLimit))
+	}
+}
+
+// MemoryConfig holds memory configuration for logging
+type MemoryConfig struct {
+	Configured     bool
+	Source         string
+	ContainerLimit int64
+	GoMemLimit     int64
+	Ratio          float64
+}
+
+// formatBytesStartup formats bytes into human-readable string
+func formatBytesStartup(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}

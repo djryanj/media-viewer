@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
+	"media-viewer/internal/memory"
 	"media-viewer/internal/metrics"
 	"media-viewer/internal/workers"
 
@@ -62,6 +64,7 @@ type ThumbnailGenerator struct {
 	enabled            bool
 	db                 *database.Database
 	generationInterval time.Duration
+	memoryMonitor      *memory.Monitor
 
 	// Background generation state
 	stopChan        chan struct{}
@@ -120,7 +123,7 @@ type GenerationStats struct {
 }
 
 // NewThumbnailGenerator creates a new ThumbnailGenerator instance.
-func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database.Database, generationInterval time.Duration) *ThumbnailGenerator {
+func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database.Database, generationInterval time.Duration, memMonitor *memory.Monitor) *ThumbnailGenerator {
 	if enabled {
 		logging.Debug("ThumbnailGenerator: enabled, cache dir: %s", cacheDir)
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
@@ -141,6 +144,7 @@ func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database
 		enabled:            enabled,
 		db:                 db,
 		generationInterval: generationInterval,
+		memoryMonitor:      memMonitor,
 		stopChan:           make(chan struct{}),
 	}
 }
@@ -696,52 +700,33 @@ func (t *ThumbnailGenerator) drawEmptyFolderIcon(canvas *image.RGBA) {
 func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePath string) (image.Image, error) {
 	logging.Debug("Opening image: %s", filePath)
 
-	actualType, err := detectFileType(filePath)
-	if err != nil {
-		logging.Debug("Could not detect file type for %s: %v", filePath, err)
-	} else {
-		logging.Debug("Detected file type: %s for %s", actualType, filePath)
+	// Check memory before processing
+	if t.memoryMonitor != nil && !t.memoryMonitor.WaitIfPaused() {
+		return nil, fmt.Errorf("thumbnail generation stopped")
 	}
 
-	img, err := imaging.Open(filePath, imaging.AutoOrientation(true))
+	// Use constrained image loading to prevent OOM
+	img, err := LoadImageConstrained(filePath, MaxImageDimension, MaxImagePixels)
 	if err == nil {
 		return img, nil
 	}
 
-	logging.Debug("imaging.Open failed for %s: %v, trying fallback methods", filePath, err)
+	logging.Debug("Constrained load failed for %s: %v, trying fallback methods", filePath, err)
 
-	img, err = decodeImageFile(filePath)
+	// Try standard imaging library
+	img, err = imaging.Open(filePath, imaging.AutoOrientation(true))
 	if err == nil {
 		return img, nil
 	}
 
-	logging.Debug("Standard decode failed for %s: %v, trying ffmpeg fallback", filePath, err)
+	logging.Debug("imaging.Open failed for %s: %v, trying ffmpeg fallback", filePath, err)
 
+	// FFmpeg fallback
 	img, err = t.generateImageWithFFmpeg(ctx, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("all image decode methods failed for %s: %w", filePath, err)
 	}
 
-	return img, nil
-}
-
-func decodeImageFile(filePath string) (image.Image, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logging.Warn("failed to close image file %s: %v", filePath, err)
-		}
-	}()
-
-	img, format, err := image.Decode(file)
-	if err != nil {
-		return nil, err
-	}
-
-	logging.Debug("Decoded image format: %s for %s", format, filePath)
 	return img, nil
 }
 
@@ -886,66 +871,6 @@ func (t *ThumbnailGenerator) GetFileType(path string) database.FileType {
 		return database.FileTypeVideo
 	}
 	return database.FileTypeOther
-}
-
-func detectFileType(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logging.Warn("failed to close file %s: %v", filePath, err)
-		}
-	}()
-
-	header := make([]byte, 32)
-	n, err := file.Read(header)
-	if err != nil {
-		return "", err
-	}
-	header = header[:n]
-
-	switch {
-	case len(header) >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF:
-		return "jpeg", nil
-
-	case len(header) >= 8 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47:
-		return "png", nil
-
-	case len(header) >= 4 && header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38:
-		return "gif", nil
-
-	case len(header) >= 12 && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46 &&
-		header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50:
-		return "webp", nil
-
-	case len(header) >= 2 && header[0] == 0x42 && header[1] == 0x4D:
-		return "bmp", nil
-
-	case len(header) >= 4 && ((header[0] == 0x49 && header[1] == 0x49 && header[2] == 0x2A && header[3] == 0x00) ||
-		(header[0] == 0x4D && header[1] == 0x4D && header[2] == 0x00 && header[3] == 0x2A)):
-		return "tiff", nil
-
-	case len(header) >= 12 && header[4] == 0x66 && header[5] == 0x74 && header[6] == 0x79 && header[7] == 0x70:
-		brand := string(header[8:12])
-		if brand == "heic" || brand == "heix" || brand == "hevc" || brand == "hevx" || brand == "mif1" || brand == "msf1" {
-			return "heif", nil
-		}
-		if brand == "avif" || brand == "avis" {
-			return "avif", nil
-		}
-		return "mp4-container", nil
-
-	case len(header) >= 2 && header[0] == 0xFF && header[1] == 0x0A:
-		return "jxl", nil
-
-	case len(header) >= 12 && header[0] == 0x00 && header[1] == 0x00 && header[2] == 0x00 && header[3] == 0x0C &&
-		header[4] == 0x4A && header[5] == 0x58 && header[6] == 0x4C && header[7] == 0x20:
-		return "jxl", nil
-	}
-
-	return "unknown", nil
 }
 
 // InvalidateThumbnail removes the cached thumbnail for a specific path
@@ -1268,8 +1193,15 @@ func (t *ThumbnailGenerator) processBatch(files []database.MediaFile) {
 		return
 	}
 
-	// Get optimal worker count based on available resources using workers utility
+	// Get base worker count
 	numWorkers := workers.ForMixed(maxThumbnailWorkers)
+
+	// Reduce workers if memory is under pressure
+	if t.memoryMonitor != nil && t.memoryMonitor.ShouldThrottle() {
+		numWorkers = max(1, numWorkers/2)
+		logging.Info("Memory pressure detected, reducing thumbnail workers to %d", numWorkers)
+	}
+
 	if numWorkers > len(files) {
 		numWorkers = len(files)
 	}
@@ -1335,11 +1267,9 @@ func (t *ThumbnailGenerator) thumbnailWorker(workerID int, jobs <-chan database.
 	logging.Debug("Thumbnail worker %d started", workerID)
 	defer logging.Debug("Thumbnail worker %d stopped", workerID)
 
-	// Create a context that cancels when stopChan is closed
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Monitor stop channel in a separate goroutine
 	go func() {
 		select {
 		case <-t.stopChan:
@@ -1354,6 +1284,11 @@ func (t *ThumbnailGenerator) thumbnailWorker(workerID int, jobs <-chan database.
 		case <-t.stopChan:
 			return
 		default:
+		}
+
+		// Wait if memory is critical
+		if t.memoryMonitor != nil && !t.memoryMonitor.WaitIfPaused() {
+			return // Stop signal received while waiting
 		}
 
 		// Update current file being processed
@@ -1375,6 +1310,11 @@ func (t *ThumbnailGenerator) thumbnailWorker(workerID int, jobs <-chan database.
 			path:    file.Path,
 			skipped: false,
 			err:     err,
+		}
+
+		// If memory is under pressure, trigger GC after each image
+		if t.memoryMonitor != nil && t.memoryMonitor.ShouldThrottle() {
+			runtime.GC()
 		}
 	}
 }
