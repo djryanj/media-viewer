@@ -35,8 +35,10 @@ type BulkFavoriteResponse struct {
 }
 
 // GetFavorites returns all favorite media files
-func (h *Handlers) GetFavorites(w http.ResponseWriter, _ *http.Request) {
-	favorites, err := h.db.GetFavorites()
+func (h *Handlers) GetFavorites(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	favorites, err := h.db.GetFavorites(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get favorites", http.StatusInternalServerError)
 		return
@@ -52,6 +54,8 @@ func (h *Handlers) GetFavorites(w http.ResponseWriter, _ *http.Request) {
 
 // AddFavorite adds a media file to favorites
 func (h *Handlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req FavoriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -63,7 +67,7 @@ func (h *Handlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.AddFavorite(req.Path, req.Name, req.Type); err != nil {
+	if err := h.db.AddFavorite(ctx, req.Path, req.Name, req.Type); err != nil {
 		http.Error(w, "Failed to add favorite", http.StatusInternalServerError)
 		return
 	}
@@ -73,6 +77,8 @@ func (h *Handlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
 
 // RemoveFavorite removes a media file from favorites
 func (h *Handlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req FavoriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -84,7 +90,7 @@ func (h *Handlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.RemoveFavorite(req.Path); err != nil {
+	if err := h.db.RemoveFavorite(ctx, req.Path); err != nil {
 		http.Error(w, "Failed to remove favorite", http.StatusInternalServerError)
 		return
 	}
@@ -94,6 +100,8 @@ func (h *Handlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 
 // BulkAddFavorites adds multiple items to favorites at once
 func (h *Handlers) BulkAddFavorites(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req BulkFavoriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -122,7 +130,7 @@ func (h *Handlers) BulkAddFavorites(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if err := h.db.AddFavorite(item.Path, item.Name, item.Type); err != nil {
+		if err := h.db.AddFavorite(ctx, item.Path, item.Name, item.Type); err != nil {
 			response.Failed++
 			if len(response.Errors) < 10 {
 				response.Errors = append(response.Errors, item.Path+": "+err.Error())
@@ -142,6 +150,8 @@ func (h *Handlers) BulkAddFavorites(w http.ResponseWriter, r *http.Request) {
 
 // BulkRemoveFavorites removes multiple items from favorites at once
 func (h *Handlers) BulkRemoveFavorites(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req BulkFavoriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -170,7 +180,7 @@ func (h *Handlers) BulkRemoveFavorites(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if err := h.db.RemoveFavorite(path); err != nil {
+		if err := h.db.RemoveFavorite(ctx, path); err != nil {
 			response.Failed++
 			if len(response.Errors) < 10 {
 				response.Errors = append(response.Errors, path+": "+err.Error())
@@ -190,13 +200,15 @@ func (h *Handlers) BulkRemoveFavorites(w http.ResponseWriter, r *http.Request) {
 
 // CheckFavorite checks if a media file is in favorites
 func (h *Handlers) CheckFavorite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "Path is required", http.StatusBadRequest)
 		return
 	}
 
-	isFavorite := h.db.IsFavorite(path)
+	isFavorite := h.db.IsFavorite(ctx, path)
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]bool{"isFavorite": isFavorite})

@@ -33,45 +33,12 @@ type Session struct {
 // SessionDuration is the length of time a session remains valid.
 const SessionDuration = 7 * 24 * time.Hour // 7 days
 
-// InitAuthTables creates the authentication tables.
-// func (d *Database) InitAuthTables() error {
-// 	d.mu.Lock()
-// 	defer d.mu.Unlock()
-
-// 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
-// 	defer cancel()
-
-// 	schema := `
-// 	CREATE TABLE IF NOT EXISTS users (
-// 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-// 		password_hash TEXT NOT NULL,
-// 		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-// 		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-// 	);
-
-// 	CREATE TABLE IF NOT EXISTS sessions (
-// 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-// 		user_id INTEGER NOT NULL,
-// 		token TEXT NOT NULL UNIQUE,
-// 		expires_at INTEGER NOT NULL,
-// 		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-// 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-// 	);
-
-// 	CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-// 	CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
-// 	`
-
-// 	_, err := d.db.ExecContext(ctx, schema)
-// 	return err
-// }
-
 // HasUsers checks if a user exists (single-user app).
-func (d *Database) HasUsers() bool {
+func (d *Database) HasUsers(ctx context.Context) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var count int
@@ -83,7 +50,7 @@ func (d *Database) HasUsers() bool {
 }
 
 // CreateUser creates the single user with the given password.
-func (d *Database) CreateUser(password string) error {
+func (d *Database) CreateUser(ctx context.Context, password string) error {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("create_user", start, err) }()
@@ -91,7 +58,7 @@ func (d *Database) CreateUser(password string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Hash the password
@@ -112,7 +79,7 @@ func (d *Database) CreateUser(password string) error {
 }
 
 // ValidatePassword checks the password and returns the user if valid.
-func (d *Database) ValidatePassword(password string) (*User, error) {
+func (d *Database) ValidatePassword(ctx context.Context, password string) (*User, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("validate_password", start, err) }()
@@ -120,7 +87,7 @@ func (d *Database) ValidatePassword(password string) (*User, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var user User
@@ -148,7 +115,7 @@ func (d *Database) ValidatePassword(password string) (*User, error) {
 }
 
 // CreateSession creates a new session for a user.
-func (d *Database) CreateSession(userID int64) (*Session, error) {
+func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("create_session", start, err) }()
@@ -156,7 +123,7 @@ func (d *Database) CreateSession(userID int64) (*Session, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Generate random token
@@ -192,7 +159,7 @@ func (d *Database) CreateSession(userID int64) (*Session, error) {
 }
 
 // ValidateSession checks if a session token is valid.
-func (d *Database) ValidateSession(token string) (*User, error) {
+func (d *Database) ValidateSession(ctx context.Context, token string) (*User, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("validate_session", start, err) }()
@@ -200,7 +167,7 @@ func (d *Database) ValidateSession(token string) (*User, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Hash the token for lookup
@@ -228,8 +195,14 @@ func (d *Database) ValidateSession(token string) (*User, error) {
 	// Check expiration
 	if time.Now().Unix() > expiresAt {
 		// Clean up expired session in background - don't block validation
+		// Using background context intentionally: this cleanup should complete
+		// even if the HTTP request is canceled, and the request context
+		// may already be done by the time this goroutine runs.
+		//nolint:contextcheck // Intentionally using background context for fire-and-forget cleanup
 		go func() {
-			if delErr := d.deleteSessionByHash(tokenHash); delErr != nil {
+			bgCtx, bgCancel := context.WithTimeout(context.Background(), defaultTimeout)
+			defer bgCancel()
+			if delErr := d.deleteSessionByHash(bgCtx, tokenHash); delErr != nil {
 				logging.Error("failed to delete expired session: %v", delErr)
 			}
 		}()
@@ -257,11 +230,11 @@ func (d *Database) ValidateSession(token string) (*User, error) {
 }
 
 // deleteSessionByHash removes a session by its hashed token.
-func (d *Database) deleteSessionByHash(tokenHash string) error {
+func (d *Database) deleteSessionByHash(ctx context.Context, tokenHash string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", tokenHash)
@@ -269,7 +242,7 @@ func (d *Database) deleteSessionByHash(tokenHash string) error {
 }
 
 // DeleteSession removes a session.
-func (d *Database) DeleteSession(token string) error {
+func (d *Database) DeleteSession(ctx context.Context, token string) error {
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
 		return fmt.Errorf("invalid token format: %w", err)
@@ -277,15 +250,15 @@ func (d *Database) DeleteSession(token string) error {
 	hash := sha256.Sum256(tokenBytes)
 	tokenHash := hex.EncodeToString(hash[:])
 
-	return d.deleteSessionByHash(tokenHash)
+	return d.deleteSessionByHash(ctx, tokenHash)
 }
 
 // DeleteAllSessions removes all sessions (used when password is changed).
-func (d *Database) DeleteAllSessions() error {
+func (d *Database) DeleteAllSessions(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, "DELETE FROM sessions")
@@ -293,7 +266,7 @@ func (d *Database) DeleteAllSessions() error {
 }
 
 // CleanExpiredSessions removes all expired sessions.
-func (d *Database) CleanExpiredSessions() error {
+func (d *Database) CleanExpiredSessions(ctx context.Context) error {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("clean_expired_sessions", start, err) }()
@@ -301,7 +274,7 @@ func (d *Database) CleanExpiredSessions() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err = d.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
@@ -309,7 +282,7 @@ func (d *Database) CleanExpiredSessions() error {
 }
 
 // UpdatePassword updates the user's password and invalidates all sessions.
-func (d *Database) UpdatePassword(newPassword string) error {
+func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("update_password", start, err) }()
@@ -317,7 +290,7 @@ func (d *Database) UpdatePassword(newPassword string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)

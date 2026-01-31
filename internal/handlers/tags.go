@@ -37,8 +37,10 @@ type BulkTagResponse struct {
 }
 
 // GetAllTags returns all tags
-func (h *Handlers) GetAllTags(w http.ResponseWriter, _ *http.Request) {
-	tags, err := h.db.GetAllTags()
+func (h *Handlers) GetAllTags(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tags, err := h.db.GetAllTags(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get tags", http.StatusInternalServerError)
 		return
@@ -54,13 +56,15 @@ func (h *Handlers) GetAllTags(w http.ResponseWriter, _ *http.Request) {
 
 // GetFileTags returns tags for a specific file
 func (h *Handlers) GetFileTags(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	path := r.URL.Query().Get("path")
+
 	if path == "" {
 		http.Error(w, "Path is required", http.StatusBadRequest)
 		return
 	}
 
-	tags, err := h.db.GetFileTags(path)
+	tags, err := h.db.GetFileTags(ctx, path)
 	if err != nil {
 		http.Error(w, "Failed to get tags", http.StatusInternalServerError)
 		return
@@ -76,6 +80,8 @@ func (h *Handlers) GetFileTags(w http.ResponseWriter, r *http.Request) {
 
 // GetBatchFileTags returns tags for multiple files at once
 func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req BatchTagsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -101,7 +107,7 @@ func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		tags, err := h.db.GetFileTags(path)
+		tags, err := h.db.GetFileTags(ctx, path)
 		if err != nil {
 			// Log error but continue with other paths
 			continue
@@ -119,6 +125,8 @@ func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
 
 // AddTagToFile adds a tag to a file
 func (h *Handlers) AddTagToFile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req TagRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -130,7 +138,7 @@ func (h *Handlers) AddTagToFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.AddTagToFile(req.Path, req.Tag); err != nil {
+	if err := h.db.AddTagToFile(ctx, req.Path, req.Tag); err != nil {
 		http.Error(w, "Failed to add tag", http.StatusInternalServerError)
 		return
 	}
@@ -140,6 +148,8 @@ func (h *Handlers) AddTagToFile(w http.ResponseWriter, r *http.Request) {
 
 // RemoveTagFromFile removes a tag from a file
 func (h *Handlers) RemoveTagFromFile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req TagRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -151,7 +161,7 @@ func (h *Handlers) RemoveTagFromFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.RemoveTagFromFile(req.Path, req.Tag); err != nil {
+	if err := h.db.RemoveTagFromFile(ctx, req.Path, req.Tag); err != nil {
 		http.Error(w, "Failed to remove tag", http.StatusInternalServerError)
 		return
 	}
@@ -161,6 +171,8 @@ func (h *Handlers) RemoveTagFromFile(w http.ResponseWriter, r *http.Request) {
 
 // BulkAddTag adds a tag to multiple files at once
 func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req BulkTagRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -194,7 +206,7 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if err := h.db.AddTagToFile(path, req.Tag); err != nil {
+		if err := h.db.AddTagToFile(ctx, path, req.Tag); err != nil {
 			response.Failed++
 			// Optionally collect error details (limit to prevent response bloat)
 			if len(response.Errors) < 10 {
@@ -216,6 +228,8 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 
 // BulkRemoveTag removes a tag from multiple files at once
 func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req BulkTagRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -249,7 +263,7 @@ func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if err := h.db.RemoveTagFromFile(path, req.Tag); err != nil {
+		if err := h.db.RemoveTagFromFile(ctx, path, req.Tag); err != nil {
 			response.Failed++
 			// Optionally collect error details (limit to prevent response bloat)
 			if len(response.Errors) < 10 {
@@ -271,6 +285,8 @@ func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
 
 // SetFileTags replaces all tags for a file
 func (h *Handlers) SetFileTags(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req TagRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -282,7 +298,7 @@ func (h *Handlers) SetFileTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.SetFileTags(req.Path, req.Tags); err != nil {
+	if err := h.db.SetFileTags(ctx, req.Path, req.Tags); err != nil {
 		http.Error(w, "Failed to set tags", http.StatusInternalServerError)
 		return
 	}
@@ -292,6 +308,7 @@ func (h *Handlers) SetFileTags(w http.ResponseWriter, r *http.Request) {
 
 // GetFilesByTag returns files with a specific tag
 func (h *Handlers) GetFilesByTag(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	vars := mux.Vars(r)
 	tagName := vars["tag"]
 
@@ -304,7 +321,7 @@ func (h *Handlers) GetFilesByTag(w http.ResponseWriter, r *http.Request) {
 	pageSize := 50
 	// Parse pagination from query params if needed
 
-	result, err := h.db.GetFilesByTag(tagName, page, pageSize)
+	result, err := h.db.GetFilesByTag(ctx, tagName, page, pageSize)
 	if err != nil {
 		http.Error(w, "Failed to get files", http.StatusInternalServerError)
 		return
@@ -316,6 +333,7 @@ func (h *Handlers) GetFilesByTag(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTag removes a tag entirely
 func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	vars := mux.Vars(r)
 	tagName := vars["tag"]
 
@@ -324,7 +342,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.DeleteTag(tagName); err != nil {
+	if err := h.db.DeleteTag(ctx, tagName); err != nil {
 		http.Error(w, "Failed to delete tag", http.StatusInternalServerError)
 		return
 	}
@@ -334,6 +352,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 // RenameTag renames a tag
 func (h *Handlers) RenameTag(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	vars := mux.Vars(r)
 	tagName := vars["tag"]
 
@@ -348,7 +367,7 @@ func (h *Handlers) RenameTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.RenameTag(tagName, req.NewName); err != nil {
+	if err := h.db.RenameTag(ctx, tagName, req.NewName); err != nil {
 		http.Error(w, "Failed to rename tag", http.StatusInternalServerError)
 		return
 	}

@@ -45,6 +45,10 @@ func (a *dbStatsAdapter) GetStats() metrics.Stats {
 func main() {
 	startTime := time.Now()
 
+	// Create a context for background operations that cancels on shutdown
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+
 	// Load configuration
 	config, err := startup.LoadConfig()
 	if err != nil {
@@ -66,9 +70,16 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
-		for range ticker.C {
-			if err := db.CleanExpiredSessions(); err != nil {
-				logging.Error("failed to clean expired sessions: %v", err)
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(bgCtx, 30*time.Second)
+				if err := db.CleanExpiredSessions(ctx); err != nil {
+					logging.Error("failed to clean expired sessions: %v", err)
+				}
+				cancel()
+			case <-bgCtx.Done():
+				return
 			}
 		}
 	}()

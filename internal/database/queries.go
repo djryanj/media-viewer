@@ -57,7 +57,7 @@ type SearchOptions struct {
 }
 
 // ListDirectory returns a paginated directory listing.
-func (d *Database) ListDirectory(opts ListOptions) (*DirectoryListing, error) {
+func (d *Database) ListDirectory(ctx context.Context, opts ListOptions) (*DirectoryListing, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("list_directory", start, err) }()
@@ -69,7 +69,8 @@ func (d *Database) ListDirectory(opts ListOptions) (*DirectoryListing, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Use passed context with timeout
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	totalItems, err := d.countDirectoryItemsUnlocked(ctx, opts)
@@ -146,7 +147,7 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 
 	selectQuery := `
 		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
-		FROM files 
+		FROM files
 		WHERE parent_path = ?
 	`
 	selectArgs := []interface{}{opts.Path}
@@ -335,7 +336,7 @@ func buildBreadcrumb(path string) []PathPart {
 }
 
 // Search searches for media files matching the given query.
-func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
+func (d *Database) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("search", start, err) }()
@@ -349,7 +350,7 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 	if strings.HasPrefix(queryLower, "tag:") {
 		tagName := strings.TrimSpace(opts.Query[4:]) // Preserve original case for display
 		if tagName != "" {
-			return d.GetFilesByTag(tagName, opts.Page, opts.PageSize)
+			return d.GetFilesByTag(ctx, tagName, opts.Page, opts.PageSize)
 		}
 	}
 
@@ -371,7 +372,8 @@ func (d *Database) Search(opts SearchOptions) (*SearchResult, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// Use passed context with timeout
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	// First, get files matching FTS
@@ -616,7 +618,7 @@ func (d *Database) searchByTagOnlyUnlocked(ctx context.Context, opts SearchOptio
 }
 
 // SearchSuggestions returns quick search suggestions for autocomplete.
-func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestion, error) {
+func (d *Database) SearchSuggestions(ctx context.Context, query string, limit int) ([]SearchSuggestion, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("search_suggestions", start, err) }()
@@ -635,7 +637,8 @@ func (d *Database) SearchSuggestions(query string, limit int) ([]SearchSuggestio
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	// Use passed context with timeout
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var suggestions []SearchSuggestion
@@ -758,7 +761,7 @@ func highlightMatch(text, query string) string {
 }
 
 // GetAllPlaylists returns all playlist files.
-func (d *Database) GetAllPlaylists() ([]MediaFile, error) {
+func (d *Database) GetAllPlaylists(ctx context.Context) ([]MediaFile, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("get_all_playlists", start, err) }()
@@ -766,7 +769,8 @@ func (d *Database) GetAllPlaylists() ([]MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	// Use passed context with timeout
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	query := `
@@ -810,7 +814,7 @@ func (d *Database) GetAllPlaylists() ([]MediaFile, error) {
 }
 
 // GetMediaInDirectory returns all media files in a directory (for lightbox).
-func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
+func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("get_media_in_directory", start, err) }()
@@ -818,7 +822,8 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Use passed context with timeout
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// Build sort clause - default to name if not specified
@@ -837,7 +842,7 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 
 	query := fmt.Sprintf(`
 		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
-		FROM files 
+		FROM files
 		WHERE parent_path = ? AND type IN ('image', 'video')
 		ORDER BY %s %s
 	`, sortColumn, sortDir)
@@ -883,11 +888,11 @@ func (d *Database) GetMediaInDirectory(parentPath string, sortField SortField, s
 }
 
 // GetMediaFilesInFolder returns media files directly within a folder (for folder thumbnails).
-func (d *Database) GetMediaFilesInFolder(folderPath string, limit int) ([]MediaFile, error) {
+func (d *Database) GetMediaFilesInFolder(ctx context.Context, folderPath string, limit int) ([]MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	if limit <= 0 {
@@ -934,6 +939,7 @@ func (d *Database) GetMediaFilesInFolder(folderPath string, limit int) ([]MediaF
 }
 
 // CalculateStats calculates current index statistics.
+// This method uses its own context as it's typically called from non-HTTP contexts.
 func (d *Database) CalculateStats() (IndexStats, error) {
 	start := time.Now()
 	var err error
@@ -969,12 +975,12 @@ func (d *Database) CalculateStats() (IndexStats, error) {
 	return stats, nil
 }
 
-// GetSubfolders returns all immediate subfolders of a given path
-func (d *Database) GetSubfolders(parentPath string) ([]MediaFile, error) {
+// GetSubfolders returns all immediate subfolders of a given path.
+func (d *Database) GetSubfolders(ctx context.Context, parentPath string) ([]MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	query := `
@@ -1030,7 +1036,8 @@ func (d *Database) GetSubfolders(parentPath string) ([]MediaFile, error) {
 	return folders, nil
 }
 
-// GetAllMediaFiles returns all media files (images, videos, folders) for thumbnail rebuilding
+// GetAllMediaFiles returns all media files (images, videos, folders) for thumbnail rebuilding.
+// This method uses its own context as it's typically called from non-HTTP contexts.
 func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
 	start := time.Now()
 	var err error
@@ -1095,12 +1102,15 @@ func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
 	return files, nil
 }
 
-// GetAllMediaFilesForThumbnails returns all media files ordered by path depth (root first)
-// This ensures parent folders are processed before children
+// GetAllMediaFilesForThumbnails returns all media files ordered by path depth (root first).
+// This ensures parent folders are processed before children.
+// This method uses its own context as it's typically called from non-HTTP contexts.
 func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
 	start := time.Now()
 	var err error
-	defer func() { recordQuery("get_all_media_files_for_thumbnails", start, err) }()
+	defer func() {
+		recordQuery("get_all_media_files_for_thumbnails", start, err)
+	}()
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -1114,7 +1124,7 @@ func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
 		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
 		FROM files
 		WHERE type IN (?, ?, ?)
-		ORDER BY 
+		ORDER BY
 			(LENGTH(path) - LENGTH(REPLACE(path, '/', ''))) ASC,
 			path ASC
 	`

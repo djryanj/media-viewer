@@ -461,12 +461,12 @@ func LogFatal(format string, args ...interface{}) {
 func printBanner() {
 	banner := `
 ------------------------------------------------------------
-    __  ___         ___         _    ___                    
-   /  |/  /__  ____/ (_)___ _  | |  / (_)__ _      _____  ___ 
+    __  ___         ___         _    ___
+   /  |/  /__  ____/ (_)___ _  | |  / (_)__ _      _____  ___
   / /|_/ / _ \/ __  / / __ '/  | | / / / _ \ | /| / / _ \/ __|
- / /  / /  __/ /_/ / / /_/ /   | |/ / /  __/ |/ |/ /  __/ |   
-/_/  /_/\___/\__,_/_/\__,_/    |___/_/\___/|__/|__/\___/|_|   
-                                                              
+ / /  / /  __/ /_/ / / /_/ /   | |/ / /  __/ |/ |/ /  __/ |
+/_/  /_/\___/\__,_/_/\__,_/    |___/_/\___/|__/|__/\___/|_|
+
 ------------------------------------------------------------`
 	fmt.Println(banner)
 	logging.Info("  Version:    %s", Version)
@@ -483,6 +483,11 @@ func logSystemInfo() {
 	logging.Info("  Go version:      %s", runtime.Version())
 	logging.Info("  OS/Arch:         %s/%s", runtime.GOOS, runtime.GOARCH)
 	logging.Info("  CPUs available:  %d", runtime.NumCPU())
+	logging.Info("  GOMAXPROCS:      %d", runtime.GOMAXPROCS(0))
+
+	if runtime.GOMAXPROCS(0) < runtime.NumCPU() {
+		logging.Info("  (Container CPU limit detected)")
+	}
 
 	if logging.IsDebugEnabled() {
 		logging.Debug("  Goroutines:      %d", runtime.NumGoroutine())

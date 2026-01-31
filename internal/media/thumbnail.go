@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -21,6 +22,7 @@ import (
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
 	"media-viewer/internal/metrics"
+	"media-viewer/internal/workers"
 
 	// Image format decoders - required for image.Decode to support these formats
 	_ "image/gif"
@@ -29,13 +31,36 @@ import (
 	_ "golang.org/x/image/webp" // WebP format support
 )
 
+// Sentinel errors
+var (
+	errSkipped = errors.New("skipped: thumbnail already exists")
+)
+
+const (
+	folderThumbSize    = 200
+	folderGridCellSize = 80
+	folderGridGap      = 4
+	folderGridPadding  = 20
+	folderTabHeight    = 25
+	maxSearchDepth     = 3
+
+	// Background generation settings
+	generationBatchSize  = 50
+	generationBatchDelay = 100 * time.Millisecond
+
+	// Cache metrics update interval
+	cacheMetricsInterval = 1 * time.Minute
+
+	// Maximum thumbnail workers (absolute cap)
+	maxThumbnailWorkers = 8
+)
+
 // ThumbnailGenerator generates and caches thumbnail images for media files.
 type ThumbnailGenerator struct {
 	cacheDir           string
 	mediaDir           string
 	enabled            bool
 	db                 *database.Database
-	mu                 sync.Mutex
 	generationInterval time.Duration
 
 	// Background generation state
@@ -48,6 +73,16 @@ type ThumbnailGenerator struct {
 	cacheMetricsMu sync.RWMutex
 	lastCacheSize  int64
 	lastCacheCount int
+
+	// Per-file locks to allow parallel generation of different files
+	fileLocks sync.Map // map[string]*sync.Mutex
+}
+
+// thumbnailResult holds the result of a thumbnail generation attempt
+type thumbnailResult struct {
+	path    string
+	skipped bool
+	err     error
 }
 
 // RebuildProgress tracks thumbnail rebuild progress
@@ -84,22 +119,6 @@ type GenerationStats struct {
 	CurrentFile   string    `json:"currentFile,omitempty"`
 }
 
-const (
-	folderThumbSize    = 200
-	folderGridCellSize = 80
-	folderGridGap      = 4
-	folderGridPadding  = 20
-	folderTabHeight    = 25
-	maxSearchDepth     = 3
-
-	// Background generation settings
-	generationBatchSize  = 50                     // Files per batch
-	generationBatchDelay = 100 * time.Millisecond // Delay between batches
-
-	// Cache metrics update interval
-	cacheMetricsInterval = 1 * time.Minute
-)
-
 // NewThumbnailGenerator creates a new ThumbnailGenerator instance.
 func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database.Database, generationInterval time.Duration) *ThumbnailGenerator {
 	if enabled {
@@ -131,8 +150,24 @@ func (t *ThumbnailGenerator) IsEnabled() bool {
 	return t.enabled
 }
 
+// getLock gets or creates a lock for a specific file path
+func (t *ThumbnailGenerator) getLock(path string) *sync.Mutex {
+	lock, _ := t.fileLocks.LoadOrStore(path, &sync.Mutex{})
+	mu, ok := lock.(*sync.Mutex)
+	if !ok {
+		mu = &sync.Mutex{}
+		t.fileLocks.Store(path, mu)
+	}
+	return mu
+}
+
+// releaseLock removes the lock for a file path
+func (t *ThumbnailGenerator) releaseLock(path string) {
+	t.fileLocks.Delete(path)
+}
+
 // GetThumbnail generates or retrieves a cached thumbnail for the given file.
-func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.FileType) ([]byte, error) {
+func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, fileType database.FileType) ([]byte, error) {
 	if !t.enabled {
 		return nil, fmt.Errorf("thumbnails disabled")
 	}
@@ -158,15 +193,20 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 	}
 	cachePath := filepath.Join(t.cacheDir, cacheKey)
 
-	// Check cache (for all types now, including folders during background generation)
+	// Check cache first (no lock needed for read)
 	if data, err := os.ReadFile(cachePath); err == nil {
 		metrics.ThumbnailCacheHits.Inc()
 		return data, nil
 	}
 	metrics.ThumbnailCacheMisses.Inc()
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	// Get per-file lock (allows parallel generation of different files)
+	fileLock := t.getLock(filePath)
+	fileLock.Lock()
+	defer func() {
+		fileLock.Unlock()
+		t.releaseLock(filePath)
+	}()
 
 	// Double-check cache after acquiring lock
 	if data, err := os.ReadFile(cachePath); err == nil {
@@ -181,11 +221,11 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 
 	switch fileType {
 	case database.FileTypeImage:
-		img, err = t.generateImageThumbnail(filePath)
+		img, err = t.generateImageThumbnail(ctx, filePath)
 	case database.FileTypeVideo:
-		img, err = t.generateVideoThumbnail(filePath)
+		img, err = t.generateVideoThumbnail(ctx, filePath)
 	case database.FileTypeFolder:
-		img, err = t.generateFolderThumbnail(filePath)
+		img, err = t.generateFolderThumbnail(ctx, filePath)
 	case database.FileTypePlaylist, database.FileTypeOther:
 		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_unsupported").Inc()
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
@@ -231,10 +271,6 @@ func (t *ThumbnailGenerator) GetThumbnail(filePath string, fileType database.Fil
 	return buf.Bytes(), nil
 }
 
-// =============================================================================
-// FOLDER THUMBNAIL GENERATION
-// =============================================================================
-
 // Folder colors
 var (
 	folderBodyColor  = color.RGBA{R: 240, G: 200, B: 100, A: 255} // Main folder body
@@ -242,7 +278,7 @@ var (
 	folderInnerColor = color.RGBA{R: 250, G: 235, B: 180, A: 255} // Inner area (lighter)
 )
 
-func (t *ThumbnailGenerator) generateFolderThumbnail(folderPath string) (image.Image, error) {
+func (t *ThumbnailGenerator) generateFolderThumbnail(ctx context.Context, folderPath string) (image.Image, error) {
 	logging.Debug("Generating folder thumbnail: %s", folderPath)
 
 	// Get relative path for database queries
@@ -253,7 +289,7 @@ func (t *ThumbnailGenerator) generateFolderThumbnail(folderPath string) (image.I
 	}
 
 	// Find images for the grid
-	images := t.findImagesForFolder(relativePath, 4)
+	images := t.findImagesForFolder(ctx, relativePath, 4)
 	logging.Debug("Found %d images for folder thumbnail", len(images))
 
 	// Create the folder thumbnail
@@ -261,7 +297,7 @@ func (t *ThumbnailGenerator) generateFolderThumbnail(folderPath string) (image.I
 }
 
 // findImagesForFolder finds up to maxImages images in the folder and its subdirectories
-func (t *ThumbnailGenerator) findImagesForFolder(relativePath string, maxImages int) []image.Image {
+func (t *ThumbnailGenerator) findImagesForFolder(ctx context.Context, relativePath string, maxImages int) []image.Image {
 	// Pre-allocate with expected capacity
 	images := make([]image.Image, 0, maxImages)
 
@@ -271,7 +307,7 @@ func (t *ThumbnailGenerator) findImagesForFolder(relativePath string, maxImages 
 	}
 
 	// First, try to get images directly from this folder
-	mediaFiles, err := t.db.GetMediaFilesInFolder(relativePath, maxImages)
+	mediaFiles, err := t.db.GetMediaFilesInFolder(ctx, relativePath, maxImages)
 	if err != nil {
 		logging.Error("GetMediaFilesInFolder failed: %v", err)
 		return images
@@ -290,7 +326,7 @@ func (t *ThumbnailGenerator) findImagesForFolder(relativePath string, maxImages 
 	// If we don't have enough, search subdirectories
 	if len(candidates) < maxImages {
 		additionalNeeded := maxImages - len(candidates)
-		subImages := t.findImagesInSubdirectories(relativePath, additionalNeeded, maxSearchDepth)
+		subImages := t.findImagesInSubdirectories(ctx, relativePath, additionalNeeded, maxSearchDepth)
 		candidates = append(candidates, subImages...)
 		logging.Debug("Found %d additional images from subdirectories", len(subImages))
 	}
@@ -304,7 +340,7 @@ func (t *ThumbnailGenerator) findImagesForFolder(relativePath string, maxImages 
 	for _, f := range candidates {
 		fullPath := filepath.Join(t.mediaDir, f.Path)
 
-		img, err := t.generateImageThumbnail(fullPath)
+		img, err := t.generateImageThumbnail(ctx, fullPath)
 		if err != nil {
 			logging.Debug("Failed to generate thumbnail for %s: %v", f.Path, err)
 			continue
@@ -325,7 +361,7 @@ func (t *ThumbnailGenerator) findImagesForFolder(relativePath string, maxImages 
 }
 
 // findImagesInSubdirectories recursively searches for images in subdirectories
-func (t *ThumbnailGenerator) findImagesInSubdirectories(parentPath string, maxImages, maxDepth int) []database.MediaFile {
+func (t *ThumbnailGenerator) findImagesInSubdirectories(ctx context.Context, parentPath string, maxImages, maxDepth int) []database.MediaFile {
 	if maxDepth <= 0 || maxImages <= 0 {
 		return nil
 	}
@@ -333,7 +369,7 @@ func (t *ThumbnailGenerator) findImagesInSubdirectories(parentPath string, maxIm
 	var results []database.MediaFile
 
 	// Get subdirectories using the database
-	subfolders, err := t.db.GetSubfolders(parentPath)
+	subfolders, err := t.db.GetSubfolders(ctx, parentPath)
 	if err != nil {
 		logging.Debug("Failed to get subfolders for %s: %v", parentPath, err)
 		return results
@@ -346,7 +382,7 @@ func (t *ThumbnailGenerator) findImagesInSubdirectories(parentPath string, maxIm
 
 		// Get images from this subfolder
 		remaining := maxImages - len(results)
-		mediaFiles, err := t.db.GetMediaFilesInFolder(subfolder.Path, remaining)
+		mediaFiles, err := t.db.GetMediaFilesInFolder(ctx, subfolder.Path, remaining)
 		if err != nil {
 			logging.Debug("Failed to get media files from %s: %v", subfolder.Path, err)
 			continue
@@ -364,7 +400,7 @@ func (t *ThumbnailGenerator) findImagesInSubdirectories(parentPath string, maxIm
 		// If still need more, recurse into this subfolder
 		if len(results) < maxImages {
 			remaining = maxImages - len(results)
-			subResults := t.findImagesInSubdirectories(subfolder.Path, remaining, maxDepth-1)
+			subResults := t.findImagesInSubdirectories(ctx, subfolder.Path, remaining, maxDepth-1)
 			results = append(results, subResults...)
 		}
 	}
@@ -657,11 +693,7 @@ func (t *ThumbnailGenerator) drawEmptyFolderIcon(canvas *image.RGBA) {
 	}
 }
 
-// =============================================================================
-// IMAGE THUMBNAIL GENERATION
-// =============================================================================
-
-func (t *ThumbnailGenerator) generateImageThumbnail(filePath string) (image.Image, error) {
+func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePath string) (image.Image, error) {
 	logging.Debug("Opening image: %s", filePath)
 
 	actualType, err := detectFileType(filePath)
@@ -685,7 +717,7 @@ func (t *ThumbnailGenerator) generateImageThumbnail(filePath string) (image.Imag
 
 	logging.Debug("Standard decode failed for %s: %v, trying ffmpeg fallback", filePath, err)
 
-	img, err = t.generateImageWithFFmpeg(filePath)
+	img, err = t.generateImageWithFFmpeg(ctx, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("all image decode methods failed for %s: %w", filePath, err)
 	}
@@ -713,7 +745,7 @@ func decodeImageFile(filePath string) (image.Image, error) {
 	return img, nil
 }
 
-func (t *ThumbnailGenerator) generateImageWithFFmpeg(filePath string) (image.Image, error) {
+func (t *ThumbnailGenerator) generateImageWithFFmpeg(ctx context.Context, filePath string) (image.Image, error) {
 	logging.Debug("Using ffmpeg to decode image: %s", filePath)
 
 	ffmpegPath, err := exec.LookPath("ffmpeg")
@@ -722,7 +754,8 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(filePath string) (image.Ima
 	}
 	logging.Debug("Using ffmpeg: %s", ffmpegPath)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Use passed context with timeout
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",
@@ -758,11 +791,7 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(filePath string) (image.Ima
 	return img, nil
 }
 
-// =============================================================================
-// VIDEO THUMBNAIL GENERATION
-// =============================================================================
-
-func (t *ThumbnailGenerator) generateVideoThumbnail(filePath string) (image.Image, error) {
+func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePath string) (image.Image, error) {
 	logging.Debug("Extracting video frame: %s", filePath)
 
 	ffmpegPath, err := exec.LookPath("ffmpeg")
@@ -771,7 +800,8 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(filePath string) (image.Imag
 	}
 	logging.Debug("Using ffmpeg: %s", ffmpegPath)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Use passed context with timeout
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",
@@ -791,6 +821,10 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(filePath string) (image.Imag
 	err = cmd.Run()
 	if err != nil {
 		logging.Debug("FFmpeg first attempt failed for %s: %v, stderr: %s", filePath, err, stderr.String())
+
+		// Reset context timeout for retry
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
 
 		cmd = exec.CommandContext(ctx, "ffmpeg",
 			"-i", filePath,
@@ -1228,34 +1262,120 @@ func (t *ThumbnailGenerator) runGeneration() {
 	metrics.ThumbnailGenerationLastTimestamp.Set(float64(time.Now().Unix()))
 }
 
-// processBatch processes a batch of files for thumbnail generation
+// processBatch processes a batch of files for thumbnail generation using parallel workers
 func (t *ThumbnailGenerator) processBatch(files []database.MediaFile) {
-	for _, file := range files {
+	if len(files) == 0 {
+		return
+	}
+
+	// Get optimal worker count based on available resources using workers utility
+	numWorkers := workers.ForMixed(maxThumbnailWorkers)
+	if numWorkers > len(files) {
+		numWorkers = len(files)
+	}
+
+	logging.Debug("Processing thumbnail batch with %d workers", numWorkers)
+
+	// Channels for work distribution
+	jobs := make(chan database.MediaFile, len(files))
+	results := make(chan thumbnailResult, len(files))
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go t.thumbnailWorker(i, jobs, results, &wg)
+	}
+
+	// Send jobs in a goroutine
+	go func() {
+		defer close(jobs)
+
+		for _, file := range files {
+			select {
+			case jobs <- file:
+				// Job sent successfully
+			case <-t.stopChan:
+				return // Exit the goroutine entirely
+			}
+		}
+	}()
+
+	// Wait for workers in background and close results
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results
+	for result := range results {
 		t.generationMu.Lock()
 		t.generationStats.Processed++
+
+		switch {
+		case result.err != nil && errors.Is(result.err, errSkipped):
+			t.generationStats.Skipped++
+		case result.err != nil:
+			t.generationStats.Failed++
+			logging.Debug("Failed to generate thumbnail for %s: %v", result.path, result.err)
+		case result.skipped:
+			t.generationStats.Skipped++
+		default:
+			t.generationStats.Generated++
+		}
+
+		t.generationMu.Unlock()
+	}
+}
+
+// thumbnailWorker processes thumbnail generation jobs.
+func (t *ThumbnailGenerator) thumbnailWorker(workerID int, jobs <-chan database.MediaFile, results chan<- thumbnailResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	logging.Debug("Thumbnail worker %d started", workerID)
+	defer logging.Debug("Thumbnail worker %d stopped", workerID)
+
+	// Create a context that cancels when stopChan is closed
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Monitor stop channel in a separate goroutine
+	go func() {
+		select {
+		case <-t.stopChan:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	for file := range jobs {
+		// Check for stop signal
+		select {
+		case <-t.stopChan:
+			return
+		default:
+		}
+
+		// Update current file being processed
+		t.generationMu.Lock()
 		t.generationStats.CurrentFile = file.Path
 		t.generationMu.Unlock()
 
 		// Check if thumbnail already exists
 		if t.thumbnailExists(file.Path, file.Type) {
-			t.generationMu.Lock()
-			t.generationStats.Skipped++
-			t.generationMu.Unlock()
+			results <- thumbnailResult{path: file.Path, skipped: true, err: errSkipped}
 			continue
 		}
 
 		// Generate thumbnail
 		fullPath := filepath.Join(t.mediaDir, file.Path)
-		_, err := t.GetThumbnail(fullPath, file.Type)
+		_, err := t.GetThumbnail(ctx, fullPath, file.Type)
 
-		t.generationMu.Lock()
-		if err != nil {
-			t.generationStats.Failed++
-			logging.Debug("Failed to generate thumbnail for %s: %v", file.Path, err)
-		} else {
-			t.generationStats.Generated++
+		results <- thumbnailResult{
+			path:    file.Path,
+			skipped: false,
+			err:     err,
 		}
-		t.generationMu.Unlock()
 	}
 }
 
