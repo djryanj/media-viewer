@@ -89,19 +89,22 @@ docker run -d `
 
 ## Configuration
 
-| Environment Variable | Default     | Description                                                  |
-| -------------------- | ----------- | ------------------------------------------------------------ |
-| `MEDIA_DIR`          | `/media`    | Path to media directory inside container                     |
-| `CACHE_DIR`          | `/cache`    | Path to cache directory (thumbnails, transcodes)             |
-| `DATABASE_DIR`       | `/database` | Path to database directory                                   |
-| `PORT`               | `8080`      | HTTP server port                                             |
-| `METRICS_PORT`       | `9090`      | Prometheus metrics server port                               |
-| `METRICS_ENABLED`    | `true`      | Enable or disable the metrics server                         |
-| `INDEX_INTERVAL`     | `30m`       | How often to re-scan the media directory                     |
-| `THUMBNAIL_INTERVAL` | `6h`        | How often the thumbnail generator regenerates all thumbnails |
-| `LOG_LEVEL`          | `info`      | Server log level (`debug`, `info`, `warn`, `error`)          |
-| `LOG_STATIC_FILES`   | `false`     | Log static file requests                                     |
-| `LOG_HEALTH_CHECKS`  | `true`      | Log health check endpoint requests                           |
+| Environment Variable | Default     | Description                                                                                                                            |
+| -------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `MEDIA_DIR`          | `/media`    | Path to media directory inside container                                                                                               |
+| `CACHE_DIR`          | `/cache`    | Path to cache directory (thumbnails, transcodes)                                                                                       |
+| `DATABASE_DIR`       | `/database` | Path to database directory                                                                                                             |
+| `PORT`               | `8080`      | HTTP server port                                                                                                                       |
+| `METRICS_PORT`       | `9090`      | Prometheus metrics server port                                                                                                         |
+| `METRICS_ENABLED`    | `true`      | Enable or disable the metrics server                                                                                                   |
+| `INDEX_INTERVAL`     | `30m`       | How often to re-scan the media directory                                                                                               |
+| `THUMBNAIL_INTERVAL` | `6h`        | How often the thumbnail generator regenerates all thumbnails                                                                           |
+| `LOG_LEVEL`          | `info`      | Server log level (`debug`, `info`, `warn`, `error`)                                                                                    |
+| `LOG_STATIC_FILES`   | `false`     | Log static file requests                                                                                                               |
+| `LOG_HEALTH_CHECKS`  | `true`      | Log health check endpoint requests                                                                                                     |
+| `MEMORY_LIMIT`       | (none)      | Container memory limit in bytes. Set via Kubernetes Downward API to enable automatic GOMEMLIMIT configuration.                         |
+| `MEMORY_RATIO`       | `0.85`      | Percentage of `MEMORY_LIMIT` to allocate to Go heap (0.0-1.0). The remainder is reserved for FFmpeg, image processing, and OS buffers. |
+| `GOMEMLIMIT`         | (none)      | Direct override for Go's memory limit. If set, takes precedence over `MEMORY_LIMIT`. Accepts values like `400MiB` or `1GiB`.           |
 
 ### Boolean Environment Variables
 
@@ -147,6 +150,164 @@ THUMBNAIL_INTERVAL=1d       # Days not supported
 | Small library (< 1000 files)      | `6h`          |
 | Medium library (1000-10000 files) | `12h`         |
 | Large library (> 10000 files)     | `24h`         |
+
+### Memory Configuration
+
+When running in Kubernetes or other container environments, the application can be configured to respect memory limits and avoid OOM (Out of Memory) kills.
+
+#### Kubernetes Configuration
+
+To enable memory-aware operation in Kubernetes, pass the container's memory limit using the Downward API:
+
+```yaml
+spec:
+    containers:
+        - name: media-viewer
+          image: ghcr.io/djryanj/media-viewer:latest
+          resources:
+              limits:
+                  memory: '512Mi'
+              requests:
+                  memory: '256Mi'
+          env:
+              # Pass memory limit to application via Downward API
+              - name: MEMORY_LIMIT
+                valueFrom:
+                    resourceFieldRef:
+                        resource: limits.memory
+              # Optional: customize the ratio (default is 0.85)
+              - name: MEMORY_RATIO
+                value: '0.75'
+```
+
+#### Memory Ratio Guidelines
+
+The `MEMORY_RATIO` determines how much of the container's memory is allocated to Go's heap. The remaining memory is reserved for:
+
+- FFmpeg child processes (video transcoding and thumbnail extraction)
+- Image processing operations
+- SQLite memory-mapped files
+- Goroutine stacks
+- OS buffers and caches
+
+| Use Case                              | Recommended Ratio | Description                                    |
+| ------------------------------------- | ----------------- | ---------------------------------------------- |
+| Small library, few videos             | `0.85`            | Default, suitable for most deployments         |
+| Large library, active transcoding     | `0.75`            | More headroom for FFmpeg operations            |
+| Heavy concurrent thumbnail generation | `0.70`            | Multiple FFmpeg processes for video thumbnails |
+
+#### How It Works
+
+When `MEMORY_LIMIT` is set, the application calculates and sets Go's `GOMEMLIMIT`:
+
+```
+GOMEMLIMIT = MEMORY_LIMIT × MEMORY_RATIO
+```
+
+For example, with a 512Mi container limit and 0.75 ratio:
+
+- Container limit: 512 MiB
+- GOMEMLIMIT: 384 MiB (75%)
+- Reserved: 128 MiB (25%) for FFmpeg, etc.
+
+When Go's heap approaches `GOMEMLIMIT`, the garbage collector runs more aggressively to stay under the limit, reducing the risk of OOM kills.
+
+#### Monitoring Memory Usage
+
+Memory metrics are exposed via the Prometheus endpoint:
+
+| Metric                           | Description                         |
+| -------------------------------- | ----------------------------------- |
+| `media_viewer_go_memlimit_bytes` | Configured GOMEMLIMIT               |
+| `media_viewer_go_memalloc_bytes` | Current Go heap allocation          |
+| `media_viewer_go_memsys_bytes`   | Total memory obtained from OS       |
+| `media_viewer_go_gc_runs_total`  | Number of garbage collection cycles |
+
+Example Prometheus query to check memory pressure:
+
+```promql
+media_viewer_go_memalloc_bytes / media_viewer_go_memlimit_bytes
+```
+
+Values approaching 1.0 indicate the application is under memory pressure.
+
+````
+
+**5. Update the docker-compose example in README.md:**
+
+Find the existing docker-compose example and add the memory configuration:
+
+```yaml
+version: '3.8'
+
+services:
+    media-viewer:
+        image: ghcr.io/djryanj/media-viewer:latest
+        ports:
+            - '8080:8080'
+            - '9090:9090'
+        volumes:
+            - /path/to/your/media:/media:ro
+            - media-cache:/cache
+            - media-database:/database
+        environment:
+            - MEDIA_DIR=/media
+            - CACHE_DIR=/cache
+            - DATABASE_DIR=/database
+            - PORT=8080
+            - METRICS_PORT=9090
+            - METRICS_ENABLED=true
+            - INDEX_INTERVAL=30m
+        # Memory limits (optional but recommended)
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+        # Note: For docker-compose, set GOMEMLIMIT directly
+        # since Downward API is not available
+        # environment:
+        #     - GOMEMLIMIT=400MiB
+        restart: unless-stopped
+
+volumes:
+    media-cache:
+    media-database:
+````
+
+### Expected Startup Output
+
+When the application starts with memory configuration, you'll see:
+
+```
+------------------------------------------------------------
+MEMORY CONFIGURATION
+------------------------------------------------------------
+  Source:              MEMORY_LIMIT (Kubernetes Downward API)
+  Container Limit:     512.0 MiB
+  Memory Ratio:        75.0%
+  GOMEMLIMIT:          384.0 MiB
+  Reserved for OS/FFmpeg: 128.0 MiB
+```
+
+Or if using `GOMEMLIMIT` directly:
+
+```
+------------------------------------------------------------
+MEMORY CONFIGURATION
+------------------------------------------------------------
+  Source:              GOMEMLIMIT environment variable
+  GOMEMLIMIT:          400.0 MiB
+```
+
+Or if not configured:
+
+```
+------------------------------------------------------------
+MEMORY CONFIGURATION
+------------------------------------------------------------
+  GOMEMLIMIT:          not configured
+  (Set MEMORY_LIMIT or GOMEMLIMIT to enable memory limits)
+```
 
 ## Monitoring
 

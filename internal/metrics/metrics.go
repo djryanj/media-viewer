@@ -354,3 +354,72 @@ var (
 func SetAppInfo(version, commit, goVersion string) {
 	AppInfo.WithLabelValues(version, commit, goVersion).Set(1)
 }
+
+// Memory metrics
+var (
+	MemoryUsageBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_memory_usage_bytes",
+			Help: "Current memory usage in bytes",
+		},
+	)
+
+	MemoryLimitBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_memory_limit_bytes",
+			Help: "Memory limit in bytes (from GOMEMLIMIT)",
+		},
+	)
+
+	MemoryUsageRatio = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_memory_usage_ratio",
+			Help: "Memory usage as a ratio of the limit (0.0-1.0)",
+		},
+	)
+
+	MemoryPaused = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_memory_paused",
+			Help: "Whether processing is paused due to memory pressure (1 = paused, 0 = running)",
+		},
+	)
+
+	MemoryGCPauses = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_memory_gc_pauses_total",
+			Help: "Total number of times processing was paused due to memory pressure",
+		},
+	)
+)
+
+// Memory metrics
+var (
+	GoMemLimit = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_go_memlimit_bytes",
+			Help: "Configured GOMEMLIMIT in bytes",
+		},
+	)
+
+	GoMemAllocBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_go_memalloc_bytes",
+			Help: "Current Go heap allocation in bytes",
+		},
+	)
+
+	GoMemSysBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_go_memsys_bytes",
+			Help: "Total memory obtained from the OS by Go runtime",
+		},
+	)
+
+	GoGCRuns = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_go_gc_runs_total",
+			Help: "Total number of completed GC cycles",
+		},
+	)
+)

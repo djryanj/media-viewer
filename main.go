@@ -15,6 +15,7 @@ import (
 	"media-viewer/internal/indexer"
 	"media-viewer/internal/logging"
 	"media-viewer/internal/media"
+	"media-viewer/internal/memory"
 	"media-viewer/internal/metrics"
 	"media-viewer/internal/middleware"
 	"media-viewer/internal/startup"
@@ -43,6 +44,9 @@ func (a *dbStatsAdapter) GetStats() metrics.Stats {
 }
 
 func main() {
+	// Configure memory limit from environment FIRST, before any significant allocations
+	memResult := memory.ConfigureFromEnv()
+
 	startTime := time.Now()
 
 	// Create a context for background operations that cancels on shutdown
@@ -55,8 +59,22 @@ func main() {
 		startup.LogFatal("Configuration error: %v", err)
 	}
 
+	// Log memory configuration
+	startup.LogMemoryConfig(startup.MemoryConfig{
+		Configured:     memResult.Configured,
+		Source:         memResult.Source,
+		ContainerLimit: memResult.ContainerLimit,
+		GoMemLimit:     memResult.GoMemLimit,
+		Ratio:          memResult.Ratio,
+	})
+
 	// Set application info metric
 	metrics.SetAppInfo(startup.Version, startup.Commit, runtime.Version())
+
+	memConfig := memory.DefaultConfig()
+	memMonitor := memory.NewMonitor(memConfig)
+	memMonitor.Start()
+	logging.Info("Memory monitor started")
 
 	// Initialize database
 	dbStart := time.Now()
@@ -95,6 +113,7 @@ func main() {
 		config.ThumbnailsEnabled,
 		db,
 		config.ThumbnailInterval,
+		memMonitor,
 	)
 
 	// Initialize indexer
@@ -163,7 +182,7 @@ func main() {
 	shutdownComplete := make(chan struct{})
 
 	// Start graceful shutdown handler
-	go handleShutdown(srv, metricsSrv, db, idx, trans, thumbGen, metricsCollector, shutdownComplete)
+	go handleShutdown(srv, metricsSrv, db, idx, trans, thumbGen, metricsCollector, memMonitor, shutdownComplete)
 
 	// Start server
 	startup.LogServerStarted(startup.ServerConfig{
@@ -277,7 +296,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	return r
 }
 
-func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, metricsCollector *metrics.Collector, done chan struct{}) {
+func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, metricsCollector *metrics.Collector, memMonitor *memory.Monitor, done chan struct{}) {
 	defer close(done)
 
 	sigChan := make(chan os.Signal, 1)
@@ -304,6 +323,10 @@ func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *in
 	startup.LogShutdownStep("Cleaning up transcoder")
 	trans.Cleanup()
 	startup.LogShutdownStepComplete("Transcoder cleanup complete")
+
+	startup.LogShutdownStep("Stopping memory monitor")
+	memMonitor.Stop()
+	startup.LogShutdownStepComplete("Memory monitor stopped")
 
 	// Shutdown metrics server if running
 	if metricsSrv != nil {
