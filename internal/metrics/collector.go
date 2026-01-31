@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"os"
 	"time"
 
 	"media-viewer/internal/logging"
@@ -25,14 +26,16 @@ type Stats struct {
 // Collector periodically collects and updates metrics
 type Collector struct {
 	statsProvider StatsProvider
+	dbPath        string
 	interval      time.Duration
 	stopChan      chan struct{}
 }
 
 // NewCollector creates a new metrics collector
-func NewCollector(provider StatsProvider, interval time.Duration) *Collector {
+func NewCollector(provider StatsProvider, dbPath string, interval time.Duration) *Collector {
 	return &Collector{
 		statsProvider: provider,
+		dbPath:        dbPath,
 		interval:      interval,
 		stopChan:      make(chan struct{}),
 	}
@@ -66,6 +69,10 @@ func (c *Collector) collectLoop() {
 }
 
 func (c *Collector) collect() {
+	// Collect database file size
+	c.collectDBSize()
+
+	// Collect stats from provider
 	if c.statsProvider == nil {
 		return
 	}
@@ -81,4 +88,31 @@ func (c *Collector) collect() {
 
 	logging.Debug("Metrics collected: files=%d, folders=%d, favorites=%d, tags=%d",
 		stats.TotalFiles, stats.TotalFolders, stats.TotalFavorites, stats.TotalTags)
+}
+
+func (c *Collector) collectDBSize() {
+	if c.dbPath == "" {
+		return
+	}
+
+	// Main database file
+	if fileInfo, err := os.Stat(c.dbPath); err == nil {
+		DBSizeBytes.WithLabelValues("main").Set(float64(fileInfo.Size()))
+	} else {
+		logging.Warn("Failed to get database file size: %v", err)
+	}
+
+	// WAL file (Write-Ahead Log)
+	if walInfo, err := os.Stat(c.dbPath + "-wal"); err == nil {
+		DBSizeBytes.WithLabelValues("wal").Set(float64(walInfo.Size()))
+	} else {
+		DBSizeBytes.WithLabelValues("wal").Set(0)
+	}
+
+	// SHM file (Shared Memory)
+	if shmInfo, err := os.Stat(c.dbPath + "-shm"); err == nil {
+		DBSizeBytes.WithLabelValues("shm").Set(float64(shmInfo.Size()))
+	} else {
+		DBSizeBytes.WithLabelValues("shm").Set(0)
+	}
 }
