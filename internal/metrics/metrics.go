@@ -57,6 +57,14 @@ var (
 			Help: "Number of open database connections",
 		},
 	)
+
+	DBSizeBytes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_db_size_bytes",
+			Help: "Size of SQLite database files in bytes",
+		},
+		[]string{"file"}, // "main", "wal", "shm"
+	)
 )
 
 // Indexer metrics
