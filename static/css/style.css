@@ -2092,7 +2092,7 @@ select:focus {
 .player-hot-zone {
     position: absolute;
     top: 0;
-    bottom: 0;
+    bottom: 40%; /* Don't extend to bottom - leave room for video controls */
     width: 15%;
     min-width: 50px;
     max-width: 100px;
@@ -2132,11 +2132,36 @@ select:focus {
 @media (hover: none) and (pointer: coarse) {
     .player-hot-zone {
         opacity: 0.3;
+        bottom: 50%; /* More room for touch-friendly video controls */
     }
 
     .player-hot-zone:active {
         opacity: 1;
     }
+}
+
+/* Landscape mode adjustments */
+.player-modal.landscape-mode .player-hot-zone {
+    bottom: 45%;
+    width: 12%;
+    min-width: 40px;
+    max-width: 80px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .player-modal.landscape-mode .player-hot-zone {
+        bottom: 55%;
+    }
+}
+
+/* Ensure video controls are always accessible */
+.video-wrapper video {
+    z-index: 1;
+}
+
+/* When playlist sidebar is visible in landscape, keep hot zones in video area */
+.player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper .player-hot-zone-right {
+    right: 0;
 }
 
 /* ===========================================
