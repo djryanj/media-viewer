@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: media-viewer
+  namespace: media-viewer
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  labels:
+    app: media-viewer
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: media-viewer.thewulph.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: media-viewer
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    - media-viewer.thewulph.com
+    secretName: media-viewer-tls

@@ -4,7 +4,7 @@ const Preferences = {
         sortField: 'name',
         sortOrder: 'asc',
         videoAutoplay: true,
-        // Add more preferences here as needed
+        mediaLoop: true,
     },
 
     // Cache of current preferences
@@ -154,6 +154,24 @@ const Preferences = {
     toggleVideoAutoplay() {
         const newValue = !this.get('videoAutoplay');
         this.set('videoAutoplay', newValue);
+        return newValue;
+    },
+
+    /**
+     * Check if media loop is enabled (for videos and animated images)
+     * @returns {boolean}
+     */
+    isMediaLoopEnabled() {
+        return this.get('mediaLoop');
+    },
+
+    /**
+     * Toggle media loop preference
+     * @returns {boolean} New value
+     */
+    toggleMediaLoop() {
+        const newValue = !this.get('mediaLoop');
+        this.set('mediaLoop', newValue);
         return newValue;
     },
 };
