@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Media Loop Control** - Toggle looping for videos and animated images (GIF, WebP, APNG) in the lightbox viewer
+    - Loop button appears automatically for supported media types
+    - Keyboard shortcut: `L` to toggle loop
+    - Preference saved and persists across sessions
+    - Videos use native HTML5 loop attribute
+    - Animated images use canvas-based detection to force continuous playback
+
 ## [v0.4.0] - January 31, 2026
 
 ### Added
