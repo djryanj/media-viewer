@@ -11,8 +11,8 @@ import (
 )
 
 // ListPlaylists returns all available playlists
-func (h *Handlers) ListPlaylists(w http.ResponseWriter, _ *http.Request) {
-	playlists, err := h.db.GetAllPlaylists()
+func (h *Handlers) ListPlaylists(w http.ResponseWriter, r *http.Request) {
+	playlists, err := h.db.GetAllPlaylists(r.Context())
 	if err != nil {
 		http.Error(w, "Failed to get playlists", http.StatusInternalServerError)
 		return
@@ -28,7 +28,7 @@ func (h *Handlers) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 	name := vars["name"]
 
 	// Find the playlist file
-	playlists, err := h.db.GetAllPlaylists()
+	playlists, err := h.db.GetAllPlaylists(r.Context())
 	if err != nil {
 		http.Error(w, "Failed to get playlists", http.StatusInternalServerError)
 		return

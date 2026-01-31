@@ -36,7 +36,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.db.Search(opts)
+	result, err := h.db.Search(r.Context(), opts)
 	if err != nil {
 		http.Error(w, "Search failed", http.StatusInternalServerError)
 		return
@@ -54,7 +54,7 @@ func (h *Handlers) SearchSuggestions(w http.ResponseWriter, r *http.Request) {
 		limit = l
 	}
 
-	suggestions, err := h.db.SearchSuggestions(query, limit)
+	suggestions, err := h.db.SearchSuggestions(r.Context(), query, limit)
 	if err != nil {
 		http.Error(w, "Search suggestions failed", http.StatusInternalServerError)
 		return

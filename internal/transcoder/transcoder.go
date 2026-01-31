@@ -3,17 +3,21 @@ package transcoder
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"media-viewer/internal/logging"
+	"media-viewer/internal/streaming"
 )
 
 // Transcoder manages video transcoding operations for compatible playback.
@@ -22,6 +26,9 @@ type Transcoder struct {
 	enabled   bool
 	processes map[string]*exec.Cmd
 	processMu sync.Mutex
+
+	// Streaming configuration
+	streamConfig streaming.TimeoutWriterConfig
 }
 
 // VideoInfo contains information about a video file.
@@ -48,10 +55,16 @@ var compatibleContainers = map[string]bool{
 
 // New creates a new Transcoder instance.
 func New(cacheDir string, enabled bool) *Transcoder {
+	config := streaming.DefaultTimeoutWriterConfig()
+	config.WriteTimeout = 30 * time.Second
+	config.IdleTimeout = 60 * time.Second
+	config.ChunkSize = 256 * 1024 // 256KB chunks for video
+
 	return &Transcoder{
-		cacheDir:  cacheDir,
-		enabled:   enabled,
-		processes: make(map[string]*exec.Cmd),
+		cacheDir:     cacheDir,
+		enabled:      enabled,
+		processes:    make(map[string]*exec.Cmd),
+		streamConfig: config,
 	}
 }
 
@@ -127,6 +140,7 @@ func (t *Transcoder) GetVideoInfo(ctx context.Context, filePath string) (*VideoI
 }
 
 // StreamVideo streams a video file, transcoding if necessary for browser compatibility.
+// Now uses timeout-protected chunked streaming.
 func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writer, targetWidth int) error {
 	info, err := t.GetVideoInfo(ctx, filePath)
 	if err != nil {
@@ -135,17 +149,7 @@ func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writ
 
 	// If no transcoding needed and no resize, just stream the file
 	if !info.NeedsTranscode && (targetWidth == 0 || targetWidth >= info.Width) {
-		file, err := os.Open(filePath)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := file.Close(); err != nil {
-				log.Printf("failed to close video file %s: %v", filePath, err)
-			}
-		}()
-		_, err = io.Copy(w, file)
-		return err
+		return t.streamFile(ctx, filePath, w)
 	}
 
 	// Check if transcoding is enabled
@@ -153,6 +157,33 @@ func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writ
 		return fmt.Errorf("transcoding required but disabled (cache directory not writable)")
 	}
 
+	return t.transcodeAndStream(ctx, filePath, w, targetWidth, info)
+}
+
+// streamFile streams a file directly with timeout protection
+func (t *Transcoder) streamFile(ctx context.Context, filePath string, w io.Writer) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close video file %s: %v", filePath, err)
+		}
+	}()
+
+	// If w is an http.ResponseWriter, use timeout-protected streaming
+	if hw, ok := w.(http.ResponseWriter); ok {
+		return streaming.StreamWithTimeout(ctx, hw, file, t.streamConfig)
+	}
+
+	// Fallback for non-HTTP writers (e.g., tests)
+	_, err = io.Copy(w, file)
+	return err
+}
+
+// transcodeAndStream transcodes video and streams with timeout protection
+func (t *Transcoder) transcodeAndStream(ctx context.Context, filePath string, w io.Writer, targetWidth int, info *VideoInfo) error {
 	// Build ffmpeg command for transcoding
 	args := []string{
 		"-i", filePath,
@@ -172,11 +203,17 @@ func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writ
 	args = append(args, "-")
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	cmd.Stdout = w
+
+	// Create a pipe for ffmpeg output
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
+	// Track the process
 	t.processMu.Lock()
 	t.processes[filePath] = cmd
 	t.processMu.Unlock()
@@ -187,12 +224,42 @@ func (t *Transcoder) StreamVideo(ctx context.Context, filePath string, w io.Writ
 		t.processMu.Unlock()
 	}()
 
-	if err := cmd.Run(); err != nil {
+	// Start ffmpeg
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	// Stream output with timeout protection
+	var streamErr error
+	if hw, ok := w.(http.ResponseWriter); ok {
+		streamErr = streaming.StreamWithTimeout(ctx, hw, stdout, t.streamConfig)
+	} else {
+		_, streamErr = io.Copy(w, stdout)
+	}
+
+	// Wait for ffmpeg to complete
+	cmdErr := cmd.Wait()
+
+	// Determine the actual error
+	if streamErr != nil {
+		// Client disconnected or timeout - kill ffmpeg if still running
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+
+		if errors.Is(streamErr, streaming.ErrClientGone) || errors.Is(streamErr, streaming.ErrWriteTimeout) {
+			logging.Debug("Stream ended: %v for %s", streamErr, filePath)
+			return nil // Not really an error, client just left
+		}
+		return streamErr
+	}
+
+	if cmdErr != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		logging.Error("FFmpeg stderr: %s", stderr.String())
-		return fmt.Errorf("transcoding error: %w", err)
+		return fmt.Errorf("transcoding error: %w", cmdErr)
 	}
 
 	return nil

@@ -9,7 +9,7 @@ import (
 )
 
 // AddFavorite adds a path to favorites.
-func (d *Database) AddFavorite(path, name string, fileType FileType) error {
+func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType FileType) error {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("add_favorite", start, err) }()
@@ -17,7 +17,7 @@ func (d *Database) AddFavorite(path, name string, fileType FileType) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	query := `
@@ -31,7 +31,7 @@ func (d *Database) AddFavorite(path, name string, fileType FileType) error {
 }
 
 // RemoveFavorite removes a path from favorites.
-func (d *Database) RemoveFavorite(path string) error {
+func (d *Database) RemoveFavorite(ctx context.Context, path string) error {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("remove_favorite", start, err) }()
@@ -39,7 +39,7 @@ func (d *Database) RemoveFavorite(path string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err = d.db.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
@@ -47,11 +47,11 @@ func (d *Database) RemoveFavorite(path string) error {
 }
 
 // IsFavorite checks if a path is a favorite.
-func (d *Database) IsFavorite(path string) bool {
+func (d *Database) IsFavorite(ctx context.Context, path string) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	return d.isFavoriteUnlocked(ctx, path)
@@ -69,7 +69,7 @@ func (d *Database) isFavoriteUnlocked(ctx context.Context, path string) bool {
 }
 
 // GetFavorites returns all favorites with their file info.
-func (d *Database) GetFavorites() ([]MediaFile, error) {
+func (d *Database) GetFavorites(ctx context.Context) ([]MediaFile, error) {
 	start := time.Now()
 	var err error
 	defer func() { recordQuery("get_favorites", start, err) }()
@@ -77,7 +77,7 @@ func (d *Database) GetFavorites() ([]MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	return d.getFavoritesUnlocked(ctx)
@@ -137,11 +137,11 @@ func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error
 }
 
 // GetFavoriteCount returns the number of favorites.
-func (d *Database) GetFavoriteCount() int {
+func (d *Database) GetFavoriteCount(ctx context.Context) int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var count int

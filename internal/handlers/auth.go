@@ -39,8 +39,10 @@ const (
 )
 
 // CheckSetupRequired returns whether initial setup is needed
-func (h *Handlers) CheckSetupRequired(w http.ResponseWriter, _ *http.Request) {
-	needsSetup := !h.db.HasUsers()
+func (h *Handlers) CheckSetupRequired(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	needsSetup := !h.db.HasUsers(ctx)
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]bool{
@@ -50,8 +52,10 @@ func (h *Handlers) CheckSetupRequired(w http.ResponseWriter, _ *http.Request) {
 
 // Setup creates the initial password
 func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	// Only allow setup if no users exist
-	if h.db.HasUsers() {
+	if h.db.HasUsers(ctx) {
 		http.Error(w, "Setup already completed", http.StatusForbidden)
 		return
 	}
@@ -69,7 +73,7 @@ func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create user
-	if err := h.db.CreateUser(req.Password); err != nil {
+	if err := h.db.CreateUser(ctx, req.Password); err != nil {
 		logging.Error("Failed to create user: %v", err)
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
@@ -86,6 +90,8 @@ func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 
 // Login authenticates with password
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -93,7 +99,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate password
-	user, err := h.db.ValidatePassword(req.Password)
+	user, err := h.db.ValidatePassword(ctx, req.Password)
 	if err != nil {
 		logging.Warn("Failed login attempt")
 		metrics.AuthAttemptsTotal.WithLabelValues("failure").Inc()
@@ -104,7 +110,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	metrics.AuthAttemptsTotal.WithLabelValues("success").Inc()
 
 	// Create session
-	session, err := h.db.CreateSession(user.ID)
+	session, err := h.db.CreateSession(ctx, user.ID)
 	if err != nil {
 		logging.Error("Failed to create session: %v", err)
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
@@ -132,10 +138,12 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 
 // Logout ends the current session
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	cookie, err := r.Cookie(SessionCookieName)
 	if err == nil && cookie.Value != "" {
 		// Best-effort session cleanup - don't fail logout if this errors
-		if err := h.db.DeleteSession(cookie.Value); err != nil {
+		if err := h.db.DeleteSession(ctx, cookie.Value); err != nil {
 			logging.Error("failed to delete session during logout: %v", err)
 		}
 	}
@@ -159,6 +167,8 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 
 // CheckAuth verifies the current session
 func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	cookie, err := r.Cookie(SessionCookieName)
 	if err != nil || cookie.Value == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -168,7 +178,7 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.db.ValidateSession(cookie.Value)
+	_, err = h.db.ValidateSession(ctx, cookie.Value)
 	if err != nil {
 		// Clear invalid cookie
 		http.SetCookie(w, &http.Cookie{
@@ -196,6 +206,8 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 // AuthMiddleware protects routes that require authentication
 func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		// Allow auth endpoints without authentication
 		if strings.HasPrefix(r.URL.Path, "/api/auth/") ||
 			r.URL.Path == "/login.html" ||
@@ -223,7 +235,7 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Validate session
-		_, err = h.db.ValidateSession(cookie.Value)
+		_, err = h.db.ValidateSession(ctx, cookie.Value)
 		if err != nil {
 			// Clear invalid cookie
 			http.SetCookie(w, &http.Cookie{
@@ -248,6 +260,8 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 
 // ChangePassword handles password change requests
 func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	var req PasswordChangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -255,7 +269,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate current password
-	_, err := h.db.ValidatePassword(req.CurrentPassword)
+	_, err := h.db.ValidatePassword(ctx, req.CurrentPassword)
 	if err != nil {
 		logging.Warn("Failed password change attempt - invalid current password")
 		http.Error(w, "Current password is incorrect", http.StatusUnauthorized)
@@ -269,7 +283,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update password
-	if err := h.db.UpdatePassword(req.NewPassword); err != nil {
+	if err := h.db.UpdatePassword(ctx, req.NewPassword); err != nil {
 		logging.Error("Failed to update password: %v", err)
 		http.Error(w, "Failed to update password", http.StatusInternalServerError)
 		return

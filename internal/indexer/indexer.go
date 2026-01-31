@@ -75,6 +75,10 @@ type Indexer struct {
 	filesIndexed   atomic.Int64
 	foldersIndexed atomic.Int64
 	indexProgress  atomic.Value // stores IndexProgress
+
+	// Parallel walker configuration
+	parallelConfig ParallelWalkerConfig
+	useParallel    bool
 }
 
 // IndexProgress tracks the current indexing progress
@@ -88,14 +92,26 @@ type IndexProgress struct {
 // New creates a new Indexer instance.
 func New(db *database.Database, mediaDir string, indexInterval time.Duration) *Indexer {
 	idx := &Indexer{
-		db:            db,
-		mediaDir:      mediaDir,
-		indexInterval: indexInterval,
-		stopChan:      make(chan struct{}),
-		startTime:     time.Now(),
+		db:             db,
+		mediaDir:       mediaDir,
+		indexInterval:  indexInterval,
+		stopChan:       make(chan struct{}),
+		startTime:      time.Now(),
+		parallelConfig: DefaultParallelWalkerConfig(),
+		useParallel:    true, // Enable parallel walking by default
 	}
 	idx.indexProgress.Store(IndexProgress{})
 	return idx
+}
+
+// SetParallelWalking enables or disables parallel directory walking
+func (idx *Indexer) SetParallelWalking(enabled bool) {
+	idx.useParallel = enabled
+}
+
+// SetParallelConfig sets the parallel walker configuration
+func (idx *Indexer) SetParallelConfig(config ParallelWalkerConfig) {
+	idx.parallelConfig = config
 }
 
 // Start begins the indexing process.
@@ -193,7 +209,7 @@ type HealthStatus struct {
 }
 
 // Index performs a full index of the media directory.
-// Uses batched commits to avoid blocking other database operations.
+// Uses parallel walking for large directories and batched commits.
 func (idx *Indexer) Index() error {
 	if !idx.tryStartIndexing() {
 		logging.Info("Index already in progress, skipping...")
@@ -212,7 +228,17 @@ func (idx *Indexer) Index() error {
 	idx.resetCounters(startTime)
 
 	indexTime := time.Now()
-	result, err := idx.walkAndIndex(startTime)
+
+	var result indexResult
+	var err error
+
+	// Choose walking strategy based on configuration
+	if idx.useParallel {
+		result, err = idx.parallelWalkAndIndex(startTime)
+	} else {
+		result, err = idx.walkAndIndex(startTime)
+	}
+
 	if err != nil {
 		metrics.IndexerErrors.Inc()
 		return err
@@ -232,6 +258,87 @@ func (idx *Indexer) Index() error {
 	metrics.IndexerLastRunDuration.Set(duration)
 	metrics.IndexerFilesProcessed.Add(float64(result.totalFiles))
 	metrics.IndexerFoldersProcessed.Add(float64(result.totalFolders))
+
+	return nil
+}
+
+// parallelWalkAndIndex uses parallel directory walking for faster indexing
+func (idx *Indexer) parallelWalkAndIndex(startTime time.Time) (indexResult, error) {
+	logging.Info("Using parallel directory walking with %d workers", idx.parallelConfig.NumWorkers)
+
+	// Create parallel walker
+	walker := NewParallelWalker(idx.mediaDir, idx.parallelConfig)
+
+	// Handle stop signal
+	go func() {
+		select {
+		case <-idx.stopChan:
+			walker.Stop()
+		case <-walker.ctx.Done():
+		}
+	}()
+
+	// Walk and collect all files
+	files, err := walker.Walk()
+	if err != nil && !errors.Is(err, fs.SkipAll) {
+		return indexResult{}, fmt.Errorf("parallel walk error: %w", err)
+	}
+
+	// Get statistics
+	totalFiles, totalFolders, _ := walker.Stats()
+
+	// Update progress counters
+	idx.filesIndexed.Store(totalFiles)
+	idx.foldersIndexed.Store(totalFolders)
+	idx.updateProgress(startTime)
+
+	// Process files in batches for database insertion
+	if err := idx.processBatchedFiles(files, startTime); err != nil {
+		return indexResult{}, err
+	}
+
+	return indexResult{
+		totalFiles:   totalFiles,
+		totalFolders: totalFolders,
+	}, nil
+}
+
+// processBatchedFiles inserts files into the database in batches
+func (idx *Indexer) processBatchedFiles(files []database.MediaFile, startTime time.Time) error {
+	totalFiles := len(files)
+	logging.Info("Processing %d files in batches of %d", totalFiles, idx.parallelConfig.BatchSize)
+
+	for i := 0; i < totalFiles; i += idx.parallelConfig.BatchSize {
+		// Check for stop signal
+		select {
+		case <-idx.stopChan:
+			return fs.SkipAll
+		default:
+		}
+
+		end := i + idx.parallelConfig.BatchSize
+		if end > totalFiles {
+			end = totalFiles
+		}
+
+		batch := files[i:end]
+
+		if err := idx.processBatch(batch); err != nil {
+			logging.Error("Error processing batch: %v", err)
+			// Continue with next batch
+		}
+
+		// Update progress
+		idx.updateProgress(startTime)
+
+		// Small delay to allow other operations
+		time.Sleep(batchDelay)
+
+		// Log progress
+		if (i+idx.parallelConfig.BatchSize)%5000 == 0 || end == totalFiles {
+			logging.Info("Database insert progress: %d/%d files", end, totalFiles)
+		}
+	}
 
 	return nil
 }
@@ -273,8 +380,10 @@ type indexResult struct {
 	totalFolders int64
 }
 
-// walkAndIndex walks the media directory and indexes files in batches
+// walkAndIndex walks the media directory and indexes files in batches (sequential mode)
 func (idx *Indexer) walkAndIndex(startTime time.Time) (indexResult, error) {
+	logging.Info("Using sequential directory walking")
+
 	var currentBatch []database.MediaFile
 	var result indexResult
 

@@ -51,8 +51,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance Improvements
 
+#### Concurrency and Parallelism
+
+- **Parallel Directory Indexing**: Added parallel directory walker with configurable worker pool for significantly faster initial indexing of large media libraries (2-4x improvement)
+- **Parallel Thumbnail Generation**: Background thumbnail generation now uses a worker pool instead of sequential processing, dramatically improving throughput
+- **Per-File Thumbnail Locking**: Replaced global thumbnail mutex with per-file locking, allowing parallel generation of thumbnails for different files
+- **Container-Aware Worker Pools**: Worker counts automatically scale based on available CPU resources, respecting Kubernetes/container CPU limits via GOMAXPROCS
+- **New `workers` Utility Package**: Centralized worker count calculation with task-specific helpers (`ForCPU`, `ForIO`, `ForMixed`) and environment variable override support
+
+#### Streaming Improvements
+
+- **Timeout-Protected Video Streaming**: Added chunked streaming with per-write timeouts to prevent slow/disconnected clients from holding server resources indefinitely
+- **Idle Connection Detection**: Streams are automatically terminated if no data flows for a configurable period
+- **Client Disconnect Handling**: Proper detection and cleanup when clients disconnect during video streaming
+
+#### Other Performance Improvements
+
 - Replaced universal CSS selector (`*`) with explicit element reset for improved rendering performance
 - Optimized image preloading in lightbox with priority-based loading (adjacent images load with higher priority)
+
+### Code Quality Improvements
+
+#### Context Propagation
+
+- Added proper `context.Context` propagation throughout the codebase for improved request cancellation and timeout handling
+- All HTTP handlers now pass request context to database operations
+- Database operations respect context cancellation, allowing long-running queries to be terminated when clients disconnect
+- Background operations (indexing, thumbnail generation) use appropriate contexts that survive request completion
+
+#### New Packages
+
+- **`internal/streaming`**: Timeout-protected HTTP streaming utilities with configurable write timeouts, idle detection, and progress callbacks
+- **`internal/workers`**: CPU-aware worker pool sizing utilities that respect container resource limits
+
+#### Linting and Code Standards
+
+- Fixed all `contextcheck` linter errors by properly propagating context through call chains
+- Fixed `nilerr` warnings with appropriate error handling or explicit nolint directives
+- Fixed `ifElseChain` warnings by converting to switch statements
+- Fixed unused parameter warnings
+- Fixed redefinition of built-in function warnings (renamed `max` parameter to `limit`)
+- Added proper documentation comments to all exported variables and types
+- Added `//nolint` directives with explanations for intentional patterns (e.g., MD5 for cache keys, background operations not using request context)
 
 ### Bug Fixes
 

@@ -2,15 +2,21 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"media-viewer/internal/database"
 
 	"golang.org/x/term"
 )
+
+// Default timeout for database operations
+const defaultTimeout = 30 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
@@ -19,6 +25,19 @@ func main() {
 	}
 
 	command := os.Args[1]
+
+	// Create a context that cancels on interrupt signals
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle interrupt signals for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Fprintln(os.Stderr, "\nInterrupted, shutting down...")
+		cancel()
+	}()
 
 	// Get database directory from env or default
 	databaseDir := os.Getenv("DATABASE_DIR")
@@ -42,11 +61,11 @@ func main() {
 
 	switch command {
 	case "reset":
-		if !resetPassword(db) {
+		if !resetPassword(ctx, db) {
 			os.Exit(1)
 		}
 	case "status":
-		showStatus(db)
+		showStatus(ctx, db)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		printUsage()
@@ -67,9 +86,13 @@ func printUsage() {
 	fmt.Println("  DATABASE_DIR - Path to database directory (default: /database)")
 }
 
-func resetPassword(db *database.Database) bool {
+func resetPassword(ctx context.Context, db *database.Database) bool {
+	// Add timeout to context for database operations
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
 	// Check if user exists
-	if !db.HasUsers() {
+	if !db.HasUsers(ctx) {
 		fmt.Fprintln(os.Stderr, "Error: No password configured yet. Use the web interface to set up.")
 		return false
 	}
@@ -100,7 +123,7 @@ func resetPassword(db *database.Database) bool {
 		return false
 	}
 
-	if err := db.UpdatePassword(string(password)); err != nil {
+	if err := db.UpdatePassword(ctx, string(password)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to update password: %v\n", err)
 		return false
 	}
@@ -110,8 +133,12 @@ func resetPassword(db *database.Database) bool {
 	return true
 }
 
-func showStatus(db *database.Database) {
-	if db.HasUsers() {
+func showStatus(ctx context.Context, db *database.Database) {
+	// Add timeout to context for database operations
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	if db.HasUsers(ctx) {
 		fmt.Println("Status: Password is configured")
 	} else {
 		fmt.Println("Status: No password configured (setup required)")

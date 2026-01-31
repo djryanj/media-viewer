@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,6 +18,7 @@ import (
 
 // ListFiles lists files in a directory with sorting and pagination
 func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	logging.Debug("ListFiles called: %s", r.URL.String())
 
 	opts := database.ListOptions{
@@ -44,7 +47,7 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	logging.Debug("ListFiles options: path=%q, sort=%s, order=%s, page=%d, pageSize=%d",
 		opts.Path, opts.SortField, opts.SortOrder, opts.Page, opts.PageSize)
 
-	listing, err := h.db.ListDirectory(opts)
+	listing, err := h.db.ListDirectory(ctx, opts)
 	if err != nil {
 		logging.Error("ListFiles database error: %v", err)
 		http.Error(w, "Failed to list directory", http.StatusInternalServerError)
@@ -59,6 +62,7 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 
 // GetMediaFiles returns all media files (images and videos) in a directory for lightbox viewing
 func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	parentPath := r.URL.Query().Get("path")
 
 	sortField := database.SortField(r.URL.Query().Get("sort"))
@@ -73,7 +77,7 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 
 	logging.Debug("GetMediaFiles: path=%s, sort=%s, order=%s", parentPath, sortField, sortOrder)
 
-	files, err := h.db.GetMediaInDirectory(parentPath, sortField, sortOrder)
+	files, err := h.db.GetMediaInDirectory(ctx, parentPath, sortField, sortOrder)
 	if err != nil {
 		logging.Error("GetMediaFiles error: %v", err)
 		http.Error(w, "Failed to get media files", http.StatusInternalServerError)
@@ -106,6 +110,7 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 
 // GetThumbnail returns a thumbnail image for a media file
 func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	vars := mux.Vars(r)
 	filePath := vars["path"]
 
@@ -140,7 +145,7 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get file info from database to determine type
-	file, err := h.db.GetFileByPath(filePath)
+	file, err := h.db.GetFileByPath(ctx, filePath)
 	if err != nil {
 		logging.Error("Thumbnail: file not found in database %s: %v", filePath, err)
 		http.Error(w, "File not found", http.StatusNotFound)
@@ -180,7 +185,7 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	logging.Debug("Thumbnail: generating for %s (type: %s)", filePath, file.Type)
 
-	thumb, err := h.thumbGen.GetThumbnail(fullPath, file.Type)
+	thumb, err := h.thumbGen.GetThumbnail(ctx, fullPath, file.Type)
 	if err != nil {
 		logging.Error("Thumbnail: generation failed for %s: %v", filePath, err)
 		http.Error(w, fmt.Sprintf("Failed to generate thumbnail: %v", err), http.StatusInternalServerError)
@@ -198,6 +203,7 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 
 // StreamVideo streams a video file, transcoding if necessary for browser compatibility
 func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	vars := mux.Vars(r)
 	filePath := vars["path"]
 
@@ -219,27 +225,35 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		targetWidth, _ = strconv.Atoi(widthStr)
 	}
 
-	info, err := h.transcoder.GetVideoInfo(r.Context(), fullPath)
+	info, err := h.transcoder.GetVideoInfo(ctx, fullPath)
 	if err != nil {
 		http.Error(w, "Failed to get video info", http.StatusInternalServerError)
 		return
 	}
 
+	// For direct file serving (no transcoding needed), use standard ServeFile
+	// which handles range requests properly
 	if !info.NeedsTranscode && (targetWidth == 0 || targetWidth >= info.Width) {
 		http.ServeFile(w, r, fullPath)
 		return
 	}
 
+	// For transcoding, use chunked streaming with timeout protection
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Cache-Control", "no-cache")
 
-	if err := h.transcoder.StreamVideo(r.Context(), fullPath, w, targetWidth); err != nil {
-		logging.Error("error streaming video %s: %v", filePath, err)
+	if err := h.transcoder.StreamVideo(ctx, fullPath, w, targetWidth); err != nil {
+		// Only log if it's not a client disconnect
+		if !errors.Is(err, context.Canceled) {
+			logging.Error("error streaming video %s: %v", filePath, err)
+		}
 	}
 }
 
 // GetStreamInfo returns codec and dimension information about a video file
 func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	vars := mux.Vars(r)
 	filePath := vars["path"]
 
@@ -251,7 +265,7 @@ func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := h.transcoder.GetVideoInfo(r.Context(), fullPath)
+	info, err := h.transcoder.GetVideoInfo(ctx, fullPath)
 	if err != nil {
 		http.Error(w, "Failed to get video info", http.StatusInternalServerError)
 		return
@@ -262,10 +276,12 @@ func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetStats returns current library statistics
-func (h *Handlers) GetStats(w http.ResponseWriter, _ *http.Request) {
+func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	stats := h.db.GetStats()
-	stats.TotalFavorites = h.db.GetFavoriteCount()
-	stats.TotalTags = h.db.GetTagCount()
+	stats.TotalFavorites = h.db.GetFavoriteCount(ctx)
+	stats.TotalTags = h.db.GetTagCount(ctx)
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, stats)
@@ -282,6 +298,9 @@ func (h *Handlers) TriggerReindex(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
+	// TriggerIndex starts a background goroutine that manages its own context
+	// The indexing operation should continue even if the HTTP request completes
+	//nolint:contextcheck // Intentionally not passing request context - indexing runs in background
 	h.indexer.TriggerIndex()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -376,7 +395,9 @@ func (h *Handlers) RebuildAllThumbnails(w http.ResponseWriter, _ *http.Request) 
 		return
 	}
 
-	// Start rebuild (clears cache and triggers generation)
+	// RebuildAll starts a background goroutine that manages its own context
+	// The rebuild operation should continue even if the HTTP request completes
+	//nolint:contextcheck // Intentionally not passing request context - rebuild runs in background
 	h.thumbGen.RebuildAll()
 
 	w.Header().Set("Content-Type", "application/json")

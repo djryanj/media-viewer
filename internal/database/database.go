@@ -267,11 +267,11 @@ func (d *Database) DeleteMissingFiles(tx *sql.Tx, cutoffTime time.Time) (int64, 
 }
 
 // GetFileByPath retrieves a single file by path.
-func (d *Database) GetFileByPath(path string) (*MediaFile, error) {
+func (d *Database) GetFileByPath(ctx context.Context, path string) (*MediaFile, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	query := `
