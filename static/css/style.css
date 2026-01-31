@@ -4303,3 +4303,198 @@ body.selection-mode .stats-bar {
         padding: 0.1875rem 0.3125rem;
     }
 }
+
+/* ===========================================
+   PWA & SAFE AREA SUPPORT
+   =========================================== */
+
+/* Prevent overscroll/bounce effects */
+html {
+    overscroll-behavior: none;
+}
+
+body {
+    overscroll-behavior-y: contain;
+    /* Prevent pull-to-refresh */
+    touch-action: pan-x pan-y;
+}
+
+/* Support for devices with notches/safe areas (iPhone X+, etc.) */
+@supports (padding: env(safe-area-inset-top)) {
+    body {
+        /* Ensure content doesn't go under system UI */
+        padding-top: env(safe-area-inset-top);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+
+    .header {
+        padding-top: calc(0.75rem + env(safe-area-inset-top));
+    }
+
+    /* Remove body padding when header handles it */
+    body {
+        padding-top: 0;
+    }
+
+    .stats-bar {
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+    }
+
+    .selection-toolbar {
+        padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    }
+
+    .pagination {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    }
+
+    /* Lightbox safe areas */
+    .lightbox {
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+            env(safe-area-inset-left);
+    }
+
+    .lightbox-close {
+        top: calc(0.5rem + env(safe-area-inset-top));
+        right: calc(0.5rem + env(safe-area-inset-right));
+    }
+
+    .lightbox-pin,
+    .lightbox-tag,
+    .lightbox-autoplay {
+        top: calc(0.5rem + env(safe-area-inset-top));
+    }
+
+    .lightbox-pin {
+        left: calc(0.5rem + env(safe-area-inset-left));
+    }
+
+    .lightbox-tag {
+        left: calc(3.5rem + env(safe-area-inset-left));
+    }
+
+    .lightbox-autoplay {
+        left: calc(7rem + env(safe-area-inset-left));
+    }
+
+    .lightbox-info {
+        bottom: calc(0.5rem + env(safe-area-inset-bottom));
+        left: calc(0.5rem + env(safe-area-inset-left));
+        right: calc(0.5rem + env(safe-area-inset-right));
+    }
+
+    .lightbox-tags-overlay {
+        bottom: calc(4rem + env(safe-area-inset-bottom));
+    }
+
+    /* Player modal safe areas */
+    .player-modal {
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+            env(safe-area-inset-left);
+    }
+
+    .player-modal.landscape-mode .player-header {
+        padding-top: calc(0.5rem + env(safe-area-inset-top));
+        padding-left: calc(1rem + env(safe-area-inset-left));
+        padding-right: calc(1rem + env(safe-area-inset-right));
+    }
+
+    .player-modal.landscape-mode .player-controls {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+        padding-left: calc(1rem + env(safe-area-inset-left));
+        padding-right: calc(1rem + env(safe-area-inset-right));
+    }
+
+    .player-modal.landscape-mode .playlist-sidebar {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* Modal dialogs */
+    .modal-content {
+        margin-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* Search dropdown */
+    .search-dropdown {
+        max-height: calc(60vh - env(safe-area-inset-bottom));
+    }
+}
+
+/* PWA standalone mode specific styles */
+body.pwa-standalone {
+    /* Running as installed app */
+}
+
+/* Disable text selection on UI elements for more native feel */
+.header,
+.breadcrumb,
+.pagination,
+.stats-bar,
+.selection-toolbar,
+.btn,
+.btn-icon,
+.gallery-item-info,
+.gallery-item-mobile-info,
+.lightbox-info,
+.player-header,
+.player-controls {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* But allow selection in inputs */
+input,
+textarea,
+[contenteditable='true'] {
+    -webkit-user-select: auto;
+    user-select: auto;
+}
+
+/* Smoother touch scrolling */
+.gallery,
+.favorites-gallery,
+.search-dropdown,
+#playlist-items,
+.modal-body {
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Disable callout on long-press for images */
+.gallery-item-thumb img,
+.lightbox-image {
+    -webkit-touch-callout: none;
+}
+
+/* Desktop - remove safe area padding */
+@media (min-width: 900px) {
+    @supports (padding: env(safe-area-inset-top)) {
+        .header {
+            padding-top: 0.75rem;
+        }
+
+        .lightbox-close {
+            top: 1rem;
+            right: 1rem;
+        }
+
+        .lightbox-pin {
+            left: 1rem;
+        }
+
+        .lightbox-tag {
+            left: 4.5rem;
+        }
+
+        .lightbox-autoplay {
+            left: 8rem;
+        }
+
+        .lightbox-info {
+            bottom: 1rem;
+            left: 50%;
+            right: auto;
+        }
+    }
+}

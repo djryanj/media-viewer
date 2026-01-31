@@ -63,5 +63,6 @@ sample-media/
 
 /media/
 cache/
+database/
 
 node_modules/

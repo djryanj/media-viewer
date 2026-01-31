@@ -12,7 +12,7 @@ const Player = {
     playlistVisible: false,
     edgeSwipeStartX: null,
     edgeSwipeThreshold: 30,
-    itemTags: new Map(), // Cache for item tags
+    itemTags: new Map(),
 
     init() {
         this.cacheElements();
@@ -635,6 +635,8 @@ const Player = {
 
         this.playCurrentVideo();
         this.updateNavigation();
+
+        this.acquireWakeLock();
     },
 
     close() {
@@ -655,6 +657,27 @@ const Player = {
         }
         if (this.hintTimeout) {
             clearTimeout(this.hintTimeout);
+        }
+
+        this.releaseWakeLock();
+    },
+
+    async acquireWakeLock() {
+        if (typeof WakeLock !== 'undefined') {
+            await WakeLock.acquire('video playback');
+        }
+    },
+
+    releaseWakeLock() {
+        // Only release if lightbox isn't also open
+        if (typeof WakeLock !== 'undefined') {
+            const lightboxOpen =
+                typeof Lightbox !== 'undefined' &&
+                !Lightbox.elements?.lightbox?.classList.contains('hidden');
+
+            if (!lightboxOpen) {
+                WakeLock.release();
+            }
         }
     },
 

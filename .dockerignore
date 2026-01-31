@@ -4,3 +4,14 @@ Dockerfile
 Makefile
 README.md
 .air.toml
+generate-icons.js
+eslint.config.js
+jsconfig.json
+.prettierrc
+.github/
+sample-media/
+tmp/
+.editorconfig
+stylelintrc.json
+.vscode/
+.env

@@ -12,7 +12,8 @@ STATIC_DIR := static
 .PHONY: all build build-all run dev dev-frontend dev-full test clean \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fix \
-        frontend-format frontend-format-check frontend-check frontend-dev
+        frontend-format frontend-format-check frontend-check frontend-dev \
+		icons
 
 # Build configuration
 BUILD_TAGS := fts5
@@ -193,6 +194,15 @@ setup: frontend-install
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Setup complete"
 
+
+# ===========================================
+# Icons
+# ===========================================
+
+icons: ## Regenerate PWA icons
+	@echo "Generating icons..."
+	@cd static && node generate-icons.js
+
 # =============================================================================
 # Help
 # =============================================================================
@@ -242,6 +252,9 @@ help:
 	@echo "  docker-build     Build Docker image"
 	@echo "  docker-build-dev Build Docker image for development"
 	@echo "  docker-run       Run Docker container"
+	@echo ""
+	@echo "Icons targets:"
+	@echo "  icons            Regenerate PWA icons"
 	@echo ""
 	@echo "Setup targets:"
 	@echo "  setup            Install all development dependencies"

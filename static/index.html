@@ -4,13 +4,43 @@
         <meta charset="UTF-8" />
         <meta
             name="viewport"
-            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+            content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1.0"
         />
         <title>Media Viewer</title>
+
+        <!-- PWA Meta Tags -->
+        <meta name="application-name" content="Media Viewer" />
+        <meta name="theme-color" content="#1a1a2e" />
+        <meta name="color-scheme" content="dark" />
+        <meta name="mobile-web-app-capable" content="yes" />
+
+        <!-- iOS Safari PWA Support -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Media Viewer" />
+
+        <!-- iOS Safari Icons -->
+        <link rel="apple-touch-icon" href="/icons/icon-180x180.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
+        <link rel="apple-touch-icon" sizes="167x167" href="/icons/icon-167x167.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
+
+        <!-- Favicon -->
+        <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
+
+        <!-- Web App Manifest -->
+        <link rel="manifest" href="/manifest.json" ` />
+
+        <!-- Prevent automatic detection -->
+        <meta name="format-detection" content="telephone=no" />
+
+        <!-- Styles -->
         <link rel="stylesheet" href="/css/style.css" />
         <!-- Lucide Icons -->
         <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     </head>
+
     <body>
         <!-- Header -->
         <header class="header">
@@ -294,6 +324,7 @@
         <script src="/js/favorites.js"></script>
         <script src="/js/search.js"></script>
         <script src="/js/tags.js"></script>
+        <script src="/js/wake-lock.js"></script>
         <script src="/js/lightbox.js"></script>
         <script src="/js/player.js"></script>
         <script src="/js/selection.js"></script>
