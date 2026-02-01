@@ -94,7 +94,9 @@
                             <option value="type">Type</option>
                         </select>
                         <button class="btn-icon" id="sort-order" title="Toggle sort order">
-                            <i data-lucide="arrow-up" class="sort-icon"></i>
+                            <span class="sort-icon">
+                                <i data-lucide="arrow-up-narrow-wide"></i>
+                            </span>
                         </button>
                     </div>
 
@@ -336,11 +338,6 @@
         <script>
             // Initialize Lucide icons
             lucide.createIcons();
-
-            // Initialize app
-            document.addEventListener('DOMContentLoaded', () => {
-                MediaApp.init();
-            });
         </script>
     </body>
 </html>
