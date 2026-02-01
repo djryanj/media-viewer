@@ -315,12 +315,20 @@ select:focus {
 }
 
 .sort-icon {
-    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transition: transform var(--transition);
 }
 
 .sort-icon.desc {
     transform: rotate(180deg);
+}
+
+.sort-icon svg,
+.sort-icon [data-lucide] {
+    width: 1.125rem;
+    height: 1.125rem;
 }
 
 /* ===========================================

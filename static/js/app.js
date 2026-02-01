@@ -1,3 +1,13 @@
+// Add at the top of app.js, before MediaApp definition
+(function () {
+    const originalAddEventListener = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (type, listener, options) {
+        if (this.id === 'sort-order' && type === 'click') {
+            console.trace('Adding click listener to sort-order button');
+        }
+        return originalAddEventListener.call(this, type, listener, options);
+    };
+})();
 const MediaApp = {
     state: {
         currentPath: '',
@@ -14,6 +24,12 @@ const MediaApp = {
     elements: {},
 
     init() {
+        if (this._initialized) {
+            console.warn('MediaApp.init() called multiple times - skipping');
+            return;
+        }
+        this._initialized = true;
+
         this.cacheElements();
         this.bindEvents();
         this.checkAuth();
@@ -217,6 +233,14 @@ const MediaApp = {
                 try {
                     Preferences.init();
                     this.state.currentSort = Preferences.getSort();
+
+                    // Update sort field dropdown to match preference
+                    if (this.elements.sortField) {
+                        this.elements.sortField.value = this.state.currentSort.field;
+                    }
+
+                    // Update sort order icon to match preference
+                    this.updateSortIcon(this.state.currentSort.order);
                 } catch (e) {
                     console.error('Preferences init error:', e);
                 }
@@ -364,10 +388,14 @@ const MediaApp = {
 
         this.showLoading();
         try {
+            // Capture current sort state to ensure consistency
+            const sortField = this.state.currentSort.field;
+            const sortOrder = this.state.currentSort.order;
+
             const params = new URLSearchParams({
                 path: path,
-                sort: this.state.currentSort.field,
-                order: this.state.currentSort.order,
+                sort: sortField,
+                order: sortOrder,
                 page: '1',
                 pageSize:
                     typeof InfiniteScroll !== 'undefined'
@@ -391,7 +419,8 @@ const MediaApp = {
             this.state.listing = await response.json();
             this.state.currentPath = path;
 
-            await this.loadMediaFiles(path);
+            // Load media files with the same sort parameters
+            await this.loadMediaFiles(path, sortField, sortOrder);
 
             if (pushState) {
                 const url = path ? `?path=${encodeURIComponent(path)}` : window.location.pathname;
@@ -416,12 +445,16 @@ const MediaApp = {
         }
     },
 
-    async loadMediaFiles(path) {
+    async loadMediaFiles(path, sortField, sortOrder) {
         try {
+            // Use passed parameters, fall back to state if not provided
+            const field = sortField || this.state.currentSort.field;
+            const order = sortOrder || this.state.currentSort.order;
+
             const params = new URLSearchParams({
                 path: path,
-                sort: this.state.currentSort.field,
-                order: this.state.currentSort.order,
+                sort: field,
+                order: order,
             });
 
             const response = await fetch(`/api/media?${params}`);
@@ -567,21 +600,55 @@ const MediaApp = {
             InfiniteScroll.clearCache();
         }
 
-        this.loadDirectory(this.state.currentPath);
+        // Don't push history state for sort changes
+        this.loadDirectory(this.state.currentPath, false);
     },
 
     toggleSortOrder() {
-        const icon = this.elements.sortOrder.querySelector('.sort-icon');
-        if (this.state.currentSort.order === 'asc') {
-            this.state.currentSort.order = 'desc';
-            icon.classList.add('desc');
-        } else {
-            this.state.currentSort.order = 'asc';
-            icon.classList.remove('desc');
+        if (this._initialized === false) return;
+
+        // Debounce
+        const now = Date.now();
+        if (this._lastSortToggle && now - this._lastSortToggle < 500) {
+            return;
         }
-        Preferences.set('sortOrder', this.state.currentSort.order);
+        this._lastSortToggle = now;
+
+        // Toggle the state
+        const newOrder = this.state.currentSort.order === 'asc' ? 'desc' : 'asc';
+        this.state.currentSort.order = newOrder;
+
+        // Update the icon
+        this.updateSortIcon(newOrder);
+
+        // Save preference
+        Preferences.set('sortOrder', newOrder);
+
+        // Reset to first page
         this.state.currentPage = 1;
-        this.loadDirectory(this.state.currentPath);
+
+        // Clear infinite scroll cache
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.clearCache();
+        }
+
+        // Reload without pushing history
+        this.loadDirectory(this.state.currentPath, false);
+    },
+
+    updateSortIcon(order) {
+        const iconWrapper = this.elements.sortOrder.querySelector('.sort-icon');
+        if (!iconWrapper) return;
+
+        // Use different icons for ascending vs descending
+        const iconName = order === 'asc' ? 'arrow-up-narrow-wide' : 'arrow-down-wide-narrow';
+
+        iconWrapper.innerHTML = `<i data-lucide="${iconName}"></i>`;
+
+        // Re-initialize Lucide for this element
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons({ nodes: [iconWrapper] });
+        }
     },
 
     handleFilterChange() {
@@ -592,7 +659,8 @@ const MediaApp = {
             InfiniteScroll.clearCache();
         }
 
-        this.loadDirectory(this.state.currentPath);
+        // Don't push history state for filter changes
+        this.loadDirectory(this.state.currentPath, false);
     },
 
     showLoading() {
