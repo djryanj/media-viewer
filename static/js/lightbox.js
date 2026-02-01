@@ -77,7 +77,7 @@ const Lightbox = {
             ? '<i data-lucide="play-circle"></i>'
             : '<i data-lucide="pause-circle"></i>';
         btn.title = isEnabled ? 'Autoplay ON (A)' : 'Autoplay OFF (A)';
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [btn] });
     },
 
     toggleAutoplay() {
@@ -121,7 +121,7 @@ const Lightbox = {
             ? '<i data-lucide="repeat"></i>'
             : '<i data-lucide="repeat-1"></i>';
         btn.title = isEnabled ? 'Loop ON (L)' : 'Loop OFF (L)';
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [btn] });
     },
 
     toggleLoop() {
@@ -591,6 +591,12 @@ const Lightbox = {
         this.elements.title.textContent = file.name;
 
         this.updatePinButton(file);
+
+        // Get tags from gallery if not already on the file
+        if (file.tags === undefined) {
+            file.tags = this.getTagsFromGallery(file.path) || [];
+        }
+
         this.updateTagButton(file);
         this.updateTagsOverlay(file);
 
@@ -602,15 +608,12 @@ const Lightbox = {
 
         this.elements.lightbox.classList.toggle('video-mode', isVideo);
 
-        // Show autoplay button only for videos
         if (this.elements.autoplayBtn) {
             this.elements.autoplayBtn.classList.toggle('hidden', !isVideo);
         }
 
-        // Show loop button for videos AND animated images
         if (this.elements.loopBtn) {
             this.elements.loopBtn.classList.toggle('hidden', !showLoopButton);
-            // Update button state
             this.updateLoopButton();
         }
 
@@ -621,6 +624,70 @@ const Lightbox = {
         }
 
         this.preloadAdjacent();
+    },
+
+    /**
+     * Get tags from gallery item if available
+     */
+    getTagsFromGallery(path) {
+        const galleryItem = document.querySelector(
+            `.gallery-item[data-path="${CSS.escape(path)}"]`
+        );
+        if (!galleryItem) return null;
+
+        const tagsContainer = galleryItem.querySelector('.gallery-item-tags');
+        if (!tagsContainer && !galleryItem.querySelector('.tag-button.has-tags')) {
+            return []; // No tags container and no has-tags indicator = no tags
+        }
+
+        if (!tagsContainer) return null; // Has indicator but no container, unknown state
+
+        // Try to get from data attribute first (if we store it there)
+        const allTagsData = tagsContainer.dataset.allTags;
+        if (allTagsData) {
+            try {
+                return JSON.parse(allTagsData);
+            } catch (e) {
+                // Fall through to DOM parsing
+            }
+        }
+
+        // Parse from DOM
+        const tagElements = tagsContainer.querySelectorAll('.item-tag:not(.more)');
+        const tags = [];
+        tagElements.forEach((el) => {
+            const tagText = el.dataset.tag || el.textContent?.trim();
+            if (tagText) {
+                tags.push(tagText);
+            }
+        });
+
+        return tags.length > 0 ? tags : [];
+    },
+
+    /**
+     * Fetch tags from server and update UI
+     */
+    async fetchAndUpdateTags(file) {
+        // Show current cached tags immediately (if any)
+        this.updateTagButton(file);
+        this.updateTagsOverlay(file);
+
+        try {
+            const response = await fetch(`/api/tags/file?path=${encodeURIComponent(file.path)}`);
+            if (response.ok) {
+                const tags = await response.json();
+
+                // Update the file object with fresh tags
+                file.tags = tags || [];
+
+                // Update UI with fresh data
+                this.updateTagButton(file);
+                this.updateTagsOverlay(file);
+            }
+        } catch (error) {
+            console.debug('Lightbox: failed to fetch tags for', file.path, error);
+        }
     },
 
     updateTagsOverlay(file) {
@@ -885,15 +952,65 @@ const Lightbox = {
             return a.distance - b.distance;
         });
 
+        // Collect paths that need tag fetching
+        const pathsNeedingTags = [];
+
         indicesToPreload.forEach((entry, index) => {
             const item = this.items[entry.index];
-            if (item && item.type === 'image') {
+            if (!item) return;
+
+            // Preload image
+            if (item.type === 'image') {
                 const priority = index < 2 ? 'high' : 'low';
                 this.preloadImage(item, priority);
             }
+
+            // Queue tag fetch if not already loaded
+            if (item.tags === undefined) {
+                // Try gallery first
+                const galleryTags = this.getTagsFromGallery(item.path);
+                if (galleryTags !== null) {
+                    item.tags = galleryTags;
+                } else {
+                    pathsNeedingTags.push(item.path);
+                }
+            }
         });
 
+        // Batch fetch tags for items not in gallery
+        if (pathsNeedingTags.length > 0) {
+            this.preloadTags(pathsNeedingTags);
+        }
+
         this.cleanPreloadCache();
+    },
+
+    /**
+     * Preload tags for multiple paths
+     */
+    async preloadTags(paths) {
+        try {
+            const response = await fetch('/api/tags/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: paths }),
+            });
+
+            if (response.ok) {
+                const tagsData = await response.json();
+
+                // Update items with fetched tags
+                // Note: backend only returns paths that have tags
+                for (const item of this.items) {
+                    if (paths.includes(item.path)) {
+                        // If path is in response, use those tags; otherwise empty array
+                        item.tags = tagsData[item.path] || [];
+                    }
+                }
+            }
+        } catch (error) {
+            console.debug('Lightbox: failed to preload tags', error);
+        }
     },
 
     preloadImage(file, priority = 'low') {
@@ -956,7 +1073,7 @@ const Lightbox = {
         this.elements.pinBtn.title = isPinned
             ? 'Remove from favorites (F)'
             : 'Add to favorites (F)';
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [this.elements.pinBtn] });
     },
 
     togglePin() {
@@ -998,7 +1115,7 @@ const Lightbox = {
         this.elements.tagBtn.classList.toggle('has-tags', hasTags);
         this.elements.tagBtn.innerHTML = '<i data-lucide="tag"></i>';
         this.elements.tagBtn.title = 'Manage tags (T)';
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [this.elements.tagBtn] });
     },
 };
 

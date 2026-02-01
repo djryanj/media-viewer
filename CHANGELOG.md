@@ -13,13 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Infinite scroll with paginated fallback in both main gallery and search views
 - Session keepalive system to maintain active sessions during user activity
-- Shorter server sessions by default (configurable with`SESSION_DURATION` environment variable) which ensures that media stays private without complex PWA and frontend changes ([#73](https://github.com/djryanj/media-viewer/issues/73), [#82](https://github.com/djryanj/media-viewer/issues/82))
+- Shorter server sessions by default (configurable with `SESSION_DURATION` environment variable) which ensures that media stays private without complex PWA and frontend changes ([#73](https://github.com/djryanj/media-viewer/issues/73), [#82](https://github.com/djryanj/media-viewer/issues/82))
 - Escape key logs out from the main screen ([#73](https://github.com/djryanj/media-viewer/issues/73))
 - Navigation improvements (back button)
 
 ### Changed
 
 - Colorblind accessibility improvements including a subtle change to the icon design (#100)
+- Sort order button now uses distinct icons (`arrow-up-narrow-wide` / `arrow-down-wide-narrow`) for clearer visual feedback
+
+### Fixed
+
+- Sort order changes no longer pollute browser history ([#97](https://github.com/djryanj/media-viewer/issues/97))
+- Sort order icon now correctly reflects current state ([#97](https://github.com/djryanj/media-viewer/issues/97))
+- Prevented duplicate app initialization that caused redundant network requests
+- Lightbox now correctly displays tag indicator by sourcing tags from gallery and preloading for adjacent items ([#106](https://github.com/djryanj/media-viewer/issues/106))
 
 ### Deprecated
 
@@ -31,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batched selection updates (single paint cycle)
 - Priority loading for visible items on cache restore
 - O(1) selection lookups via Set
+- Eliminated duplicate initialization improving app responsiveness
+- Lightbox preloads tags for adjacent items using batch endpoint
 
 ## [0.4.2] - January 31, 2026
 
