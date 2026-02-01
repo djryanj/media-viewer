@@ -13,6 +13,10 @@ const Search = {
     init() {
         this.cacheElements();
         this.bindEvents();
+        // Initialize infinite scroll for search
+        if (typeof InfiniteScrollSearch !== 'undefined') {
+            InfiniteScrollSearch.init();
+        }
     },
 
     cacheElements() {
@@ -452,8 +456,11 @@ const Search = {
         try {
             const params = new URLSearchParams({
                 q: query,
-                page: this.currentPage,
-                pageSize: this.pageSize,
+                page: '1',
+                pageSize:
+                    typeof InfiniteScrollSearch !== 'undefined'
+                        ? String(InfiniteScrollSearch.config.batchSize)
+                        : String(this.pageSize),
             });
 
             const filterType = document.getElementById('filter-type').value;
@@ -478,25 +485,33 @@ const Search = {
         if (!this.results) return;
 
         this.elements.queryDisplay.textContent = `"${this.results.query}"`;
-        this.elements.resultsGallery.innerHTML = '';
 
-        if (this.results.items.length === 0) {
-            this.elements.resultsGallery.innerHTML = `
+        // Use infinite scroll for search if available
+        if (typeof InfiniteScrollSearch !== 'undefined') {
+            InfiniteScrollSearch.startSearch(this.results.query, this.results);
+        } else {
+            // Fallback to original rendering
+            this.elements.resultsGallery.innerHTML = '';
+
+            if (this.results.items.length === 0) {
+                this.elements.resultsGallery.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon"><i data-lucide="search"></i></div>
                     <p>No results found for "${this.escapeHtml(this.results.query)}"</p>
                 </div>
             `;
-            lucide.createIcons();
-        } else {
-            this.results.items.forEach((item) => {
-                const element = Gallery.createGalleryItem(item);
-                this.elements.resultsGallery.appendChild(element);
-            });
-            lucide.createIcons();
+                lucide.createIcons();
+            } else {
+                this.results.items.forEach((item) => {
+                    const element = Gallery.createGalleryItem(item);
+                    this.elements.resultsGallery.appendChild(element);
+                });
+                lucide.createIcons();
+            }
+
+            this.renderPagination();
         }
 
-        this.renderPagination();
         this.elements.results.classList.remove('hidden');
 
         // Scroll to top of results
@@ -512,6 +527,11 @@ const Search = {
         this.lastQuery = '';
         this.results = null;
 
+        // Reset infinite scroll search state
+        if (typeof InfiniteScrollSearch !== 'undefined') {
+            InfiniteScrollSearch.resetState();
+        }
+
         // Restore previous state
         this.restorePreviousState();
     },
@@ -525,6 +545,13 @@ const Search = {
     },
 
     renderPagination() {
+        // If using infinite scroll, hide pagination
+        if (typeof InfiniteScrollSearch !== 'undefined') {
+            this.elements.pagination.classList.add('hidden');
+            return;
+        }
+
+        // Original pagination logic for fallback
         if (!this.results || this.results.totalPages <= 1) {
             this.elements.pagination.classList.add('hidden');
             return;

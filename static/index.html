@@ -143,12 +143,12 @@
         <main class="main-content">
             <div class="gallery" id="gallery"></div>
 
-            <div class="pagination hidden" id="pagination">
-                <button class="btn" id="page-prev">
+            <div id="pagination" class="pagination hidden">
+                <button id="page-prev" class="btn">
                     <i data-lucide="chevron-left"></i> Previous
                 </button>
                 <span id="page-info"></span>
-                <button class="btn" id="page-next">Next <i data-lucide="chevron-right"></i></button>
+                <button id="page-next" class="btn">Next <i data-lucide="chevron-right"></i></button>
             </div>
         </main>
 
@@ -159,12 +159,12 @@
                 <button class="btn" id="search-results-close">Close</button>
             </div>
             <div class="search-results-gallery" id="search-results-gallery"></div>
-            <div class="pagination hidden" id="search-pagination">
-                <button class="btn" id="search-page-prev">
+            <div id="search-pagination" class="pagination hidden">
+                <button id="search-page-prev" class="btn">
                     <i data-lucide="chevron-left"></i> Previous
                 </button>
                 <span id="search-page-info"></span>
-                <button class="btn" id="search-page-next">
+                <button id="search-page-next" class="btn">
                     Next <i data-lucide="chevron-right"></i>
                 </button>
             </div>
@@ -320,6 +320,8 @@
         <!-- Scripts -->
         <script src="/js/history.js"></script>
         <script src="/js/preferences.js"></script>
+        <script src="/js/infinite-scroll.js"></script>
+        <script src="/js/infinite-scroll-search.js"></script>
         <script src="/js/gallery.js"></script>
         <script src="/js/favorites.js"></script>
         <script src="/js/search.js"></script>

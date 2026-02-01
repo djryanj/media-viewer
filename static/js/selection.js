@@ -1,6 +1,9 @@
 const ItemSelection = {
     isActive: false,
-    selectedItems: new Map(),
+    // Store only paths and minimal data, not DOM references
+    selectedPaths: new Set(),
+    selectedData: new Map(), // path -> {name, type}
+
     isDragging: false,
     lastTouchedElement: null,
     elements: {},
@@ -12,6 +15,11 @@ const ItemSelection = {
     touchStartY: 0,
 
     selectableTypes: ['image', 'video', 'folder', 'playlist'],
+
+    // Batch DOM update settings
+    batchUpdateDelay: 16, // ~1 frame
+    pendingUpdates: new Set(),
+    updateScheduled: false,
 
     createIcon(name) {
         const icon = document.createElement('i');
@@ -211,7 +219,7 @@ const ItemSelection = {
                     const type = galleryItem.dataset.type;
 
                     if (this.isSelectableType(type)) {
-                        if (!this.selectedItems.has(path)) {
+                        if (!this.selectedPaths.has(path)) {
                             this.selectItem(galleryItem);
                         }
                     }
@@ -247,11 +255,14 @@ const ItemSelection = {
         if (this.isActive) return;
 
         this.isActive = true;
-        this.selectedItems.clear();
+        this.selectedPaths.clear();
+        this.selectedData.clear();
 
         document.body.classList.add('selection-mode');
         this.elements.toolbar.classList.remove('hidden');
-        this.addCheckboxesToGallery();
+
+        // Add checkboxes only to visible items
+        this.addCheckboxesToVisibleItems();
 
         if (initialElement) {
             this.selectItem(initialElement);
@@ -272,13 +283,16 @@ const ItemSelection = {
         if (!this.isActive) return;
 
         this.isActive = false;
-        this.selectedItems.clear();
+        this.selectedPaths.clear();
+        this.selectedData.clear();
         this.isDragging = false;
+        this.pendingUpdates.clear();
 
         document.body.classList.remove('selection-mode');
         this.elements.toolbar.classList.add('hidden');
         this.removeCheckboxesFromGallery();
 
+        // Batch remove selected class
         document.querySelectorAll('.gallery-item.selected').forEach((item) => {
             item.classList.remove('selected');
         });
@@ -298,27 +312,104 @@ const ItemSelection = {
         }
     },
 
-    addCheckboxesToGallery() {
-        document.querySelectorAll('.gallery-item').forEach((item) => {
-            const type = item.dataset.type;
+    /**
+     * Add checkboxes only to currently visible items (performance optimization)
+     */
+    addCheckboxesToVisibleItems() {
+        const gallery = this.elements.gallery;
+        const items = gallery.querySelectorAll('.gallery-item:not(.skeleton)');
 
+        // Use IntersectionObserver to only add checkboxes to visible items initially
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        this.addCheckboxToItem(entry.target);
+                        observer.unobserve(entry.target);
+                    }
+                });
+            },
+            { rootMargin: '200px' }
+        );
+
+        items.forEach((item) => {
+            const type = item.dataset.type;
             if (this.isSelectableType(type)) {
-                const thumbArea = item.querySelector('.gallery-item-thumb');
-                if (thumbArea && !thumbArea.querySelector('.selection-checkbox')) {
-                    const checkbox = document.createElement('div');
-                    checkbox.className = 'selection-checkbox';
-                    checkbox.innerHTML = '<i data-lucide="check"></i>';
-                    thumbArea.appendChild(checkbox);
-                    lucide.createIcons();
+                // Add checkbox immediately if in viewport, otherwise observe
+                const rect = item.getBoundingClientRect();
+                const inViewport = rect.top < window.innerHeight + 200 && rect.bottom > -200;
+
+                if (inViewport) {
+                    this.addCheckboxToItem(item);
+                } else {
+                    observer.observe(item);
                 }
+            }
+        });
+
+        // Store observer for cleanup
+        this._checkboxObserver = observer;
+    },
+
+    /**
+     * Add checkbox to a single item
+     */
+    addCheckboxToItem(item) {
+        const thumbArea = item.querySelector('.gallery-item-thumb');
+        if (thumbArea && !thumbArea.querySelector('.selection-checkbox')) {
+            const checkbox = document.createElement('div');
+            checkbox.className = 'selection-checkbox';
+            checkbox.innerHTML = '<i data-lucide="check"></i>';
+            thumbArea.appendChild(checkbox);
+
+            // Check if this item should be selected
+            const path = item.dataset.path;
+            if (this.selectedPaths.has(path)) {
+                item.classList.add('selected');
+            }
+
+            lucide.createIcons({ nodes: [checkbox] });
+        }
+    },
+
+    /**
+     * Add checkboxes to newly loaded items (called by InfiniteScroll)
+     */
+    addCheckboxesToNewItems(container) {
+        if (!this.isActive) return;
+
+        const items = container.querySelectorAll
+            ? container.querySelectorAll('.gallery-item:not(.skeleton)')
+            : [];
+
+        items.forEach((item) => {
+            const type = item.dataset.type;
+            if (this.isSelectableType(type)) {
+                this.addCheckboxToItem(item);
             }
         });
     },
 
+    /**
+     * Alias for backward compatibility
+     */
+    addCheckboxesToGallery() {
+        this.addCheckboxesToVisibleItems();
+    },
+
     removeCheckboxesFromGallery() {
+        // Disconnect observer if exists
+        if (this._checkboxObserver) {
+            this._checkboxObserver.disconnect();
+            this._checkboxObserver = null;
+        }
+
         document.querySelectorAll('.selection-checkbox').forEach((cb) => cb.remove());
     },
 
+    /**
+     * Select an item - stores path, not DOM reference
+     */
     selectItem(element) {
         const path = element.dataset.path;
         const name = element.dataset.name || path.split('/').pop();
@@ -326,76 +417,127 @@ const ItemSelection = {
 
         if (!this.isSelectableType(type)) return;
 
-        element.classList.add('selected');
-        this.selectedItems.set(path, { name, type, element });
+        // Store in Sets/Maps (no DOM reference)
+        this.selectedPaths.add(path);
+        this.selectedData.set(path, { name, type });
 
-        const checkbox = element.querySelector('.select-checkbox');
-        if (checkbox) {
-            checkbox.checked = true;
-        }
-
+        // Schedule DOM update
+        this.scheduleDOMUpdate(path, true);
         this.updateToolbar();
     },
 
+    /**
+     * Deselect an item
+     */
     deselectItem(element, autoExit = true) {
         const path = element.dataset.path;
-        element.classList.remove('selected');
-        this.selectedItems.delete(path);
 
-        const checkbox = element.querySelector('.select-checkbox');
-        if (checkbox) {
-            checkbox.checked = false;
-        }
+        this.selectedPaths.delete(path);
+        this.selectedData.delete(path);
 
+        // Schedule DOM update
+        this.scheduleDOMUpdate(path, false);
         this.updateToolbar();
 
-        if (autoExit && this.selectedItems.size === 0) {
+        if (autoExit && this.selectedPaths.size === 0) {
             this.exitSelectionModeWithHistory();
         }
     },
 
+    /**
+     * Schedule batched DOM updates for better performance
+     */
+    scheduleDOMUpdate(path, isSelected) {
+        this.pendingUpdates.add({ path, isSelected });
+
+        if (!this.updateScheduled) {
+            this.updateScheduled = true;
+            requestAnimationFrame(() => {
+                this.processPendingUpdates();
+            });
+        }
+    },
+
+    /**
+     * Process all pending DOM updates in a single frame
+     */
+    processPendingUpdates() {
+        this.pendingUpdates.forEach(({ path, isSelected }) => {
+            const element = document.querySelector(
+                `.gallery-item[data-path="${CSS.escape(path)}"]`
+            );
+            if (element) {
+                element.classList.toggle('selected', isSelected);
+                const checkbox = element.querySelector('.select-checkbox');
+                if (checkbox) {
+                    checkbox.checked = isSelected;
+                }
+            }
+        });
+
+        this.pendingUpdates.clear();
+        this.updateScheduled = false;
+    },
+
     toggleItem(element) {
         const path = element.dataset.path;
-        if (this.selectedItems.has(path)) {
+        if (this.selectedPaths.has(path)) {
             this.deselectItem(element);
         } else {
             this.selectItem(element);
         }
     },
 
+    /**
+     * Select all - optimized for large libraries
+     */
     selectAll() {
-        const galleryItems = document.querySelectorAll('.gallery-item');
-        const selectableItems = Array.from(galleryItems).filter((item) => {
-            const type = item.dataset.type;
-            return this.isSelectableType(type);
-        });
+        // Get all items from InfiniteScroll if available, otherwise from DOM
+        let allItems;
+        if (typeof InfiniteScroll !== 'undefined') {
+            allItems = InfiniteScroll.getAllLoadedItems();
+        } else {
+            // Fallback to DOM
+            allItems = Array.from(document.querySelectorAll('.gallery-item:not(.skeleton)')).map(
+                (el) => ({
+                    path: el.dataset.path,
+                    name: el.dataset.name,
+                    type: el.dataset.type,
+                })
+            );
+        }
 
-        const allSelected = selectableItems.every((item) => {
-            const path = item.dataset.path;
-            return this.selectedItems.has(path);
-        });
+        const selectableItems = allItems.filter((item) => this.isSelectableType(item.type));
+
+        // Check if all are already selected
+        const allSelected = selectableItems.every((item) => this.selectedPaths.has(item.path));
 
         if (allSelected) {
             // Deselect all but stay in selection mode
             selectableItems.forEach((item) => {
-                this.deselectItem(item, false);
+                this.selectedPaths.delete(item.path);
+                this.selectedData.delete(item.path);
+                this.scheduleDOMUpdate(item.path, false);
             });
-            this.updateToolbar();
         } else {
+            // Select all
             selectableItems.forEach((item) => {
-                const path = item.dataset.path;
-                if (!this.selectedItems.has(path)) {
-                    this.selectItem(item);
+                if (!this.selectedPaths.has(item.path)) {
+                    this.selectedPaths.add(item.path);
+                    this.selectedData.set(item.path, { name: item.name, type: item.type });
+                    this.scheduleDOMUpdate(item.path, true);
                 }
             });
         }
+
+        this.updateToolbar();
     },
 
     updateToolbar() {
-        const count = this.selectedItems.size;
+        const count = this.selectedPaths.size;
         this.elements.count.textContent = `${count} selected`;
 
-        const hasTaggableItems = Array.from(this.selectedItems.values()).some(
+        const hasTaggableItems = Array.from(this.selectedData.values()).some(
             (item) => item.type !== 'folder'
         );
 
@@ -403,20 +545,16 @@ const ItemSelection = {
         this.elements.favoriteBtn.disabled = count === 0;
 
         // Update select all button state
-        const galleryItems = document.querySelectorAll('.gallery-item');
-        const selectableItems = Array.from(galleryItems).filter((item) => {
-            const type = item.dataset.type;
-            return this.isSelectableType(type);
-        });
+        let totalSelectable = 0;
+        if (typeof InfiniteScroll !== 'undefined') {
+            const allItems = InfiniteScroll.getAllLoadedItems();
+            totalSelectable = allItems.filter((item) => this.isSelectableType(item.type)).length;
+        } else {
+            totalSelectable = document.querySelectorAll('.gallery-item:not(.skeleton)').length;
+        }
 
-        const allSelected =
-            selectableItems.length > 0 &&
-            selectableItems.every((item) => {
-                const path = item.dataset.path;
-                return this.selectedItems.has(path);
-            });
+        const allSelected = totalSelectable > 0 && this.selectedPaths.size >= totalSelectable;
 
-        // Update button text/icon to indicate current state
         const selectAllBtn = this.elements.selectAllBtn;
         if (selectAllBtn) {
             const textSpan = selectAllBtn.querySelector('span');
@@ -433,9 +571,9 @@ const ItemSelection = {
     },
 
     openBulkTagModal() {
-        if (this.selectedItems.size === 0) return;
+        if (this.selectedPaths.size === 0) return;
 
-        const taggableItems = Array.from(this.selectedItems.entries()).filter(
+        const taggableItems = Array.from(this.selectedData.entries()).filter(
             ([_path, data]) => data.type !== 'folder'
         );
 
@@ -451,10 +589,10 @@ const ItemSelection = {
     },
 
     async bulkFavorite() {
-        if (this.selectedItems.size === 0) return;
+        if (this.selectedPaths.size === 0) return;
 
         // Filter out items that are already favorites
-        const itemsToAdd = Array.from(this.selectedItems.entries())
+        const itemsToAdd = Array.from(this.selectedData.entries())
             .filter(([path]) => !Favorites.isPinned(path))
             .map(([path, data]) => ({
                 path: path,
@@ -514,8 +652,23 @@ const ItemSelection = {
         }
     },
 
+    /**
+     * Check if item is selected by path (no DOM lookup)
+     */
     isItemSelected(path) {
-        return this.selectedItems.has(path);
+        return this.selectedPaths.has(path);
+    },
+
+    /**
+     * Get selected items data (for backward compatibility)
+     */
+    get selectedItems() {
+        // Return a Map-like interface for backward compatibility
+        const map = new Map();
+        this.selectedData.forEach((data, path) => {
+            map.set(path, { ...data, element: null });
+        });
+        return map;
     },
 };
 
