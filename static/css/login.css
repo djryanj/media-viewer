@@ -1,14 +1,34 @@
+/* login.css */
+
 :root {
+    /* Background colors */
     --bg-primary: #1a1a2e;
     --bg-secondary: #16213e;
     --bg-tertiary: #0f3460;
+
+    /* Text colors - improved contrast */
     --text-primary: #eaeaea;
-    --text-secondary: #a0a0a0;
+    --text-secondary: #b8b8b8;
+
+    /* Accent color */
     --accent: #e94560;
     --accent-hover: #ff6b6b;
+
+    /* Semantic colors - distinct for colorblind users */
+    --success: #2ecc71;
+    --success-bg: rgba(46, 204, 113, 0.15);
+    --error: #e74c3c;
+    --error-bg: rgba(231, 76, 60, 0.15);
+    --warning: #f39c12;
+    --warning-bg: rgba(243, 156, 18, 0.15);
+    --info: #3498db;
+    --info-bg: rgba(52, 152, 219, 0.15);
+
+    /* Borders */
     --border-color: #2a2a4a;
-    --success: #4ecdc4;
-    --error: #e94560;
+    --border-focus: #5dade2;
+
+    /* Other */
     --radius: 8px;
     --transition: 0.2s ease;
 }
@@ -110,17 +130,18 @@ body {
 
 .form-group input:focus {
     outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.15);
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.25);
 }
 
 .form-group input::placeholder {
     color: var(--text-secondary);
 }
 
-/* Error state for input */
+/* Error state for input - uses border + background tint */
 .form-group input.error {
     border-color: var(--error);
+    background: var(--error-bg);
     animation: shake 0.4s ease-in-out;
 }
 
@@ -166,7 +187,7 @@ body {
 
 .password-toggle:focus {
     outline: none;
-    color: var(--accent);
+    color: var(--border-focus);
 }
 
 .password-toggle:active {
@@ -191,22 +212,29 @@ body {
 }
 
 /* ===========================================
-   ERROR MESSAGE
+   ERROR MESSAGE - ACCESSIBLE DESIGN
+   Uses: icon + color + border + background
    =========================================== */
 
 .error-message {
-    background: rgba(233, 69, 96, 0.1);
+    background: var(--error-bg);
     border: 1px solid var(--error);
+    border-left: 4px solid var(--error);
     color: var(--error);
     padding: 0.75rem 1rem;
     border-radius: var(--radius);
     margin-bottom: 1rem;
     font-size: 0.875rem;
-    text-align: center;
+    text-align: left;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+    gap: 0.625rem;
+}
+
+.error-message::before {
+    content: '⚠';
+    font-size: 1.125rem;
+    flex-shrink: 0;
 }
 
 .error-message.hidden {
@@ -222,6 +250,65 @@ body {
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
+}
+
+/* ===========================================
+   SUCCESS MESSAGE - ACCESSIBLE DESIGN
+   =========================================== */
+
+.success-message {
+    background: var(--success-bg);
+    border: 1px solid var(--success);
+    border-left: 4px solid var(--success);
+    color: var(--success);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+}
+
+.success-message::before {
+    content: '✓';
+    font-size: 1.125rem;
+    flex-shrink: 0;
+    font-weight: bold;
+}
+
+.success-message.hidden {
+    display: none;
+}
+
+/* ===========================================
+   INFO MESSAGE - ACCESSIBLE DESIGN
+   =========================================== */
+
+.info-message {
+    background: var(--info-bg);
+    border: 1px solid var(--info);
+    border-left: 4px solid var(--info);
+    color: var(--info);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+}
+
+.info-message::before {
+    content: 'ℹ';
+    font-size: 1.125rem;
+    flex-shrink: 0;
+}
+
+.info-message.hidden {
+    display: none;
 }
 
 /* ===========================================
@@ -342,10 +429,24 @@ body {
 
 .btn:focus-visible,
 .password-toggle:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
 }
 
 input:focus-visible {
     outline: none; /* Using box-shadow instead */
+}
+
+/* ===========================================
+   REDUCED MOTION
+   =========================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }
