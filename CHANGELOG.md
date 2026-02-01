@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Infinite scroll with paginated fallback in both main gallery and search views
+
+### Deprecated
+
+- Manual pagination (hidden, kept for fallback)
+
+### Performance
+
+- Intersection Observer vs scroll events
+- Batched selection updates (single paint cycle)
+- Priority loading for visible items on cache restore
+- O(1) selection lookups via Set
+
+## [0.4.2] - January 31, 2026
+
+- **NOTE**: Due to a significant performance degredation in 0.4.1 on NFS-mounted filesystems, do not use 0.4.2.
+
+### Fixed
+
+- Filesystem performance issues on NFS
+
+## [0.4.1] - January 31, 2026
+
+### Added
+
 - **Media Loop Control** - Toggle looping for videos and animated images (GIF, WebP, APNG) in the lightbox viewer
     - Loop button appears automatically for supported media types
     - Keyboard shortcut: `L` to toggle loop

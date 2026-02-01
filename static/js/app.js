@@ -25,6 +25,11 @@ const MediaApp = {
 
         // Check if running as installed PWA
         this.checkPWAStatus();
+
+        // Initialize infinite scroll
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.init();
+        }
     },
 
     cacheElements() {
@@ -280,14 +285,22 @@ const MediaApp = {
     },
 
     async loadDirectory(path = '', pushState = true) {
+        // Save scroll position for current path before loading new one
+        if (typeof InfiniteScroll !== 'undefined' && this.state.currentPath !== path) {
+            InfiniteScroll.saveToCache(this.state.currentPath);
+        }
+
         this.showLoading();
         try {
             const params = new URLSearchParams({
                 path: path,
                 sort: this.state.currentSort.field,
                 order: this.state.currentSort.order,
-                page: String(this.state.currentPage),
-                pageSize: String(this.state.pageSize),
+                page: '1',
+                pageSize:
+                    typeof InfiniteScroll !== 'undefined'
+                        ? String(InfiniteScroll.config.batchSize)
+                        : String(this.state.pageSize),
             });
 
             if (this.state.currentFilter) {
@@ -314,8 +327,14 @@ const MediaApp = {
             }
 
             this.renderBreadcrumb();
-            Gallery.render(this.state.listing.items);
-            this.renderPagination();
+
+            // Use infinite scroll if available
+            if (typeof InfiniteScroll !== 'undefined') {
+                await InfiniteScroll.startForDirectory(path, this.state.listing);
+            } else {
+                Gallery.render(this.state.listing.items);
+                this.renderPagination();
+            }
 
             Favorites.updateFromListing(this.state.listing);
         } catch (error) {
@@ -468,7 +487,12 @@ const MediaApp = {
     handleSortChange() {
         this.state.currentSort.field = this.elements.sortField.value;
         Preferences.set('sortField', this.state.currentSort.field);
-        this.state.currentPage = 1;
+
+        // Clear infinite scroll cache when sort changes
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.clearCache();
+        }
+
         this.loadDirectory(this.state.currentPath);
     },
 
@@ -488,7 +512,12 @@ const MediaApp = {
 
     handleFilterChange() {
         this.state.currentFilter = this.elements.filterType.value;
-        this.state.currentPage = 1;
+
+        // Clear infinite scroll cache when filter changes
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.clearCache();
+        }
+
         this.loadDirectory(this.state.currentPath);
     },
 
