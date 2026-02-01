@@ -49,7 +49,7 @@ type Indexer struct {
 	// Progress tracking
 	filesIndexed   atomic.Int64
 	foldersIndexed atomic.Int64
-	indexProgress  atomic.Value // stores IndexProgress
+	indexProgress  atomic.Value
 
 	// Parallel walker configuration
 	parallelConfig ParallelWalkerConfig
@@ -58,10 +58,11 @@ type Indexer struct {
 	// Callback when indexing completes
 	onIndexComplete func()
 
-	// Last known state for change detection
-	lastKnownCount   int
-	lastKnownModTime time.Time
-	stateMu          sync.RWMutex
+	// Last known state for lightweight change detection
+	stateMu            sync.RWMutex
+	lastRootModTime    time.Time
+	lastTopLevelCount  int
+	lastSubdirModTimes map[string]time.Time
 }
 
 // IndexProgress tracks the current indexing progress
@@ -75,14 +76,15 @@ type IndexProgress struct {
 // New creates a new Indexer instance.
 func New(db *database.Database, mediaDir string, indexInterval time.Duration) *Indexer {
 	idx := &Indexer{
-		db:             db,
-		mediaDir:       mediaDir,
-		indexInterval:  indexInterval,
-		pollInterval:   defaultPollInterval,
-		stopChan:       make(chan struct{}),
-		startTime:      time.Now(),
-		parallelConfig: DefaultParallelWalkerConfig(),
-		useParallel:    true,
+		db:                 db,
+		mediaDir:           mediaDir,
+		indexInterval:      indexInterval,
+		pollInterval:       defaultPollInterval,
+		stopChan:           make(chan struct{}),
+		startTime:          time.Now(),
+		parallelConfig:     DefaultParallelWalkerConfig(),
+		useParallel:        true,
+		lastSubdirModTimes: make(map[string]time.Time),
 	}
 	idx.indexProgress.Store(IndexProgress{})
 	return idx
@@ -197,7 +199,7 @@ type HealthStatus struct {
 	IndexProgress     *IndexProgress `json:"indexProgress,omitempty"`
 }
 
-// pollForChanges periodically checks for file changes using filesystem scanning.
+// pollForChanges periodically checks for file changes.
 func (idx *Indexer) pollForChanges() {
 	// Wait for initial index to complete
 	for !idx.IsReady() {
@@ -234,116 +236,134 @@ func (idx *Indexer) pollForChanges() {
 	}
 }
 
-// detectChanges performs a quick scan to detect if files have changed.
+// detectChanges performs a lightweight check to detect if files have changed.
+// It only checks the root directory's modification time and does a quick count
+// of top-level entries, avoiding expensive recursive walks on NFS.
 func (idx *Indexer) detectChanges() (bool, error) {
 	start := time.Now()
 	defer func() {
 		metrics.IndexerPollDuration.Observe(time.Since(start).Seconds())
 		metrics.IndexerPollChecksTotal.Inc()
 	}()
-	var currentCount int
-	var newestModTime time.Time
 
-	err := filepath.WalkDir(idx.mediaDir, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil //nolint:nilerr // Intentionally continue walking on error
-		}
-
-		// Skip hidden files and directories
-		if strings.HasPrefix(d.Name(), ".") {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Only count media files and directories
-		if d.IsDir() {
-			currentCount++
-		} else {
-			ext := strings.ToLower(filepath.Ext(d.Name()))
-			if mediatypes.IsMediaFile(ext) {
-				currentCount++
-
-				// Get modification time
-				info, err := d.Info()
-				if err == nil && info.ModTime().After(newestModTime) {
-					metrics.IndexerPollChangesDetected.Inc()
-					newestModTime = info.ModTime()
-				}
-			}
-		}
-
-		return nil
-	})
-
+	// Check if root directory has been modified
+	rootInfo, err := os.Stat(idx.mediaDir)
 	if err != nil {
-		return false, fmt.Errorf("failed to walk directory: %w", err)
+		return false, fmt.Errorf("failed to stat media directory: %w", err)
 	}
 
-	// Compare with last known state
 	idx.stateMu.RLock()
-	lastCount := idx.lastKnownCount
-	lastModTime := idx.lastKnownModTime
+	lastRootModTime := idx.lastRootModTime
+	lastTopLevelCount := idx.lastTopLevelCount
 	idx.stateMu.RUnlock()
 
-	// Check for changes
-	if currentCount != lastCount {
-		logging.Debug("File count changed: %d -> %d", lastCount, currentCount)
+	// Check root directory modification time
+	if rootInfo.ModTime().After(lastRootModTime) {
+		logging.Debug("Root directory modified: %v > %v", rootInfo.ModTime(), lastRootModTime)
 		metrics.IndexerPollChangesDetected.Inc()
-
 		return true, nil
 	}
 
-	if newestModTime.After(lastModTime) {
-		logging.Debug("Newer modification time found: %v > %v", newestModTime, lastModTime)
-		metrics.IndexerPollChangesDetected.Inc()
+	// Quick count of top-level entries (not recursive)
+	entries, err := os.ReadDir(idx.mediaDir)
+	if err != nil {
+		return false, fmt.Errorf("failed to read media directory: %w", err)
+	}
 
+	topLevelCount := 0
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), ".") {
+			topLevelCount++
+		}
+	}
+
+	if topLevelCount != lastTopLevelCount {
+		logging.Debug("Top-level count changed: %d -> %d", lastTopLevelCount, topLevelCount)
+		metrics.IndexerPollChangesDetected.Inc()
+		return true, nil
+	}
+
+	// Check a sample of subdirectories for modification
+	if idx.checkSubdirectorySample(entries) {
+		metrics.IndexerPollChangesDetected.Inc()
 		return true, nil
 	}
 
 	return false, nil
 }
 
+// checkSubdirectorySample checks modification times of a sample of subdirectories.
+// This catches changes in nested folders without walking the entire tree.
+func (idx *Indexer) checkSubdirectorySample(entries []fs.DirEntry) bool {
+	idx.stateMu.RLock()
+	lastSubdirModTimes := idx.lastSubdirModTimes
+	idx.stateMu.RUnlock()
+
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		path := filepath.Join(idx.mediaDir, entry.Name())
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+
+		if lastMod, exists := lastSubdirModTimes[entry.Name()]; exists {
+			if info.ModTime().After(lastMod) {
+				logging.Debug("Subdirectory %s modified: %v > %v", entry.Name(), info.ModTime(), lastMod)
+				return true
+			}
+		} else {
+			// New subdirectory
+			logging.Debug("New subdirectory detected: %s", entry.Name())
+			return true
+		}
+	}
+
+	return false
+}
+
 // updateLastKnownState updates the cached state after indexing.
 func (idx *Indexer) updateLastKnownState() {
-	var count int
-	var newestModTime time.Time
+	rootInfo, err := os.Stat(idx.mediaDir)
+	if err != nil {
+		logging.Warn("Failed to stat media directory for state update: %v", err)
+		return
+	}
 
-	_ = filepath.WalkDir(idx.mediaDir, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil //nolint:nilerr // Intentionally continue walking on error
+	entries, err := os.ReadDir(idx.mediaDir)
+	if err != nil {
+		logging.Warn("Failed to read media directory for state update: %v", err)
+		return
+	}
+
+	topLevelCount := 0
+	subdirModTimes := make(map[string]time.Time)
+
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
 		}
+		topLevelCount++
 
-		if strings.HasPrefix(d.Name(), ".") {
-			if d.IsDir() {
-				return filepath.SkipDir
+		if entry.IsDir() {
+			path := filepath.Join(idx.mediaDir, entry.Name())
+			if info, err := os.Stat(path); err == nil {
+				subdirModTimes[entry.Name()] = info.ModTime()
 			}
-			return nil
 		}
-
-		if d.IsDir() {
-			count++
-		} else {
-			ext := strings.ToLower(filepath.Ext(d.Name()))
-			if mediatypes.IsMediaFile(ext) {
-				count++
-				info, err := d.Info()
-				if err == nil && info.ModTime().After(newestModTime) {
-					newestModTime = info.ModTime()
-				}
-			}
-		}
-
-		return nil
-	})
+	}
 
 	idx.stateMu.Lock()
-	idx.lastKnownCount = count
-	idx.lastKnownModTime = newestModTime
+	idx.lastRootModTime = rootInfo.ModTime()
+	idx.lastTopLevelCount = topLevelCount
+	idx.lastSubdirModTimes = subdirModTimes
 	idx.stateMu.Unlock()
 
-	logging.Debug("Updated last known state: count=%d, newestMod=%v", count, newestModTime)
+	logging.Debug("Updated last known state: rootMod=%v, topLevel=%d, subdirs=%d",
+		rootInfo.ModTime(), topLevelCount, len(subdirModTimes))
 }
 
 // Index performs a full index of the media directory.
