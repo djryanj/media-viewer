@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"media-viewer/internal/logging"
+	"media-viewer/internal/metrics"
 )
 
 // Config holds memory management configuration
@@ -104,23 +105,27 @@ func (m *Monitor) checkMemory() {
 
 	m.mu.Lock()
 	m.current = stats.Alloc
-	waspaused := m.isPaused
+	wasPaused := m.isPaused
 
 	if m.limit > 0 {
 		usage := float64(stats.Alloc) / float64(m.limit)
+
+		// Update usage ratio metric
+		metrics.MemoryUsageRatio.Set(usage)
 
 		if usage >= m.config.CriticalWaterMark {
 			if !m.isPaused {
 				logging.Warn("Memory critical (%.1f%% of limit), pausing processing", usage*100)
 				m.isPaused = true
-				// Trigger GC to try to free memory
+				metrics.MemoryPaused.Set(1)
+				metrics.MemoryGCPauses.Inc()
 				go runtime.GC()
 			}
 		} else if usage < m.config.HighWaterMark {
 			if m.isPaused {
 				logging.Info("Memory recovered (%.1f%% of limit), resuming processing", usage*100)
 				m.isPaused = false
-				// Signal any waiting goroutines
+				metrics.MemoryPaused.Set(0)
 				close(m.pauseChan)
 				m.pauseChan = make(chan struct{})
 			}
@@ -128,7 +133,7 @@ func (m *Monitor) checkMemory() {
 	}
 	m.mu.Unlock()
 
-	if m.isPaused != waspaused {
+	if m.isPaused != wasPaused {
 		logging.Debug("Memory state changed: paused=%v, alloc=%.1f MB", m.isPaused, float64(stats.Alloc)/(1024*1024))
 	}
 }

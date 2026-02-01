@@ -109,8 +109,9 @@ docker run -d `
 | `PORT`               | `8080`      | HTTP server port                                                                                                                       |
 | `METRICS_PORT`       | `9090`      | Prometheus metrics server port                                                                                                         |
 | `METRICS_ENABLED`    | `true`      | Enable or disable the metrics server                                                                                                   |
-| `INDEX_INTERVAL`     | `30m`       | How often to re-scan the media directory                                                                                               |
-| `THUMBNAIL_INTERVAL` | `6h`        | How often the thumbnail generator regenerates all thumbnails                                                                           |
+| `INDEX_INTERVAL`     | `30m`       | How often to perform a full re-index of the media directory                                                                            |
+| `POLL_INTERVAL`      | `30s`       | How often to check for filesystem changes (lightweight scan for new/modified/deleted files)                                            |
+| `THUMBNAIL_INTERVAL` | `6h`        | How often the thumbnail generator performs a full scan (incremental updates happen automatically after indexing)                       |
 | `LOG_LEVEL`          | `info`      | Server log level (`debug`, `info`, `warn`, `error`)                                                                                    |
 | `LOG_STATIC_FILES`   | `false`     | Log static file requests                                                                                                               |
 | `LOG_HEALTH_CHECKS`  | `true`      | Log health check endpoint requests                                                                                                     |
@@ -127,7 +128,7 @@ Boolean environment variables accept the following values:
 
 ### Duration Values
 
-`INDEX_INTERVAL` and `THUMBNAIL_INTERVAL` use Go's duration format:
+`INDEX_INTERVAL`, `POLL_INTERVAL`, and `THUMBNAIL_INTERVAL` use Go's duration format:
 
 | Unit         | Suffix | Example |
 | ------------ | ------ | ------- |
@@ -141,20 +142,39 @@ Boolean environment variables accept the following values:
 Examples:
 
 ```bash
-THUMBNAIL_INTERVAL=30m      # Every 30 minutes
+POLL_INTERVAL=30s           # Every 30 seconds (default)
+POLL_INTERVAL=1m            # Every minute
+INDEX_INTERVAL=30m          # Every 30 minutes (default)
 THUMBNAIL_INTERVAL=6h       # Every 6 hours (default)
 THUMBNAIL_INTERVAL=1h30m    # Every 1 hour and 30 minutes
-THUMBNAIL_INTERVAL=1.5h     # Every 1.5 hours (90 minutes)
 ```
 
 Invalid formats:
 
 ```bash
-THUMBNAIL_INTERVAL=6        # Missing unit
+POLL_INTERVAL=30            # Missing unit
 THUMBNAIL_INTERVAL=1d       # Days not supported
 ```
 
 #### Recommended Values
+
+##### Poll Interval
+
+| Use Case                    | Value       |
+| --------------------------- | ----------- |
+| Frequently changing library | `10s`-`30s` |
+| Stable library              | `1m`-`5m`   |
+| Minimal resource usage      | `5m`-`15m`  |
+
+##### Index Interval
+
+| Use Case             | Value      |
+| -------------------- | ---------- |
+| Development/Testing  | `5m`-`15m` |
+| Production           | `30m`-`1h` |
+| Large/stable library | `1h`-`6h`  |
+
+##### Thumbnail Interval
 
 | Use Case                          | Value         |
 | --------------------------------- | ------------- |
@@ -162,6 +182,8 @@ THUMBNAIL_INTERVAL=1d       # Days not supported
 | Small library (< 1000 files)      | `6h`          |
 | Medium library (1000-10000 files) | `12h`         |
 | Large library (> 10000 files)     | `24h`         |
+
+> **Note:** Thumbnail generation now runs incrementally after each index completion. The `THUMBNAIL_INTERVAL` controls periodic full scans as a fallback to catch any missed changes.
 
 ### Memory Configuration
 

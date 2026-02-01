@@ -117,8 +117,13 @@ func main() {
 	)
 
 	// Initialize indexer
-	startup.LogIndexerInit(config.IndexInterval)
+	startup.LogIndexerInit(config.IndexInterval, config.PollInterval)
 	idx := indexer.New(db, config.MediaDir, config.IndexInterval)
+	idx.SetPollInterval(config.PollInterval)
+
+	idx.SetOnIndexComplete(func() {
+		thumbGen.NotifyIndexComplete()
+	})
 
 	// Start indexer in background
 	go func() {

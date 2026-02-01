@@ -39,6 +39,7 @@ const (
 )
 
 // ImageExtensions maps file extensions to whether they are supported image formats.
+// ImageExtensions maps file extensions to whether they are supported image formats.
 var ImageExtensions = map[string]bool{
 	".jpg":  true,
 	".jpeg": true,
@@ -52,6 +53,13 @@ var ImageExtensions = map[string]bool{
 	".tif":  true,
 	".heic": true,
 	".heif": true,
+	".avif": true,
+	".jxl":  true,
+	".raw":  true,
+	".cr2":  true,
+	".nef":  true,
+	".arw":  true,
+	".dng":  true,
 }
 
 // VideoExtensions maps file extensions to whether they are supported video formats.

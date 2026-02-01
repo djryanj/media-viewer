@@ -48,9 +48,6 @@ Thumbs.db
 # Air tmp directory
 tmp/
 
-# Sample media (optional - uncomment if you don't want to track)
-# sample-media/
-
 # Log files
 *.log
 air.log
@@ -63,6 +60,6 @@ sample-media/
 
 /media/
 cache/
-database/
+/database
 
 node_modules/

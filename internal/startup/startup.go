@@ -63,6 +63,7 @@ type Config struct {
 	MetricsPort       string
 	IndexInterval     time.Duration
 	ThumbnailInterval time.Duration
+	PollInterval      time.Duration
 	LogStaticFiles    bool
 	LogHealthChecks   bool
 	MetricsEnabled    bool
@@ -93,6 +94,7 @@ func LoadConfig() (*Config, error) {
 	metricsPort := getEnv("METRICS_PORT", "9090")
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
 	thumbnailIntervalStr := getEnv("THUMBNAIL_INTERVAL", "6h")
+	pollIntervalStr := getEnv("POLL_INTERVAL", "30s") // NEW
 	logStaticFiles := getEnvBool("LOG_STATIC_FILES", false)
 	logHealthChecks := getEnvBool("LOG_HEALTH_CHECKS", true)
 	metricsEnabled := getEnvBool("METRICS_ENABLED", true)
@@ -105,6 +107,7 @@ func LoadConfig() (*Config, error) {
 	logging.Info("  METRICS_ENABLED:     %v", metricsEnabled)
 	logging.Info("  INDEX_INTERVAL:      %s", indexIntervalStr)
 	logging.Info("  THUMBNAIL_INTERVAL:  %s", thumbnailIntervalStr)
+	logging.Info("  POLL_INTERVAL:       %s", pollIntervalStr) // NEW
 	logging.Info("  LOG_STATIC_FILES:    %v", logStaticFiles)
 	logging.Info("  LOG_HEALTH_CHECKS:   %v", logHealthChecks)
 	logging.Info("  LOG_LEVEL:           %s", logging.GetLevel())
@@ -119,6 +122,12 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		logging.Warn("  Invalid THUMBNAIL_INTERVAL, using default: 6h")
 		thumbnailInterval = 6 * time.Hour
+	}
+
+	pollInterval, err := time.ParseDuration(pollIntervalStr) // NEW
+	if err != nil {
+		logging.Warn("  Invalid POLL_INTERVAL, using default: 30s")
+		pollInterval = 30 * time.Second
 	}
 
 	// Resolve paths
@@ -158,6 +167,7 @@ func LoadConfig() (*Config, error) {
 		MetricsPort:       metricsPort,
 		IndexInterval:     indexInterval,
 		ThumbnailInterval: thumbnailInterval,
+		PollInterval:      pollInterval, // NEW
 		LogStaticFiles:    logStaticFiles,
 		LogHealthChecks:   logHealthChecks,
 		MetricsEnabled:    metricsEnabled,
@@ -265,12 +275,13 @@ func LogThumbnailInit(enabled bool) {
 }
 
 // LogIndexerInit logs indexer initialization
-func LogIndexerInit(interval time.Duration) {
+func LogIndexerInit(indexInterval, pollInterval time.Duration) {
 	logging.Info("")
 	logging.Info("------------------------------------------------------------")
 	logging.Info("INDEXER INITIALIZATION")
 	logging.Info("------------------------------------------------------------")
-	logging.Info("  Index interval: %v", interval)
+	logging.Info("  Index interval: %v", indexInterval)
+	logging.Info("  Poll interval:  %v", pollInterval)
 	logging.Info("  Starting indexer...")
 }
 
