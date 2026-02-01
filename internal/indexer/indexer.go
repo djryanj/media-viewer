@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +16,6 @@ import (
 	"media-viewer/internal/logging"
 	"media-viewer/internal/mediatypes"
 	"media-viewer/internal/metrics"
-
-	"github.com/fsnotify/fsnotify"
 )
 
 const (
@@ -30,6 +27,9 @@ const (
 
 	// Delay between batches to allow other operations
 	batchDelay = 10 * time.Millisecond
+
+	// Default polling interval for change detection
+	defaultPollInterval = 30 * time.Second
 )
 
 // Indexer manages the indexing of media files in the media directory.
@@ -37,7 +37,7 @@ type Indexer struct {
 	db                   *database.Database
 	mediaDir             string
 	indexInterval        time.Duration
-	watcher              *fsnotify.Watcher
+	pollInterval         time.Duration
 	stopChan             chan struct{}
 	indexMu              sync.Mutex
 	isIndexing           bool
@@ -54,6 +54,14 @@ type Indexer struct {
 	// Parallel walker configuration
 	parallelConfig ParallelWalkerConfig
 	useParallel    bool
+
+	// Callback when indexing completes
+	onIndexComplete func()
+
+	// Last known state for change detection
+	lastKnownCount   int
+	lastKnownModTime time.Time
+	stateMu          sync.RWMutex
 }
 
 // IndexProgress tracks the current indexing progress
@@ -70,23 +78,36 @@ func New(db *database.Database, mediaDir string, indexInterval time.Duration) *I
 		db:             db,
 		mediaDir:       mediaDir,
 		indexInterval:  indexInterval,
+		pollInterval:   defaultPollInterval,
 		stopChan:       make(chan struct{}),
 		startTime:      time.Now(),
 		parallelConfig: DefaultParallelWalkerConfig(),
-		useParallel:    true, // Enable parallel walking by default
+		useParallel:    true,
 	}
 	idx.indexProgress.Store(IndexProgress{})
 	return idx
 }
 
-// SetParallelWalking enables or disables parallel directory walking
+// SetPollInterval sets the interval for polling-based change detection.
+func (idx *Indexer) SetPollInterval(interval time.Duration) {
+	if interval > 0 {
+		idx.pollInterval = interval
+	}
+}
+
+// SetParallelWalking enables or disables parallel directory walking.
 func (idx *Indexer) SetParallelWalking(enabled bool) {
 	idx.useParallel = enabled
 }
 
-// SetParallelConfig sets the parallel walker configuration
+// SetParallelConfig sets the parallel walker configuration.
 func (idx *Indexer) SetParallelConfig(config ParallelWalkerConfig) {
 	idx.parallelConfig = config
+}
+
+// SetOnIndexComplete sets a callback to be invoked when indexing completes.
+func (idx *Indexer) SetOnIndexComplete(callback func()) {
+	idx.onIndexComplete = callback
 }
 
 // Start begins the indexing process.
@@ -102,10 +123,10 @@ func (idx *Indexer) Start() error {
 		}
 	}()
 
-	// Start file watcher
-	go idx.watchFiles()
+	// Start polling-based change detection
+	go idx.pollForChanges()
 
-	// Start periodic re-index
+	// Start periodic full re-index
 	go idx.periodicIndex()
 
 	return nil
@@ -114,17 +135,10 @@ func (idx *Indexer) Start() error {
 // Stop stops the indexing process.
 func (idx *Indexer) Stop() {
 	close(idx.stopChan)
-	if idx.watcher != nil {
-		if err := idx.watcher.Close(); err != nil {
-			log.Printf("error closing file watcher: %v", err)
-		}
-	}
 }
 
-// IsReady returns true if the server is ready to accept traffic
-// Now returns true early once minimum files are indexed
+// IsReady returns true if the server is ready to accept traffic.
 func (idx *Indexer) IsReady() bool {
-	// Ready if we've indexed minimum files OR initial index is complete
 	if idx.filesIndexed.Load()+idx.foldersIndexed.Load() >= minFilesForReady {
 		return true
 	}
@@ -134,7 +148,7 @@ func (idx *Indexer) IsReady() bool {
 	return idx.initialIndexComplete
 }
 
-// getProgress safely retrieves the current IndexProgress
+// getProgress safely retrieves the current IndexProgress.
 func (idx *Indexer) getProgress() IndexProgress {
 	if progress, ok := idx.indexProgress.Load().(IndexProgress); ok {
 		return progress
@@ -142,7 +156,7 @@ func (idx *Indexer) getProgress() IndexProgress {
 	return IndexProgress{}
 }
 
-// GetHealthStatus returns detailed health information
+// GetHealthStatus returns detailed health information.
 func (idx *Indexer) GetHealthStatus() HealthStatus {
 	idx.indexMu.Lock()
 	defer idx.indexMu.Unlock()
@@ -170,7 +184,7 @@ func (idx *Indexer) GetHealthStatus() HealthStatus {
 	return status
 }
 
-// HealthStatus contains health check information
+// HealthStatus contains health check information.
 type HealthStatus struct {
 	Ready             bool           `json:"ready"`
 	Indexing          bool           `json:"indexing"`
@@ -183,8 +197,156 @@ type HealthStatus struct {
 	IndexProgress     *IndexProgress `json:"indexProgress,omitempty"`
 }
 
+// pollForChanges periodically checks for file changes using filesystem scanning.
+func (idx *Indexer) pollForChanges() {
+	// Wait for initial index to complete
+	for !idx.IsReady() {
+		select {
+		case <-time.After(1 * time.Second):
+		case <-idx.stopChan:
+			return
+		}
+	}
+
+	logging.Info("Starting change detection polling (interval: %v)", idx.pollInterval)
+
+	ticker := time.NewTicker(idx.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			changed, err := idx.detectChanges()
+			if err != nil {
+				logging.Error("Error detecting changes: %v", err)
+				continue
+			}
+			if changed {
+				logging.Info("File changes detected, triggering re-index")
+				if err := idx.Index(); err != nil {
+					logging.Error("Re-index after change detection failed: %v", err)
+				}
+			}
+		case <-idx.stopChan:
+			logging.Info("Change detection polling stopped")
+			return
+		}
+	}
+}
+
+// detectChanges performs a quick scan to detect if files have changed.
+func (idx *Indexer) detectChanges() (bool, error) {
+	start := time.Now()
+	defer func() {
+		metrics.IndexerPollDuration.Observe(time.Since(start).Seconds())
+		metrics.IndexerPollChecksTotal.Inc()
+	}()
+	var currentCount int
+	var newestModTime time.Time
+
+	err := filepath.WalkDir(idx.mediaDir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // Intentionally continue walking on error
+		}
+
+		// Skip hidden files and directories
+		if strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Only count media files and directories
+		if d.IsDir() {
+			currentCount++
+		} else {
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if mediatypes.IsMediaFile(ext) {
+				currentCount++
+
+				// Get modification time
+				info, err := d.Info()
+				if err == nil && info.ModTime().After(newestModTime) {
+					metrics.IndexerPollChangesDetected.Inc()
+					newestModTime = info.ModTime()
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return false, fmt.Errorf("failed to walk directory: %w", err)
+	}
+
+	// Compare with last known state
+	idx.stateMu.RLock()
+	lastCount := idx.lastKnownCount
+	lastModTime := idx.lastKnownModTime
+	idx.stateMu.RUnlock()
+
+	// Check for changes
+	if currentCount != lastCount {
+		logging.Debug("File count changed: %d -> %d", lastCount, currentCount)
+		metrics.IndexerPollChangesDetected.Inc()
+
+		return true, nil
+	}
+
+	if newestModTime.After(lastModTime) {
+		logging.Debug("Newer modification time found: %v > %v", newestModTime, lastModTime)
+		metrics.IndexerPollChangesDetected.Inc()
+
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// updateLastKnownState updates the cached state after indexing.
+func (idx *Indexer) updateLastKnownState() {
+	var count int
+	var newestModTime time.Time
+
+	_ = filepath.WalkDir(idx.mediaDir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // Intentionally continue walking on error
+		}
+
+		if strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if d.IsDir() {
+			count++
+		} else {
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if mediatypes.IsMediaFile(ext) {
+				count++
+				info, err := d.Info()
+				if err == nil && info.ModTime().After(newestModTime) {
+					newestModTime = info.ModTime()
+				}
+			}
+		}
+
+		return nil
+	})
+
+	idx.stateMu.Lock()
+	idx.lastKnownCount = count
+	idx.lastKnownModTime = newestModTime
+	idx.stateMu.Unlock()
+
+	logging.Debug("Updated last known state: count=%d, newestMod=%v", count, newestModTime)
+}
+
 // Index performs a full index of the media directory.
-// Uses parallel walking for large directories and batched commits.
 func (idx *Indexer) Index() error {
 	if !idx.tryStartIndexing() {
 		logging.Info("Index already in progress, skipping...")
@@ -192,7 +354,6 @@ func (idx *Indexer) Index() error {
 	}
 	defer idx.finishIndexing()
 
-	// Update metrics
 	metrics.IndexerIsRunning.Set(1)
 	defer metrics.IndexerIsRunning.Set(0)
 	metrics.IndexerRunsTotal.Inc()
@@ -207,7 +368,6 @@ func (idx *Indexer) Index() error {
 	var result indexResult
 	var err error
 
-	// Choose walking strategy based on configuration
 	if idx.useParallel {
 		result, err = idx.parallelWalkAndIndex(startTime)
 	} else {
@@ -227,6 +387,9 @@ func (idx *Indexer) Index() error {
 
 	idx.finalizeIndex(startTime, result.totalFiles, result.totalFolders)
 
+	// Update last known state for change detection
+	idx.updateLastKnownState()
+
 	// Update metrics
 	duration := time.Since(startTime).Seconds()
 	metrics.IndexerLastRunTimestamp.Set(float64(time.Now().Unix()))
@@ -237,14 +400,12 @@ func (idx *Indexer) Index() error {
 	return nil
 }
 
-// parallelWalkAndIndex uses parallel directory walking for faster indexing
+// parallelWalkAndIndex uses parallel directory walking for faster indexing.
 func (idx *Indexer) parallelWalkAndIndex(startTime time.Time) (indexResult, error) {
 	logging.Info("Using parallel directory walking with %d workers", idx.parallelConfig.NumWorkers)
 
-	// Create parallel walker
 	walker := NewParallelWalker(idx.mediaDir, idx.parallelConfig)
 
-	// Handle stop signal
 	go func() {
 		select {
 		case <-idx.stopChan:
@@ -253,21 +414,17 @@ func (idx *Indexer) parallelWalkAndIndex(startTime time.Time) (indexResult, erro
 		}
 	}()
 
-	// Walk and collect all files
 	files, err := walker.Walk()
 	if err != nil && !errors.Is(err, fs.SkipAll) {
 		return indexResult{}, fmt.Errorf("parallel walk error: %w", err)
 	}
 
-	// Get statistics
 	totalFiles, totalFolders, _ := walker.Stats()
 
-	// Update progress counters
 	idx.filesIndexed.Store(totalFiles)
 	idx.foldersIndexed.Store(totalFolders)
 	idx.updateProgress(startTime)
 
-	// Process files in batches for database insertion
 	if err := idx.processBatchedFiles(files, startTime); err != nil {
 		return indexResult{}, err
 	}
@@ -278,13 +435,12 @@ func (idx *Indexer) parallelWalkAndIndex(startTime time.Time) (indexResult, erro
 	}, nil
 }
 
-// processBatchedFiles inserts files into the database in batches
+// processBatchedFiles inserts files into the database in batches.
 func (idx *Indexer) processBatchedFiles(files []database.MediaFile, startTime time.Time) error {
 	totalFiles := len(files)
 	logging.Info("Processing %d files in batches of %d", totalFiles, idx.parallelConfig.BatchSize)
 
 	for i := 0; i < totalFiles; i += idx.parallelConfig.BatchSize {
-		// Check for stop signal
 		select {
 		case <-idx.stopChan:
 			return fs.SkipAll
@@ -300,16 +456,12 @@ func (idx *Indexer) processBatchedFiles(files []database.MediaFile, startTime ti
 
 		if err := idx.processBatch(batch); err != nil {
 			logging.Error("Error processing batch: %v", err)
-			// Continue with next batch
 		}
 
-		// Update progress
 		idx.updateProgress(startTime)
 
-		// Small delay to allow other operations
 		time.Sleep(batchDelay)
 
-		// Log progress
 		if (i+idx.parallelConfig.BatchSize)%5000 == 0 || end == totalFiles {
 			logging.Info("Database insert progress: %d/%d files", end, totalFiles)
 		}
@@ -318,7 +470,7 @@ func (idx *Indexer) processBatchedFiles(files []database.MediaFile, startTime ti
 	return nil
 }
 
-// tryStartIndexing attempts to start indexing, returns false if already in progress
+// tryStartIndexing attempts to start indexing, returns false if already in progress.
 func (idx *Indexer) tryStartIndexing() bool {
 	idx.indexMu.Lock()
 	defer idx.indexMu.Unlock()
@@ -330,7 +482,7 @@ func (idx *Indexer) tryStartIndexing() bool {
 	return true
 }
 
-// finishIndexing marks indexing as complete
+// finishIndexing marks indexing as complete.
 func (idx *Indexer) finishIndexing() {
 	idx.indexMu.Lock()
 	defer idx.indexMu.Unlock()
@@ -339,7 +491,7 @@ func (idx *Indexer) finishIndexing() {
 	idx.initialIndexComplete = true
 }
 
-// resetCounters resets the indexing counters
+// resetCounters resets the indexing counters.
 func (idx *Indexer) resetCounters(startTime time.Time) {
 	idx.filesIndexed.Store(0)
 	idx.foldersIndexed.Store(0)
@@ -349,13 +501,13 @@ func (idx *Indexer) resetCounters(startTime time.Time) {
 	})
 }
 
-// indexResult holds the results of the walk and index operation
+// indexResult holds the results of the walk and index operation.
 type indexResult struct {
 	totalFiles   int64
 	totalFolders int64
 }
 
-// walkAndIndex walks the media directory and indexes files in batches (sequential mode)
+// walkAndIndex walks the media directory and indexes files in batches (sequential mode).
 func (idx *Indexer) walkAndIndex(startTime time.Time) (indexResult, error) {
 	logging.Info("Using sequential directory walking")
 
@@ -380,7 +532,7 @@ func (idx *Indexer) walkAndIndex(startTime time.Time) (indexResult, error) {
 	return result, nil
 }
 
-// processPath processes a single path during the directory walk
+// processPath processes a single path during the directory walk.
 func (idx *Indexer) processPath(
 	path string,
 	info os.FileInfo,
@@ -389,7 +541,6 @@ func (idx *Indexer) processPath(
 	result *indexResult,
 	startTime time.Time,
 ) error {
-	// Check for stop signal
 	select {
 	case <-idx.stopChan:
 		return fs.SkipAll
@@ -401,7 +552,6 @@ func (idx *Indexer) processPath(
 		return nil
 	}
 
-	// Skip hidden files and directories
 	if strings.HasPrefix(info.Name(), ".") {
 		if info.IsDir() {
 			return filepath.SkipDir
@@ -414,17 +564,15 @@ func (idx *Indexer) processPath(
 		return err
 	}
 
-	// Skip root
 	if relPath == "." {
 		return nil
 	}
 
 	file, ok := idx.createMediaFile(relPath, info)
 	if !ok {
-		return nil // Unsupported file type
+		return nil
 	}
 
-	// Update counters
 	if info.IsDir() {
 		result.totalFolders++
 		idx.foldersIndexed.Add(1)
@@ -435,19 +583,16 @@ func (idx *Indexer) processPath(
 
 	*currentBatch = append(*currentBatch, file)
 
-	// Process batch when it reaches the batch size
 	if len(*currentBatch) >= batchSize {
 		if err := idx.processBatch(*currentBatch); err != nil {
 			logging.Error("Error processing batch: %v", err)
 		}
-		*currentBatch = (*currentBatch)[:0] // Reset slice but keep capacity
+		*currentBatch = (*currentBatch)[:0]
 
 		idx.updateProgress(startTime)
 
-		// Small delay to allow other operations
 		time.Sleep(batchDelay)
 
-		// Log progress
 		total := result.totalFiles + result.totalFolders
 		if total%5000 == 0 {
 			logging.Info("Indexed %d files, %d folders...", result.totalFiles, result.totalFolders)
@@ -457,7 +602,7 @@ func (idx *Indexer) processPath(
 	return nil
 }
 
-// createMediaFile creates a MediaFile struct from path and file info
+// createMediaFile creates a MediaFile struct from path and file info.
 func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.MediaFile, bool) {
 	parentPath := filepath.Dir(relPath)
 	if parentPath == "." {
@@ -479,7 +624,6 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 	ext := strings.ToLower(filepath.Ext(info.Name()))
 	fileType := mediatypes.GetFileType(ext)
 
-	// Skip unsupported files
 	if fileType == mediatypes.FileTypeOther {
 		return database.MediaFile{}, false
 	}
@@ -496,7 +640,7 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 	}, true
 }
 
-// updateProgress updates the indexing progress
+// updateProgress updates the indexing progress.
 func (idx *Indexer) updateProgress(startTime time.Time) {
 	idx.indexProgress.Store(IndexProgress{
 		FilesIndexed:   idx.filesIndexed.Load(),
@@ -506,7 +650,7 @@ func (idx *Indexer) updateProgress(startTime time.Time) {
 	})
 }
 
-// finalizeIndex completes the indexing process and updates stats
+// finalizeIndex completes the indexing process and updates stats.
 func (idx *Indexer) finalizeIndex(startTime time.Time, totalFiles, totalFolders int64) {
 	duration := time.Since(startTime)
 
@@ -514,23 +658,25 @@ func (idx *Indexer) finalizeIndex(startTime time.Time, totalFiles, totalFolders 
 	idx.lastIndexTime = time.Now()
 	idx.indexMu.Unlock()
 
-	// Update progress to complete
 	idx.indexProgress.Store(IndexProgress{
 		FilesIndexed:   totalFiles,
 		FoldersIndexed: totalFolders,
 		IsIndexing:     false,
 	})
 
-	// Update stats
 	stats, _ := idx.db.CalculateStats()
 	stats.LastIndexed = idx.lastIndexTime
 	stats.IndexDuration = duration.String()
 	idx.db.UpdateStats(stats)
 
 	logging.Info("Index complete: %d files, %d folders in %v", totalFiles, totalFolders, duration)
+
+	if idx.onIndexComplete != nil {
+		idx.onIndexComplete()
+	}
 }
 
-// processBatch processes a batch of files in a single transaction
+// processBatch processes a batch of files in a single transaction.
 func (idx *Indexer) processBatch(files []database.MediaFile) error {
 	if len(files) == 0 {
 		return nil
@@ -554,7 +700,7 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 	return nil
 }
 
-// cleanupMissingFiles removes files from the database that no longer exist on disk
+// cleanupMissingFiles removes files from the database that no longer exist on disk.
 func (idx *Indexer) cleanupMissingFiles(indexTime time.Time) error {
 	tx, err := idx.db.BeginBatch()
 	if err != nil {
@@ -578,147 +724,6 @@ func (idx *Indexer) cleanupMissingFiles(indexTime time.Time) error {
 	}
 
 	return nil
-}
-
-func (idx *Indexer) watchFiles() {
-	var err error
-	idx.watcher, err = fsnotify.NewWatcher()
-	if err != nil {
-		logging.Error("Failed to create file watcher: %v", err)
-		return
-	}
-
-	watchCount := idx.addDirectoriesToWatcher()
-	logging.Debug("File watcher started, watching %d directories", watchCount)
-
-	idx.processWatcherEvents()
-}
-
-// addDirectoriesToWatcher adds all directories in mediaDir to the watcher
-func (idx *Indexer) addDirectoriesToWatcher() int {
-	watchCount := 0
-	err := filepath.Walk(idx.mediaDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() && !strings.HasPrefix(info.Name(), ".") {
-			if addErr := idx.watcher.Add(path); addErr != nil {
-				logging.Warn("failed to add path to watcher %s: %v", path, addErr)
-			} else {
-				watchCount++
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		logging.Error("failed to walk media directory for watcher: %v", err)
-	}
-	return watchCount
-}
-
-// processWatcherEvents handles file system events from the watcher
-func (idx *Indexer) processWatcherEvents() {
-	debouncer := newIndexDebouncer(2*time.Second, func() {
-		logging.Debug("File changes detected, re-indexing...")
-		if err := idx.Index(); err != nil {
-			logging.Error("re-index after file change failed: %v", err)
-		}
-	})
-
-	for {
-		select {
-		case event, ok := <-idx.watcher.Events:
-			if !ok {
-				return
-			}
-			idx.handleWatcherEvent(event, debouncer)
-
-		case err, ok := <-idx.watcher.Errors:
-			if !ok {
-				return
-			}
-			logging.Error("Watcher error: %v", err)
-
-		case <-idx.stopChan:
-			return
-		}
-	}
-}
-
-// handleWatcherEvent processes a single file system event
-func (idx *Indexer) handleWatcherEvent(event fsnotify.Event, debouncer *indexDebouncer) {
-	// Skip hidden files
-	if strings.Contains(event.Name, "/.") {
-		return
-	}
-
-	switch {
-	case event.Op&fsnotify.Create != 0:
-		idx.handleCreateEvent(event)
-		debouncer.trigger()
-
-	case event.Op&fsnotify.Remove != 0:
-		debouncer.trigger()
-
-	case event.Op&fsnotify.Rename != 0:
-		debouncer.trigger()
-
-	case event.Op&fsnotify.Write != 0:
-		idx.handleWriteEvent(event, debouncer)
-	}
-}
-
-// handleCreateEvent handles file/directory creation events
-func (idx *Indexer) handleCreateEvent(event fsnotify.Event) {
-	info, err := os.Stat(event.Name)
-	if err != nil {
-		return
-	}
-	if info.IsDir() {
-		if addErr := idx.watcher.Add(event.Name); addErr != nil {
-			logging.Warn("failed to add new directory to watcher %s: %v", event.Name, addErr)
-		} else {
-			logging.Debug("Added new directory to watcher: %s", event.Name)
-		}
-	}
-}
-
-// handleWriteEvent handles file write events
-func (idx *Indexer) handleWriteEvent(event fsnotify.Event, debouncer *indexDebouncer) {
-	info, err := os.Stat(event.Name)
-	if err != nil {
-		return
-	}
-	if !info.IsDir() {
-		debouncer.trigger()
-	}
-}
-
-// indexDebouncer provides debounced triggering of the index function
-type indexDebouncer struct {
-	delay    time.Duration
-	callback func()
-	timer    *time.Timer
-	mu       sync.Mutex
-}
-
-// newIndexDebouncer creates a new debouncer with the specified delay and callback
-func newIndexDebouncer(delay time.Duration, callback func()) *indexDebouncer {
-	return &indexDebouncer{
-		delay:    delay,
-		callback: callback,
-	}
-}
-
-// trigger resets the debounce timer
-func (d *indexDebouncer) trigger() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if d.timer != nil {
-		d.timer.Stop()
-	}
-	d.timer = time.AfterFunc(d.delay, d.callback)
 }
 
 func (idx *Indexer) periodicIndex() {
@@ -752,7 +757,7 @@ func (idx *Indexer) LastIndexTime() time.Time {
 	return idx.lastIndexTime
 }
 
-// TriggerIndex manually triggers a re-index
+// TriggerIndex manually triggers a re-index.
 func (idx *Indexer) TriggerIndex() {
 	go func() {
 		if err := idx.Index(); err != nil {
@@ -761,7 +766,7 @@ func (idx *Indexer) TriggerIndex() {
 	}()
 }
 
-// GetProgress returns the current indexing progress
+// GetProgress returns the current indexing progress.
 func (idx *Indexer) GetProgress() IndexProgress {
 	return idx.getProgress()
 }

@@ -1174,3 +1174,161 @@ func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
 
 	return files, nil
 }
+
+// GetFilesUpdatedSince returns media files updated after the given timestamp.
+// This is used for incremental thumbnail generation.
+func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([]MediaFile, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_files_updated_since", start, err) }()
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
+		FROM files
+		WHERE type IN (?, ?, ?) AND updated_at > ?
+		ORDER BY path
+	`
+
+	rows, err := d.db.QueryContext(ctx, query, FileTypeImage, FileTypeVideo, FileTypeFolder, since.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("failed to query updated files: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logging.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	return d.scanMediaFiles(rows)
+}
+
+// GetFoldersWithUpdatedContents returns folders that contain files updated after the given timestamp.
+// This includes folders at any level of the hierarchy above the changed files.
+func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time.Time) ([]MediaFile, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_folders_with_updated_contents", start, err) }()
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Find all unique parent paths of files that have been updated
+	// Then get the folder records for those paths
+	query := `
+		WITH RECURSIVE
+		updated_parents AS (
+			-- Get immediate parent paths of updated files
+			SELECT DISTINCT parent_path as path
+			FROM files
+			WHERE updated_at > ? AND parent_path != ''
+
+			UNION
+
+			-- Recursively get parent paths up to root
+			SELECT
+				CASE
+					WHEN INSTR(path, '/') > 0
+					THEN SUBSTR(path, 1, LENGTH(path) - LENGTH(SUBSTR(path, INSTR(path, '/') + 1)) - 1)
+					ELSE ''
+				END as path
+			FROM updated_parents
+			WHERE path != '' AND INSTR(path, '/') > 0
+		)
+		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+		FROM files f
+		INNER JOIN updated_parents up ON f.path = up.path
+		WHERE f.type = ?
+		ORDER BY LENGTH(f.path) DESC, f.path
+	`
+
+	rows, err := d.db.QueryContext(ctx, query, since.Unix(), FileTypeFolder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query folders with updated contents: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logging.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	return d.scanMediaFiles(rows)
+}
+
+// GetAllIndexedPaths returns all file paths currently in the index.
+// Used for orphan thumbnail detection.
+func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]bool, error) {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("get_all_indexed_paths", start, err) }()
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	rows, err := d.db.QueryContext(ctx, "SELECT path FROM files WHERE type IN (?, ?, ?)",
+		FileTypeImage, FileTypeVideo, FileTypeFolder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query indexed paths: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logging.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	paths := make(map[string]bool)
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			continue
+		}
+		paths[path] = true
+	}
+
+	return paths, rows.Err()
+}
+
+// scanMediaFiles is a helper to scan rows into MediaFile slices.
+func (d *Database) scanMediaFiles(rows *sql.Rows) ([]MediaFile, error) {
+	var files []MediaFile
+	for rows.Next() {
+		var f MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&f.ID,
+			&f.Name,
+			&f.Path,
+			&f.ParentPath,
+			&f.Type,
+			&f.Size,
+			&modTime,
+			&mimeType,
+		)
+		if err != nil {
+			logging.Warn("error scanning media file row: %v", err)
+			continue
+		}
+
+		f.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			f.MimeType = mimeType.String
+		}
+
+		files = append(files, f)
+	}
+
+	return files, rows.Err()
+}

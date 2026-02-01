@@ -298,20 +298,6 @@ func SetAppInfo(version, commit, goVersion string) {
 
 // Memory metrics
 var (
-	MemoryUsageBytes = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "media_viewer_memory_usage_bytes",
-			Help: "Current memory usage in bytes",
-		},
-	)
-
-	MemoryLimitBytes = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "media_viewer_memory_limit_bytes",
-			Help: "Memory limit in bytes (from GOMEMLIMIT)",
-		},
-	)
-
 	MemoryUsageRatio = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "media_viewer_memory_usage_ratio",
@@ -361,6 +347,31 @@ var (
 		prometheus.CounterOpts{
 			Name: "media_viewer_go_gc_runs_total",
 			Help: "Total number of completed GC cycles",
+		},
+	)
+)
+
+// Polling-based change detection metrics
+var (
+	IndexerPollChecksTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_indexer_poll_checks_total",
+			Help: "Total number of polling checks for file changes",
+		},
+	)
+
+	IndexerPollChangesDetected = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_indexer_poll_changes_detected_total",
+			Help: "Total number of times polling detected changes",
+		},
+	)
+
+	IndexerPollDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_indexer_poll_duration_seconds",
+			Help:    "Duration of polling change detection scans",
+			Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		},
 	)
 )

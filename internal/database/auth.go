@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"media-viewer/internal/logging"
+	"media-viewer/internal/metrics"
 )
 
 // User represents the single user account in the system.
@@ -149,6 +150,9 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 
 	id, _ := result.LastInsertId()
 
+	//nolint:contextcheck // Metrics update uses background context for reliability
+	d.updateActiveSessionsMetric()
+
 	return &Session{
 		ID:        id,
 		UserID:    userID,
@@ -250,7 +254,12 @@ func (d *Database) DeleteSession(ctx context.Context, token string) error {
 	hash := sha256.Sum256(tokenBytes)
 	tokenHash := hex.EncodeToString(hash[:])
 
-	return d.deleteSessionByHash(ctx, tokenHash)
+	err = d.deleteSessionByHash(ctx, tokenHash)
+	if err == nil {
+		//nolint:contextcheck // Metrics update uses background context for reliability
+		d.updateActiveSessionsMetric()
+	}
+	return err
 }
 
 // DeleteAllSessions removes all sessions (used when password is changed).
@@ -278,6 +287,10 @@ func (d *Database) CleanExpiredSessions(ctx context.Context) error {
 	defer cancel()
 
 	_, err = d.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
+	if err == nil {
+		//nolint:contextcheck // Metrics update uses background context for reliability
+		d.updateActiveSessionsMetric()
+	}
 	return err
 }
 
@@ -319,4 +332,21 @@ func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error
 	}
 
 	return nil
+}
+
+// updateActiveSessionsMetric updates the active sessions gauge.
+func (d *Database) updateActiveSessionsMetric() {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	var count int
+	err := d.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sessions WHERE expires_at > ?",
+		time.Now().Unix(),
+	).Scan(&count)
+	if err != nil {
+		logging.Debug("Failed to count active sessions: %v", err)
+		return
+	}
+	metrics.ActiveSessions.Set(float64(count))
 }

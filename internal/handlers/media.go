@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/md5" //nolint:gosec // MD5 used for cache key generation, not security
 	"errors"
 	"fmt"
 	"net/http"
@@ -192,10 +193,34 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set content type based on file type
+	if file.Type == database.FileTypeFolder {
+		w.Header().Set("Content-Type", "image/png")
+	} else {
+		w.Header().Set("Content-Type", "image/jpeg")
+	}
+
+	// Cache headers - shorter cache for folders since they can change
+	if file.Type == database.FileTypeFolder {
+		// Folders: cache for 5 minutes, must revalidate
+		w.Header().Set("Cache-Control", "public, max-age=300, must-revalidate")
+	} else {
+		// Files: cache for 24 hours
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+	}
+
+	// Add ETag for conditional requests
+	etag := fmt.Sprintf(`"%x"`, md5.Sum(thumb)) //nolint:gosec // MD5 used for cache key generation, not security
+	w.Header().Set("ETag", etag)
+
 	logging.Debug("Thumbnail: success for %s (%d bytes)", filePath, len(thumb))
 
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	// Check If-None-Match header
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
 	if _, err := w.Write(thumb); err != nil {
 		logging.Error("failed to write thumbnail response: %v", err)
 	}

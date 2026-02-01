@@ -17,10 +17,11 @@
 //
 // ## Database Metrics
 //
-// Monitor database query performance:
+// Monitor database query performance and storage:
 //   - DBQueryTotal: Counter of queries by operation and status
 //   - DBQueryDuration: Histogram of query duration by operation
 //   - DBConnectionsOpen: Gauge of open database connections
+//   - DBSizeBytes: Gauge of database file sizes (main, WAL, SHM)
 //
 // ## Indexer Metrics
 //
@@ -32,6 +33,9 @@
 //   - IndexerFoldersProcessed: Counter of folders processed
 //   - IndexerErrors: Counter of indexer errors
 //   - IndexerIsRunning: Gauge indicating if indexer is active
+//   - IndexerPollChecksTotal: Counter of polling checks for file changes
+//   - IndexerPollChangesDetected: Counter of times polling detected changes
+//   - IndexerPollDuration: Histogram of polling scan duration
 //
 // ## Thumbnail Metrics
 //
@@ -43,9 +47,10 @@
 //   - ThumbnailCacheSize: Gauge of cache size in bytes
 //   - ThumbnailCacheCount: Gauge of cached thumbnail count
 //   - ThumbnailGeneratorRunning: Gauge indicating if background generation is active
-//   - ThumbnailGenerationBatchComplete: Counter of completed generation batches
+//   - ThumbnailGenerationBatchComplete: Counter of completed generation batches by type
 //   - ThumbnailGenerationLastDuration: Gauge of last generation run duration
 //   - ThumbnailGenerationLastTimestamp: Gauge of last generation completion time
+//   - ThumbnailGenerationFilesTotal: Gauge of files by status (generated/skipped/failed)
 //
 // ## Media Library Metrics
 //
@@ -67,6 +72,17 @@
 // Track authentication activity:
 //   - AuthAttemptsTotal: Counter by status (success/failure)
 //   - ActiveSessions: Gauge of active user sessions
+//
+// ## Memory Metrics
+//
+// Monitor Go runtime memory and pressure:
+//   - GoMemLimit: Gauge of configured GOMEMLIMIT
+//   - GoMemAllocBytes: Gauge of current heap allocation
+//   - GoMemSysBytes: Gauge of total memory from OS
+//   - GoGCRuns: Counter of completed GC cycles
+//   - MemoryUsageRatio: Gauge of memory usage as ratio of limit (0.0-1.0)
+//   - MemoryPaused: Gauge indicating if processing is paused due to memory pressure
+//   - MemoryGCPauses: Counter of times processing was paused for memory
 //
 // ## Application Info
 //
@@ -101,14 +117,19 @@
 //
 // # Collector
 //
-// The package also provides a Collector type that periodically gathers
-// statistics from a StatsProvider and updates the corresponding gauges.
+// The package provides a [Collector] type that periodically gathers
+// statistics from a [StatsProvider] and updates the corresponding gauges.
 // This is useful for metrics that need to be calculated from external
 // sources like the database:
 //
-//	collector := metrics.NewCollector(statsProvider, 1*time.Minute)
+//	collector := metrics.NewCollector(statsProvider, dbPath, 1*time.Minute)
 //	collector.Start()
 //	defer collector.Stop()
+//
+// The collector automatically updates:
+//   - Media library statistics (files, folders, favorites, tags)
+//   - Database file sizes
+//   - Go runtime memory statistics
 //
 // # Prometheus Queries
 //
@@ -126,11 +147,27 @@
 //
 //	sum(rate(media_viewer_http_requests_total{status=~"5.."}[5m])) / sum(rate(media_viewer_http_requests_total[5m]))
 //
-// Cache hit rate:
+// Thumbnail cache hit rate:
 //
-//	media_viewer_thumbnail_cache_hits_total / (media_viewer_thumbnail_cache_hits_total + media_viewer_thumbnail_cache_misses_total)
+//	rate(media_viewer_thumbnail_cache_hits_total[5m]) /
+//	(rate(media_viewer_thumbnail_cache_hits_total[5m]) + rate(media_viewer_thumbnail_cache_misses_total[5m]))
 //
 // Database query latency by operation:
 //
 //	histogram_quantile(0.95, sum(rate(media_viewer_db_query_duration_seconds_bucket[5m])) by (le, operation))
+//
+// Memory pressure events:
+//
+//	rate(media_viewer_memory_gc_pauses_total[1h])
+//
+// Indexer polling efficiency (changes detected per poll):
+//
+//	rate(media_viewer_indexer_poll_changes_detected_total[1h]) /
+//	rate(media_viewer_indexer_poll_checks_total[1h])
+//
+// Thumbnail generation success rate:
+//
+//	media_viewer_thumbnail_generation_files{status="generated"} /
+//	(media_viewer_thumbnail_generation_files{status="generated"} +
+//	 media_viewer_thumbnail_generation_files{status="failed"})
 package metrics

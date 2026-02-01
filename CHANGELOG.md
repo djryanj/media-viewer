@@ -17,10 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Preference saved and persists across sessions
     - Videos use native HTML5 loop attribute
     - Animated images use canvas-based detection to force continuous playback
-
-### Fixes
-
-- **Playlist View Hotzones** - previously, these were blocking the video controls in the playlist. ([#56](https://github.com/djryanj/media-viewer/issues/56))
+- Polling-based change detection for media library updates (replaces fsnotify)
+- Incremental thumbnail generation that only processes changed files
+- Orphan thumbnail cleanup removes thumbnails for deleted files
+- Meta file tracking (`.meta` sidecar files) for thumbnail source path lookup
+- Legacy thumbnail cleanup for thumbnails without meta files
+- Video frame support in folder thumbnail generation
+- Indexer notifies thumbnail generator on completion for immediate processing
 
 ### Changed
 
@@ -32,10 +35,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Improved accessibility with proper ARIA labels
     - Better focus management after password visibility toggle
 - Consolidated duplicate media type definitions into new `mediatypes` package
+- Folder thumbnails now include video frames, not just images
+- Thumbnail generator waits for initial index completion instead of fixed 30-second delay
+- Replaced fsnotify-based file watching with polling-based change detection (better for containers)
+- Change detection now polls every 30 seconds (configurable via `POLL_INTERVAL` environment variable)
+- More reliable in Docker/container environments with mounted volumes
 
 ### Removed
 
-- Removed unused `media/scanner.go` and `media/types.go` (superseded by database-backed indexer)
+- Removed fsnotify-based file watching (unreliable in containerized environments)
+- Removed unused `media/scanner.go` (superseded by database-backed indexer)
+- Removed unused `media/types.go` (consolidated into `mediatypes` package)
+- Removed duplicate extension maps and file type detection from `indexer` package
+- Removed scanner-related Prometheus metrics
+
+### Fixed
+
+- **Playlist View Hotzones** - previously, these were blocking the video controls in the playlist. ([#56](https://github.com/djryanj/media-viewer/issues/56))
+- Folder thumbnails now update when contents change
+- Orphaned thumbnails are properly cleaned up when source files are deleted
+- Thumbnail generator now receives index completion events immediately on startup
 
 ## [v0.4.0] - January 31, 2026
 
