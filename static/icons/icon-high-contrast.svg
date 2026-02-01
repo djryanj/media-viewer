@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="64" fill="#1a1a2e"/>
+
+  <!-- Lock shackle with subtle highlight -->
+  <path d="M160 200 L160 160 Q160 80 256 80 Q352 80 352 160 L352 200"
+        fill="none" stroke="#1a3a5c" stroke-width="44" stroke-linecap="round"/>
+  <path d="M160 200 L160 160 Q160 80 256 80 Q352 80 352 160 L352 200"
+        fill="none" stroke="#0f3460" stroke-width="40" stroke-linecap="round"/>
+
+  <!-- Lock body with border -->
+  <rect x="118" y="198" width="276" height="224" rx="26" fill="#0a2540" opacity="0.5"/>
+  <rect x="120" y="200" width="272" height="220" rx="24" fill="#0f3460"/>
+
+  <!-- Lock body inner with border -->
+  <rect x="148" y="228" width="216" height="164" rx="14" fill="#0a1628"/>
+  <rect x="150" y="230" width="212" height="160" rx="12" fill="#16213e"/>
+
+  <!-- Play button area - high contrast circle -->
+  <circle cx="256" cy="300" r="55" fill="#0a1628"/>
+  <circle cx="256" cy="300" r="50" fill="#f5f5f5"/>
+
+  <!-- Play triangle - dark on light for maximum contrast -->
+  <path d="M240 270 L240 330 L290 300 Z" fill="#1a1a2e"/>
+
+  <!-- Accent ring - visible but not relied upon -->
+  <circle cx="256" cy="300" r="58" fill="none" stroke="#e94560" stroke-width="3"/>
+</svg>

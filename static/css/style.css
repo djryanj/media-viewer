@@ -1,3 +1,5 @@
+/* style.css */
+
 /* ===========================================
    EXPLICIT CSS RESET (Optimized)
    =========================================== */
@@ -84,24 +86,52 @@ a {
 }
 
 /* ===========================================
-   CSS VARIABLES
+   CSS VARIABLES - COLORBLIND ACCESSIBLE
    =========================================== */
 
 :root {
+    /* Background colors */
     --bg-primary: #1a1a2e;
     --bg-secondary: #16213e;
     --bg-tertiary: #0f3460;
+
+    /* Text colors - improved contrast */
     --text-primary: #eaeaea;
-    --text-secondary: #a0a0a0;
+    --text-secondary: #b8b8b8; /* Improved from #a0a0a0 for better contrast */
+
+    /* Accent color - interactive elements */
     --accent: #e94560;
     --accent-hover: #ff6b6b;
+
+    /* Semantic colors - distinct for colorblind users */
+    --success: #2ecc71; /* Green with good luminance */
+    --success-bg: rgba(46, 204, 113, 0.15);
+    --error: #e74c3c; /* Distinct red, different from accent */
+    --error-bg: rgba(231, 76, 60, 0.15);
+    --warning: #f39c12; /* Orange/amber for warnings */
+    --warning-bg: rgba(243, 156, 18, 0.15);
+    --info: #3498db; /* Blue for informational */
+    --info-bg: rgba(52, 152, 219, 0.15);
+
+    /* State colors */
+    --favorite-color: #f1c40f; /* Gold/yellow - high visibility */
+    --folder-color: #f6c344;
+    --enabled-color: #3498db; /* Blue instead of teal - more distinct */
+
+    /* Type badge colors - using shapes + colors */
+    --type-folder: #f6c344;
+    --type-image: #3498db; /* Blue */
+    --type-video: #9b59b6; /* Purple - distinct from red */
+    --type-playlist: #1abc9c; /* Teal */
+
+    /* Borders and shadows */
     --border-color: #2a2a4a;
+    --border-focus: #5dade2; /* Light blue focus ring */
     --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     --radius: 8px;
     --transition: 0.2s ease;
-    --folder-color: #f6c344;
-    --success: #4ecdc4;
-    --error: #e94560;
+
+    /* Header height */
     --header-height: auto;
 }
 
@@ -191,7 +221,8 @@ body {
 
 .search-box input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
 }
 
 .search-box input::placeholder {
@@ -258,7 +289,7 @@ select {
 
 select:hover,
 select:focus {
-    border-color: var(--accent);
+    border-color: var(--border-focus);
     outline: none;
 }
 
@@ -624,7 +655,7 @@ select:focus {
     display: none;
 }
 
-/* Pin/Favorite Button */
+/* Pin/Favorite Button - uses icon change + color for state */
 .pin-button {
     position: absolute;
     top: 0.25rem;
@@ -653,11 +684,14 @@ select:focus {
     opacity: 1;
 }
 
+/* Pinned state: filled star + gold color + ring indicator */
 .pin-button.pinned {
-    color: gold;
+    color: var(--favorite-color);
+    background: rgba(0, 0, 0, 0.7);
+    box-shadow: 0 0 0 2px var(--favorite-color);
 }
 
-/* Tag button */
+/* Tag button - uses icon + ring for state */
 .tag-button {
     position: absolute;
     top: 0.25rem;
@@ -685,8 +719,11 @@ select:focus {
     opacity: 1;
 }
 
+/* Has tags state: accent color + ring indicator */
 .tag-button.has-tags {
     color: var(--accent);
+    background: rgba(0, 0, 0, 0.7);
+    box-shadow: 0 0 0 2px var(--accent);
 }
 
 /* Video indicator */
@@ -860,28 +897,35 @@ select:focus {
         flex-shrink: 0;
     }
 
+    /* Type badges - using distinct colors + text label */
     .gallery-item-type {
         text-transform: uppercase;
         font-size: 0.5625rem;
         padding: 0.125rem 0.375rem;
         background: var(--bg-tertiary);
         border-radius: 3px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
     }
 
     .gallery-item-type.folder {
-        color: var(--folder-color);
+        color: var(--type-folder);
+        border-left: 2px solid var(--type-folder);
     }
 
     .gallery-item-type.image {
-        color: #4ecdc4;
+        color: var(--type-image);
+        border-left: 2px solid var(--type-image);
     }
 
     .gallery-item-type.video {
-        color: #ff6b6b;
+        color: var(--type-video);
+        border-left: 2px solid var(--type-video);
     }
 
     .gallery-item-type.playlist {
-        color: #ffe66d;
+        color: var(--type-playlist);
+        border-left: 2px solid var(--type-playlist);
     }
 
     /* Tags in info section - fixed position at bottom */
@@ -1309,9 +1353,13 @@ select:focus {
     text-overflow: ellipsis;
 }
 
+/* Favorite indicator in search - icon + color */
 .search-dropdown-item-pin {
-    color: gold;
+    color: var(--favorite-color);
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
 }
 
 /* Tag suggestions - keep icon style */
@@ -1560,6 +1608,7 @@ select:focus {
     display: none;
 }
 
+/* Lightbox action buttons - consistent styling */
 .lightbox-pin,
 .lightbox-tag {
     position: absolute;
@@ -1577,8 +1626,10 @@ select:focus {
     justify-content: center;
     transition:
         background var(--transition),
-        color var(--transition);
+        color var(--transition),
+        box-shadow var(--transition);
 }
+
 .lightbox-pin {
     left: 0.5rem;
 }
@@ -1592,12 +1643,18 @@ select:focus {
     background: rgba(255, 255, 255, 0.2);
 }
 
+/* Pinned state - gold color + ring + filled icon */
 .lightbox-pin.pinned {
-    color: gold;
+    color: var(--favorite-color);
+    box-shadow: 0 0 0 2px var(--favorite-color);
+    background: rgba(241, 196, 15, 0.2);
 }
 
+/* Has tags state - accent color + ring */
 .lightbox-tag.has-tags {
     color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+    background: rgba(233, 69, 96, 0.2);
 }
 
 .lightbox-info {
@@ -1829,7 +1886,8 @@ select:focus {
     justify-content: center;
     transition:
         background var(--transition),
-        color var(--transition);
+        color var(--transition),
+        box-shadow var(--transition);
 }
 
 .lightbox-autoplay:hover,
@@ -1837,8 +1895,11 @@ select:focus {
     background: rgba(255, 255, 255, 0.2);
 }
 
+/* Enabled state - blue color + ring */
 .lightbox-autoplay.enabled {
-    color: #4ecdc4;
+    color: var(--enabled-color);
+    box-shadow: 0 0 0 2px var(--enabled-color);
+    background: rgba(52, 152, 219, 0.2);
 }
 
 .lightbox-autoplay.hidden {
@@ -1993,9 +2054,12 @@ select:focus {
     background: var(--bg-secondary);
 }
 
+/* Active playlist item - uses background + left border indicator */
 #playlist-items li.active {
     background: var(--accent);
     color: white;
+    border-left: 4px solid white;
+    padding-left: calc(1rem - 4px);
 }
 
 #playlist-items li.active .playlist-tag {
@@ -2003,10 +2067,12 @@ select:focus {
     color: white;
 }
 
+/* Unavailable playlist item - uses strikethrough + opacity */
 #playlist-items li.unavailable {
     color: var(--text-secondary);
     cursor: not-allowed;
     opacity: 0.5;
+    text-decoration: line-through;
 }
 
 .playlist-item-name {
@@ -2092,7 +2158,7 @@ select:focus {
 .player-hot-zone {
     position: absolute;
     top: 0;
-    bottom: 40%; /* Don't extend to bottom - leave room for video controls */
+    bottom: 40%;
     width: 15%;
     min-width: 50px;
     max-width: 100px;
@@ -2132,7 +2198,7 @@ select:focus {
 @media (hover: none) and (pointer: coarse) {
     .player-hot-zone {
         opacity: 0.3;
-        bottom: 50%; /* More room for touch-friendly video controls */
+        bottom: 50%;
     }
 
     .player-hot-zone:active {
@@ -2607,7 +2673,8 @@ select:focus {
 
 .tag-input-container input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
 }
 
 .tag-suggestions {
@@ -2709,7 +2776,7 @@ select:focus {
     }
 
     .tag-remove:hover {
-        color: var(--accent);
+        color: var(--error);
     }
 
     .modal-close:hover {
@@ -2761,7 +2828,8 @@ select:focus {
 
 #password-form .form-group input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
 }
 
 #password-form .form-group input::placeholder {
@@ -2775,15 +2843,26 @@ select:focus {
     color: var(--text-secondary);
 }
 
+/* Error message - uses icon + color + border for accessibility */
 #password-form .error-message {
-    background: rgba(233, 69, 96, 0.1);
+    background: var(--error-bg);
     border: 1px solid var(--error);
+    border-left: 4px solid var(--error);
     color: var(--error);
     padding: 0.75rem 1rem;
     border-radius: var(--radius);
     margin-bottom: 1rem;
     font-size: 0.875rem;
-    text-align: center;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#password-form .error-message::before {
+    content: '⚠';
+    font-size: 1rem;
+    flex-shrink: 0;
 }
 
 #password-form .error-message.hidden {
@@ -2868,15 +2947,28 @@ select:focus {
     cursor: not-allowed;
 }
 
+/* Danger button - distinct from accent */
 .btn-danger {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--error);
+    border-color: var(--error);
     color: white;
 }
 
 .btn-danger:hover {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
+    background: #c0392b;
+    border-color: #c0392b;
+}
+
+/* Success button */
+.btn-success {
+    background: var(--success);
+    border-color: var(--success);
+    color: white;
+}
+
+.btn-success:hover {
+    background: #27ae60;
+    border-color: #27ae60;
 }
 
 @media (hover: hover) {
@@ -2955,6 +3047,19 @@ select:focus {
 .confirm-modal-icon {
     font-size: 3rem;
     margin-bottom: 1rem;
+}
+
+/* Confirmation icon colors based on action type */
+.confirm-modal-icon.warning {
+    color: var(--warning);
+}
+
+.confirm-modal-icon.danger {
+    color: var(--error);
+}
+
+.confirm-modal-icon.info {
+    color: var(--info);
 }
 
 .confirm-modal-content h3 {
@@ -3086,11 +3191,53 @@ select:focus {
     pointer-events: none;
     font-size: 0.875rem;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .toast.show {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
+}
+
+/* Toast variants with icons */
+.toast.success {
+    border-left: 4px solid var(--success);
+}
+
+.toast.success::before {
+    content: '✓';
+    color: var(--success);
+    font-weight: bold;
+}
+
+.toast.error {
+    border-left: 4px solid var(--error);
+}
+
+.toast.error::before {
+    content: '✕';
+    color: var(--error);
+    font-weight: bold;
+}
+
+.toast.warning {
+    border-left: 4px solid var(--warning);
+}
+
+.toast.warning::before {
+    content: '⚠';
+    color: var(--warning);
+}
+
+.toast.info {
+    border-left: 4px solid var(--info);
+}
+
+.toast.info::before {
+    content: 'ℹ';
+    color: var(--info);
 }
 
 @media (min-width: 900px) {
@@ -3210,12 +3357,15 @@ select:focus {
     border-radius: var(--radius);
     color: var(--text-primary);
     font-size: 1rem;
-    transition: border-color var(--transition);
+    transition:
+        border-color var(--transition),
+        box-shadow var(--transition);
 }
 
 .form-group input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
 }
 
 .form-group input::placeholder {
@@ -3229,18 +3379,104 @@ select:focus {
     color: var(--text-secondary);
 }
 
+/* General error message styling */
 .error-message {
-    background: rgba(233, 69, 96, 0.1);
+    background: var(--error-bg);
     border: 1px solid var(--error);
+    border-left: 4px solid var(--error);
     color: var(--error);
     padding: 0.75rem 1rem;
     border-radius: var(--radius);
     margin-bottom: 1rem;
     font-size: 0.875rem;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.error-message::before {
+    content: '⚠';
+    font-size: 1rem;
+    flex-shrink: 0;
 }
 
 .error-message.hidden {
+    display: none;
+}
+
+/* Success message styling */
+.success-message {
+    background: var(--success-bg);
+    border: 1px solid var(--success);
+    border-left: 4px solid var(--success);
+    color: var(--success);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.success-message::before {
+    content: '✓';
+    font-size: 1rem;
+    flex-shrink: 0;
+    font-weight: bold;
+}
+
+.success-message.hidden {
+    display: none;
+}
+
+/* Warning message styling */
+.warning-message {
+    background: var(--warning-bg);
+    border: 1px solid var(--warning);
+    border-left: 4px solid var(--warning);
+    color: var(--warning);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.warning-message::before {
+    content: '⚠';
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.warning-message.hidden {
+    display: none;
+}
+
+/* Info message styling */
+.info-message {
+    background: var(--info-bg);
+    border: 1px solid var(--info);
+    border-left: 4px solid var(--info);
+    color: var(--info);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.info-message::before {
+    content: 'ℹ';
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.info-message.hidden {
     display: none;
 }
 
@@ -3293,7 +3529,7 @@ select:focus {
    =========================================== */
 
 :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
 }
 
@@ -3485,9 +3721,11 @@ select:focus:not(:focus-visible) {
     transition: color 0.15s ease;
 }
 
+/* Selected state - uses checkmark + color + filled background */
 .gallery-item.selected .selection-checkbox {
     background: var(--accent);
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px white;
 }
 
 .gallery-item.selected .selection-checkbox .checkbox-icon {
@@ -3786,7 +4024,7 @@ body.selection-mode .stats-bar {
 .search-dropdown-item-pin [data-lucide] {
     width: 0.875rem;
     height: 0.875rem;
-    color: gold;
+    color: var(--favorite-color);
 }
 
 .favorites-section .section-header h2 [data-lucide] {
@@ -3797,13 +4035,13 @@ body.selection-mode .stats-bar {
 
 /* Filled star for pinned state */
 .pin-button.pinned [data-lucide] {
-    fill: gold;
-    color: gold;
+    fill: var(--favorite-color);
+    color: var(--favorite-color);
 }
 
 .lightbox-pin.pinned [data-lucide] {
-    fill: gold;
-    color: gold;
+    fill: var(--favorite-color);
+    color: var(--favorite-color);
 }
 
 /* Sort icon rotation */
@@ -3980,7 +4218,7 @@ body.selection-mode .stats-bar {
     right: -4px;
     width: 14px;
     height: 14px;
-    background: var(--accent);
+    background: var(--error);
     border: none;
     border-radius: 50%;
     color: white;
@@ -3997,7 +4235,7 @@ body.selection-mode .stats-bar {
 }
 
 .item-tag-remove:hover {
-    background: var(--accent-hover);
+    background: #c0392b;
     transform: scale(1.2);
 }
 
@@ -4130,7 +4368,7 @@ body.selection-mode .stats-bar {
     }
 }
 
-//* ===========================================
+/* ===========================================
    LIGHTBOX TAGS OVERLAY
    =========================================== */
 
@@ -4545,7 +4783,8 @@ textarea,
     justify-content: center;
     transition:
         background var(--transition),
-        color var(--transition);
+        color var(--transition),
+        box-shadow var(--transition);
 }
 
 .lightbox-loop-toggle:hover,
@@ -4553,8 +4792,11 @@ textarea,
     background: rgba(255, 255, 255, 0.2);
 }
 
+/* Enabled state - blue color + ring */
 .lightbox-loop-toggle.enabled {
-    color: #4ecdc4;
+    color: var(--enabled-color);
+    box-shadow: 0 0 0 2px var(--enabled-color);
+    background: rgba(52, 152, 219, 0.2);
 }
 
 .lightbox-loop-toggle.hidden {
@@ -4795,7 +5037,7 @@ textarea,
     font-size: 0.875rem;
 }
 
-/* Reduced motion */
+/* Reduced motion - disable shimmer */
 @media (prefers-reduced-motion: reduce) {
     .skeleton-shimmer,
     .skeleton-text::after {
