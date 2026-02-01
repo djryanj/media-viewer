@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Infinite scroll with paginated fallback in both main gallery and search views
 
+### Changed
+
+- Colorblind accessibility improvements including a subtle change to the icon design (#100)
+
 ### Deprecated
 
 - Manual pagination (hidden, kept for fallback)
