@@ -112,12 +112,16 @@ docker run -d `
 | `INDEX_INTERVAL`     | `30m`       | How often to perform a full re-index of the media directory                                                                            |
 | `POLL_INTERVAL`      | `30s`       | How often to check for filesystem changes (lightweight scan for new/modified/deleted files)                                            |
 | `THUMBNAIL_INTERVAL` | `6h`        | How often the thumbnail generator performs a full scan (incremental updates happen automatically after indexing)                       |
+| `SESSION_DURATION`   | `24h`       | How long user sessions remain valid (sliding expiration extends on activity)                                                           |
+| `SESSION_CLEANUP`    | `1h`        | How often to clean up expired sessions from the database                                                                               |
 | `LOG_LEVEL`          | `info`      | Server log level (`debug`, `info`, `warn`, `error`)                                                                                    |
 | `LOG_STATIC_FILES`   | `false`     | Log static file requests                                                                                                               |
 | `LOG_HEALTH_CHECKS`  | `true`      | Log health check endpoint requests                                                                                                     |
 | `MEMORY_LIMIT`       | (none)      | Container memory limit in bytes. Set via Kubernetes Downward API to enable automatic GOMEMLIMIT configuration.                         |
 | `MEMORY_RATIO`       | `0.85`      | Percentage of `MEMORY_LIMIT` to allocate to Go heap (0.0-1.0). The remainder is reserved for FFmpeg, image processing, and OS buffers. |
 | `GOMEMLIMIT`         | (none)      | Direct override for Go's memory limit. If set, takes precedence over `MEMORY_LIMIT`. Accepts values like `400MiB` or `1GiB`.           |
+
+> **Note:** Setting `SESSION_DURATION` below 5 minutes is not recommended as it may cause sessions to expire between keepalive intervals.
 
 ### Boolean Environment Variables
 

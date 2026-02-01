@@ -8,6 +8,7 @@ const MediaApp = {
         currentPage: 1,
         pageSize: 100,
         version: null,
+        lastAuthCheck: 0,
     },
 
     elements: {},
@@ -17,6 +18,7 @@ const MediaApp = {
         this.bindEvents();
         this.checkAuth();
         this.registerServiceWorker();
+        this.setupVisibilityHandling();
 
         // Initialize Wake Lock
         if (typeof WakeLock !== 'undefined') {
@@ -29,6 +31,12 @@ const MediaApp = {
         // Initialize infinite scroll
         if (typeof InfiniteScroll !== 'undefined') {
             InfiniteScroll.init();
+        }
+
+        // Initialize Session Manager (handles keepalives and auth expiration)
+        if (typeof SessionManager !== 'undefined') {
+            // SessionManager auto-initializes, but we can configure it here if needed
+            console.debug('MediaApp: SessionManager available');
         }
     },
 
@@ -104,33 +112,94 @@ const MediaApp = {
             }
         });
 
-        // Use bubble phase (default) so HistoryManager's capture phase handler runs first
+        // Handle browser back/forward for directory navigation
         window.addEventListener('popstate', (e) => {
-            console.debug(
-                'MediaApp: popstate fired, isHandlingPopState:',
-                HistoryManager.isHandlingPopState,
-                'currentStateType:',
-                HistoryManager.getCurrentStateType()
-            );
-
-            // If HistoryManager is handling an overlay/modal/selection close, don't navigate
+            // Skip if HistoryManager is handling an overlay
             if (typeof HistoryManager !== 'undefined' && HistoryManager.isHandlingPopState) {
-                console.debug('MediaApp: skipping - HistoryManager is handling');
                 return;
             }
 
-            // If HistoryManager has any overlay states, it should handle the popstate
+            // Skip if there are overlay states open
             if (typeof HistoryManager !== 'undefined' && HistoryManager.getCurrentStateType()) {
-                console.debug('MediaApp: skipping - HistoryManager has states');
                 return;
             }
 
-            console.debug('MediaApp: handling navigation');
-            const path = e.state?.path || '';
-            this.state.currentPath = path;
-            this.state.currentPage = 1;
-            this.loadDirectory(path, false);
+            // Handle directory navigation
+            if (e.state && typeof e.state.path === 'string') {
+                const targetPath = e.state.path;
+                if (targetPath !== this.state.currentPath) {
+                    this.state.currentPath = targetPath;
+                    this.state.currentPage = 1;
+                    this.loadDirectory(targetPath, false);
+                }
+            }
         });
+    },
+
+    /**
+     * Setup handling for when app becomes visible again (PWA resume, tab focus)
+     */
+    setupVisibilityHandling() {
+        // Handle page visibility change (tab switch, PWA resume)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                this.handleAppResume();
+            }
+        });
+
+        // Handle page show (back/forward cache restoration)
+        window.addEventListener('pageshow', (e) => {
+            if (e.persisted) {
+                console.debug('MediaApp: restored from bfcache');
+                this.handleAppResume();
+            }
+        });
+    },
+
+    /**
+     * Handle app resume - verify auth is still valid
+     */
+    async handleAppResume() {
+        // Delegate to SessionManager if available
+        if (typeof SessionManager !== 'undefined') {
+            SessionManager.touch();
+            SessionManager.sendKeepalive();
+            return;
+        }
+
+        // Fallback behavior if SessionManager not loaded
+        const now = Date.now();
+        const timeSinceLastCheck = now - (this.state.lastAuthCheck || 0);
+
+        if (timeSinceLastCheck < 5000) {
+            return;
+        }
+
+        console.debug('MediaApp: checking auth on resume');
+        this.state.lastAuthCheck = now;
+
+        try {
+            const response = await fetch('/api/auth/check', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+            });
+
+            if (!response.ok) {
+                console.debug('MediaApp: auth check failed, redirecting');
+                window.location.replace('/login.html');
+                return;
+            }
+
+            const data = await response.json();
+
+            if (!data.success) {
+                console.debug('MediaApp: auth invalid on resume, redirecting');
+                window.location.replace('/login.html');
+            }
+        } catch (error) {
+            console.error('MediaApp: auth check error on resume', error);
+            window.location.replace('/login.html');
+        }
     },
 
     async checkAuth() {
@@ -281,11 +350,14 @@ const MediaApp = {
         const urlParams = new URLSearchParams(window.location.search);
         const path = urlParams.get('path') || '';
         this.state.currentPath = path;
+
+        // Set initial history state
+        history.replaceState({ path }, '', window.location.href);
+
         this.loadDirectory(path, false);
     },
 
     async loadDirectory(path = '', pushState = true) {
-        // Save scroll position for current path before loading new one
         if (typeof InfiniteScroll !== 'undefined' && this.state.currentPath !== path) {
             InfiniteScroll.saveToCache(this.state.currentPath);
         }
@@ -328,7 +400,6 @@ const MediaApp = {
 
             this.renderBreadcrumb();
 
-            // Use infinite scroll if available
             if (typeof InfiniteScroll !== 'undefined') {
                 await InfiniteScroll.startForDirectory(path, this.state.listing);
             } else {
@@ -480,8 +551,11 @@ const MediaApp = {
     },
 
     navigateTo(path) {
+        if (path === this.state.currentPath) {
+            return;
+        }
         this.state.currentPage = 1;
-        this.loadDirectory(path);
+        this.loadDirectory(path, true);
     },
 
     handleSortChange() {

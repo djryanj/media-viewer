@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Infinite scroll with paginated fallback in both main gallery and search views
+- Session keepalive system to maintain active sessions during user activity
+- Shorter server sessions by default (configurable with`SESSION_DURATION` environment variable) which ensures that media stays private without complex PWA and frontend changes ([#73](https://github.com/djryanj/media-viewer/issues/73), [#82](https://github.com/djryanj/media-viewer/issues/82))
+- Escape key logs out from the main screen ([#73](https://github.com/djryanj/media-viewer/issues/73))
+- Navigation improvements (back button)
 
 ### Changed
 

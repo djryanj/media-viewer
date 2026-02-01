@@ -759,18 +759,43 @@ const Lightbox = {
             }
         };
 
-        img.onerror = () => {
+        img.onerror = (e) => {
             if (loadId !== this.currentLoadId) {
                 return;
             }
 
             this.hideLoading();
             console.error('Failed to load image:', file.path);
+
+            // Check if this might be an auth error (image returns 401)
+            // The global fetch interceptor handles API calls, but images load differently
+            this.checkImageAuthError(imageUrl);
+
             this.elements.image.classList.remove('hidden');
             this.elements.image.src = '';
         };
 
         img.src = imageUrl;
+    },
+
+    /**
+     * Check if an image load failure was due to authentication
+     */
+    async checkImageAuthError(imageUrl) {
+        try {
+            const response = await fetch(imageUrl, { method: 'HEAD' });
+            if (response.status === 401) {
+                console.debug('Lightbox: image auth error detected');
+                if (typeof SessionManager !== 'undefined') {
+                    SessionManager.handleSessionExpired();
+                } else {
+                    window.location.replace('/login.html');
+                }
+            }
+        } catch (e) {
+            // Network error, not auth related
+            console.debug('Lightbox: image check failed', e);
+        }
     },
 
     loadVideo(file, loadId) {
@@ -799,12 +824,28 @@ const Lightbox = {
             video.removeEventListener('error', onError);
         };
 
-        const onError = (e) => {
+        const onError = async (e) => {
             if (loadId !== this.currentLoadId) {
                 return;
             }
             console.error('Error loading video:', e);
             this.hideLoading();
+
+            // Check if this is an auth error
+            try {
+                const response = await fetch(videoUrl, { method: 'HEAD' });
+                if (response.status === 401) {
+                    console.debug('Lightbox: video auth error detected');
+                    if (typeof SessionManager !== 'undefined') {
+                        SessionManager.handleSessionExpired();
+                    } else {
+                        window.location.replace('/login.html');
+                    }
+                }
+            } catch (err) {
+                console.debug('Lightbox: video auth check failed', err);
+            }
+
             video.removeEventListener('canplay', onCanPlay);
             video.removeEventListener('error', onError);
         };

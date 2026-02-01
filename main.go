@@ -59,6 +59,9 @@ func main() {
 		startup.LogFatal("Configuration error: %v", err)
 	}
 
+		// Configure session duration
+	database.SetSessionDuration(config.SessionDuration)
+
 	// Log memory configuration
 	startup.LogMemoryConfig(startup.MemoryConfig{
 		Configured:     memResult.Configured,
@@ -84,9 +87,9 @@ func main() {
 	}
 	startup.LogDatabaseInit(time.Since(dbStart))
 
-	// Clean up expired sessions periodically
+	// Clean up expired sessions periodically (use configured interval)
 	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
+		ticker := time.NewTicker(config.SessionCleanup)
 		defer ticker.Stop()
 		for {
 			select {
@@ -259,6 +262,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	auth.HandleFunc("/logout", h.Logout).Methods("POST")
 	auth.HandleFunc("/check", h.CheckAuth).Methods("GET")
 	auth.HandleFunc("/password", h.ChangePassword).Methods("PUT")
+	auth.HandleFunc("/keepalive", h.Keepalive).Methods("POST")
 
 	// Protected API routes
 	api := r.PathPrefix("/api").Subrouter()

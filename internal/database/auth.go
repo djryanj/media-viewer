@@ -31,8 +31,26 @@ type Session struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-// SessionDuration is the length of time a session remains valid.
-const SessionDuration = 7 * 24 * time.Hour // 7 days
+// DefaultSessionDuration is the default session length if not configured.
+const DefaultSessionDuration = 5 * time.Minute
+
+// sessionDuration is the configured session duration (set via SetSessionDuration).
+var sessionDuration = DefaultSessionDuration
+
+// SetSessionDuration configures the session duration.
+func SetSessionDuration(d time.Duration) {
+	if d < 1*time.Minute {
+		logging.Warn("Session duration too short (%v), using minimum of 1 minute", d)
+		d = 1 * time.Minute
+	}
+	sessionDuration = d
+	logging.Info("Session duration set to %v", sessionDuration)
+}
+
+// GetSessionDuration returns the current session duration.
+func GetSessionDuration() time.Duration {
+	return sessionDuration
+}
 
 // HasUsers checks if a user exists (single-user app).
 func (d *Database) HasUsers(ctx context.Context) bool {
@@ -138,7 +156,7 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 	tokenHash := hex.EncodeToString(hash[:])
 	token := hex.EncodeToString(tokenBytes)
 
-	expiresAt := time.Now().Add(SessionDuration)
+	expiresAt := time.Now().Add(sessionDuration)
 
 	result, err := d.db.ExecContext(ctx,
 		"INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)",
@@ -198,10 +216,7 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 
 	// Check expiration
 	if time.Now().Unix() > expiresAt {
-		// Clean up expired session in background - don't block validation
-		// Using background context intentionally: this cleanup should complete
-		// even if the HTTP request is canceled, and the request context
-		// may already be done by the time this goroutine runs.
+		// Clean up expired session in background
 		//nolint:contextcheck // Intentionally using background context for fire-and-forget cleanup
 		go func() {
 			bgCtx, bgCancel := context.WithTimeout(context.Background(), defaultTimeout)
@@ -231,6 +246,44 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 	user.UpdatedAt = time.Unix(updatedAtU, 0)
 
 	return &user, nil
+}
+
+// ExtendSession extends the expiration time of an existing session.
+func (d *Database) ExtendSession(ctx context.Context, token string) error {
+	start := time.Now()
+	var err error
+	defer func() { recordQuery("extend_session", start, err) }()
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	// Hash the token for lookup
+	tokenBytes, err := hex.DecodeString(token)
+	if err != nil {
+		return fmt.Errorf("invalid token format: %w", err)
+	}
+	hash := sha256.Sum256(tokenBytes)
+	tokenHash := hex.EncodeToString(hash[:])
+
+	newExpiresAt := time.Now().Add(sessionDuration)
+
+	result, err := d.db.ExecContext(ctx,
+		"UPDATE sessions SET expires_at = ? WHERE token = ? AND expires_at > ?",
+		newExpiresAt.Unix(), tokenHash, time.Now().Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to extend session: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("session not found or expired")
+	}
+
+	return nil
 }
 
 // deleteSessionByHash removes a session by its hashed token.
@@ -286,8 +339,11 @@ func (d *Database) CleanExpiredSessions(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err = d.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
+	result, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
 	if err == nil {
+		if rows, _ := result.RowsAffected(); rows > 0 {
+			logging.Debug("Cleaned %d expired sessions", rows)
+		}
 		//nolint:contextcheck // Metrics update uses background context for reliability
 		d.updateActiveSessionsMetric()
 	}

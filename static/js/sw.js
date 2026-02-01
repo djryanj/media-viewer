@@ -1,32 +1,36 @@
 /**
  * Service Worker for Media Viewer PWA
- *
- * This is a minimal service worker that enables PWA installation.
- * It caches the app shell for faster loading and offline capability.
  */
 
-const CACHE_NAME = 'media-viewer-v1';
+const CACHE_NAME = 'media-viewer-v2';
 
 // Assets to cache on install (app shell)
 const PRECACHE_ASSETS = [
     '/',
     '/index.html',
-    '/login.html',
-    '/style.css',
-    '/app.js',
-    '/gallery.js',
-    '/lightbox.js',
-    '/player.js',
-    '/search.js',
-    '/favorites.js',
-    '/tags.js',
-    '/preferences.js',
-    '/history-manager.js',
-    '/selection.js',
-    '/wake-lock.js',
+    '/css/style.css',
+    '/css/login.css',
+    '/js/app.js',
+    '/js/gallery.js',
+    '/js/lightbox.js',
+    '/js/player.js',
+    '/js/search.js',
+    '/js/favorites.js',
+    '/js/tags.js',
+    '/js/preferences.js',
+    '/js/history.js',
+    '/js/selection.js',
+    '/js/infinite-scroll.js',
+    '/js/wake-lock.js',
     '/manifest.json',
     '/icons/icon-192x192.png',
     '/icons/icon-512x512.png',
+];
+
+// Paths that should NEVER be cached
+const NO_CACHE_PATHS = [
+    '/api/',
+    '/login.html', // Don't cache login page - always fetch fresh
 ];
 
 // Install event - cache app shell
@@ -38,10 +42,8 @@ self.addEventListener('install', (event) => {
             .open(CACHE_NAME)
             .then((cache) => {
                 console.debug('[SW] Caching app shell');
-                // Use addAll for critical assets, but don't fail if some are missing
                 return cache.addAll(PRECACHE_ASSETS).catch((err) => {
                     console.warn('[SW] Some assets failed to cache:', err);
-                    // Cache what we can individually
                     return Promise.all(
                         PRECACHE_ASSETS.map((url) =>
                             cache.add(url).catch(() => console.warn('[SW] Failed to cache:', url))
@@ -50,7 +52,6 @@ self.addEventListener('install', (event) => {
                 });
             })
             .then(() => {
-                // Force the waiting service worker to become active
                 return self.skipWaiting();
             })
     );
@@ -74,13 +75,12 @@ self.addEventListener('activate', (event) => {
                 );
             })
             .then(() => {
-                // Take control of all pages immediately
                 return self.clients.claim();
             })
     );
 });
 
-// Fetch event - network first, fallback to cache
+// Fetch event - handle requests
 self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
@@ -90,28 +90,52 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Skip API calls - always go to network
-    if (url.pathname.startsWith('/api/')) {
-        return;
-    }
+    // Check if this path should never be cached
+    const shouldSkipCache = NO_CACHE_PATHS.some((path) => url.pathname.startsWith(path));
 
-    // Skip video/media streaming - don't cache large files
-    if (url.pathname.startsWith('/api/stream/') || url.pathname.startsWith('/api/file/')) {
-        return;
-    }
-
-    // For navigation requests (HTML pages)
-    if (request.mode === 'navigate') {
+    if (shouldSkipCache) {
+        // Always go to network, no cache
         event.respondWith(
             fetch(request).catch(() => {
-                // If offline, try to return cached page or offline page
-                return caches.match(request).then((cached) => cached);
+                // If network fails for login page, we can't do much
+                // Return a basic offline message
+                if (url.pathname === '/login.html') {
+                    return new Response(
+                        '<!DOCTYPE html><html><head><title>Offline</title></head><body><h1>You are offline</h1><p>Please check your connection and try again.</p></body></html>',
+                        { headers: { 'Content-Type': 'text/html' } }
+                    );
+                }
+                return new Response('Offline', { status: 503 });
             })
         );
         return;
     }
 
-    // For static assets - try cache first, then network
+    // For navigation requests to index.html - network first, cache fallback
+    if (request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    // Cache the fresh response
+                    if (response.ok) {
+                        const responseClone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(request, responseClone);
+                        });
+                    }
+                    return response;
+                })
+                .catch(() => {
+                    // Network failed, try cache
+                    return caches.match(request).then((cached) => {
+                        return cached || caches.match('/index.html');
+                    });
+                })
+        );
+        return;
+    }
+
+    // For static assets - cache first, update in background
     if (url.pathname.match(/\.(css|js|png|jpg|jpeg|svg|ico|woff2?)$/)) {
         event.respondWith(
             caches.match(request).then((cached) => {
@@ -133,7 +157,6 @@ self.addEventListener('fetch', (event) => {
 
                 // Not in cache, fetch from network
                 return fetch(request).then((response) => {
-                    // Cache the response for future
                     if (response.ok) {
                         const responseClone = response.clone();
                         caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
@@ -151,13 +174,18 @@ self.addEventListener('fetch', (event) => {
 
 // Handle messages from the main app
 self.addEventListener('message', (event) => {
+    console.debug('[SW] Message received:', event.data);
+
     if (event.data === 'skipWaiting') {
         self.skipWaiting();
     }
 
-    if (event.data === 'clearCache') {
-        caches.delete(CACHE_NAME).then(() => {
-            console.debug('[SW] Cache cleared');
-        });
+    if (event.data === 'clearCache' || (event.data && event.data.type === 'LOGOUT')) {
+        console.debug('[SW] Clearing cache for logout');
+        event.waitUntil(
+            caches.delete(CACHE_NAME).then(() => {
+                console.debug('[SW] Cache cleared');
+            })
+        );
     }
 });
