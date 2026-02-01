@@ -59,7 +59,7 @@ func main() {
 		startup.LogFatal("Configuration error: %v", err)
 	}
 
-		// Configure session duration
+	// Configure session duration
 	database.SetSessionDuration(config.SessionDuration)
 
 	// Log memory configuration
