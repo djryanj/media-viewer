@@ -64,6 +64,8 @@ type Config struct {
 	IndexInterval     time.Duration
 	ThumbnailInterval time.Duration
 	PollInterval      time.Duration
+	SessionDuration   time.Duration
+	SessionCleanup    time.Duration
 	LogStaticFiles    bool
 	LogHealthChecks   bool
 	MetricsEnabled    bool
@@ -94,23 +96,27 @@ func LoadConfig() (*Config, error) {
 	metricsPort := getEnv("METRICS_PORT", "9090")
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
 	thumbnailIntervalStr := getEnv("THUMBNAIL_INTERVAL", "6h")
-	pollIntervalStr := getEnv("POLL_INTERVAL", "30s") // NEW
+	pollIntervalStr := getEnv("POLL_INTERVAL", "30s")
+	sessionDurationStr := getEnv("SESSION_DURATION", "5m")
+	sessionCleanupStr := getEnv("SESSION_CLEANUP_INTERVAL", "1m")
 	logStaticFiles := getEnvBool("LOG_STATIC_FILES", false)
 	logHealthChecks := getEnvBool("LOG_HEALTH_CHECKS", true)
 	metricsEnabled := getEnvBool("METRICS_ENABLED", true)
 
-	logging.Info("  MEDIA_DIR:           %s", mediaDir)
-	logging.Info("  CACHE_DIR:           %s", cacheDir)
-	logging.Info("  DATABASE_DIR:        %s", databaseDir)
-	logging.Info("  PORT:                %s", port)
-	logging.Info("  METRICS_PORT:        %s", metricsPort)
-	logging.Info("  METRICS_ENABLED:     %v", metricsEnabled)
-	logging.Info("  INDEX_INTERVAL:      %s", indexIntervalStr)
-	logging.Info("  THUMBNAIL_INTERVAL:  %s", thumbnailIntervalStr)
-	logging.Info("  POLL_INTERVAL:       %s", pollIntervalStr) // NEW
-	logging.Info("  LOG_STATIC_FILES:    %v", logStaticFiles)
-	logging.Info("  LOG_HEALTH_CHECKS:   %v", logHealthChecks)
-	logging.Info("  LOG_LEVEL:           %s", logging.GetLevel())
+	logging.Info("  MEDIA_DIR:               %s", mediaDir)
+	logging.Info("  CACHE_DIR:               %s", cacheDir)
+	logging.Info("  DATABASE_DIR:            %s", databaseDir)
+	logging.Info("  PORT:                    %s", port)
+	logging.Info("  METRICS_PORT:            %s", metricsPort)
+	logging.Info("  METRICS_ENABLED:         %v", metricsEnabled)
+	logging.Info("  INDEX_INTERVAL:          %s", indexIntervalStr)
+	logging.Info("  THUMBNAIL_INTERVAL:      %s", thumbnailIntervalStr)
+	logging.Info("  POLL_INTERVAL:           %s", pollIntervalStr)
+	logging.Info("  SESSION_DURATION:        %s", sessionDurationStr)
+	logging.Info("  SESSION_CLEANUP_INTERVAL:%s", sessionCleanupStr)
+	logging.Info("  LOG_STATIC_FILES:        %v", logStaticFiles)
+	logging.Info("  LOG_HEALTH_CHECKS:       %v", logHealthChecks)
+	logging.Info("  LOG_LEVEL:               %s", logging.GetLevel())
 
 	indexInterval, err := time.ParseDuration(indexIntervalStr)
 	if err != nil {
@@ -124,10 +130,22 @@ func LoadConfig() (*Config, error) {
 		thumbnailInterval = 6 * time.Hour
 	}
 
-	pollInterval, err := time.ParseDuration(pollIntervalStr) // NEW
+	pollInterval, err := time.ParseDuration(pollIntervalStr)
 	if err != nil {
 		logging.Warn("  Invalid POLL_INTERVAL, using default: 30s")
 		pollInterval = 30 * time.Second
+	}
+
+	sessionDuration, err := time.ParseDuration(sessionDurationStr)
+	if err != nil {
+		logging.Warn("  Invalid SESSION_DURATION, using default: 5m")
+		sessionDuration = 5 * time.Minute
+	}
+
+	sessionCleanup, err := time.ParseDuration(sessionCleanupStr)
+	if err != nil {
+		logging.Warn("  Invalid SESSION_CLEANUP_INTERVAL, using default: 1m")
+		sessionCleanup = 1 * time.Minute
 	}
 
 	// Resolve paths
@@ -167,7 +185,9 @@ func LoadConfig() (*Config, error) {
 		MetricsPort:       metricsPort,
 		IndexInterval:     indexInterval,
 		ThumbnailInterval: thumbnailInterval,
-		PollInterval:      pollInterval, // NEW
+		PollInterval:      pollInterval,
+		SessionDuration:   sessionDuration,
+		SessionCleanup:    sessionCleanup,
 		LogStaticFiles:    logStaticFiles,
 		LogHealthChecks:   logHealthChecks,
 		MetricsEnabled:    metricsEnabled,

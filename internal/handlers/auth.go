@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
 	"media-viewer/internal/metrics"
 )
@@ -28,9 +29,10 @@ type PasswordChangeRequest struct {
 
 // AuthResponse represents the response from authentication endpoints
 type AuthResponse struct {
-	Success  bool   `json:"success"`
-	Message  string `json:"message,omitempty"`
-	Username string `json:"username,omitempty"` // Kept for API compatibility, always empty
+	Success   bool   `json:"success"`
+	Message   string `json:"message,omitempty"`
+	Username  string `json:"username,omitempty"`
+	ExpiresIn int    `json:"expiresIn,omitempty"` // Seconds until session expires
 }
 
 const (
@@ -117,7 +119,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set cookie
+	// Set cookie with session duration
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    session.Token,
@@ -127,12 +129,13 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	logging.Info("User logged in")
+	logging.Info("User logged in, session expires in %v", database.GetSessionDuration())
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, AuthResponse{
-		Success:  true,
-		Username: "", // Empty for single-user app
+		Success:   true,
+		Username:  "",
+		ExpiresIn: int(database.GetSessionDuration().Seconds()),
 	})
 }
 
@@ -198,8 +201,9 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, AuthResponse{
-		Success:  true,
-		Username: "", // Empty for single-user app
+		Success:   true,
+		Username:  "",
+		ExpiresIn: int(database.GetSessionDuration().Seconds()),
 	})
 }
 
@@ -259,6 +263,21 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Extend session (sliding expiration)
+		if err := h.db.ExtendSession(ctx, cookie.Value); err != nil {
+			logging.Debug("Failed to extend session: %v", err)
+		} else {
+			// Update cookie expiration
+			http.SetCookie(w, &http.Cookie{
+				Name:     SessionCookieName,
+				Value:    cookie.Value,
+				Path:     "/",
+				Expires:  time.Now().Add(database.GetSessionDuration()),
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
+			})
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -300,5 +319,46 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, AuthResponse{
 		Success: true,
 		Message: "Password updated successfully",
+	})
+}
+
+// Keepalive extends the current session without returning user data
+func (h *Handlers) Keepalive(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		http.Error(w, "No session", http.StatusUnauthorized)
+		return
+	}
+
+	// Validate the session first
+	_, err = h.db.ValidateSession(ctx, cookie.Value)
+	if err != nil {
+		http.Error(w, "Invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	// Extend the session
+	if err := h.db.ExtendSession(ctx, cookie.Value); err != nil {
+		logging.Debug("Failed to extend session in keepalive: %v", err)
+		http.Error(w, "Failed to extend session", http.StatusInternalServerError)
+		return
+	}
+
+	// Update cookie expiration
+	http.SetCookie(w, &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    cookie.Value,
+		Path:     "/",
+		Expires:  time.Now().Add(database.GetSessionDuration()),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, map[string]interface{}{
+		"success":   true,
+		"expiresIn": int(database.GetSessionDuration().Seconds()),
 	})
 }

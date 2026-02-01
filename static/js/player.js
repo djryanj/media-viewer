@@ -13,6 +13,7 @@ const Player = {
     edgeSwipeStartX: null,
     edgeSwipeThreshold: 30,
     itemTags: new Map(),
+    _videoErrorHandler: null,
 
     init() {
         this.cacheElements();
@@ -114,7 +115,6 @@ const Player = {
                 const deltaX = this.edgeSwipeStartX - e.touches[0].clientX;
                 const deltaY = Math.abs(e.touches[0].clientY - this.edgeSwipeStartY);
 
-                // If swiping left (into the screen) and more horizontal than vertical
                 if (deltaX > this.edgeSwipeThreshold && deltaX > deltaY) {
                     this.showPlaylist();
                     this.edgeSwipeStartX = null;
@@ -144,7 +144,6 @@ const Player = {
             this.hidePlaylist();
         });
 
-        // Insert after sidebar
         if (this.elements.sidebar) {
             this.elements.sidebar.after(overlay);
         } else {
@@ -202,7 +201,6 @@ const Player = {
 
         this.elements.video.addEventListener('ended', () => this.next());
 
-        // Keyboard navigation
         document.addEventListener('keydown', (e) => {
             if (this.elements.modal.classList.contains('hidden')) return;
 
@@ -227,14 +225,12 @@ const Player = {
             }
         });
 
-        // Close on click outside
         this.elements.modal.addEventListener('click', (e) => {
             if (e.target === this.elements.modal) {
                 this.closeWithHistory();
             }
         });
 
-        // Swipe support for video navigation
         this.elements.videoWrapper.addEventListener(
             'touchstart',
             (e) => {
@@ -280,7 +276,6 @@ const Player = {
             { passive: true }
         );
 
-        // Show controls on tap in landscape mode
         this.elements.videoWrapper.addEventListener('click', (e) => {
             if (
                 this.isLandscape &&
@@ -292,7 +287,6 @@ const Player = {
             }
         });
 
-        // Orientation change detection
         window.addEventListener('orientationchange', () => {
             setTimeout(() => this.checkOrientation(), 100);
         });
@@ -307,7 +301,6 @@ const Player = {
             });
         }
 
-        // Swipe to close playlist from within sidebar
         if (this.elements.sidebar) {
             let sidebarTouchStartX = null;
 
@@ -326,7 +319,6 @@ const Player = {
 
                     const deltaX = e.touches[0].clientX - sidebarTouchStartX;
 
-                    // Swiping right (away from screen) closes playlist
                     if (deltaX > 50) {
                         this.hidePlaylist();
                         sidebarTouchStartX = null;
@@ -377,7 +369,6 @@ const Player = {
             this.elements.sidebar?.classList.remove('visible');
             this.elements.playlistToggle?.classList.remove('active');
 
-            // Show hint briefly when entering landscape
             this.showHint();
         } else {
             this.elements.modal.classList.remove('landscape-mode');
@@ -422,7 +413,6 @@ const Player = {
         this.elements.playlistToggle?.classList.add('active');
         this.elements.modal.classList.add('controls-visible');
 
-        // Keep controls visible while playlist is open
         if (this.controlsTimeout) {
             clearTimeout(this.controlsTimeout);
         }
@@ -433,7 +423,6 @@ const Player = {
         this.elements.sidebar?.classList.remove('visible');
         this.elements.playlistToggle?.classList.remove('active');
 
-        // Start hiding controls after delay
         if (this.isLandscape) {
             this.controlsTimeout = setTimeout(() => {
                 this.elements.modal.classList.remove('controls-visible');
@@ -452,20 +441,12 @@ const Player = {
             this.showControls();
         }
     },
-    /**
-     * Extract clean display name from a path
-     * Handles both UNC paths (\\server\share\...) and regular paths
-     * @param {string} fullPath - Full path or filename
-     * @returns {string} Clean name without path or extension
-     */
+
     getDisplayName(fullPath) {
         if (!fullPath) return 'Unknown';
 
-        // Handle both forward and back slashes
-        // Split on either type of slash
         const parts = fullPath.split(/[/\\]/);
 
-        // Get the last non-empty part (the filename)
         let filename = '';
         for (let i = parts.length - 1; i >= 0; i--) {
             if (parts[i] && parts[i].trim()) {
@@ -476,7 +457,6 @@ const Player = {
 
         if (!filename) return 'Unknown';
 
-        // Remove file extension
         const lastDotIndex = filename.lastIndexOf('.');
         if (lastDotIndex > 0) {
             filename = filename.substring(0, lastDotIndex);
@@ -485,75 +465,42 @@ const Player = {
         return filename;
     },
 
-    /**
-     * Load tags for all playlist items
-     * @param {Array} items - Playlist items
-     */
     async loadPlaylistTags(items) {
         this.itemTags.clear();
 
-        // Get unique paths that exist
         const paths = items.filter((item) => item.exists && item.path).map((item) => item.path);
 
         if (paths.length === 0) return;
 
-        const response = await fetch('/api/tags/batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paths }),
-        });
+        try {
+            const response = await fetch('/api/tags/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths }),
+            });
 
-        if (response.ok) {
-            const tagsData = await response.json();
-            // Expecting format: { "path1": ["tag1", "tag2"], "path2": ["tag3"] }
-            for (const [path, tags] of Object.entries(tagsData)) {
-                if (tags && tags.length > 0) {
-                    this.itemTags.set(path, tags);
+            if (response.status === 401) {
+                console.debug('Player: tags load auth error');
+                return;
+            }
+
+            if (response.ok) {
+                const tagsData = await response.json();
+                for (const [path, tags] of Object.entries(tagsData)) {
+                    if (tags && tags.length > 0) {
+                        this.itemTags.set(path, tags);
+                    }
                 }
             }
+        } catch (error) {
+            console.debug('Player: failed to load tags', error);
         }
     },
 
-    /**
-     * Fallback: Load tags for each item individually
-     * @param {Array} paths - Array of file paths
-     */
-    async loadTagsIndividually(paths) {
-        // Limit concurrent requests
-        const batchSize = 5;
-
-        for (let i = 0; i < paths.length; i += batchSize) {
-            const batch = paths.slice(i, i + batchSize);
-
-            await Promise.all(
-                batch.map(async (path) => {
-                    try {
-                        const response = await fetch(
-                            `/api/tags/file?path=${encodeURIComponent(path)}`
-                        );
-                        if (response.ok) {
-                            const tags = await response.json();
-                            if (tags && tags.length > 0) {
-                                this.itemTags.set(path, tags);
-                            }
-                        }
-                    } catch {
-                        // Ignore individual failures
-                    }
-                })
-            );
-        }
-    },
-
-    /**
-     * Render tags HTML for a playlist item
-     * @param {Array} tags - Array of tag names
-     * @returns {string} HTML string
-     */
     renderItemTags(tags) {
         if (!tags || tags.length === 0) return '';
 
-        const maxDisplay = 2; // Limit tags shown in playlist to save space
+        const maxDisplay = 2;
         const displayTags = tags.slice(0, maxDisplay);
         const moreCount = tags.length - maxDisplay;
 
@@ -569,11 +516,6 @@ const Player = {
         return html;
     },
 
-    /**
-     * Escape HTML for safe display
-     * @param {string} text
-     * @returns {string}
-     */
     escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
@@ -585,18 +527,27 @@ const Player = {
         MediaApp.showLoading();
         try {
             const response = await fetch(`/api/playlist/${encodeURIComponent(name)}`);
+
+            if (response.status === 401) {
+                console.debug('Player: playlist load auth error');
+                if (typeof SessionManager !== 'undefined') {
+                    SessionManager.handleSessionExpired();
+                } else {
+                    window.location.replace('/login.html');
+                }
+                return;
+            }
+
             if (!response.ok) throw new Error('Failed to load playlist');
 
             const data = await response.json();
 
-            // Handle both array and object formats from server
             let items;
             if (Array.isArray(data)) {
                 items = data;
             } else if (data.items) {
                 items = data.items;
             } else {
-                // Convert object with numeric keys to array
                 items = Object.values(data);
             }
 
@@ -607,7 +558,6 @@ const Player = {
 
             this.currentIndex = 0;
 
-            // Load tags for all items
             await this.loadPlaylistTags(items);
 
             this.open();
@@ -645,6 +595,13 @@ const Player = {
         this.elements.modal.classList.remove('controls-visible');
         this.elements.modal.classList.remove('show-hint');
         document.body.style.overflow = '';
+
+        // Clean up video error handler
+        if (this._videoErrorHandler && this.elements.video) {
+            this.elements.video.removeEventListener('error', this._videoErrorHandler);
+            this._videoErrorHandler = null;
+        }
+
         this.elements.video.pause();
         this.elements.video.src = '';
         this.isLandscape = false;
@@ -669,7 +626,6 @@ const Player = {
     },
 
     releaseWakeLock() {
-        // Only release if lightbox isn't also open
         if (typeof WakeLock !== 'undefined') {
             const lightboxOpen =
                 typeof Lightbox !== 'undefined' &&
@@ -683,7 +639,6 @@ const Player = {
 
     closeWithHistory() {
         if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('player')) {
-            // Let handlePopState close it
             history.back();
         } else {
             this.close();
@@ -708,14 +663,11 @@ const Player = {
             const li = document.createElement('li');
             li.dataset.index = index;
 
-            // Get clean display name
             const displayName = this.getDisplayName(item.name || item.path);
 
-            // Get tags for this item
             const tags = this.itemTags.get(item.path) || [];
             const tagsHtml = this.renderItemTags(tags);
 
-            // Build the list item content
             li.innerHTML = `
                 <span class="playlist-item-name">${this.escapeHtml(displayName)}</span>
                 ${tagsHtml}
@@ -751,21 +703,34 @@ const Player = {
             return;
         }
 
-        // Update active state in list
         this.elements.items.querySelectorAll('li').forEach((li, i) => {
             li.classList.toggle('active', i === this.currentIndex);
         });
 
-        // Update header with clean name
         const displayName = this.getDisplayName(item.name || item.path);
         this.elements.title.textContent = displayName;
 
-        this.elements.video.src = `/api/stream/${item.path}`;
-        this.elements.video.load();
+        const video = this.elements.video;
+        const videoUrl = `/api/stream/${item.path}`;
 
-        // Check autoplay preference
+        // Remove any existing error listener to avoid duplicates
+        if (this._videoErrorHandler) {
+            video.removeEventListener('error', this._videoErrorHandler);
+        }
+
+        // Create error handler for this video
+        this._videoErrorHandler = async (e) => {
+            console.error('Player: Error loading video:', e);
+            await this.checkVideoAuthError(videoUrl);
+        };
+
+        video.addEventListener('error', this._videoErrorHandler);
+
+        video.src = videoUrl;
+        video.load();
+
         if (typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled()) {
-            this.elements.video.play().catch((err) => {
+            video.play().catch((err) => {
                 console.debug('Autoplay prevented:', err);
             });
         }
@@ -773,6 +738,27 @@ const Player = {
         const activeItem = this.elements.items.querySelector('.active');
         if (activeItem) {
             activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    },
+
+    /**
+     * Check if a video load failure was due to authentication
+     * @param {string} videoUrl - The URL that failed to load
+     */
+    async checkVideoAuthError(videoUrl) {
+        try {
+            const response = await fetch(videoUrl, { method: 'HEAD' });
+            if (response.status === 401) {
+                console.debug('Player: video auth error detected');
+                if (typeof SessionManager !== 'undefined') {
+                    SessionManager.handleSessionExpired();
+                } else {
+                    this.close();
+                    window.location.replace('/login.html');
+                }
+            }
+        } catch (e) {
+            console.debug('Player: video auth check failed', e);
         }
     },
 
