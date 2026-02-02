@@ -17,9 +17,9 @@ const TagTooltip = {
         this.tooltip = document.createElement('div');
         this.tooltip.className = 'tag-tooltip';
         this.tooltip.innerHTML = `
-            <div class="tag-tooltip-title">All tags <span class="tag-tooltip-hint">(tap to search)</span></div>
-            <div class="tag-tooltip-tags"></div>
-        `;
+        <div class="tag-tooltip-title">All tags <span class="tag-tooltip-hint">(tap to search)</span></div>
+        <div class="tag-tooltip-tags"></div>
+    `;
 
         this.hoverZone.appendChild(this.tooltip);
         document.body.appendChild(this.hoverZone);
@@ -30,29 +30,42 @@ const TagTooltip = {
             if (!target) return;
 
             const tooltipTag = target.closest('.tag-tooltip-tag');
-            const removeBtn = target.closest('.item-tag-remove');
+            const removeBtn = target.closest('.tag-tooltip-remove');
 
             // Handle remove button
             if (removeBtn) {
                 e.preventDefault();
                 e.stopPropagation();
-                const tag = tooltipTag || removeBtn.closest('.tag-tooltip-tag');
-                const tagName = tag?.dataset.tag;
-                const itemPath = tag?.dataset.path;
+                const tagName = tooltipTag?.dataset.tag;
+                const itemPath = tooltipTag?.dataset.path;
 
                 if (tagName && itemPath && typeof Tags !== 'undefined') {
                     Tags.removeTagFromItem(itemPath, tagName);
+                    // Refresh tooltip after removal
+                    setTimeout(() => {
+                        if (this.currentTarget) {
+                            const galleryItem = this.currentTarget.closest('.gallery-item');
+                            if (!galleryItem) {
+                                this.hide();
+                                return;
+                            }
+                            const allTags = this.getTagsForItem(galleryItem);
+                            if (allTags && allTags.length > 3) {
+                                this.show(this.currentTarget);
+                            } else {
+                                this.hide();
+                            }
+                        }
+                    }, 100);
                 }
                 return;
             }
 
-            // Handle tag click for search
+            // Handle tag text click for search
             if (tooltipTag) {
                 e.preventDefault();
                 e.stopPropagation();
-                const tagText = tooltipTag.querySelector('.item-tag-text');
-                const tagName =
-                    tooltipTag.dataset.tag || (tagText ? tagText.textContent.trim() : null);
+                const tagName = tooltipTag.dataset.tag;
                 if (tagName) {
                     this.hide();
                     if (typeof Tags !== 'undefined') {
@@ -64,39 +77,41 @@ const TagTooltip = {
     },
 
     bindGlobalEvents() {
-        // Desktop: mouse events
-        if (!this.isMobile) {
-            document.addEventListener(
-                'mouseenter',
-                (e) => {
-                    const target = e.target instanceof Element ? e.target : null;
-                    if (!target) return;
+        // Click to toggle tooltip on +n indicator
+        document.addEventListener('click', (e) => {
+            const target = e.target instanceof Element ? e.target : null;
+            if (!target) return;
 
-                    const moreTag = target.closest('.item-tag.more');
-                    if (moreTag) {
-                        this.show(moreTag);
-                    }
-                },
-                true
-            );
+            const moreTag = target.closest('.item-tag.more');
 
-            document.addEventListener('mousemove', (e) => {
-                if (!this.hoverZone.classList.contains('visible')) return;
+            if (moreTag) {
+                e.preventDefault();
+                e.stopPropagation();
 
-                const mouseX = e.clientX;
-                const mouseY = e.clientY;
-
-                const overTrigger =
-                    this.currentTarget && this.isPointInElement(mouseX, mouseY, this.currentTarget);
-                const overTooltip = this.isPointInElement(mouseX, mouseY, this.tooltip);
-
-                if (!overTrigger && !overTooltip) {
+                // Toggle tooltip on click
+                if (
+                    this.currentTarget === moreTag &&
+                    this.hoverZone.classList.contains('visible')
+                ) {
                     this.hide();
+                } else {
+                    this.show(moreTag);
                 }
-            });
-        }
+                return;
+            }
 
-        // Mobile: touch events
+            // If clicking inside tooltip, let other handlers deal with it
+            if (target.closest('.tag-tooltip')) {
+                return;
+            }
+
+            // Clicking elsewhere closes tooltip
+            if (this.hoverZone.classList.contains('visible')) {
+                this.hide();
+            }
+        });
+
+        // Also handle touch for mobile
         document.addEventListener(
             'touchend',
             (e) => {
@@ -164,31 +179,19 @@ const TagTooltip = {
 
         const tagsContainer = this.tooltip.querySelector('.tag-tooltip-tags');
 
-        // On mobile, don't show remove buttons
-        if (this.isMobile) {
-            tagsContainer.innerHTML = allTags
-                .map(
-                    (tag) => `
-                    <span class="tag-tooltip-tag" data-tag="${this.escapeAttr(tag)}" data-path="${this.escapeAttr(itemPath)}">
-                        <span class="item-tag-text">${this.escapeHtml(tag)}</span>
-                    </span>
-                `
-                )
-                .join('');
-        } else {
-            tagsContainer.innerHTML = allTags
-                .map(
-                    (tag) => `
-                    <span class="tag-tooltip-tag" data-tag="${this.escapeAttr(tag)}" data-path="${this.escapeAttr(itemPath)}" title="Search for &quot;${this.escapeAttr(tag)}&quot;">
-                        <span class="item-tag-text">${this.escapeHtml(tag)}</span>
-                        <button class="item-tag-remove" title="Remove &quot;${this.escapeAttr(tag)}&quot; tag">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                        </button>
-                    </span>
-                `
-                )
-                .join('');
-        }
+        tagsContainer.innerHTML = allTags
+            .map(
+                (tag) => `
+            <span class="tag-tooltip-tag" data-tag="${this.escapeAttr(tag)}" data-path="${this.escapeAttr(itemPath)}">
+                <button class="tag-tooltip-remove" title="Remove &quot;${this.escapeAttr(tag)}&quot; tag">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+                <span class="tag-tooltip-divider"></span>
+                <span class="tag-tooltip-text">${this.escapeHtml(tag)}</span>
+            </span>
+        `
+            )
+            .join('');
 
         this.position(targetElement);
         this.hoverZone.classList.add('visible');

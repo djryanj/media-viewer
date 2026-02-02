@@ -40,27 +40,39 @@ const ItemSelection = {
         toolbar.id = 'selection-toolbar';
         toolbar.className = 'selection-toolbar hidden';
         toolbar.innerHTML = `
-            <div class="selection-toolbar-info">
-                <button class="selection-close-btn" title="Cancel selection">
-                    <i data-lucide="x"></i>
-                </button>
-                <span class="selection-count">0 selected</span>
-            </div>
-            <div class="selection-toolbar-actions">
-                <button class="selection-action-btn" id="selection-tag-btn" title="Tag selected items">
-                    <i data-lucide="tag"></i>
-                    <span>Tag</span>
-                </button>
-                <button class="selection-action-btn" id="selection-favorite-btn" title="Add to favorites">
-                    <i data-lucide="star"></i>
-                    <span>Favorite</span>
-                </button>
-                <button class="selection-action-btn selection-select-all-btn" id="selection-all-btn" title="Select all">
-                    <i data-lucide="check-square"></i>
-                    <span>All</span>
-                </button>
-            </div>
-        `;
+        <div class="selection-toolbar-info">
+            <button class="selection-close-btn" title="Cancel selection">
+                <i data-lucide="x"></i>
+            </button>
+            <span class="selection-count">0 selected</span>
+        </div>
+        <div class="selection-toolbar-actions">
+            <button class="selection-action-btn" id="selection-copy-tags-btn" title="Copy tags from selected item">
+                <i data-lucide="clipboard-copy"></i>
+                <span>Copy Tags</span>
+            </button>
+            <button class="selection-action-btn" id="selection-paste-tags-btn" title="No tags copied" disabled>
+                <i data-lucide="clipboard-paste"></i>
+                <span>Paste Tags</span>
+            </button>
+            <button class="selection-action-btn" id="selection-merge-tags-btn" title="Merge and paste tags between selected items" style="display: none;">
+                <i data-lucide="merge"></i>
+                <span>Merge Tags</span>
+            </button>
+            <button class="selection-action-btn" id="selection-tag-btn" title="Tag selected items">
+                <i data-lucide="tag"></i>
+                <span>Tag</span>
+            </button>
+            <button class="selection-action-btn" id="selection-favorite-btn" title="Add to favorites">
+                <i data-lucide="star"></i>
+                <span>Favorite</span>
+            </button>
+            <button class="selection-action-btn selection-select-all-btn" id="selection-all-btn" title="Select all">
+                <i data-lucide="check-square"></i>
+                <span>All</span>
+            </button>
+        </div>
+    `;
         document.body.appendChild(toolbar);
         lucide.createIcons();
     },
@@ -69,6 +81,9 @@ const ItemSelection = {
         this.elements = {
             toolbar: document.getElementById('selection-toolbar'),
             count: document.querySelector('.selection-count'),
+            copyTagsBtn: document.getElementById('selection-copy-tags-btn'),
+            pasteTagsBtn: document.getElementById('selection-paste-tags-btn'),
+            mergeTagsBtn: document.getElementById('selection-merge-tags-btn'),
             tagBtn: document.getElementById('selection-tag-btn'),
             favoriteBtn: document.getElementById('selection-favorite-btn'),
             selectAllBtn: document.getElementById('selection-all-btn'),
@@ -79,6 +94,9 @@ const ItemSelection = {
 
     bindEvents() {
         this.elements.closeBtn.addEventListener('click', () => this.exitSelectionModeWithHistory());
+        this.elements.copyTagsBtn.addEventListener('click', () => this.copyTagsFromSelection());
+        this.elements.pasteTagsBtn.addEventListener('click', () => this.pasteTagsToSelection());
+        this.elements.mergeTagsBtn.addEventListener('click', () => this.mergeTagsInSelection());
         this.elements.tagBtn.addEventListener('click', () => this.openBulkTagModal());
         this.elements.favoriteBtn.addEventListener('click', () => this.bulkFavorite());
         this.elements.selectAllBtn.addEventListener('click', () => this.selectAll());
@@ -92,6 +110,16 @@ const ItemSelection = {
             } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 this.selectAll();
+            } else if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                this.copyTagsFromSelection();
+            } else if (e.key === 'v' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                this.pasteTagsToSelection();
+            } else if (e.key === 'm' && (e.ctrlKey || e.metaKey)) {
+                // Ctrl+M for merge
+                e.preventDefault();
+                this.mergeTagsInSelection();
             } else if (e.key === 't' || e.key === 'T') {
                 e.preventDefault();
                 this.openBulkTagModal();
@@ -541,6 +569,47 @@ const ItemSelection = {
             (item) => item.type !== 'folder'
         );
 
+        const taggableCount = Array.from(this.selectedData.values()).filter(
+            (item) => item.type !== 'folder'
+        ).length;
+
+        // Copy tags: only enabled when exactly 1 non-folder item is selected
+        const canCopy = count === 1 && hasTaggableItems;
+        this.elements.copyTagsBtn.disabled = !canCopy;
+        this.elements.copyTagsBtn.title = canCopy
+            ? 'Copy tags from selected item (Ctrl+C)'
+            : count > 1
+              ? 'Select only one item to copy tags'
+              : 'Select an item to copy tags';
+
+        // Paste tags: enabled when items selected and clipboard has tags
+        // Exclude source item from count
+        const sourcePath = TagClipboard.sourcePath;
+        const destinationCount = sourcePath
+            ? Array.from(this.selectedPaths).filter((p) => p !== sourcePath).length
+            : count;
+        const canPaste = destinationCount > 0 && hasTaggableItems && TagClipboard.hasTags();
+
+        this.elements.pasteTagsBtn.disabled = !canPaste;
+        this.elements.pasteTagsBtn.title = canPaste
+            ? `Paste ${TagClipboard.copiedTags.length} tag${TagClipboard.copiedTags.length !== 1 ? 's' : ''} to ${destinationCount} item${destinationCount !== 1 ? 's' : ''} (Ctrl+V)`
+            : !TagClipboard.hasTags()
+              ? 'No tags copied'
+              : 'Select destination items';
+
+        // Merge tags: enabled when 2+ taggable items selected
+        const canMerge = taggableCount >= 2;
+        this.elements.mergeTagsBtn.style.display = canMerge ? '' : 'none';
+        this.elements.mergeTagsBtn.disabled = !canMerge;
+        this.elements.mergeTagsBtn.title = canMerge
+            ? `Merge tags across ${taggableCount} items (Ctrl+M)`
+            : 'Select at least 2 items to merge tags';
+
+        // Show/hide copy and paste based on selection count
+        // When 2+ items selected, show merge instead of copy
+        this.elements.copyTagsBtn.style.display = count <= 1 ? '' : 'none';
+        this.elements.pasteTagsBtn.style.display = TagClipboard.hasTags() ? '' : 'none';
+
         this.elements.tagBtn.disabled = count === 0 || !hasTaggableItems;
         this.elements.favoriteBtn.disabled = count === 0;
 
@@ -669,6 +738,78 @@ const ItemSelection = {
             map.set(path, { ...data, element: null });
         });
         return map;
+    },
+
+    /**
+     * Copy tags from the selected item (single item only)
+     */
+    async copyTagsFromSelection() {
+        if (this.selectedPaths.size !== 1) {
+            Gallery.showToast('Select exactly one item to copy tags from');
+            return;
+        }
+
+        const [path] = this.selectedPaths;
+        const data = this.selectedData.get(path);
+
+        if (data.type === 'folder') {
+            Gallery.showToast('Cannot copy tags from folders');
+            return;
+        }
+
+        await TagClipboard.copyTags(path, data.name);
+    },
+
+    /**
+     * Paste tags to selected items (excludes the source item if it's selected)
+     */
+    pasteTagsToSelection() {
+        if (this.selectedPaths.size === 0) {
+            Gallery.showToast('No items selected');
+            return;
+        }
+
+        if (!TagClipboard.hasTags()) {
+            Gallery.showToast('No tags copied');
+            return;
+        }
+
+        // Get selected paths, excluding the source item
+        const sourcePath = TagClipboard.sourcePath;
+        const paths = Array.from(this.selectedPaths).filter((path) => path !== sourcePath);
+
+        if (paths.length === 0) {
+            Gallery.showToast('Select destination items (other than the source)');
+            return;
+        }
+
+        const names = paths.map(
+            (path) => this.selectedData.get(path)?.name || path.split('/').pop()
+        );
+
+        TagClipboard.openPasteModal(paths, names);
+    },
+
+    /**
+     * Merge tags from all selected items and paste to all of them
+     */
+    async mergeTagsInSelection() {
+        if (this.selectedPaths.size < 2) {
+            Gallery.showToast('Select at least 2 items to merge tags');
+            return;
+        }
+
+        // Filter to taggable items only
+        const taggableItems = Array.from(this.selectedData.entries())
+            .filter(([, data]) => data.type !== 'folder')
+            .map(([path, data]) => ({ path, name: data.name }));
+
+        if (taggableItems.length < 2) {
+            Gallery.showToast('Select at least 2 taggable items');
+            return;
+        }
+
+        await TagClipboard.openMergeModal(taggableItems);
     },
 };
 

@@ -12,7 +12,7 @@ const SessionManager = {
         // Warn user before session expires (0 to disable, only warns if inactive)
         expirationWarningTime: 60 * 1000, // 1 minute before expiry
         // Enable debug logging
-        debug: true,
+        debug: false,
     },
 
     state: {

@@ -265,12 +265,6 @@ const Gallery = {
         tagEl.className = 'item-tag';
         tagEl.dataset.tag = tagName;
         tagEl.dataset.path = itemPath;
-        tagEl.title = `Search for "${tagName}"`;
-
-        const tagText = document.createElement('span');
-        tagText.className = 'item-tag-text';
-        tagText.textContent = tagName;
-        tagEl.appendChild(tagText);
 
         const removeBtn = document.createElement('button');
         removeBtn.className = 'item-tag-remove';
@@ -278,6 +272,16 @@ const Gallery = {
         removeBtn.innerHTML =
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>';
         tagEl.appendChild(removeBtn);
+
+        const divider = document.createElement('span');
+        divider.className = 'item-tag-divider';
+        tagEl.appendChild(divider);
+
+        const tagText = document.createElement('span');
+        tagText.className = 'item-tag-text';
+        tagText.textContent = tagName;
+        tagText.title = `Search for "${tagName}"`;
+        tagEl.appendChild(tagText);
 
         return tagEl;
     },

@@ -1,13 +1,3 @@
-// Add at the top of app.js, before MediaApp definition
-(function () {
-    const originalAddEventListener = EventTarget.prototype.addEventListener;
-    EventTarget.prototype.addEventListener = function (type, listener, options) {
-        if (this.id === 'sort-order' && type === 'click') {
-            console.trace('Adding click listener to sort-order button');
-        }
-        return originalAddEventListener.call(this, type, listener, options);
-    };
-})();
 const MediaApp = {
     state: {
         currentPath: '',
