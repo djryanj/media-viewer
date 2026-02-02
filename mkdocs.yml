@@ -1,0 +1,161 @@
+# mkdocs.yml
+
+site_name: Media Viewer
+site_description: A self-hosted media gallery for your private media collection.
+site_author: Ryan Jacobs
+site_url: https://djryanj.github.io/media-viewer/
+
+repo_name: ghcr.io/djryanj/media-viewer
+repo_url: https://github.com/djryanj/media-viewer
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2024-2026 Ryan Jacobs
+
+theme:
+    name: material
+    language: en
+    palette:
+        # Dark mode (matches app theme)
+        - scheme: slate
+          primary: pink
+          accent: pink
+          toggle:
+              icon: material/brightness-7
+              name: Switch to light mode
+        # Light mode
+        - scheme: default
+          primary: pink
+          accent: pink
+          toggle:
+              icon: material/brightness-4
+              name: Switch to dark mode
+    font:
+        text: Roboto
+        code: Roboto Mono
+    icon:
+        repo: fontawesome/brands/github
+        logo: material/image-multiple
+    features:
+        - navigation.instant
+        - navigation.instant.prefetch
+        - navigation.tracking
+        - navigation.tabs
+        - navigation.tabs.sticky
+        - navigation.sections
+        - navigation.expand
+        - navigation.path
+        - navigation.top
+        - navigation.footer
+        - toc.follow
+        - search.suggest
+        - search.highlight
+        - search.share
+        - content.code.copy
+        - content.code.annotate
+        - content.action.edit
+        - content.action.view
+        - content.tabs.link
+
+plugins:
+    - search:
+          separator: '[\s\-,:!=$$()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+    - minify:
+          minify_html: true
+    - git-revision-date-localized:
+          enable_creation_date: true
+          type: timeago
+
+markdown_extensions:
+    # Python Markdown
+    - abbr
+    - admonition
+    - attr_list
+    - def_list
+    - footnotes
+    - md_in_html
+    - toc:
+          permalink: true
+          toc_depth: 3
+
+    # Python Markdown Extensions
+    - pymdownx.arithmatex:
+          generic: true
+    - pymdownx.betterem:
+          smart_enable: all
+    - pymdownx.caret
+    - pymdownx.details
+    - pymdownx.emoji:
+          emoji_index: !!python/name:material.extensions.emoji.twemoji
+          emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    - pymdownx.highlight:
+          anchor_linenums: true
+          line_spans: __span
+          pygments_lang_class: true
+    - pymdownx.inlinehilite
+    - pymdownx.keys
+    - pymdownx.mark
+    - pymdownx.smartsymbols
+    - pymdownx.snippets:
+          auto_append:
+              - includes/abbreviations.md
+    - pymdownx.superfences:
+          custom_fences:
+              - name: mermaid
+                class: mermaid
+                format: !!python/name:pymdownx.superfences.fence_code_format
+    - pymdownx.tabbed:
+          alternate_style: true
+    - pymdownx.tasklist:
+          custom_checkbox: true
+    - pymdownx.tilde
+
+extra:
+    version:
+        provider: mike
+    social:
+        - icon: fontawesome/brands/github
+          link: https://github.com/djryanj
+          name: djryanj on GitHub
+    generator: false
+
+extra_css:
+    - stylesheets/extra.css
+
+nav:
+    - Home: index.md
+    - Getting Started:
+          - Installation: getting-started/installation.md
+          - Configuration: getting-started/configuration.md
+          - Quick Start: getting-started/quick-start.md
+    - User Guide:
+          - Overview: user-guide/overview.md
+          - Browsing Media: user-guide/browsing.md
+          - Tagging: user-guide/tagging.md
+          - Favorites: user-guide/favorites.md
+          - Playlists: user-guide/playlists.md
+          - Search: user-guide/search.md
+          - Keyboard Shortcuts: user-guide/keyboard-shortcuts.md
+    - Features:
+          - Gallery View: features/gallery.md
+          - Lightbox: features/lightbox.md
+          - Selection Mode: features/selection-mode.md
+          - Tag Management: features/tag-management.md
+          - PWA Support: features/pwa.md
+    - Administration:
+          - Server Configuration: admin/server-config.md
+          - Environment Variables: admin/environment-variables.md
+          - Thumbnail Management: admin/thumbnails.md
+          - Security: admin/security.md
+    - API Reference:
+          - Overview: api/overview.md
+          - Authentication: api/authentication.md
+          - Files & Media: api/files.md
+          - Tags: api/tags.md
+          - Favorites: api/favorites.md
+          - Playlists: api/playlists.md
+    - Development:
+          - Contributing: development/contributing.md
+          - Architecture: development/architecture.md
+          - Frontend: development/frontend.md
+          - Backend: development/backend.md
+    - Changelog: changelog.md
