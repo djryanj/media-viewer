@@ -1,5 +1,7 @@
+// history.js - Updated handlePopState method
+
 const HistoryManager = {
-    states: [], // Only tracks OVERLAY states (lightbox, modal, etc.)
+    states: [],
     isHandlingPopState: false,
     initialized: false,
 
@@ -11,9 +13,6 @@ const HistoryManager = {
         this.bindEscapeKey();
     },
 
-    /**
-     * Bind escape key to trigger back navigation
-     */
     bindEscapeKey() {
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
@@ -27,31 +26,22 @@ const HistoryManager = {
         });
     },
 
-    /**
-     * Handle back action (from escape key)
-     */
     handleBackAction() {
-        // 1. If overlay is open, close it
         const currentType = this.getCurrentStateType();
         if (currentType) {
             history.back();
             return;
         }
 
-        // 2. If in subfolder, navigate to parent
         if (typeof MediaApp !== 'undefined' && MediaApp.state.currentPath) {
             const parentPath = this.getParentPath(MediaApp.state.currentPath);
             MediaApp.navigateTo(parentPath);
             return;
         }
 
-        // 3. At root with no overlays - try to close PWA or do nothing
         this.closeApp();
     },
 
-    /**
-     * Get parent path from current path
-     */
     getParentPath(currentPath) {
         if (!currentPath) return '';
         const lastSlash = currentPath.lastIndexOf('/');
@@ -59,9 +49,6 @@ const HistoryManager = {
         return currentPath.substring(0, lastSlash);
     },
 
-    /**
-     * Close the app (PWA only) - no logout
-     */
     closeApp() {
         const isStandalonePWA =
             window.matchMedia('(display-mode: standalone)').matches ||
@@ -73,13 +60,9 @@ const HistoryManager = {
             window.close();
         } else {
             console.debug('HistoryManager: at root in browser, doing nothing');
-            // In regular browser, do nothing - user can use browser's back
         }
     },
 
-    /**
-     * Push an overlay state (lightbox, modal, etc.)
-     */
     pushState(type, data = {}) {
         const state = {
             type,
@@ -116,7 +99,6 @@ const HistoryManager = {
             overlayStates: this.states.map((s) => s.type),
         });
 
-        // Check if we have overlay states to close
         const currentOverlay = this.getCurrentStateType();
 
         if (currentOverlay) {
@@ -132,6 +114,11 @@ const HistoryManager = {
                 case 'tag-modal':
                     if (typeof Tags !== 'undefined') {
                         Tags.closeModal();
+                    }
+                    break;
+                case 'paste-tags-modal':
+                    if (typeof TagClipboard !== 'undefined') {
+                        TagClipboard.closePasteModalDirect();
                     }
                     break;
                 case 'lightbox':
@@ -160,7 +147,6 @@ const HistoryManager = {
             return;
         }
 
-        // No overlay - let MediaApp handle directory navigation
         this.isHandlingPopState = false;
     },
 
@@ -170,6 +156,9 @@ const HistoryManager = {
         }
         if (!document.getElementById('tag-modal')?.classList.contains('hidden')) {
             Tags.closeModal();
+        }
+        if (!document.getElementById('paste-tags-modal')?.classList.contains('hidden')) {
+            TagClipboard.closePasteModalDirect();
         }
         if (!document.getElementById('lightbox')?.classList.contains('hidden')) {
             Lightbox.close();

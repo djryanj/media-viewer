@@ -50,6 +50,15 @@ const Tags = {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     this.addTagFromInput();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // If suggestions are showing, hide them first
+                    if (!this.elements.tagSuggestions.classList.contains('hidden')) {
+                        this.elements.tagSuggestions.classList.add('hidden');
+                    } else {
+                        this.closeModalWithHistory();
+                    }
                 }
             });
         }
@@ -547,17 +556,11 @@ const Tags = {
                 tagEl.dataset.tag = tag;
                 container.appendChild(tagEl);
             } else {
-                // Removable tags for desktop
+                // "X | tag" style for desktop
                 const tagEl = document.createElement('span');
                 tagEl.className = 'item-tag';
                 tagEl.dataset.tag = tag;
                 tagEl.dataset.path = itemPath;
-                tagEl.title = `Search for "${tag}"`;
-
-                const tagText = document.createElement('span');
-                tagText.className = 'item-tag-text';
-                tagText.textContent = tag;
-                tagEl.appendChild(tagText);
 
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'item-tag-remove';
@@ -565,6 +568,16 @@ const Tags = {
                 removeBtn.innerHTML =
                     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>';
                 tagEl.appendChild(removeBtn);
+
+                const divider = document.createElement('span');
+                divider.className = 'item-tag-divider';
+                tagEl.appendChild(divider);
+
+                const tagText = document.createElement('span');
+                tagText.className = 'item-tag-text';
+                tagText.textContent = tag;
+                tagText.title = `Search for "${tag}"`;
+                tagEl.appendChild(tagText);
 
                 container.appendChild(tagEl);
             }
@@ -574,6 +587,7 @@ const Tags = {
             const moreEl = document.createElement('span');
             moreEl.className = 'item-tag more';
             moreEl.textContent = `+${moreCount}`;
+            moreEl.title = 'Click to see all tags';
             container.appendChild(moreEl);
         }
     },
@@ -602,7 +616,6 @@ const Tags = {
         return html;
     },
     bindTagClickDelegation() {
-        // Handle both click and touch events
         const handleTagInteraction = (e) => {
             // Handle tag remove button clicks
             const removeBtn = e.target.closest('.item-tag-remove');
@@ -628,6 +641,16 @@ const Tags = {
                         this.removeTagFromItem(itemPath, tagName);
                     }
                 }
+                return;
+            }
+
+            // Skip paste modal tag chips - they have their own click handler
+            if (e.target.closest('.paste-tag-chip')) {
+                return;
+            }
+
+            // Skip .more tags - TagTooltip handles these
+            if (e.target.closest('.item-tag.more')) {
                 return;
             }
 
@@ -660,8 +683,8 @@ const Tags = {
                 return;
             }
 
-            // Handle .tag-chip clicks (tag modal) - but not the remove button
-            const tagChip = e.target.closest('.tag-chip');
+            // Handle .tag-chip clicks (tag modal) - but not the remove button, and not paste modal chips
+            const tagChip = e.target.closest('.tag-chip:not(.paste-tag-chip)');
             if (tagChip && !e.target.closest('.tag-remove')) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -674,7 +697,6 @@ const Tags = {
             }
         };
 
-        // Use click event - works for both mouse and touch
         document.addEventListener('click', handleTagInteraction);
     },
 
