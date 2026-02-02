@@ -1,144 +1,363 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const loginForm = document.getElementById('login-form');
-    const setupForm = document.getElementById('setup-form');
-    const loading = document.getElementById('loading');
-    const loginError = document.getElementById('login-error');
-    const loginErrorText = document.getElementById('login-error-text');
-    const setupError = document.getElementById('setup-error');
-    const setupErrorText = document.getElementById('setup-error-text');
+/**
+ * Login Page Controller
+ * Handles password authentication and passkey (WebAuthn) authentication
+ */
+(function () {
+    'use strict';
 
-    // Setup password visibility toggles
-    setupPasswordToggles();
+    // DOM Elements - cached after DOM ready
+    let loginForm;
+    let setupForm;
+    let loading;
+    let loginError;
+    let setupError;
+    let passkeySection;
+    let passkeyLoginBtn;
+    let passwordInput;
+    let loginSubmitBtn;
+    let setupSubmitBtn;
 
-    // Check if setup is required
-    checkSetupRequired();
+    // Track if we're currently doing a passkey login
+    let passkeyLoginInProgress = false;
 
     /**
-     * Setup password visibility toggle buttons
+     * Cache DOM elements
      */
-    function setupPasswordToggles() {
-        const toggles = document.querySelectorAll('.password-toggle');
+    function cacheElements() {
+        loginForm = document.getElementById('login-form');
+        setupForm = document.getElementById('setup-form');
+        loading = document.getElementById('loading');
+        loginError = document.getElementById('login-error');
+        setupError = document.getElementById('setup-error');
+        passkeySection = document.getElementById('passkey-section');
+        passkeyLoginBtn = document.getElementById('passkey-login-btn');
+        passwordInput = document.getElementById('password');
+        loginSubmitBtn = document.getElementById('login-submit');
+        setupSubmitBtn = document.getElementById('setup-submit');
+    }
 
-        toggles.forEach((toggle) => {
-            toggle.addEventListener('click', () => {
+    /**
+     * Initialize the login page
+     */
+    async function init() {
+        cacheElements();
+
+        // Initialize Lucide icons
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
+        // Ensure passkey section is hidden initially
+        hidePasskeySection();
+
+        // Setup password toggle buttons
+        initPasswordToggles();
+
+        // Setup form handlers
+        initFormHandlers();
+
+        // Check authentication state and setup requirements
+        await checkInitialState();
+    }
+
+    /**
+     * Explicitly hide the passkey section
+     */
+    function hidePasskeySection() {
+        if (passkeySection) {
+            passkeySection.classList.add('hidden');
+            passkeySection.style.display = 'none';
+        }
+    }
+
+    /**
+     * Explicitly show the passkey section
+     */
+    function showPasskeySection() {
+        if (passkeySection) {
+            passkeySection.classList.remove('hidden');
+            passkeySection.style.display = '';
+        }
+    }
+
+    /**
+     * Initialize password visibility toggle buttons
+     */
+    function initPasswordToggles() {
+        document.querySelectorAll('.password-toggle').forEach((toggle) => {
+            toggle.addEventListener('click', (e) => {
+                e.preventDefault();
+
                 const wrapper = toggle.closest('.password-input-wrapper');
+                if (!wrapper) return;
+
                 const input = wrapper.querySelector('input');
-                const eyeIcon = toggle.querySelector('.icon-eye');
-                const eyeOffIcon = toggle.querySelector('.icon-eye-off');
+                if (!input) return;
+
+                const eyeOpen = toggle.querySelector('.eye-open');
+                const eyeClosed = toggle.querySelector('.eye-closed');
 
                 if (input.type === 'password') {
                     input.type = 'text';
-                    eyeIcon.style.display = 'none';
-                    eyeOffIcon.style.display = 'block';
-                    toggle.setAttribute('aria-label', 'Hide password');
+                    if (eyeOpen) eyeOpen.classList.add('hidden');
+                    if (eyeClosed) eyeClosed.classList.remove('hidden');
                 } else {
                     input.type = 'password';
-                    eyeIcon.style.display = 'block';
-                    eyeOffIcon.style.display = 'none';
-                    toggle.setAttribute('aria-label', 'Show password');
+                    if (eyeOpen) eyeOpen.classList.remove('hidden');
+                    if (eyeClosed) eyeClosed.classList.add('hidden');
                 }
-
-                // Keep focus on the input for better UX
-                input.focus();
             });
         });
     }
 
-    async function checkSetupRequired() {
-        showLoading();
-        try {
-            // First check if already authenticated
-            const authResponse = await fetch('/api/auth/check');
-            const authData = await authResponse.json();
+    /**
+     * Initialize form submission handlers
+     */
+    function initFormHandlers() {
+        if (loginForm) {
+            loginForm.addEventListener('submit', handlePasswordLogin);
+        }
 
-            if (authData.success) {
-                // Already logged in, redirect to main page
-                window.location.href = '/';
+        if (setupForm) {
+            setupForm.addEventListener('submit', handleSetup);
+        }
+
+        if (passkeyLoginBtn) {
+            passkeyLoginBtn.addEventListener('click', handlePasskeyLogin);
+        }
+
+        if (passwordInput) {
+            passwordInput.addEventListener('input', () => {
+                passwordInput.classList.remove('error');
+                hideError(loginError);
+            });
+
+            // When user focuses password field, abort conditional UI
+            // (they want to type a password instead)
+            passwordInput.addEventListener('focus', () => {
+                if (window.webAuthnManager) {
+                    window.webAuthnManager.abortConditionalUI();
+                }
+            });
+        }
+    }
+
+    /**
+     * Check initial authentication state and determine which form to show
+     */
+    async function checkInitialState() {
+        try {
+            // Check if already authenticated
+            if (await checkAuth()) {
+                redirectToApp();
                 return;
             }
 
-            // Check if setup is needed
-            const setupResponse = await fetch('/api/auth/setup-required');
-            const setupData = await setupResponse.json();
+            // Check if setup is required (first-time use)
+            const needsSetup = await checkSetupRequired();
 
             hideLoading();
 
-            if (setupData.needsSetup) {
+            if (needsSetup) {
                 showSetupForm();
             } else {
-                showLoginForm();
+                await showLoginForm();
             }
-        } catch (error) {
-            console.error('Error checking setup status:', error);
+        } catch (err) {
+            console.error('Failed to check initial state:', err);
             hideLoading();
-            showLoginForm();
+            await showLoginForm();
         }
     }
 
-    function showLoading() {
-        loading.classList.remove('hidden');
-        loginForm.classList.add('hidden');
-        setupForm.classList.add('hidden');
-    }
-
-    function hideLoading() {
-        loading.classList.add('hidden');
-    }
-
-    function showLoginForm() {
-        loginForm.classList.remove('hidden');
-        setupForm.classList.add('hidden');
-        document.getElementById('login-password').focus();
-    }
-
-    function showSetupForm() {
-        setupForm.classList.remove('hidden');
-        loginForm.classList.add('hidden');
-        document.getElementById('setup-password').focus();
-    }
-
-    function showError(errorElement, textElement, message) {
-        textElement.textContent = message;
-        errorElement.classList.remove('hidden');
-
-        // Add shake animation to the relevant input(s)
-        const form = errorElement.closest('form');
-        const inputs = form.querySelectorAll('input');
-        inputs.forEach((input) => {
-            input.classList.add('error');
-            setTimeout(() => input.classList.remove('error'), 400);
-        });
-    }
-
-    function hideError(errorElement) {
-        errorElement.classList.add('hidden');
-    }
-
-    function selectPasswordText(inputId) {
-        const input = document.getElementById(inputId);
-        if (input) {
-            input.focus();
-            input.select();
+    /**
+     * Check if user is already authenticated
+     */
+    async function checkAuth() {
+        try {
+            const response = await fetch('/api/auth/check');
+            const data = await response.json();
+            return data.success === true;
+        } catch (err) {
+            console.error('Auth check failed:', err);
+            return false;
         }
     }
 
-    // Login form submission
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        hideError(loginError);
+    /**
+     * Check if initial setup is required
+     */
+    async function checkSetupRequired() {
+        try {
+            const response = await fetch('/api/auth/setup-required');
+            const data = await response.json();
+            return data.needsSetup === true;
+        } catch (err) {
+            console.error('Setup check failed:', err);
+            return false;
+        }
+    }
 
-        const passwordInput = document.getElementById('login-password');
-        const password = passwordInput.value;
+    /**
+     * Show the login form and check for passkey availability
+     */
+    async function showLoginForm() {
+        if (loginForm) loginForm.classList.remove('hidden');
+        if (setupForm) setupForm.classList.add('hidden');
 
-        if (!password) {
-            showError(loginError, loginErrorText, 'Please enter your password');
-            passwordInput.focus();
+        // Ensure passkey section stays hidden until we confirm availability
+        hidePasskeySection();
+
+        // Check if passkeys are available
+        const passkeysAvailable = await checkPasskeyAvailability();
+
+        if (passkeysAvailable) {
+            showPasskeySection();
+
+            // Try to start Conditional UI (autofill) or auto-prompt
+            await startAutoPasskeyLogin();
+        } else {
+            hidePasskeySection();
+            // Focus password input if no passkeys
+            if (passwordInput) {
+                passwordInput.focus();
+            }
+        }
+    }
+
+    /**
+     * Start automatic passkey login
+     * This will either use Conditional UI (shows in autofill) or auto-prompt
+     */
+    async function startAutoPasskeyLogin() {
+        if (!window.webAuthnManager || passkeyLoginInProgress) {
             return;
         }
 
-        const submitBtn = loginForm.querySelector('button[type="submit"]');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Logging in...';
+        // Check if Conditional UI is supported
+        if (window.webAuthnManager.conditionalUISupported) {
+            // Start Conditional UI - passkeys will appear in autofill dropdown
+            // This runs in the background and completes when user selects a passkey
+            console.debug('Starting Conditional UI for passkey autofill...');
+
+            try {
+                const result = await window.webAuthnManager.startConditionalUI();
+
+                if (result && result.success) {
+                    console.debug('Conditional UI login successful');
+                    redirectToApp();
+                }
+            } catch (err) {
+                // Conditional UI failed or was aborted - that's okay
+                console.debug('Conditional UI ended:', err?.message || 'aborted');
+            }
+        } else {
+            // Conditional UI not supported - auto-prompt after a short delay
+            // This gives the user a moment to see the page before the prompt appears
+            console.debug('Conditional UI not supported, will auto-prompt...');
+
+            setTimeout(async () => {
+                // Only auto-prompt if user hasn't started typing
+                if (passwordInput && passwordInput.value.length === 0 && !passkeyLoginInProgress) {
+                    await handlePasskeyLogin(true); // true = auto-triggered
+                }
+            }, 500); // 500ms delay before auto-prompt
+        }
+    }
+
+    /**
+     * Show the setup form for first-time password creation
+     */
+    function showSetupForm() {
+        if (setupForm) setupForm.classList.remove('hidden');
+        if (loginForm) loginForm.classList.add('hidden');
+
+        // Always hide passkey section during setup
+        hidePasskeySection();
+
+        const setupPasswordInput = document.getElementById('setup-password');
+        if (setupPasswordInput) {
+            setupPasswordInput.focus();
+        }
+    }
+
+    /**
+     * Hide the loading indicator
+     */
+    function hideLoading() {
+        if (loading) {
+            loading.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Check if passkey login is available
+     * Returns true only if WebAuthn is supported, enabled, AND passkeys are registered
+     */
+    async function checkPasskeyAvailability() {
+        if (!passkeySection) {
+            console.debug('Passkey: Section not found in DOM');
+            return false;
+        }
+
+        if (typeof window.webAuthnManager === 'undefined') {
+            console.debug('Passkey: webAuthnManager not loaded');
+            return false;
+        }
+
+        if (!window.webAuthnManager.supported) {
+            console.debug('Passkey: WebAuthn not supported by browser');
+            return false;
+        }
+
+        try {
+            const response = await fetch('/api/auth/webauthn/available');
+
+            if (!response.ok) {
+                console.debug('Passkey: Server returned error', response.status);
+                return false;
+            }
+
+            const data = await response.json();
+            console.debug('Passkey: Server response', data);
+
+            const isAvailable = data.enabled === true && data.available === true;
+            console.debug(
+                'Passkey: enabled=' +
+                    data.enabled +
+                    ', available=' +
+                    data.available +
+                    ', showing=' +
+                    isAvailable
+            );
+
+            return isAvailable;
+        } catch (err) {
+            console.error('Passkey: Availability check failed', err);
+            return false;
+        }
+    }
+
+    /**
+     * Handle password login form submission
+     */
+    async function handlePasswordLogin(e) {
+        e.preventDefault();
+        hideError(loginError);
+
+        // Abort any conditional UI
+        if (window.webAuthnManager) {
+            window.webAuthnManager.abortConditionalUI();
+        }
+
+        const password = passwordInput.value;
+
+        if (!password) {
+            showError(loginError, 'Please enter your password');
+            return;
+        }
+
+        setButtonLoading(loginSubmitBtn, true, 'Logging in...');
 
         try {
             const response = await fetch('/api/auth/login', {
@@ -148,92 +367,228 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (response.ok) {
-                window.location.href = '/';
+                redirectToApp();
             } else {
                 const errorText = await response.text();
-                showError(loginError, loginErrorText, errorText || 'Invalid password');
-                // Select the password text so user can easily retype or see it
-                selectPasswordText('login-password');
+                showError(loginError, errorText || 'Invalid password');
+                passwordInput.classList.add('error');
+                passwordInput.focus();
+                passwordInput.select();
             }
-        } catch (error) {
-            console.error('Login error:', error);
-            showError(loginError, loginErrorText, 'An error occurred. Please try again.');
-            selectPasswordText('login-password');
+        } catch (err) {
+            console.error('Login error:', err);
+            showError(loginError, 'Connection error. Please try again.');
         } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Login';
+            setButtonLoading(loginSubmitBtn, false, 'Login');
         }
-    });
+    }
 
-    // Setup form submission
-    setupForm.addEventListener('submit', async (e) => {
+    /**
+     * Handle passkey login button click or auto-trigger
+     * @param {boolean} autoTriggered - Whether this was auto-triggered (not user click)
+     */
+    async function handlePasskeyLogin(autoTriggered = false) {
+        // If this is an event object (from click handler), extract the flag
+        if (typeof autoTriggered === 'object') {
+            autoTriggered = false;
+        }
+
+        hideError(loginError);
+
+        if (!window.webAuthnManager) {
+            if (!autoTriggered) {
+                showError(loginError, 'Passkey authentication not available');
+            }
+            return;
+        }
+
+        // Prevent multiple simultaneous attempts
+        if (passkeyLoginInProgress) {
+            return;
+        }
+
+        passkeyLoginInProgress = true;
+        setPasskeyButtonLoading(true);
+
+        try {
+            const result = await window.webAuthnManager.login();
+
+            if (result.success) {
+                redirectToApp();
+            } else {
+                if (!autoTriggered) {
+                    showError(loginError, result.message || 'Passkey authentication failed');
+                }
+            }
+        } catch (err) {
+            console.error('Passkey login error:', err);
+
+            // Only show errors for user-initiated attempts
+            if (!autoTriggered) {
+                let errorMessage = 'Passkey authentication failed';
+
+                if (err.message) {
+                    const msg = err.message.toLowerCase();
+
+                    if (
+                        msg.includes('cancelled') ||
+                        msg.includes('notallowederror') ||
+                        msg.includes('not allowed')
+                    ) {
+                        errorMessage = 'Authentication was cancelled';
+                    } else if (
+                        msg.includes('not found') ||
+                        msg.includes('no passkeys') ||
+                        msg.includes('no credentials')
+                    ) {
+                        errorMessage =
+                            'No passkeys found. Please log in with your password, then add a passkey in Settings.';
+                    } else if (msg.includes('timeout')) {
+                        errorMessage = 'Authentication timed out. Please try again.';
+                    } else if (msg.includes('not configured') || msg.includes('not enabled')) {
+                        errorMessage = 'Passkey authentication is not configured.';
+                    } else {
+                        errorMessage = err.message;
+                    }
+                }
+
+                showError(loginError, errorMessage);
+            }
+        } finally {
+            passkeyLoginInProgress = false;
+            setPasskeyButtonLoading(false);
+        }
+    }
+
+    /**
+     * Handle setup form submission
+     */
+    async function handleSetup(e) {
         e.preventDefault();
         hideError(setupError);
 
         const password = document.getElementById('setup-password').value;
         const confirm = document.getElementById('setup-confirm').value;
 
-        // Validation
         if (password.length < 6) {
-            showError(setupError, setupErrorText, 'Password must be at least 6 characters');
-            selectPasswordText('setup-password');
+            showError(setupError, 'Password must be at least 6 characters');
             return;
         }
 
         if (password !== confirm) {
-            showError(setupError, setupErrorText, 'Passwords do not match');
-            selectPasswordText('setup-confirm');
+            showError(setupError, 'Passwords do not match');
             return;
         }
 
-        const submitBtn = setupForm.querySelector('button[type="submit"]');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Creating password...';
+        setButtonLoading(setupSubmitBtn, true, 'Creating...');
 
         try {
-            const response = await fetch('/api/auth/setup', {
+            const setupResponse = await fetch('/api/auth/setup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password }),
             });
 
-            if (response.ok) {
-                // Password created, now log in
-                const loginResponse = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password }),
-                });
-
-                if (loginResponse.ok) {
-                    window.location.href = '/';
-                } else {
-                    // Password created but login failed, show login form
-                    showLoginForm();
-                }
-            } else {
-                const errorText = await response.text();
-                showError(setupError, setupErrorText, errorText || 'Failed to create password');
+            if (!setupResponse.ok) {
+                const errorText = await setupResponse.text();
+                showError(setupError, errorText || 'Failed to create password');
+                return;
             }
-        } catch (error) {
-            console.error('Setup error:', error);
-            showError(setupError, setupErrorText, 'An error occurred. Please try again.');
+
+            const loginResponse = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password }),
+            });
+
+            if (loginResponse.ok) {
+                redirectToApp();
+            } else {
+                if (setupForm) setupForm.classList.add('hidden');
+                await showLoginForm();
+            }
+        } catch (err) {
+            console.error('Setup error:', err);
+            showError(setupError, 'Connection error. Please try again.');
         } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Create Password';
+            setButtonLoading(setupSubmitBtn, false, 'Create Password');
         }
-    });
+    }
 
-    // Clear error when user starts typing
-    document.getElementById('login-password').addEventListener('input', () => {
-        hideError(loginError);
-    });
+    /**
+     * Redirect to the main application
+     */
+    function redirectToApp() {
+        window.location.href = '/';
+    }
 
-    document.getElementById('setup-password').addEventListener('input', () => {
-        hideError(setupError);
-    });
+    /**
+     * Show an error message
+     */
+    function showError(element, message) {
+        if (!element) return;
 
-    document.getElementById('setup-confirm').addEventListener('input', () => {
-        hideError(setupError);
-    });
-});
+        const span = element.querySelector('span');
+        if (span) {
+            span.textContent = message;
+        }
+        element.classList.remove('hidden');
+    }
+
+    /**
+     * Hide an error message
+     */
+    function hideError(element) {
+        if (element) {
+            element.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Set button loading state
+     */
+    function setButtonLoading(button, isLoading, text) {
+        if (!button) return;
+        button.disabled = isLoading;
+        button.textContent = text;
+    }
+
+    /**
+     * Set passkey button loading state
+     */
+    function setPasskeyButtonLoading(isLoading) {
+        if (!passkeyLoginBtn) return;
+
+        passkeyLoginBtn.disabled = isLoading;
+
+        const btnText = passkeyLoginBtn.querySelector('.btn-text');
+        const icon = passkeyLoginBtn.querySelector('.passkey-icon');
+
+        if (isLoading) {
+            if (btnText) btnText.textContent = 'Authenticating...';
+            if (icon) icon.style.display = 'none';
+
+            let spinner = passkeyLoginBtn.querySelector('.spinner');
+            if (!spinner) {
+                spinner = document.createElement('div');
+                spinner.className = 'spinner';
+                spinner.style.width = '20px';
+                spinner.style.height = '20px';
+                passkeyLoginBtn.insertBefore(spinner, passkeyLoginBtn.firstChild);
+            }
+        } else {
+            if (btnText) btnText.textContent = 'Sign in with Passkey';
+            if (icon) icon.style.display = '';
+
+            const spinner = passkeyLoginBtn.querySelector('.spinner');
+            if (spinner) spinner.remove();
+        }
+    }
+
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();

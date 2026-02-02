@@ -7,6 +7,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Passkey (WebAuthn) Authentication**
+    - Passwordless authentication using biometrics (Face ID, Touch ID, Windows Hello) or security keys (YubiKey, Titan)
+    - Support for platform authenticators (built-in device biometrics) and roaming authenticators (USB keys)
+    - Conditional UI support for passkey autofill in password fields (Chrome 108+, Edge 108+, Safari 16+)
+    - Auto-prompt for passkey login on supported browsers when passkeys are registered
+    - Multi-passkey support: register passkeys on multiple devices
+    - Named passkeys for easy device identification (e.g., "MacBook Pro", "iPhone")
+    - Passkeys management UI in Settings → Passkeys tab:
+        - List all registered passkeys with creation and last used dates
+        - Add new passkeys with custom naming via modal dialog
+        - Delete passkeys with confirmation
+    - Custom passkey naming modal with better UX than browser's default prompt
+    - Fallback to password authentication always available
+    - **Secure Context Requirement**: WebAuthn requires HTTPS (or `http://localhost` for development)
+
+- **New Environment Variables for WebAuthn**
+    - `WEBAUTHN_ENABLED` - Enable/disable passkey authentication (default: `false`)
+    - `WEBAUTHN_RP_ID` - Relying Party ID (your domain, e.g., `example.com`)
+    - `WEBAUTHN_RP_NAME` - Display name shown in authenticator prompts (default: `Media Viewer`)
+    - `WEBAUTHN_ORIGINS` - Comma-separated list of allowed origins (e.g., `https://example.com,https://media.example.com`)
+
+- **New API Endpoints**
+    - `GET /api/auth/webauthn/available` - Check if passkey login is available (WebAuthn enabled + credentials registered)
+    - `POST /api/auth/webauthn/register/begin` - Start passkey registration ceremony
+    - `POST /api/auth/webauthn/register/finish` - Complete passkey registration
+    - `POST /api/auth/webauthn/login/begin` - Start passkey authentication ceremony
+    - `POST /api/auth/webauthn/login/finish` - Complete passkey authentication and create session
+    - `GET /api/auth/webauthn/passkeys` - List all registered passkeys
+    - `DELETE /api/auth/webauthn/passkeys` - Delete a passkey by ID
+
+- **New Database Tables**
+    - `webauthn_credentials` - Stores registered passkey credentials with metadata (name, sign count, transports, timestamps)
+    - `webauthn_sessions` - Stores WebAuthn ceremony challenge data (5-minute TTL)
+
+- **Development Testing Support**
+    - Comprehensive documentation for testing WebAuthn with ngrok, Cloudflare Tunnel, or mkcert
+    - ngrok recommended for easiest mobile device testing with real HTTPS
+    - Instructions for secure context requirements and browser-specific behavior
+    - Developer troubleshooting guide for common WebAuthn issues
+
+### Changed
+
+- **Login Page Enhancements**
+    - Passkey section dynamically appears when passkeys are registered
+    - Auto-prompts for passkey authentication on page load (browsers without Conditional UI)
+    - Conditional UI integration shows passkeys in password field autofill (supported browsers)
+    - "Sign in with Passkey" button with fingerprint icon
+    - Improved error handling with user-friendly messages for cancellation, timeout, and missing passkeys
+    - Passkey login aborts when user focuses password field (intentional password entry)
+    - Loading states and disabled buttons during authentication
+
+- **Settings Modal**
+    - Added "Passkeys" tab for managing registered passkeys
+    - Passkey list shows device names, creation dates, last used dates, and sign counts
+    - Browser compatibility detection hides passkey section if WebAuthn not supported
+    - Loading states while fetching passkey data
+    - Empty state message when no passkeys registered
+
+- **Frontend Architecture**
+    - New `webauthn.js` module with `WebAuthnManager` class for all WebAuthn operations
+    - Base64url encoding/decoding utilities for credential transport
+    - Credential serialization for registration and authentication
+    - Conditional UI support with automatic fallback to modal flow
+    - Platform authenticator availability detection
+
+### Fixed
+
+- **Login Flow**
+    - Passkey section only appears when passkeys are actually registered (not just WebAuthn enabled)
+    - Prevents auto-prompt spam when no passkeys exist
+    - Proper cleanup of Conditional UI when user cancels or fails authentication
+
+### Security
+
+- **WebAuthn Implementation**
+    - User verification required for all passkeys (enforces biometric/PIN)
+    - Resident keys preferred for discoverable credentials
+    - Platform authenticators preferred over roaming for better UX
+    - Attestation preference set to `none` (privacy-focused)
+    - Exclusion lists prevent duplicate credential registration
+    - Sign count tracking for credential cloning detection
+    - Challenge data stored with 5-minute expiration
+    - One-time use of challenge data (deleted after verification)
+
+### Browser Support
+
+| Browser      | Platform Auth | Security Keys | Conditional UI |
+| ------------ | ------------- | ------------- | -------------- |
+| Chrome 108+  | ✅            | ✅            | ✅             |
+| Edge 108+    | ✅            | ✅            | ✅             |
+| Safari 16+   | ✅            | ✅            | ✅             |
+| Firefox 119+ | ✅            | ✅            | ❌             |
+
+### Developer Notes
+
+#### Testing WebAuthn in Development
+
+WebAuthn requires a secure context. For development:
+
+**Local Testing (Simplest):**
+```bash
+export WEBAUTHN_ENABLED=true
+export WEBAUTHN_RP_ID=localhost
+export WEBAUTHN_ORIGINS=http://localhost:8080
+make dev
+```
+
+**Mobile Testing with ngrok (Recommended):**
+```bash
+# Terminal 1: Start dev server
+make dev
+
+# Terminal 2: Start ngrok
+ngrok http 8080
+
+# Configure WebAuthn with ngrok URL
+export WEBAUTHN_ENABLED=true
+export WEBAUTHN_RP_ID=abc123.ngrok-free.app
+export WEBAUTHN_ORIGINS=https://abc123.ngrok-free.app
+make dev
+```
+
+See README.md for complete testing guide including Cloudflare Tunnel and mkcert options.
+
+#### Database Schema Changes
+
+The WebAuthn feature adds two new tables. Database migrations are automatic on first startup when `WEBAUTHN_ENABLED=true`.
+
+#### Go Dependencies
+
+- `github.com/go-webauthn/webauthn` v0.11.2 - WebAuthn library for credential management and verification
+
 ## [0.5.0] - February 1, 2026
 
 ### Added

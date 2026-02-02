@@ -41,7 +41,6 @@ const MediaApp = {
 
         // Initialize Session Manager (handles keepalives and auth expiration)
         if (typeof SessionManager !== 'undefined') {
-            // SessionManager auto-initializes, but we can configure it here if needed
             console.debug('MediaApp: SessionManager available');
         }
     },
@@ -61,62 +60,49 @@ const MediaApp = {
             statsInfo: document.getElementById('stats-info'),
             // Desktop buttons
             logoutBtn: document.getElementById('logout-btn'),
-            clearCacheBtn: document.getElementById('clear-cache-btn'),
             changePasswordBtn: document.getElementById('change-password-btn'),
+            clearCacheBtn: document.getElementById('clear-cache-btn'),
+            settingsBtn: document.getElementById('settings-btn'),
             // Mobile buttons
             logoutBtnMobile: document.getElementById('logout-btn-mobile'),
-            clearCacheBtnMobile: document.getElementById('clear-cache-btn-mobile'),
             changePasswordBtnMobile: document.getElementById('change-password-btn-mobile'),
-            // Modals
+            clearCacheBtnMobile: document.getElementById('clear-cache-btn-mobile'),
+            // Confirm Modal
             confirmModal: document.getElementById('confirm-modal'),
             confirmModalCancel: document.getElementById('confirm-modal-cancel'),
             confirmModalConfirm: document.getElementById('confirm-modal-confirm'),
             confirmModalTitle: document.getElementById('confirm-modal-title'),
             confirmModalMessage: document.getElementById('confirm-modal-message'),
             confirmModalIcon: document.getElementById('confirm-modal-icon'),
-            // Password modal elements
-            passwordModal: document.getElementById('password-modal'),
-            passwordForm: document.getElementById('password-form'),
-            passwordModalClose: document.getElementById('password-modal-close'),
-            passwordCancel: document.getElementById('password-cancel'),
-            passwordSubmit: document.getElementById('password-submit'),
-            passwordError: document.getElementById('password-error'),
-            currentPassword: document.getElementById('current-password'),
-            newPassword: document.getElementById('new-password'),
-            confirmPassword: document.getElementById('confirm-password'),
         };
     },
 
     bindEvents() {
-        this.elements.sortField.addEventListener('change', () => this.handleSortChange());
-        this.elements.sortOrder.addEventListener('click', () => this.toggleSortOrder());
-        this.elements.filterType.addEventListener('change', () => this.handleFilterChange());
-        this.elements.pagePrev.addEventListener('click', () => this.prevPage());
-        this.elements.pageNext.addEventListener('click', () => this.nextPage());
+        // Sort and filter controls
+        this.elements.sortField?.addEventListener('change', () => this.handleSortChange());
+        this.elements.sortOrder?.addEventListener('click', () => this.toggleSortOrder());
+        this.elements.filterType?.addEventListener('change', () => this.handleFilterChange());
 
-        // Desktop buttons
-        this.elements.logoutBtn.addEventListener('click', () => this.logout());
-        this.elements.clearCacheBtn.addEventListener('click', () => this.clearThumbnailCache());
-        this.elements.changePasswordBtn.addEventListener('click', () => this.showPasswordModal());
+        // Pagination
+        this.elements.pagePrev?.addEventListener('click', () => this.prevPage());
+        this.elements.pageNext?.addEventListener('click', () => this.nextPage());
 
-        // Mobile buttons
-        this.elements.logoutBtnMobile.addEventListener('click', () => this.logout());
-        this.elements.clearCacheBtnMobile.addEventListener('click', () =>
-            this.clearThumbnailCache()
+        // Desktop buttons - open settings modal
+        this.elements.logoutBtn?.addEventListener('click', () => this.logout());
+        this.elements.settingsBtn?.addEventListener('click', () => this.openSettings());
+        this.elements.changePasswordBtn?.addEventListener('click', () =>
+            this.openSettings('security')
         );
-        this.elements.changePasswordBtnMobile.addEventListener('click', () =>
-            this.showPasswordModal()
-        );
+        this.elements.clearCacheBtn?.addEventListener('click', () => this.openSettings('cache'));
 
-        // Password modal events
-        this.elements.passwordModalClose.addEventListener('click', () => this.hidePasswordModal());
-        this.elements.passwordCancel.addEventListener('click', () => this.hidePasswordModal());
-        this.elements.passwordForm.addEventListener('submit', (e) => this.handlePasswordChange(e));
-        this.elements.passwordModal.addEventListener('click', (e) => {
-            if (e.target === this.elements.passwordModal) {
-                this.hidePasswordModal();
-            }
-        });
+        // Mobile buttons - open settings modal
+        this.elements.logoutBtnMobile?.addEventListener('click', () => this.logout());
+        this.elements.changePasswordBtnMobile?.addEventListener('click', () =>
+            this.openSettings('security')
+        );
+        this.elements.clearCacheBtnMobile?.addEventListener('click', () =>
+            this.openSettings('cache')
+        );
 
         // Handle browser back/forward for directory navigation
         window.addEventListener('popstate', (e) => {
@@ -140,6 +126,18 @@ const MediaApp = {
                 }
             }
         });
+    },
+
+    /**
+     * Open the settings modal
+     * @param {string} tab - Optional tab to open ('security', 'passkeys', 'cache', 'about')
+     */
+    openSettings(tab = 'security') {
+        if (typeof window.settingsManager !== 'undefined') {
+            window.settingsManager.open(tab);
+        } else {
+            console.error('Settings manager not initialized');
+        }
     },
 
     /**
@@ -278,86 +276,6 @@ const MediaApp = {
             console.error('Logout error:', error);
         }
         window.location.href = '/login.html';
-    },
-
-    // Password change methods
-    showPasswordModal() {
-        // Clear form
-        this.elements.currentPassword.value = '';
-        this.elements.newPassword.value = '';
-        this.elements.confirmPassword.value = '';
-        this.elements.passwordError.classList.add('hidden');
-        this.elements.passwordSubmit.disabled = false;
-        this.elements.passwordSubmit.textContent = 'Update Password';
-
-        this.elements.passwordModal.classList.remove('hidden');
-        this.elements.currentPassword.focus();
-    },
-
-    hidePasswordModal() {
-        this.elements.passwordModal.classList.add('hidden');
-    },
-
-    showPasswordError(message) {
-        this.elements.passwordError.textContent = message;
-        this.elements.passwordError.classList.remove('hidden');
-    },
-
-    async handlePasswordChange(e) {
-        e.preventDefault();
-
-        const currentPassword = this.elements.currentPassword.value;
-        const newPassword = this.elements.newPassword.value;
-        const confirmPassword = this.elements.confirmPassword.value;
-
-        // Validation
-        if (!currentPassword) {
-            this.showPasswordError('Please enter your current password');
-            return;
-        }
-
-        if (newPassword.length < 6) {
-            this.showPasswordError('New password must be at least 6 characters');
-            return;
-        }
-
-        if (newPassword !== confirmPassword) {
-            this.showPasswordError('New passwords do not match');
-            return;
-        }
-
-        this.elements.passwordError.classList.add('hidden');
-        this.elements.passwordSubmit.disabled = true;
-        this.elements.passwordSubmit.textContent = 'Updating...';
-
-        try {
-            const response = await fetch('/api/auth/password', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    currentPassword,
-                    newPassword,
-                }),
-            });
-
-            if (response.ok) {
-                this.hidePasswordModal();
-                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                    Gallery.showToast('Password updated successfully');
-                }
-            } else if (response.status === 401) {
-                this.showPasswordError('Current password is incorrect');
-            } else {
-                const errorText = await response.text();
-                this.showPasswordError(errorText || 'Failed to update password');
-            }
-        } catch (error) {
-            console.error('Password change error:', error);
-            this.showPasswordError('An error occurred. Please try again.');
-        } finally {
-            this.elements.passwordSubmit.disabled = false;
-            this.elements.passwordSubmit.textContent = 'Update Password';
-        }
     },
 
     handleInitialPath() {
@@ -627,7 +545,7 @@ const MediaApp = {
     },
 
     updateSortIcon(order) {
-        const iconWrapper = this.elements.sortOrder.querySelector('.sort-icon');
+        const iconWrapper = this.elements.sortOrder?.querySelector('.sort-icon');
         if (!iconWrapper) return;
 
         // Use different icons for ascending vs descending
@@ -654,15 +572,20 @@ const MediaApp = {
     },
 
     showLoading() {
-        this.elements.loading.classList.remove('hidden');
+        this.elements.loading?.classList.remove('hidden');
     },
 
     hideLoading() {
-        this.elements.loading.classList.add('hidden');
+        this.elements.loading?.classList.add('hidden');
     },
 
     showError(message) {
-        alert(message);
+        // Use toast if available, otherwise alert
+        if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+            Gallery.showToast(message, 'error');
+        } else {
+            alert(message);
+        }
     },
 
     formatFileSize(bytes) {
@@ -682,7 +605,9 @@ const MediaApp = {
             if (this.elements.confirmModalIcon) {
                 const iconName = options.icon || 'alert-triangle';
                 this.elements.confirmModalIcon.innerHTML = `<i data-lucide="${iconName}"></i>`;
-                lucide.createIcons();
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
             }
             if (this.elements.confirmModalTitle) {
                 this.elements.confirmModalTitle.textContent = options.title || 'Confirm';
@@ -722,69 +647,15 @@ const MediaApp = {
                     resolve(false);
                 }
             };
-            this.elements.confirmModal.addEventListener('click', handleBackdropClick);
+            this.elements.confirmModal?.addEventListener('click', handleBackdropClick);
 
-            this.elements.confirmModal.classList.remove('hidden');
+            this.elements.confirmModal?.classList.remove('hidden');
         });
     },
 
     hideConfirmModal() {
         if (this.elements.confirmModal) {
             this.elements.confirmModal.classList.add('hidden');
-        }
-    },
-
-    async clearThumbnailCache() {
-        const confirmed = await this.showConfirmModal({
-            icon: 'trash-2',
-            title: 'Clear & Rebuild Thumbnails?',
-            message:
-                'This will delete all cached thumbnails and regenerate them in the background. The page will reload after clearing.',
-            confirmText: 'Clear & Rebuild',
-        });
-
-        if (!confirmed) {
-            return;
-        }
-
-        this.showLoading();
-
-        try {
-            const response = await fetch('/api/thumbnails/rebuild', {
-                method: 'POST',
-                credentials: 'same-origin',
-            });
-
-            if (response.status === 401) {
-                window.location.href = '/login.html';
-                return;
-            }
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText || 'Failed to clear cache');
-            }
-
-            const result = await response.json();
-            if (result.status === 'already_running') {
-                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                    Gallery.showToast('Thumbnail rebuild already in progress');
-                }
-                this.hideLoading();
-                return;
-            }
-
-            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                Gallery.showToast(`Cleared ${result.cleared || 0} thumbnails. Rebuilding...`);
-            }
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
-        } catch (error) {
-            console.error('Error clearing thumbnail cache:', error);
-            this.showError('Failed to clear thumbnail cache');
-            this.hideLoading();
         }
     },
 
@@ -844,6 +715,13 @@ const MediaApp = {
             .catch((error) => {
                 console.error('Service Worker registration failed:', error);
             });
+    },
+
+    showUpdateNotification() {
+        // Show a notification that an update is available
+        if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+            Gallery.showToast('A new version is available. Refresh to update.', 'info');
+        }
     },
 };
 

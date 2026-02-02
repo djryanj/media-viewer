@@ -279,3 +279,65 @@ func (t *Transcoder) Cleanup() {
 		}
 	}
 }
+
+// ClearCache removes all cached transcoded files and returns the number of bytes freed.
+func (t *Transcoder) ClearCache() (int64, error) {
+	if t.cacheDir == "" {
+		return 0, nil
+	}
+
+	var freedBytes int64
+
+	entries, err := os.ReadDir(t.cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to read transcode cache directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		path := filepath.Join(t.cacheDir, entry.Name())
+
+		// Get file size before deletion
+		info, err := entry.Info()
+		if err != nil {
+			logging.Warn("failed to get info for %s: %v", path, err)
+			continue
+		}
+
+		if entry.IsDir() {
+			// Calculate directory size
+			dirSize, _ := t.getDirSize(path)
+			if err := os.RemoveAll(path); err != nil {
+				logging.Warn("failed to remove directory %s: %v", path, err)
+				continue
+			}
+			freedBytes += dirSize
+		} else {
+			freedBytes += info.Size()
+			if err := os.Remove(path); err != nil {
+				logging.Warn("failed to remove file %s: %v", path, err)
+				continue
+			}
+		}
+	}
+
+	logging.Info("Cleared transcode cache: freed %d bytes", freedBytes)
+	return freedBytes, nil
+}
+
+// getDirSize calculates the total size of a directory
+func (t *Transcoder) getDirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
+}

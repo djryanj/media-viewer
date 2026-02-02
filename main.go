@@ -154,6 +154,29 @@ func main() {
 		metricsSrv = startMetricsServer(h, config.MetricsPort)
 	}
 
+	// Initialize WebAuthn
+	if err := handlers.InitWebAuthn(config, db); err != nil {
+		// Error is already logged, WebAuthn will be disabled
+		logging.Warn("WebAuthn initialization failed, passkey authentication disabled")
+	}
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(bgCtx, 30*time.Second)
+				if err := db.CleanExpiredWebAuthnSessions(ctx); err != nil {
+					logging.Error("Failed to clean expired WebAuthn sessions: %v", err)
+				}
+				cancel()
+			case <-bgCtx.Done():
+				return
+			}
+		}
+	}()
+
 	// Setup router
 	router := setupRouter(h)
 
@@ -264,6 +287,15 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	auth.HandleFunc("/password", h.ChangePassword).Methods("PUT")
 	auth.HandleFunc("/keepalive", h.Keepalive).Methods("POST")
 
+	// WebAuthn/Passkey routes
+	auth.HandleFunc("/webauthn/available", h.WebAuthnAvailable).Methods("GET")
+	auth.HandleFunc("/webauthn/register/begin", h.BeginWebAuthnRegistration).Methods("POST")
+	auth.HandleFunc("/webauthn/register/finish", h.FinishWebAuthnRegistration).Methods("POST")
+	auth.HandleFunc("/webauthn/login/begin", h.BeginWebAuthnLogin).Methods("POST")
+	auth.HandleFunc("/webauthn/login/finish", h.FinishWebAuthnLogin).Methods("POST")
+	auth.HandleFunc("/webauthn/passkeys", h.ListPasskeys).Methods("GET")
+	auth.HandleFunc("/webauthn/passkeys", h.DeletePasskey).Methods("DELETE")
+
 	// Protected API routes
 	api := r.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/files", h.ListFiles).Methods("GET")
@@ -306,6 +338,9 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/thumbnails/invalidate", h.InvalidateAllThumbnails).Methods("POST")
 	api.HandleFunc("/thumbnails/rebuild", h.RebuildAllThumbnails).Methods("POST")
 	api.HandleFunc("/thumbnails/status", h.GetThumbnailStatus).Methods("GET")
+
+	// Cache management
+	api.HandleFunc("/transcode/clear", h.ClearTranscodeCache).Methods("POST")
 
 	// Static files
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))
@@ -353,6 +388,12 @@ func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *in
 		} else {
 			startup.LogShutdownStepComplete("Metrics server stopped")
 		}
+	}
+	startup.LogShutdownStep("Cleaning up WebAuthn sessions")
+	if err := db.CleanExpiredWebAuthnSessions(ctx); err != nil {
+		logging.Warn("WebAuthn session cleanup error: %v", err)
+	} else {
+		startup.LogShutdownStepComplete("WebAuthn sessions cleaned")
 	}
 
 	startup.LogShutdownStep("Shutting down HTTP server")

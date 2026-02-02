@@ -13,7 +13,8 @@ A lightweight, containerized, single-user web application for browsing and viewi
 - Full-text fuzzy search with tag support
 - Tag files for organization
 - Pin favorites to the home page
-- Single-user authentication
+- **Passkey (WebAuthn) authentication** - Sign in with biometrics or security keys
+- Single-user authentication with password support
 - Prometheus metrics endpoint for monitoring
 - Progressive Web App (PWA) for native app-like feel
 
@@ -101,25 +102,29 @@ docker run -d `
 
 ## Configuration
 
-| Environment Variable | Default     | Description                                                                                                                            |
-| -------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `MEDIA_DIR`          | `/media`    | Path to media directory inside container                                                                                               |
-| `CACHE_DIR`          | `/cache`    | Path to cache directory (thumbnails, transcodes)                                                                                       |
-| `DATABASE_DIR`       | `/database` | Path to database directory                                                                                                             |
-| `PORT`               | `8080`      | HTTP server port                                                                                                                       |
-| `METRICS_PORT`       | `9090`      | Prometheus metrics server port                                                                                                         |
-| `METRICS_ENABLED`    | `true`      | Enable or disable the metrics server                                                                                                   |
-| `INDEX_INTERVAL`     | `30m`       | How often to perform a full re-index of the media directory                                                                            |
-| `POLL_INTERVAL`      | `30s`       | How often to check for filesystem changes (lightweight scan for new/modified/deleted files)                                            |
-| `THUMBNAIL_INTERVAL` | `6h`        | How often the thumbnail generator performs a full scan (incremental updates happen automatically after indexing)                       |
-| `SESSION_DURATION`   | `24h`       | How long user sessions remain valid (sliding expiration extends on activity)                                                           |
-| `SESSION_CLEANUP`    | `1h`        | How often to clean up expired sessions from the database                                                                               |
-| `LOG_LEVEL`          | `info`      | Server log level (`debug`, `info`, `warn`, `error`)                                                                                    |
-| `LOG_STATIC_FILES`   | `false`     | Log static file requests                                                                                                               |
-| `LOG_HEALTH_CHECKS`  | `true`      | Log health check endpoint requests                                                                                                     |
-| `MEMORY_LIMIT`       | (none)      | Container memory limit in bytes. Set via Kubernetes Downward API to enable automatic GOMEMLIMIT configuration.                         |
-| `MEMORY_RATIO`       | `0.85`      | Percentage of `MEMORY_LIMIT` to allocate to Go heap (0.0-1.0). The remainder is reserved for FFmpeg, image processing, and OS buffers. |
-| `GOMEMLIMIT`         | (none)      | Direct override for Go's memory limit. If set, takes precedence over `MEMORY_LIMIT`. Accepts values like `400MiB` or `1GiB`.           |
+| Environment Variable | Default        | Description                                                                                                                            |
+| -------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `MEDIA_DIR`          | `/media`       | Path to media directory inside container                                                                                               |
+| `CACHE_DIR`          | `/cache`       | Path to cache directory (thumbnails, transcodes)                                                                                       |
+| `DATABASE_DIR`       | `/database`    | Path to database directory                                                                                                             |
+| `PORT`               | `8080`         | HTTP server port                                                                                                                       |
+| `METRICS_PORT`       | `9090`         | Prometheus metrics server port                                                                                                         |
+| `METRICS_ENABLED`    | `true`         | Enable or disable the metrics server                                                                                                   |
+| `INDEX_INTERVAL`     | `30m`          | How often to perform a full re-index of the media directory                                                                            |
+| `POLL_INTERVAL`      | `30s`          | How often to check for filesystem changes (lightweight scan for new/modified/deleted files)                                            |
+| `THUMBNAIL_INTERVAL` | `6h`           | How often the thumbnail generator performs a full scan (incremental updates happen automatically after indexing)                       |
+| `SESSION_DURATION`   | `24h`          | How long user sessions remain valid (sliding expiration extends on activity)                                                           |
+| `SESSION_CLEANUP`    | `1h`           | How often to clean up expired sessions from the database                                                                               |
+| `WEBAUTHN_ENABLED`   | `false`        | Enable passkey (WebAuthn) authentication                                                                                               |
+| `WEBAUTHN_RP_ID`     | (none)         | WebAuthn Relying Party ID (domain name, e.g., `example.com`)                                                                           |
+| `WEBAUTHN_RP_NAME`   | `Media Viewer` | Display name for WebAuthn prompts                                                                                                      |
+| `WEBAUTHN_ORIGINS`   | (none)         | Comma-separated list of allowed origins (e.g., `https://example.com,https://media.example.com`)                                        |
+| `LOG_LEVEL`          | `info`         | Server log level (`debug`, `info`, `warn`, `error`)                                                                                    |
+| `LOG_STATIC_FILES`   | `false`        | Log static file requests                                                                                                               |
+| `LOG_HEALTH_CHECKS`  | `true`         | Log health check endpoint requests                                                                                                     |
+| `MEMORY_LIMIT`       | (none)         | Container memory limit in bytes. Set via Kubernetes Downward API to enable automatic GOMEMLIMIT configuration.                         |
+| `MEMORY_RATIO`       | `0.85`         | Percentage of `MEMORY_LIMIT` to allocate to Go heap (0.0-1.0). The remainder is reserved for FFmpeg, image processing, and OS buffers. |
+| `GOMEMLIMIT`         | (none)         | Direct override for Go's memory limit. If set, takes precedence over `MEMORY_LIMIT`. Accepts values like `400MiB` or `1GiB`.           |
 
 > **Note:** Setting `SESSION_DURATION` below 5 minutes is not recommended as it may cause sessions to expire between keepalive intervals.
 
@@ -314,6 +319,78 @@ Firefox Android does not support true standalone mode but will use `minimal-ui` 
 
 **_NOTE_**: PWA has only been tested on Firefox Android but the above table should be accurate. If you want to provide test results from other mobile browsers those are welcome!
 
+## WebAuthn (Passkey) Authentication
+
+Media Viewer supports passwordless authentication using passkeys (WebAuthn/FIDO2). Users can sign in with:
+
+- **Biometrics**: Face ID, Touch ID, Windows Hello
+- **Security keys**: YubiKey, Titan, etc.
+- **Platform authenticators**: Built-in device authenticators
+
+### Features
+
+- **Passwordless login**: No need to remember or type passwords
+- **Multi-device**: Register passkeys on multiple devices
+- **Auto-prompt**: Automatically offers passkey login when available
+- **Conditional UI**: Passkeys appear in password field autofill (supported browsers)
+- **Fallback**: Password authentication still available
+
+### Browser Support
+
+| Browser      | Platform Auth | Security Keys | Conditional UI |
+| ------------ | ------------- | ------------- | -------------- |
+| Chrome 108+  | ✅            | ✅            | ✅             |
+| Edge 108+    | ✅            | ✅            | ✅             |
+| Safari 16+   | ✅            | ✅            | ✅             |
+| Firefox 119+ | ✅            | ✅            | ❌             |
+
+### Configuration
+
+WebAuthn requires HTTPS (secure context) in production. Configure the following environment variables:
+
+```yaml
+environment:
+    - WEBAUTHN_ENABLED=true
+    - WEBAUTHN_RP_ID=example.com # Your domain
+    - WEBAUTHN_RP_NAME=Media Viewer # Display name
+    - WEBAUTHN_ORIGINS=https://example.com # Allowed origins
+```
+
+**Important**: The `WEBAUTHN_RP_ID` must match your domain. For example:
+
+- If accessing via `https://media.example.com`, set `WEBAUTHN_RP_ID=example.com`
+- For `https://example.com`, set `WEBAUTHN_RP_ID=example.com`
+- The RP ID must be a valid domain suffix of the origin
+
+Multiple origins can be specified:
+
+```yaml
+WEBAUTHN_ORIGINS=https://example.com,https://media.example.com
+```
+
+### Secure Context Requirement
+
+WebAuthn **requires a secure context**:
+
+- ✅ `https://` URLs (production)
+- ✅ `http://localhost` (development only - browser exception)
+- ❌ `http://` with IP addresses (e.g., `http://192.168.1.50:8080`)
+
+### Adding Passkeys
+
+After setting up WebAuthn:
+
+1. Log in with your password
+2. Open **Settings** → **Passkeys** tab
+3. Click **Add Passkey**
+4. Name your passkey (e.g., "MacBook Pro", "iPhone")
+5. Complete the biometric prompt or security key tap
+6. Next login, use your passkey instead of password
+
+### Development with WebAuthn
+
+See [Testing WebAuthn During Development](#testing-webauthn-during-development) for setup instructions.
+
 ## Monitoring
 
 Media Viewer exposes Prometheus metrics on a separate port (default: 9090) for monitoring application health and performance. The port can be configured with the `METRICS_PORT` environment variable.
@@ -469,6 +546,7 @@ When running locally, you may want to set these environment variables:
 | `METRICS_PORT`       | `9090`            | Metrics server port             |
 | `INDEX_INTERVAL`     | `5m`              | Faster re-indexing for testing  |
 | `THUMBNAIL_INTERVAL` | `30m`             | Faster thumbnail regeneration   |
+| `WEBAUTHN_ENABLED`   | `true`            | Enable passkey authentication   |
 
 Example:
 
@@ -491,6 +569,10 @@ LOG_STATIC_FILES=true
 LOG_HEALTH_CHECKS=false
 INDEX_INTERVAL=5m
 THUMBNAIL_INTERVAL=30m
+WEBAUTHN_ENABLED=true
+WEBAUTHN_RP_ID=localhost
+WEBAUTHN_RP_NAME="Media Viewer Dev"
+WEBAUTHN_ORIGINS=https://localhost:8080,https://192.168.1.50:8080
 ```
 
 ### Debugging
@@ -574,43 +656,162 @@ PWA features (service worker, installation prompts, standalone mode) require a *
 
 **To test on mobile devices**, you need HTTPS. Options include:
 
-#### Testing PWA on Mobile Devices
+#### Testing PWA and WebAuthN on Mobile Devices
 
-PWA features require HTTPS (except `localhost`). To test on mobile devices during development:
+PWA and WebAuthN features require HTTPS (except `localhost`). To test on mobile devices during development:
 
 **Option 1: ngrok (Recommended)**
 
 ```bash
-# Install: https://ngrok.com/download
-ngrok http 8080
+# Terminal 1: Start the development server
+make dev
 
-# Open the https://xxxxx.ngrok-free.app URL on your mobile device
+# Terminal 2: Start ngrok tunnel
+ngrok http 8080
 ```
 
-**Option 2: Cloudflare Tunnel**
+ngrok will display a URL like `https://abc123.ngrok-free.app`. Configure WebAuthn:
 
 ```bash
-# Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
+export WEBAUTHN_ENABLED=true
+export WEBAUTHN_RP_ID=abc123.ngrok-free.app
+export WEBAUTHN_RP_NAME="Media Viewer Dev"
+export WEBAUTHN_ORIGINS=https://abc123.ngrok-free.app
+make dev
+```
+
+**Benefits**:
+
+- ✅ Real HTTPS with valid certificate
+- ✅ Test on mobile devices
+- ✅ Test with real-world conditions
+- ✅ Free tier available
+
+**Limitations**:
+
+- URL changes on each restart (paid plans offer stable URLs)
+- Requires internet connection
+
+#### Option 3: Cloudflare Tunnel
+
+Similar to ngrok but from Cloudflare:
+
+```bash
+# Install cloudflared
+# https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
+
+# Terminal 1: Start dev server
+make dev
+
+# Terminal 2: Start tunnel
 cloudflared tunnel --url http://localhost:8080
 ```
 
-**Option 3: Local HTTPS with mkcert**
+Configure WebAuthn with the provided URL:
 
 ```bash
-# Install mkcert and generate certificates
-mkcert -install
-mkcert localhost 127.0.0.1 192.168.1.50  # Your local IP
-
-# Update Go server to use ListenAndServeTLS with the generated certificates
+export WEBAUTHN_ENABLED=true
+export WEBAUTHN_RP_ID=<tunnel-url>.trycloudflare.com
+export WEBAUTHN_ORIGINS=https://<tunnel-url>.trycloudflare.com
+make dev
 ```
 
-**Option 4: Chrome Android flags (development only)**
+#### Option 4: Local HTTPS with mkcert (Advanced)
 
-- Open `chrome://flags`
-- Search for "unsafely-treat-insecure-origin-as-secure"
-- Add your origin (e.g., `http://192.168.1.50:8080`)
+Generate trusted local certificates:
 
-### Developer sTroubleshooting
+```bash
+# Install mkcert
+# macOS: brew install mkcert
+# Linux: https://github.com/FiloSottile/mkcert#installation
+
+# Install local CA
+mkcert -install
+
+# Generate certificates
+mkdir -p certs
+mkcert -cert-file certs/localhost.pem -key-file certs/localhost-key.pem \
+  localhost 127.0.0.1 192.168.1.50  # Add your local IP
+
+# Configure WebAuthn
+export WEBAUTHN_ENABLED=true
+export WEBAUTHN_RP_ID=localhost
+export WEBAUTHN_ORIGINS=https://localhost:8080,https://192.168.1.50:8080
+```
+
+Update your code to use `http.ListenAndServeTLS()` or run behind an HTTPS proxy.
+
+**Benefits**:
+
+- ✅ Works offline
+- ✅ Stable URLs
+- ✅ Test on local network devices
+
+**Limitations**:
+
+- Requires code changes to serve HTTPS
+- More complex setup
+
+#### Recommended Development Workflow
+
+**For solo development on one machine**:
+
+```bash
+# Use localhost (simplest)
+export WEBAUTHN_ENABLED=true
+export WEBAUTHN_RP_ID=localhost
+export WEBAUTHN_ORIGINS=http://localhost:8080
+make dev
+```
+
+**For testing on mobile devices**:
+
+```bash
+# Use ngrok (easiest HTTPS)
+make dev
+# In another terminal:
+ngrok http 8080
+# Configure WEBAUTHN_* vars with ngrok URL
+```
+
+**For team development**:
+
+```bash
+# Use mkcert + local network
+# Or use a shared ngrok/Cloudflare tunnel
+```
+
+#### Verifying WebAuthn Setup
+
+Check WebAuthn availability:
+
+```bash
+# Test endpoint
+curl http://localhost:8080/api/auth/webauthn/available
+
+# Should return:
+# {"available":false,"enabled":true}  # Before registering passkey
+# {"available":true,"enabled":true}   # After registering passkey
+```
+
+Browser console checks:
+
+```javascript
+// Check WebAuthn support
+console.log('WebAuthn supported:', !!window.PublicKeyCredential);
+
+// Check Conditional UI support
+PublicKeyCredential.isConditionalMediationAvailable().then((available) =>
+    console.log('Conditional UI:', available)
+);
+
+// Check platform authenticator
+PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then((available) =>
+    console.log('Platform auth:', available)
+);
+```
+
+### Developer Troubleshooting
 
 #### Build Fails with CGO Errors
 
