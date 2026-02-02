@@ -5,12 +5,15 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
 ## Key Features
 
 - **Gallery Browsing**: Navigate your media library with an intuitive grid-based interface
+- **Infinite Scroll**: Seamlessly browse large libraries with automatic pagination
 - **Tagging System**: Organize media with custom tags for easy categorization and retrieval
 - **Favorites**: Mark frequently accessed items for quick access
+- **Search**: Full-text fuzzy search by name, tag, or file type with suggestions
 - **Playlists**: Create and play video playlists
-- **Search**: Find media by name, tag, or file type
 - **Progressive Web App**: Install on mobile devices for a native app experience
 - **Responsive Design**: Optimized for desktop, tablet, and mobile viewing
+- **Video Transcoding**: Automatic transcoding for browser compatibility
+- **Thumbnail Generation**: Fast thumbnail generation with incremental updates
 
 ## Quick Links
 
@@ -21,9 +24,27 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
 
 ## System Requirements
 
-- Docker (recommended) or Node.js 18+
-- Modern web browser (Chrome, Firefox, Safari, Edge)
+### Production (Docker - Recommended)
+
+- Docker and Docker Compose
+- Modern web browser (Chrome 90+, Firefox 88+, Safari 14+, Edge 90+)
 - Sufficient storage for media files and thumbnail cache
+
+### Production (From Source)
+
+- Go 1.21 or later
+- FFmpeg (for video transcoding and thumbnail generation)
+- GCC (for SQLite CGO compilation)
+- Modern web browser (Chrome 90+, Firefox 88+, Safari 14+, Edge 90+)
+- Sufficient storage for media files and thumbnail cache
+
+### Development
+
+- All production requirements (from source)
+- Node.js 18+ (for frontend tooling: linting, formatting, live reload)
+- Make (optional, for build automation)
+
+**Note**: Node.js is **only** required for development. The frontend is static HTML/CSS/JavaScript and does not require a Node.js runtime in production.
 
 ## Support
 

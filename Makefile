@@ -13,7 +13,7 @@ STATIC_DIR := static
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fix \
         frontend-format frontend-format-check frontend-check frontend-dev \
-		icons
+		icons docs-serve docs-build docs-deploy
 
 # Build configuration
 BUILD_TAGS := fts5
@@ -191,7 +191,7 @@ release-build:
 setup: frontend-install
 	@echo "Installing Go tools..."
 	go install github.com/air-verse/air@latest
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci-lint-lint/golangci-lint@latest
 	@echo "Setup complete"
 
 
@@ -202,6 +202,22 @@ setup: frontend-install
 icons: ## Regenerate PWA icons
 	@echo "Generating icons..."
 	@cd static && node generate-icons.js
+
+# ===========================================
+# Docs
+# ===========================================
+
+docs-serve:
+	@echo "Serving documentation with mkdocs..."
+	mkdocs serve -a 0.0.0.0:8000
+
+docs-build:
+	@echo "Building documentation with mkdocs..."
+	mkdocs build
+
+docs-deploy:
+	@echo "Deploying documentation with mkdocs..."
+	mkdocs gh-deploy
 
 # =============================================================================
 # Help
@@ -255,6 +271,11 @@ help:
 	@echo ""
 	@echo "Icons targets:"
 	@echo "  icons            Regenerate PWA icons"
+	@echo ""
+	@echo "Documentation targets:"
+	@echo "  docs-serve       Serve documentation locally (port 8000)"
+	@echo "  docs-build       Build documentation site"
+	@echo "  docs-deploy      Deploy documentation to GitHub Pages"
 	@echo ""
 	@echo "Setup targets:"
 	@echo "  setup            Install all development dependencies"

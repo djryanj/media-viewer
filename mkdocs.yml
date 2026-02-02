@@ -135,6 +135,7 @@ nav:
           - Playlists: user-guide/playlists.md
           - Search: user-guide/search.md
           - Keyboard Shortcuts: user-guide/keyboard-shortcuts.md
+          - Biometric/Passwordless (WebAuthN) Logins: user-guide/webauthn.md
     - Features:
           - Gallery View: features/gallery.md
           - Lightbox: features/lightbox.md
@@ -146,6 +147,7 @@ nav:
           - Environment Variables: admin/environment-variables.md
           - Thumbnail Management: admin/thumbnails.md
           - Security: admin/security.md
+          - Biometric/Passwordless (WebAuthN) Logins: admin/webauthn.md
     - API Reference:
           - Overview: api/overview.md
           - Authentication: api/authentication.md
@@ -158,4 +160,3 @@ nav:
           - Architecture: development/architecture.md
           - Frontend: development/frontend.md
           - Backend: development/backend.md
-    - Changelog: changelog.md

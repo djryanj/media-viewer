@@ -118,6 +118,13 @@ if [ -f "static/package.json" ]; then
     echo -e "${GREEN}[SUCCESS] npm dependencies installed${NC}"
 fi
 
+# Install mkdocs requirements (if applicable)
+if [ -f "requirements.txt" ]; then
+    echo -e "${BLUE}[INFO] Installing mkdocs requirements...${NC}"
+    pip install -r requirements.txt
+    echo -e "${GREEN}[SUCCESS] mkdocs requirements installed${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Post-create setup complete!${NC}"

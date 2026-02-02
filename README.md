@@ -764,52 +764,11 @@ export WEBAUTHN_ORIGINS=http://localhost:8080
 make dev
 ```
 
-**For testing on mobile devices**:
+**Option 4: Chrome Android flags (development only)**
 
-```bash
-# Use ngrok (easiest HTTPS)
-make dev
-# In another terminal:
-ngrok http 8080
-# Configure WEBAUTHN_* vars with ngrok URL
-```
-
-**For team development**:
-
-```bash
-# Use mkcert + local network
-# Or use a shared ngrok/Cloudflare tunnel
-```
-
-#### Verifying WebAuthn Setup
-
-Check WebAuthn availability:
-
-```bash
-# Test endpoint
-curl http://localhost:8080/api/auth/webauthn/available
-
-# Should return:
-# {"available":false,"enabled":true}  # Before registering passkey
-# {"available":true,"enabled":true}   # After registering passkey
-```
-
-Browser console checks:
-
-```javascript
-// Check WebAuthn support
-console.log('WebAuthn supported:', !!window.PublicKeyCredential);
-
-// Check Conditional UI support
-PublicKeyCredential.isConditionalMediationAvailable().then((available) =>
-    console.log('Conditional UI:', available)
-);
-
-// Check platform authenticator
-PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then((available) =>
-    console.log('Platform auth:', available)
-);
-```
+- Open `chrome://flags`
+- Search for "unsafely-treat-insecure-origin-as-secure"
+- Add your origin (e.g., `http://192.168.1.50:8080`)
 
 ### Developer Troubleshooting
 
