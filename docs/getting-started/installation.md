@@ -1,6 +1,6 @@
 # Installation
 
-Media Viewer can be deployed using Docker (recommended) or run directly with Node.js.
+Media Viewer can be deployed using Docker (recommended) or built from source with Go.
 
 ## Docker Installation
 
@@ -15,20 +15,29 @@ version: '3.8'
 
 services:
     media-viewer:
-        image: djryanj/media-viewer:latest
+        image: ghcr.io/djryanj/media-viewer:latest
         container_name: media-viewer
         ports:
             - '8080:8080'
+            - '9090:9090'
         volumes:
             - /path/to/your/media:/media:ro
-            - media-viewer-data:/app/data
+            - media-cache:/cache
+            - media-database:/database
         environment:
-            - PASSWORD=your-secure-password
-            - SESSION_DURATION=3600000
+            - MEDIA_DIR=/media
+            - CACHE_DIR=/cache
+            - DATABASE_DIR=/database
+            - PORT=8080
+            - METRICS_PORT=9090
+            - METRICS_ENABLED=true
+            - INDEX_INTERVAL=30m
+            - SESSION_DURATION=24h
         restart: unless-stopped
 
 volumes:
-    media-viewer-data:
+    media-cache:
+    media-database:
 ```
 
 Start the application:
@@ -43,20 +52,23 @@ docker-compose up -d
 docker run -d \
   --name media-viewer \
   -p 8080:8080 \
+  -p 9090:9090 \
   -v /path/to/your/media:/media:ro \
-  -v media-viewer-data:/app/data \
-  -e PASSWORD=your-secure-password \
-  djryanj/media-viewer:latest
+  -v media-cache:/cache \
+  -v media-database:/database \
+  ghcr.io/djryanj/media-viewer:latest
 ```
 
-## Manual Installation
+## Building from Source
 
-For development or non-Docker deployments:
+For development or custom deployments:
 
 ### Prerequisites
 
-- Node.js 18 or higher
-- npm or yarn
+- Go 1.21 or later
+- FFmpeg
+- GCC (for SQLite CGO compilation)
+- Node.js 18+ (for frontend development tools only)
 
 ### Steps
 
@@ -67,23 +79,42 @@ For development or non-Docker deployments:
     cd media-viewer
     ```
 
-2. Install dependencies:
+2. Build the application:
 
     ```bash
-    npm install
+    go build -tags 'fts5' -o media-viewer .
     ```
 
-3. Configure environment variables (see [Configuration](configuration.md))
-
-4. Start the server:
+3. (Optional) Build the password reset utility:
 
     ```bash
-    npm start
+    go build -tags 'fts5' -o resetpw ./cmd/resetpw
     ```
+
+4. Configure environment variables (see [Configuration](configuration.md))
+
+5. Start the server:
+
+    ```bash
+    ./media-viewer
+    ```
+
+## Initial Setup
+
+On first run, Media Viewer will prompt you to create a password:
+
+1. Access the application at `http://localhost:8080`
+2. You'll be redirected to the setup page
+3. Create a secure password (minimum 6 characters)
+4. Click **Create Password**
+5. You'll be automatically logged in
 
 ## Verifying Installation
 
-Once running, access Media Viewer at `http://localhost:8080` (or your configured port). You should see the login page.
+Once running, access Media Viewer at `http://localhost:8080` (or your configured port). You should see either:
+
+- The **setup page** (first time) - create your password
+- The **login page** (subsequent runs) - enter your password
 
 ## Next Steps
 

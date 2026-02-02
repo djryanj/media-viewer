@@ -1,6 +1,20 @@
-# Files API
+# Files & Media API
 
-Endpoints for browsing and retrieving media files.
+Endpoints for browsing, retrieving, and streaming media files.
+
+## API Reference
+
+See the [OpenAPI Specification](openapi.md) for interactive documentation of all file-related endpoints:
+
+- `GET /api/files` - List files and folders
+- `GET /api/file/{path}` - Get a file
+- `GET /api/thumbnail/{path}` - Get thumbnail
+- `GET /api/stream/{path}` - Stream video
+- `GET /api/stream-info/{path}` - Get stream info
+- `GET /api/playlists` - List playlists
+- `GET /api/playlist/{name}` - Get playlist contents
+
+Refer to the OpenAPI documentation for detailed request/response schemas and examples.
 
 ## List Directory
 

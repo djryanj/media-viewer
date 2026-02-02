@@ -1,14 +1,10 @@
 # API Overview
 
-Media Viewer provides a REST API for all functionality. This documentation covers the available endpoints.
+Media Viewer exposes a RESTful API for programmatic access to all features. The API is used internally by the web frontend and can also be used for custom integrations.
 
 ## Base URL
 
-All API endpoints are relative to your Media Viewer installation:
-
-```
-https://your-server.com/api/
-```
+All API endpoints are prefixed with `/api/` (except authentication, health, and version endpoints).
 
 ## Authentication
 

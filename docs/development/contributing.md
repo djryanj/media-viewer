@@ -1,157 +1,49 @@
 # Contributing
 
-Thank you for your interest in contributing to Media Viewer. This guide covers how to get started.
+Thank you for your interest in contributing to Media Viewer!
 
-## Getting Started
+For complete contributing guidelines, please see the [CONTRIBUTING.md](https://github.com/djryanj/media-viewer/blob/main/CONTRIBUTING.md) file in the root of the repository.
 
-### Prerequisites
+## Quick Links
 
-- Node.js 18 or higher
-- npm
-- Git
+- **[Report a Bug](https://github.com/djryanj/media-viewer/issues/new?template=bug_report.md)** - Found an issue? Let us know
+- **[Request a Feature](https://github.com/djryanj/media-viewer/issues/new?template=feature_request.md)** - Have an idea? We'd love to hear it
+- **[Discussions](https://github.com/djryanj/media-viewer/discussions)** - Ask questions or share ideas
 
-### Development Setup
+## Overview
 
-1. Fork the repository on GitHub
+The main contributing guide covers:
 
-2. Clone your fork:
+- Setting up your development environment
+- Code style guidelines
+- Testing requirements
+- Pull request process
+- Commit message conventions
+- Issue reporting templates
 
-    ```bash
-    git clone https://github.com/your-username/media-viewer.git
-    cd media-viewer
-    ```
+## Documentation
 
-3. Install dependencies:
+If you're specifically interested in contributing to documentation:
 
-    ```bash
-    npm install
-    ```
+1. Documentation is written in Markdown
+2. Source files are in the `docs/` directory
+3. Built with MkDocs Material theme
+4. Follow the [MkDocs documentation](https://www.mkdocs.org/) for formatting
 
-4. Create a `.env` file:
-
-    ```bash
-    PASSWORD=devpassword
-    MEDIA_PATH=/path/to/test/media
-    ```
-
-5. Start the development server:
-
-    ```bash
-    npm run dev
-    ```
-
-6. Open `http://localhost:8080` in your browser
-
-## Project Structure
-
-```
-media-viewer/
-├── public/           # Static frontend files
-│   ├── css/          # Stylesheets
-│   ├── js/           # JavaScript modules
-│   └── index.html    # Main HTML file
-├── src/              # Backend source code
-├── docs/             # Documentation
-├── tests/            # Test files
-└── package.json
-```
-
-## Making Changes
-
-### Branching
-
-Create a feature branch from `main`:
+To preview documentation changes locally:
 
 ```bash
-git checkout -b feature/your-feature-name
+make docs-serve
 ```
 
-### Code Style
+Then open `http://localhost:8000` in your browser.
 
-- Follow existing code patterns
-- Use meaningful variable and function names
-- Add comments for complex logic
-- Keep functions focused and small
+## Getting Help
 
-### Frontend
+If you have questions about contributing:
 
-- JavaScript modules are in `public/js/`
-- Styles are in `public/css/style.css`
-- Use CSS variables for colors and spacing
-- Test on both desktop and mobile
+- Check the [Architecture documentation](architecture.md) for technical details
+- Open a [Discussion](https://github.com/djryanj/media-viewer/discussions)
+- Comment on an existing issue
 
-### Backend
-
-- Server code is in `src/`
-- Follow RESTful API conventions
-- Handle errors gracefully
-- Log meaningful messages
-
-## Testing
-
-Run the test suite:
-
-```bash
-npm test
-```
-
-Test your changes manually:
-
-- Test on desktop browsers (Chrome, Firefox, Safari)
-- Test on mobile devices or emulators
-- Test with different media types
-- Test edge cases (empty folders, large libraries)
-
-## Submitting Changes
-
-### Commit Messages
-
-Write clear, descriptive commit messages:
-
-```
-Add tag copy/paste functionality
-
-- Add Copy Tags button for single item selection
-- Add Paste Tags button with confirmation modal
-- Add Merge Tags for multi-item selection
-- Add keyboard shortcuts (Ctrl+C, Ctrl+V, Ctrl+M)
-```
-
-### Pull Requests
-
-1. Push your branch to your fork
-2. Open a pull request against `main`
-3. Fill out the pull request template
-4. Link any related issues
-
-### Pull Request Checklist
-
-- [ ] Code follows project style
-- [ ] Changes are tested
-- [ ] Documentation is updated (if needed)
-- [ ] Commit messages are clear
-- [ ] No unrelated changes included
-
-## Reporting Issues
-
-### Bug Reports
-
-Include:
-
-- Steps to reproduce
-- Expected behavior
-- Actual behavior
-- Browser and device information
-- Screenshots if applicable
-
-### Feature Requests
-
-Include:
-
-- Clear description of the feature
-- Use case / why it's needed
-- Any implementation ideas
-
-## Questions
-
-For questions about contributing, open a discussion on GitHub or reach out to the maintainers.
+We appreciate your contributions!

@@ -1,8 +1,30 @@
 # Authentication API
 
-Endpoints for authentication and session management.
+Password-based authentication endpoints for session management.
 
-## Login
+## Overview
+
+Media Viewer uses session-based authentication with HTTP-only cookies. After successful login, the server sets a session cookie that must be included in subsequent requests.
+
+## Session Cookie
+
+- **Name**: `session`
+- **HttpOnly**: `true` (not accessible via JavaScript)
+- **SameSite**: `Strict`
+- **Duration**: Configurable via `SESSION_DURATION` (default: 24h)
+- **Type**: Sliding expiration (extends on activity)
+
+## Endpoints
+
+### Check Setup Required
+
+Check if initial password setup is needed.
+
+```
+GET /api/auth/check-setup
+```
+
+### Login
 
 Authenticate and create a session.
 
@@ -39,7 +61,7 @@ A session cookie is set in the response headers.
 }
 ```
 
-## Logout
+### Logout
 
 End the current session.
 
@@ -59,7 +81,7 @@ POST /api/auth/logout
 
 The session cookie is cleared.
 
-## Check Session
+### Check Session
 
 Verify if the current session is valid.
 
@@ -85,7 +107,7 @@ GET /api/auth/check
 }
 ```
 
-## Change Password
+### Change Password
 
 Update the application password.
 

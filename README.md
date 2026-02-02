@@ -18,6 +18,10 @@ A lightweight, containerized, single-user web application for browsing and viewi
 - Prometheus metrics endpoint for monitoring
 - Progressive Web App (PWA) for native app-like feel
 
+## AI Disclosure
+
+See: [AI.md](AI.md).
+
 ## Quick Start with Docker
 
 ### Using Docker Compose (Recommended)
@@ -572,7 +576,7 @@ THUMBNAIL_INTERVAL=30m
 WEBAUTHN_ENABLED=true
 WEBAUTHN_RP_ID=localhost
 WEBAUTHN_RP_NAME="Media Viewer Dev"
-WEBAUTHN_ORIGINS=https://localhost:8080,https://192.168.1.50:8080
+WEBAUTHN_ORIGINS=http://localhost:8080
 ```
 
 ### Debugging
@@ -736,7 +740,7 @@ mkcert -cert-file certs/localhost.pem -key-file certs/localhost-key.pem \
 # Configure WebAuthn
 export WEBAUTHN_ENABLED=true
 export WEBAUTHN_RP_ID=localhost
-export WEBAUTHN_ORIGINS=https://localhost:8080,https://192.168.1.50:8080
+export WEBAUTHN_ORIGINS=http://localhost:8080
 ```
 
 Update your code to use `http.ListenAndServeTLS()` or run behind an HTTPS proxy.

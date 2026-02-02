@@ -9,12 +9,12 @@ Media Viewer generates thumbnails for images and videos to provide fast gallery 
 Thumbnails are generated:
 
 - On-demand when an item is first viewed
-- In the background after cache clearing
-- At a standard size optimized for gallery display
+- Incrementally in the background after media indexing
+- Periodically via full scan (configurable with `THUMBNAIL_INTERVAL`)
 
 ### Storage
 
-Thumbnails are stored in the data directory:
+Thumbnails are stored in the cache directory:
 
 ```
 {DATA_PATH}/thumbnails/

@@ -2,10 +2,22 @@
 
 This guide covers the essential features to get you started with Media Viewer in five minutes.
 
+## First-Time Setup
+
+On first run, you'll need to create a password:
+
+1. Navigate to your Media Viewer URL (e.g., `http://localhost:8080`)
+2. You'll be redirected to the setup page
+3. Enter a secure password (minimum 6 characters)
+4. Click **Create Password**
+5. You'll be automatically logged in
+
 ## Logging In
 
+For subsequent visits:
+
 1. Navigate to your Media Viewer URL
-2. Enter your configured password
+2. Enter your password
 3. Click **Login** or press ++enter++
 
 ## Browsing Your Library
@@ -76,10 +88,10 @@ Tags help organize your media into categories.
 Use the search box at the top to find media:
 
 - **By name**: Type any part of the filename
-- **By tag**: Type `tag:` followed by the tag name
+- **By tag**: Click any tag chip or use the search box
 - **By type**: Use the filter dropdown
 
-Press ++enter++ to see full search results.
+The search provides suggestions as you type. Press ++enter++ to see full search results.
 
 ## Mobile Usage
 
@@ -89,15 +101,25 @@ Media Viewer is fully responsive and works on mobile devices.
 
 On supported devices, you can install Media Viewer as a Progressive Web App:
 
+**Android (Chrome, Edge, Samsung Internet):**
+
 1. Open Media Viewer in your mobile browser
-2. Use your browser's "Add to Home Screen" option
-3. Launch from your home screen for a full-screen experience
+2. Tap the three-dot menu (⋮)
+3. Tap "Add to Home Screen" or "Install App"
+4. Launch from your home screen for a full-screen experience
+
+**iOS (Safari):**
+
+1. Open Media Viewer in Safari
+2. Tap the Share button (square with arrow)
+3. Tap "Add to Home Screen"
+4. Launch from your home screen for a full-screen experience
 
 ### Touch Gestures
 
 - **Tap**: Open item or folder
 - **Double-tap**: Toggle favorite
-- **Long-press**: Enter selection mode
+- **Long-press**: Enter selection mode (bulk operations)
 - **Swipe**: Navigate in lightbox
 
 ## Next Steps
@@ -105,3 +127,4 @@ On supported devices, you can install Media Viewer as a Progressive Web App:
 - Learn about [Selection Mode](../features/selection-mode.md) for bulk operations
 - Explore [Tag Management](../features/tag-management.md) for advanced organization
 - Review [Keyboard Shortcuts](../user-guide/keyboard-shortcuts.md) to speed up your workflow
+- Set up [Passkey Authentication](../user-guide/webauthn.md) for passwordless login

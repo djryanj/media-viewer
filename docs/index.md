@@ -1,5 +1,11 @@
 # Media Viewer
 
+<div align="center">
+  <img src="https://raw.githubusercontent.com/djryanj/media-viewer/main/static/icons/icon-192x192.png" alt="Media Viewer Icon" width="192" height="192">
+</div>
+
+<br>
+
 Media Viewer is a self-hosted web application for browsing, organizing, and viewing your personal media collection. It provides a responsive gallery interface that works seamlessly across desktop and mobile devices, with support for images, videos, and playlists.
 
 ## Key Features
