@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-viewer-media
+  namespace: media-viewer
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+  mountOptions:
+    - hard
+    - nfsvers=4.1
+  nfs:
+    path: /mnt/zfs/backups/Osiris/D/Installs/pr0n
+    server: filer2-k8s.thewulph.com
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-viewer-media
+  namespace: media-viewer
+spec:
+  storageClassName: nfs
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi

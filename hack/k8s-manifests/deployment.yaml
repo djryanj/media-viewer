@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-viewer
+  namespace: media-viewer
+  labels:
+    app: media-viewer
+spec:  
+  revisionHistoryLimit: 3
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: media-viewer
+  template:
+    metadata:
+      labels:
+        app: media-viewer
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: media-viewer
+        image: ghcr.io/djryanj/media-viewer:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        securityContext:
+          runAsUser: 65534
+          runAsGroup: 65534
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true 
+          capabilities:
+            drop: ["ALL"] 
+        env:
+        - name: LOG_HEALTH_CHECKS
+          value: "false"
+        resources:
+          requests:
+            gpu.intel.com/i915: "1"
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            gpu.intel.com/i915: "1"
+            memory: "1Gi"
+        volumeMounts:
+        - name: cache
+          mountPath: /cache
+        - name: media
+          mountPath: /media
+          readOnly: true
+        - name: database
+          mountPath: /database
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: database
+        persistentVolumeClaim:
+          claimName: media-viewer-database
+      - name: cache
+        emptyDir: {}
+      - name: media
+        persistentVolumeClaim:
+          claimName: media-viewer-media
+      restartPolicy: Always
+      securityContext: 
+        fsGroup: 65534
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
