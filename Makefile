@@ -48,7 +48,7 @@ run:
 
 dev:
 	@echo "Starting Go development server with hot reload..."
-	LOG_LEVEL=debug air
+	LOG_LEVEL=debug WEBAUTHN_RP_ID=localhost WEBAUTHN_RP_DISPLAY_NAME="Media Viewer Dev" WEBAUTHN_RP_ORIGINS=http://localhost:8080 air
 
 dev-frontend:
 	@echo "Starting frontend development server with live reload..."

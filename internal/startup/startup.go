@@ -78,6 +78,12 @@ type Config struct {
 	// Feature flags based on directory availability
 	ThumbnailsEnabled  bool
 	TranscodingEnabled bool
+
+	// WebAuthn configuration
+	WebAuthnEnabled       bool
+	WebAuthnRPID          string   // Relying Party ID (domain, e.g., "media.example.com")
+	WebAuthnRPDisplayName string   // Display name shown to user
+	WebAuthnRPOrigins     []string // Allowed origins
 }
 
 // LoadConfig loads and validates configuration from environment variables
@@ -102,6 +108,9 @@ func LoadConfig() (*Config, error) {
 	logStaticFiles := getEnvBool("LOG_STATIC_FILES", false)
 	logHealthChecks := getEnvBool("LOG_HEALTH_CHECKS", true)
 	metricsEnabled := getEnvBool("METRICS_ENABLED", true)
+	webAuthnRPID := getEnv("WEBAUTHN_RP_ID", "")
+	webAuthnRPDisplayName := getEnv("WEBAUTHN_RP_DISPLAY_NAME", "Media Viewer")
+	webAuthnRPOriginsStr := getEnv("WEBAUTHN_RP_ORIGINS", "")
 
 	logging.Info("  MEDIA_DIR:               %s", mediaDir)
 	logging.Info("  CACHE_DIR:               %s", cacheDir)
@@ -117,7 +126,17 @@ func LoadConfig() (*Config, error) {
 	logging.Info("  LOG_STATIC_FILES:        %v", logStaticFiles)
 	logging.Info("  LOG_HEALTH_CHECKS:       %v", logHealthChecks)
 	logging.Info("  LOG_LEVEL:               %s", logging.GetLevel())
-
+	if webAuthnRPID != "" {
+		logging.Info("  WEBAUTHN_RP_ID:          %s", webAuthnRPID)
+		logging.Info("  WEBAUTHN_RP_DISPLAY_NAME:%s", webAuthnRPDisplayName)
+		if webAuthnRPOriginsStr != "" {
+			logging.Info("  WEBAUTHN_RP_ORIGINS:     %s", webAuthnRPOriginsStr)
+		} else {
+			logging.Info("  WEBAUTHN_RP_ORIGINS:     https://%s (default)", webAuthnRPID)
+		}
+	} else {
+		logging.Info("  WEBAUTHN_RP_ID:          (not configured)")
+	}
 	indexInterval, err := time.ParseDuration(indexIntervalStr)
 	if err != nil {
 		logging.Warn("  Invalid INDEX_INTERVAL, using default: 30m")
@@ -146,6 +165,28 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		logging.Warn("  Invalid SESSION_CLEANUP_INTERVAL, using default: 1m")
 		sessionCleanup = 1 * time.Minute
+	}
+
+	// Parse WebAuthn origins
+	var webAuthnRPOrigins []string
+	if webAuthnRPOriginsStr != "" {
+		webAuthnRPOrigins = strings.Split(webAuthnRPOriginsStr, ",")
+		for i, origin := range webAuthnRPOrigins {
+			webAuthnRPOrigins[i] = strings.TrimSpace(origin)
+		}
+	} else if webAuthnRPID != "" {
+		// Default to https://RPID
+		webAuthnRPOrigins = []string{"https://" + webAuthnRPID}
+	}
+
+	// Validate WebAuthn configuration
+	webAuthnEnabled := false
+	if webAuthnRPID != "" {
+		if len(webAuthnRPOrigins) == 0 {
+			logging.Warn("  WebAuthn RP ID set but no origins configured, WebAuthn disabled")
+		} else {
+			webAuthnEnabled = true
+		}
 	}
 
 	// Resolve paths
@@ -178,22 +219,26 @@ func LoadConfig() (*Config, error) {
 	}
 
 	config := &Config{
-		MediaDir:          mediaDir,
-		CacheDir:          cacheDir,
-		DatabaseDir:       databaseDir,
-		Port:              port,
-		MetricsPort:       metricsPort,
-		IndexInterval:     indexInterval,
-		ThumbnailInterval: thumbnailInterval,
-		PollInterval:      pollInterval,
-		SessionDuration:   sessionDuration,
-		SessionCleanup:    sessionCleanup,
-		LogStaticFiles:    logStaticFiles,
-		LogHealthChecks:   logHealthChecks,
-		MetricsEnabled:    metricsEnabled,
-		DatabasePath:      filepath.Join(databaseDir, "media.db"),
-		ThumbnailDir:      filepath.Join(cacheDir, "thumbnails"),
-		TranscodeDir:      filepath.Join(cacheDir, "transcoded"),
+		MediaDir:              mediaDir,
+		CacheDir:              cacheDir,
+		DatabaseDir:           databaseDir,
+		Port:                  port,
+		MetricsPort:           metricsPort,
+		IndexInterval:         indexInterval,
+		ThumbnailInterval:     thumbnailInterval,
+		PollInterval:          pollInterval,
+		SessionDuration:       sessionDuration,
+		SessionCleanup:        sessionCleanup,
+		LogStaticFiles:        logStaticFiles,
+		LogHealthChecks:       logHealthChecks,
+		MetricsEnabled:        metricsEnabled,
+		DatabasePath:          filepath.Join(databaseDir, "media.db"),
+		ThumbnailDir:          filepath.Join(cacheDir, "thumbnails"),
+		TranscodeDir:          filepath.Join(cacheDir, "transcoded"),
+		WebAuthnEnabled:       webAuthnEnabled,
+		WebAuthnRPID:          webAuthnRPID,
+		WebAuthnRPDisplayName: webAuthnRPDisplayName,
+		WebAuthnRPOrigins:     webAuthnRPOrigins,
 	}
 
 	// Ensure base database directory exists (required for database)
@@ -221,6 +266,7 @@ func LoadConfig() (*Config, error) {
 	logging.Info("    Thumbnails:  %s", enabledString(config.ThumbnailsEnabled))
 	logging.Info("    Transcoding: %s", enabledString(config.TranscodingEnabled))
 	logging.Info("    Metrics:     %s", enabledString(config.MetricsEnabled))
+	logging.Info("    WebAuthn:    %s", enabledString(config.WebAuthnEnabled))
 
 	return config, nil
 }
@@ -680,4 +726,52 @@ func formatBytesStartup(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// LogWebAuthnInit logs WebAuthn initialization status
+func LogWebAuthnInit(enabled bool, rpID string) {
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("WEBAUTHN INITIALIZATION")
+	logging.Info("------------------------------------------------------------")
+
+	if !enabled {
+		logging.Info("  WebAuthn/Passkeys: DISABLED")
+		logging.Info("  (Set WEBAUTHN_RP_ID to enable passkey authentication)")
+		return
+	}
+
+	logging.Info("  Relying Party ID:   %s", rpID)
+	logging.Info("  Initializing WebAuthn...")
+}
+
+// LogWebAuthnInitComplete logs successful WebAuthn initialization
+func LogWebAuthnInitComplete(credentialCount int) {
+	logging.Info("  [OK] WebAuthn initialized")
+	if credentialCount > 0 {
+		logging.Info("  Registered passkeys: %d", credentialCount)
+	} else {
+		logging.Info("  No passkeys registered yet")
+	}
+}
+
+// LogWebAuthnInitError logs WebAuthn initialization failure
+func LogWebAuthnInitError(err error) {
+	logging.Warn("  WebAuthn initialization failed: %v", err)
+	logging.Warn("  Passkey authentication will be unavailable")
+}
+
+// LogWebAuthnRegistration logs a new passkey registration
+func LogWebAuthnRegistration(name string) {
+	logging.Info("New passkey registered: %s", name)
+}
+
+// LogWebAuthnLogin logs a successful passkey authentication
+func LogWebAuthnLogin() {
+	logging.Info("User authenticated via passkey")
+}
+
+// LogWebAuthnLoginFailure logs a failed passkey authentication attempt
+func LogWebAuthnLoginFailure(reason string) {
+	logging.Warn("Passkey authentication failed: %s", reason)
 }

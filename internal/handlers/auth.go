@@ -217,6 +217,7 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 			r.URL.Path == "/login.html" ||
 			r.URL.Path == "/css/login.css" ||
 			r.URL.Path == "/js/login.js" ||
+			r.URL.Path == "/js/webauthn.js" ||
 			// Health check endpoints
 			r.URL.Path == "/health" ||
 			r.URL.Path == "/healthz" ||
