@@ -16,11 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shorter server sessions by default (configurable with `SESSION_DURATION` environment variable) which ensures that media stays private without complex PWA and frontend changes ([#73](https://github.com/djryanj/media-viewer/issues/73), [#82](https://github.com/djryanj/media-viewer/issues/82))
 - Escape key logs out from the main screen ([#73](https://github.com/djryanj/media-viewer/issues/73))
 - Navigation improvements (back button)
+- Tag copy/paste system for selection mode with clipboard support
+    - Copy tags from single selected item (`Ctrl+C`)
+    - Paste tags to selected items (`Ctrl+V`) with confirmation modal
+    - Merge tags across multiple selected items (`Ctrl+M`)
+- Smart paste destination handling excludes source item from targets
 
 ### Changed
 
 - Colorblind accessibility improvements including a subtle change to the icon design (#100)
 - Sort order button now uses distinct icons (`arrow-up-narrow-wide` / `arrow-down-wide-narrow`) for clearer visual feedback
+- Gallery tag chips now use "X | tag" layout with remove button on left (desktop)
+- Paste confirmation modal displays tags as selectable chips with Select All/None
 
 ### Fixed
 
@@ -28,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sort order icon now correctly reflects current state ([#97](https://github.com/djryanj/media-viewer/issues/97))
 - Prevented duplicate app initialization that caused redundant network requests
 - Lightbox now correctly displays tag indicator by sourcing tags from gallery and preloading for adjacent items ([#106](https://github.com/djryanj/media-viewer/issues/106))
+- Escape key now closes tag modal when input field is focused
+- Tag overflow tooltip no longer triggers search when clicking +N indicator
+- Fixed null reference error when refreshing tooltip after tag removal
+- Fixed tag chip hover expansion caused by `transition: all`
 
 ### Deprecated
 
