@@ -1735,9 +1735,9 @@ select:focus {
 
 /* Lightbox Hot Zones */
 .lightbox-hot-zone {
-    position: absolute;
-    top: 0;
-    bottom: 0;
+    position: fixed;
+    top: 60px;
+    bottom: 80px;
     width: 20%;
     min-width: 60px;
     max-width: 150px;
@@ -1749,6 +1749,14 @@ select:focus {
     transition: opacity 0.2s ease;
     z-index: 5;
     -webkit-tap-highlight-color: transparent;
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        black 15%,
+        black 85%,
+        transparent 100%
+    );
+    mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
 }
 
 .lightbox-hot-zone:hover,
@@ -2023,6 +2031,10 @@ select:focus {
 
 /* Lightbox Desktop */
 @media (min-width: 900px) {
+    .lightbox-hot-zone {
+        display: none;
+    }
+
     .lightbox-content {
         max-width: 90vw;
         max-height: 80vh;
@@ -2130,6 +2142,8 @@ select:focus {
     width: 15%;
     min-width: 50px;
     max-width: 100px;
+    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
 }
 
 .lightbox.video-mode .lightbox-tags-overlay {
@@ -2145,6 +2159,8 @@ select:focus {
 @media (hover: none) and (pointer: coarse) {
     .lightbox.video-mode .lightbox-hot-zone {
         bottom: 50%;
+        -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+        mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
     }
 }
 
