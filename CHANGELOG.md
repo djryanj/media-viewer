@@ -100,6 +100,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Helps diagnose "disk I/O error: read-only file system" errors in Kubernetes deployments
     - Critical for containers using `readOnlyRootFilesystem: true` with persistent volume mounts
 
+- **Lightbox Hotzone Positioning** - Fixed mobile navigation hotzones to work correctly regardless of image size
+    - Changed hotzones from `position: absolute` to `position: fixed` so they extend to screen edges even when images are narrower than viewport
+    - Added vertical spacing (`top: 60px`, `bottom: 80px`) to prevent blocking close button and info bar
+    - Hide hotzones on desktop (≥900px) where dedicated prev/next buttons are used
+    - Added gradient masks for smooth fade-out at top and bottom edges of all hotzones
+    - Enhanced video mode hotzones with additional vertical gradient masks for polished appearance near video controls
+
 ### Performance
 
 - **Optimized Thumbnail Memory Usage with libvips** - Integrated libvips for true decode-time downsampling
