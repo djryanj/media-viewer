@@ -218,9 +218,9 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	if !columnExists {
 		logging.Info("Migrating database: adding content_updated_at column to files table")
 
-		// Add the column with default value from updated_at
+		// Add the column with a simple default (SQLite doesn't allow expressions in ALTER TABLE ADD COLUMN DEFAULT)
 		_, err = d.db.ExecContext(ctx, `
-			ALTER TABLE files ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+			ALTER TABLE files ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT 0
 		`)
 		if err != nil {
 			return fmt.Errorf("failed to add content_updated_at column: %w", err)
@@ -228,7 +228,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 
 		// Initialize content_updated_at from updated_at for existing records
 		_, err = d.db.ExecContext(ctx, `
-			UPDATE files SET content_updated_at = updated_at WHERE content_updated_at IS NULL OR content_updated_at = 0
+			UPDATE files SET content_updated_at = updated_at
 		`)
 		if err != nil {
 			return fmt.Errorf("failed to initialize content_updated_at values: %w", err)
