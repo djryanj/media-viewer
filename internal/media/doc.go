@@ -4,9 +4,12 @@
 // # Thumbnail Generation
 //
 // The [ThumbnailGenerator] creates and caches thumbnail images for media files:
-//   - Images: Resized using the imaging library with auto-orientation
+//   - Images: Resized using libvips (preferred) or imaging library with auto-orientation
 //   - Videos: Frame extraction at 1 second using FFmpeg
 //   - Folders: Composite grid of up to 4 contained images/videos
+//
+// For JPEG images, libvips provides decode-time shrinking which dramatically
+// reduces memory usage by never loading the full-resolution image into memory.
 //
 // Thumbnails are cached to disk with MD5-hashed filenames. Each thumbnail
 // has an associated .meta sidecar file tracking the source path for orphan
@@ -23,11 +26,33 @@
 //
 // # Memory Management
 //
-// Large image processing is memory-constrained to prevent OOM:
-//   - Images exceeding [MaxImageDimension] (4096px) are downscaled
-//   - Images exceeding [MaxImagePixels] (20MP) are downscaled
-//   - Memory monitor integration pauses processing under pressure
-//   - Worker count is reduced when memory usage is high
+// The thumbnail generator uses multiple strategies for memory-efficient processing:
+//
+//  1. libvips Integration (Primary - All Supported Formats):
+//     - Decode-time shrinking: decodes directly to target resolution
+//     - Never loads full-size image into memory
+//     - Example: 6000×4000 JPEG → 1600×1600 uses ~10MB peak (vs ~106MB standard)
+//     - Supports: JPEG, PNG, WebP, HEIF/HEIC, GIF, TIFF, SVG, PDF, JP2K, JXL, and more
+//     - Gracefully falls back if libvips unavailable or fails for specific formats
+//
+//  2. Two-Stage Resize (Fallback - Large JPEG files):
+//     - Stage 1: Fast box filter resize to 2× target (reduces memory quickly)
+//     - Explicit GC between stages to reclaim large image memory
+//     - Stage 2: High-quality Lanczos resize to final dimensions
+//     - Used when libvips unavailable and JPEG image >4× target size
+//
+//  3. Standard Processing (Final Fallback - All formats):
+//     - Images exceeding [MaxImageDimension] (1600px) are downscaled
+//     - Images exceeding [MaxImagePixels] (2.56MP) are downscaled
+//     - Constrained loading prevents OOM on very large images
+//
+//  4. System-Wide Controls:
+//     - Memory monitor integration pauses processing under pressure
+//     - Worker count is reduced when memory usage is high
+//     - Explicit GC calls after processing large images
+//
+// The multi-tier approach ensures optimal memory usage with graceful degradation
+// across different environments (production with libvips, development without).
 //
 // # FFmpeg Integration
 //
@@ -48,13 +73,15 @@
 //
 // Thumbnail operations are instrumented with Prometheus metrics:
 //   - Generation counts by file type and status
-//   - Generation duration histograms
+//   - Generation duration histograms (overall and per-phase)
+//   - Memory usage per thumbnail operation
 //   - Cache hit/miss rates
 //   - Cache size and count
 //   - Background generation progress
 //
 // # Example Usage
 //
+//	// Initialize thumbnail generator (automatically initializes libvips if available)
 //	thumbGen := media.NewThumbnailGenerator(
 //	    "/cache/thumbnails",
 //	    "/media",
@@ -64,7 +91,7 @@
 //	    memMonitor,
 //	)
 //	thumbGen.Start()
-//	defer thumbGen.Stop()
+//	defer thumbGen.Stop() // Cleans up libvips resources
 //
 //	// Get or generate a thumbnail
 //	data, err := thumbGen.GetThumbnail(ctx, "/media/photo.jpg", database.FileTypeImage)
@@ -76,4 +103,9 @@
 //	thumbGen.InvalidateThumbnail("/media/photo.jpg")
 //	thumbGen.InvalidateAll()
 //	thumbGen.RebuildAll()
+//
+//	// Check if libvips is available
+//	if media.IsVipsAvailable() {
+//	    // Using optimized decode-time shrinking for JPEGs
+//	}
 package media

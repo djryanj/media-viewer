@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -24,6 +26,7 @@ type Database struct {
 	mu      sync.RWMutex
 	stats   IndexStats
 	statsMu sync.RWMutex
+	txStart time.Time // Track transaction start time for metrics
 }
 
 // New creates a new Database instance.
@@ -32,6 +35,11 @@ type Database struct {
 // Use startup.LoadConfig() to ensure proper directory validation before calling this.
 func New(dbPath string) (*Database, error) {
 	logging.Info("Database path: %s", dbPath)
+
+	// Diagnose potential permission issues
+	if err := diagnoseDatabasePermissions(dbPath); err != nil {
+		logging.Warn("Database permission diagnostics: %v", err)
+	}
 
 	// Use WAL mode and other optimizations
 	// busy_timeout helps prevent "database is locked" errors
@@ -87,7 +95,8 @@ func (d *Database) initialize() error {
 		mime_type TEXT,
 		file_hash TEXT,
 		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		content_updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path);
@@ -183,6 +192,51 @@ func (d *Database) initialize() error {
 	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, schema)
+	if err != nil {
+		return err
+	}
+
+	// Run migrations
+	return d.runMigrations(ctx)
+}
+
+// runMigrations applies database schema migrations
+func (d *Database) runMigrations(ctx context.Context) error {
+	// Migration 1: Add content_updated_at column if it doesn't exist
+	// Check if the column exists
+	var columnExists bool
+	err := d.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('files')
+		WHERE name='content_updated_at'
+	`).Scan(&columnExists)
+
+	if err != nil {
+		return fmt.Errorf("failed to check for content_updated_at column: %w", err)
+	}
+
+	if !columnExists {
+		logging.Info("Migrating database: adding content_updated_at column to files table")
+
+		// Add the column with default value from updated_at
+		_, err = d.db.ExecContext(ctx, `
+			ALTER TABLE files ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add content_updated_at column: %w", err)
+		}
+
+		// Initialize content_updated_at from updated_at for existing records
+		_, err = d.db.ExecContext(ctx, `
+			UPDATE files SET content_updated_at = updated_at WHERE content_updated_at IS NULL OR content_updated_at = 0
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to initialize content_updated_at values: %w", err)
+		}
+
+		logging.Info("Migration complete: content_updated_at column added and initialized")
+	}
+
 	return err
 }
 
@@ -196,6 +250,7 @@ func (d *Database) Close() error {
 // Note: This acquires an exclusive lock that is held until EndBatch is called.
 func (d *Database) BeginBatch() (*sql.Tx, error) {
 	d.mu.Lock()
+	d.txStart = time.Now() // Record transaction start time
 
 	// Use background context - transaction lifetime is managed by EndBatch, not a timeout.
 	// The timeout context pattern doesn't work here because defer cancel() would
@@ -211,22 +266,33 @@ func (d *Database) BeginBatch() (*sql.Tx, error) {
 // EndBatch commits or rolls back a transaction and releases the lock.
 func (d *Database) EndBatch(tx *sql.Tx, err error) error {
 	defer d.mu.Unlock()
+
+	// Record transaction duration
+	duration := time.Since(d.txStart).Seconds()
+
 	if err != nil {
+		metrics.DBTransactionDuration.WithLabelValues("rollback").Observe(duration)
 		rbErr := tx.Rollback()
 		if rbErr != nil {
 			return errors.Join(err, fmt.Errorf("rollback also failed: %w", rbErr))
 		}
 		return err
 	}
+
+	metrics.DBTransactionDuration.WithLabelValues("commit").Observe(duration)
 	return tx.Commit()
 }
 
 // UpsertFile inserts or updates a file record within a transaction.
 // The transaction's context controls the operation timeout.
 func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
+	// IMPORTANT: We maintain two timestamps:
+	// - updated_at: Always set to 'now' when indexer touches the file (for cleanup logic)
+	// - content_updated_at: Only updated when file content actually changes (for thumbnail invalidation)
+	// This allows the indexer to track "last seen" while thumbnail generator tracks "last changed".
 	query := `
-	INSERT INTO files (name, path, parent_path, type, size, mod_time, mime_type, file_hash, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+	INSERT INTO files (name, path, parent_path, type, size, mod_time, mime_type, file_hash, updated_at, content_updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
 	ON CONFLICT(path) DO UPDATE SET
 		name = excluded.name,
 		type = excluded.type,
@@ -234,12 +300,20 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 		mod_time = excluded.mod_time,
 		mime_type = excluded.mime_type,
 		file_hash = excluded.file_hash,
-		updated_at = strftime('%s', 'now')
+		updated_at = strftime('%s', 'now'),
+		content_updated_at = CASE
+			WHEN files.size != excluded.size
+			  OR files.mod_time != excluded.mod_time
+			  OR files.type != excluded.type
+			  OR COALESCE(files.file_hash, '') != COALESCE(excluded.file_hash, '')
+			THEN strftime('%s', 'now')
+			ELSE COALESCE(files.content_updated_at, strftime('%s', 'now'))
+		END
 	`
 
 	// Use background context since we're within a transaction.
 	// The transaction itself controls the operation's lifecycle.
-	_, err := tx.ExecContext(context.Background(), query,
+	result, err := tx.ExecContext(context.Background(), query,
 		file.Name,
 		file.Path,
 		file.ParentPath,
@@ -249,6 +323,11 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 		file.MimeType,
 		file.FileHash,
 	)
+	if err == nil {
+		if rows, _ := result.RowsAffected(); rows > 0 {
+			metrics.DBRowsAffected.WithLabelValues("upsert_file").Observe(float64(rows))
+		}
+	}
 	return err
 }
 
@@ -263,7 +342,12 @@ func (d *Database) DeleteMissingFiles(tx *sql.Tx, cutoffTime time.Time) (int64, 
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+
+	rowsAffected, err := result.RowsAffected()
+	if err == nil && rowsAffected > 0 {
+		metrics.DBRowsAffected.WithLabelValues("delete_files").Observe(float64(rowsAffected))
+	}
+	return rowsAffected, err
 }
 
 // GetFileByPath retrieves a single file by path.
@@ -355,4 +439,65 @@ func recordQuery(operation string, start time.Time, err error) {
 func (d *Database) UpdateDBMetrics() {
 	stats := d.db.Stats()
 	metrics.DBConnectionsOpen.Set(float64(stats.OpenConnections))
+}
+
+// diagnoseDatabasePermissions checks database directory and file permissions
+func diagnoseDatabasePermissions(dbPath string) error {
+	dir := filepath.Dir(dbPath)
+
+	// Check directory permissions
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("cannot stat database directory: %w", err)
+	}
+
+	logging.Debug("Database directory: %s (mode: %v)", dir, dirInfo.Mode())
+
+	// Check if directory is writable by testing
+	testFile := filepath.Join(dir, ".perm-test")
+	if err := os.WriteFile(testFile, []byte("test"), 0o600); err != nil {
+		return fmt.Errorf("database directory not writable: %w", err)
+	}
+	_ = os.Remove(testFile) // Explicitly ignore cleanup error
+	logging.Debug("Database directory is writable")
+
+	// Check main database file
+	if dbInfo, err := os.Stat(dbPath); err == nil {
+		logging.Debug("Database file exists: %s (mode: %v, size: %d bytes)", dbPath, dbInfo.Mode(), dbInfo.Size())
+		if dbInfo.Mode().Perm()&0o200 == 0 {
+			logging.Warn("Database file is read-only! Mode: %v", dbInfo.Mode())
+		}
+	}
+
+	// Check WAL file
+	walPath := dbPath + "-wal"
+	if walInfo, err := os.Stat(walPath); err == nil {
+		logging.Debug("WAL file exists: %s (mode: %v, size: %d bytes)", walPath, walInfo.Mode(), walInfo.Size())
+		if walInfo.Mode().Perm()&0o200 == 0 {
+			logging.Warn("WAL file is read-only! Mode: %v - this will cause write failures", walInfo.Mode())
+			// Try to fix it
+			if chmodErr := os.Chmod(walPath, 0o600); chmodErr != nil {
+				logging.Error("Failed to fix WAL file permissions: %v", chmodErr)
+			} else {
+				logging.Info("Fixed WAL file permissions")
+			}
+		}
+	}
+
+	// Check SHM file
+	shmPath := dbPath + "-shm"
+	if shmInfo, err := os.Stat(shmPath); err == nil {
+		logging.Debug("SHM file exists: %s (mode: %v, size: %d bytes)", shmPath, shmInfo.Mode(), shmInfo.Size())
+		if shmInfo.Mode().Perm()&0o200 == 0 {
+			logging.Warn("SHM file is read-only! Mode: %v - this will cause write failures", shmInfo.Mode())
+			// Try to fix it
+			if chmodErr := os.Chmod(shmPath, 0o600); chmodErr != nil {
+				logging.Error("Failed to fix SHM file permissions: %v", chmodErr)
+			} else {
+				logging.Info("Fixed SHM file permissions")
+			}
+		}
+	}
+
+	return nil
 }

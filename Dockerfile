@@ -23,12 +23,13 @@ RUN apk add --no-cache \
     make \
     git
 
-# Install target platform dependencies
+# Install target platform dependencies including libvips
 RUN xx-apk add --no-cache \
     gcc \
     g++ \
     musl-dev \
-    sqlite-dev
+    sqlite-dev \
+    vips-dev
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
@@ -38,6 +39,7 @@ RUN go mod download
 COPY . .
 
 # Build the main application using xx-clang
+# Note: libvips requires dynamic linking, so we can't use -static
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=1 \
@@ -46,13 +48,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CC="xx-clang" \
     CXX="xx-clang++" \
     go build \
-    -tags 'fts5 netgo osusergo' \
-    -ldflags "-s -w -extldflags '-static' \
+    -tags 'fts5' \
+    -ldflags "-s -w \
     -X 'media-viewer/internal/startup.Version=${VERSION}' \
     -X 'media-viewer/internal/startup.Commit=${COMMIT}' \
     -X 'media-viewer/internal/startup.BuildTime=${BUILD_TIME}'" \
-    -a -o media-viewer . && \
-    xx-verify --static media-viewer
+    -o media-viewer ./cmd/media-viewer
 
 # Build password reset tool
 RUN --mount=type=cache,target=/root/.cache/go-build \
@@ -63,13 +64,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CC="xx-clang" \
     CXX="xx-clang++" \
     go build \
-    -tags 'fts5 netgo osusergo' \
-    -ldflags "-s -w -extldflags '-static' \
+    -tags 'fts5' \
+    -ldflags "-s -w \
     -X 'media-viewer/internal/startup.Version=${VERSION}' \
     -X 'media-viewer/internal/startup.Commit=${COMMIT}' \
     -X 'media-viewer/internal/startup.BuildTime=${BUILD_TIME}'" \
-    -a -o resetpw ./cmd/resetpw && \
-    xx-verify --static resetpw
+    -o resetpw ./cmd/resetpw
 
 # Runtime stage
 FROM alpine:3.23
@@ -80,6 +80,7 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     sqlite \
+    vips \
     && rm -rf /var/cache/apk/*
 
 # Create directories with proper permissions

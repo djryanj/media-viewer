@@ -184,8 +184,7 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logging.Debug("Thumbnail: generating for %s (type: %s)", filePath, file.Type)
-
+	// Generate or retrieve cached thumbnail
 	thumb, err := h.thumbGen.GetThumbnail(ctx, fullPath, file.Type)
 	if err != nil {
 		logging.Error("Thumbnail: generation failed for %s: %v", filePath, err)
@@ -193,7 +192,13 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set content type based on file type
+	// Calculate ETag first (needed for conditional request check)
+	etag := fmt.Sprintf(`"%x"`, md5.Sum(thumb)) //nolint:gosec // MD5 used for cache key generation, not security
+
+	// Set headers that apply to both 200 and 304 responses
+	// These must be set before writing status code
+
+	// Content type
 	if file.Type == database.FileTypeFolder {
 		w.Header().Set("Content-Type", "image/png")
 	} else {
@@ -209,16 +214,20 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 	}
 
-	// Add ETag for conditional requests
-	etag := fmt.Sprintf(`"%x"`, md5.Sum(thumb)) //nolint:gosec // MD5 used for cache key generation, not security
+	// ETag for conditional requests
 	w.Header().Set("ETag", etag)
 
-	logging.Debug("Thumbnail: success for %s (%d bytes)", filePath, len(thumb))
-
-	// Check If-None-Match header
-	if match := r.Header.Get("If-None-Match"); match == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
+	// Check If-None-Match header for 304 Not Modified
+	clientETag := r.Header.Get("If-None-Match")
+	if clientETag != "" {
+		if clientETag == etag {
+			logging.Debug("Thumbnail: 304 Not Modified for %s (ETag match: %s)", filePath, etag)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		logging.Debug("Thumbnail: ETag mismatch for %s (client: %s, server: %s)", filePath, clientETag, etag)
+	} else {
+		logging.Debug("Thumbnail: serving %s (%d bytes, ETag: %s, no If-None-Match from client)", filePath, len(thumb), etag)
 	}
 
 	if _, err := w.Write(thumb); err != nil {

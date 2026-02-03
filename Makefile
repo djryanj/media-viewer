@@ -30,7 +30,7 @@ all: build
 
 build:
 	@echo "Building with FTS5 support..."
-	$(GO_BUILD) -ldflags "$(LDFLAGS)" -o media-viewer .
+	$(GO_BUILD) -ldflags "$(LDFLAGS)" -o media-viewer ./cmd/media-viewer
 
 build-all: build resetpw
 
@@ -44,11 +44,16 @@ resetpw:
 
 run:
 	@echo "Running with FTS5 support..."
-	$(GO_RUN) .
+	$(GO_RUN) ./cmd/media-viewer
 
 dev:
 	@echo "Starting Go development server with hot reload..."
-	LOG_LEVEL=debug WEBAUTHN_RP_ID=localhost WEBAUTHN_RP_DISPLAY_NAME="Media Viewer Dev" WEBAUTHN_RP_ORIGINS=http://localhost:8080 air
+	LOG_LEVEL=debug WEBAUTHN_RP_ID=localhost \
+	WEBAUTHN_RP_DISPLAY_NAME="Media Viewer Dev" \
+	WEBAUTHN_RP_ORIGINS=http://localhost:8080 \
+	INDEX_INTERVAL=2m \
+	THUMBNAIL_INTERVAL=4m \
+	air
 
 dev-frontend:
 	@echo "Starting frontend development server with live reload..."

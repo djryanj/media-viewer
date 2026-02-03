@@ -2,7 +2,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -tags 'fts5' -o ./tmp/main ."
+  cmd = "go build -tags 'fts5' -o ./tmp/main ./cmd/media-viewer"
   entrypoint = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
   exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules"]

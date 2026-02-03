@@ -1199,10 +1199,13 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 	logging.Debug("GetFilesUpdatedSince: original since=%v, adjusted since=%v (buffer: -10s), timestamp=%d",
 		since.Format(time.RFC3339), adjustedSince.Format(time.RFC3339), sinceTimestamp)
 
+	// IMPORTANT: This query filters by content_updated_at (when the file content actually changed),
+	// NOT by updated_at (when indexer last saw it) or mod_time (filesystem modification time).
+	// This is correct for incremental thumbnail generation - only regenerate when content changes.
 	query := `
-		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type, content_updated_at
 		FROM files
-		WHERE type IN (?, ?, ?) AND updated_at > ?
+		WHERE type IN (?, ?, ?) AND COALESCE(content_updated_at, updated_at) > ?
 		ORDER BY path
 	`
 
@@ -1216,19 +1219,46 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 		}
 	}()
 
-	files, err := d.scanMediaFiles(rows)
-	if err != nil {
-		return nil, err
+	var files []MediaFile
+	for rows.Next() {
+		var file MediaFile
+		var modTime int64
+		var contentUpdatedAt int64
+		var mimeType sql.NullString
+
+		err = rows.Scan(&file.ID, &file.Name, &file.Path, &file.ParentPath, &file.Type, &file.Size, &modTime, &mimeType, &contentUpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan file: %w", err)
+		}
+
+		file.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			file.MimeType = mimeType.String
+		}
+
+		// Log detailed info about each file found for debugging clock skew
+		dbContentUpdatedAt := time.Unix(contentUpdatedAt, 0)
+		fsToDBDelta := dbContentUpdatedAt.Sub(file.ModTime)
+		dbToAdjustedSinceDelta := dbContentUpdatedAt.Sub(adjustedSince)
+		dbToOriginalSinceDelta := dbContentUpdatedAt.Sub(since)
+
+		// Validate the filter logic: content_updated_at should be > adjustedSince
+		if contentUpdatedAt <= sinceTimestamp {
+			logging.Warn("LOGIC ERROR: File %s returned but content_updated_at=%d <= adjustedSinceTimestamp=%d",
+				file.Path, contentUpdatedAt, sinceTimestamp)
+		}
+
+		logging.Debug("  Found updated file: path=%s, fs_mod_time=%v, db_content_updated_at=%v, fs_to_db_delta=%v, db_to_adjusted_since_delta=%v, db_to_original_since_delta=%v, passes_filter=%v",
+			file.Path, file.ModTime.Format(time.RFC3339), dbContentUpdatedAt.Format(time.RFC3339), fsToDBDelta, dbToAdjustedSinceDelta, dbToOriginalSinceDelta, contentUpdatedAt > sinceTimestamp)
+
+		files = append(files, file)
 	}
 
-	// Log detailed info about each file found for debugging clock skew
-	for _, file := range files {
-		delta := file.ModTime.Sub(since)
-		logging.Debug("  Found updated file: path=%s, mod_time=%v, db_timestamp=%d, delta_from_original_since=%v",
-			file.Path, file.ModTime.Format(time.RFC3339), file.ModTime.Unix(), delta)
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate files: %w", err)
 	}
 
-	logging.Debug("GetFilesUpdatedSince: found %d files updated since %v", len(files), since.Format(time.RFC3339))
+	logging.Debug("GetFilesUpdatedSince: found %d files updated since %v (filter: content_updated_at > %d)", len(files), since.Format(time.RFC3339), sinceTimestamp)
 	return files, nil
 }
 
@@ -1252,15 +1282,15 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 	logging.Debug("GetFoldersWithUpdatedContents: original since=%v, adjusted since=%v (buffer: -10s), timestamp=%d",
 		since.Format(time.RFC3339), adjustedSince.Format(time.RFC3339), sinceTimestamp)
 
-	// Find all unique parent paths of files that have been updated
+	// Find all unique parent paths of files that have been updated (content changed)
 	// Then get the folder records for those paths
 	query := `
 		WITH RECURSIVE
 		updated_parents AS (
-			-- Get immediate parent paths of updated files
+			-- Get immediate parent paths of files whose content was updated
 			SELECT DISTINCT parent_path as path
 			FROM files
-			WHERE updated_at > ? AND parent_path != ''
+			WHERE COALESCE(content_updated_at, updated_at) > ? AND parent_path != ''
 
 			UNION
 

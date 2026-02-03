@@ -334,10 +334,19 @@ func LogTranscoderInit(enabled bool) {
 
 // LogThumbnailInit logs thumbnail generator initialization
 func LogThumbnailInit(enabled bool) {
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("THUMBNAIL GENERATOR INITIALIZATION")
+	logging.Info("------------------------------------------------------------")
+
 	if !enabled {
-		logging.Info("  Thumbnails disabled (cache directory not writable)")
-		logging.Info("  Default icons will be shown instead")
+		logging.Warn("  Thumbnails disabled (cache directory not writable)")
+		logging.Warn("  Default icons will be shown instead")
+		return
 	}
+
+	logging.Info("  Initializing thumbnail generator...")
+	logging.Info("  libvips will be initialized for memory-efficient image processing")
 }
 
 // LogIndexerInit logs indexer initialization
