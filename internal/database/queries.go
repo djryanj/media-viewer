@@ -1188,6 +1188,17 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	// Subtract 10 seconds from the 'since' time to provide a buffer
+	// This accounts for:
+	// - NFS/container clock skew
+	// - Filesystem timestamp precision
+	// - Race conditions during indexing
+	adjustedSince := since.Add(-10 * time.Second)
+	sinceTimestamp := adjustedSince.Unix()
+
+	logging.Debug("GetFilesUpdatedSince: original since=%v, adjusted since=%v (buffer: -10s), timestamp=%d",
+		since.Format(time.RFC3339), adjustedSince.Format(time.RFC3339), sinceTimestamp)
+
 	query := `
 		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
 		FROM files
@@ -1195,7 +1206,7 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 		ORDER BY path
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, FileTypeImage, FileTypeVideo, FileTypeFolder, since.Unix())
+	rows, err := d.db.QueryContext(ctx, query, FileTypeImage, FileTypeVideo, FileTypeFolder, sinceTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query updated files: %w", err)
 	}
@@ -1205,7 +1216,20 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 		}
 	}()
 
-	return d.scanMediaFiles(rows)
+	files, err := d.scanMediaFiles(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	// Log detailed info about each file found for debugging clock skew
+	for _, file := range files {
+		delta := file.ModTime.Sub(since)
+		logging.Debug("  Found updated file: path=%s, mod_time=%v, db_timestamp=%d, delta_from_original_since=%v",
+			file.Path, file.ModTime.Format(time.RFC3339), file.ModTime.Unix(), delta)
+	}
+
+	logging.Debug("GetFilesUpdatedSince: found %d files updated since %v", len(files), since.Format(time.RFC3339))
+	return files, nil
 }
 
 // GetFoldersWithUpdatedContents returns folders that contain files updated after the given timestamp.
@@ -1220,6 +1244,13 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+
+	// Subtract 10 seconds buffer for clock skew
+	adjustedSince := since.Add(-10 * time.Second)
+	sinceTimestamp := adjustedSince.Unix()
+
+	logging.Debug("GetFoldersWithUpdatedContents: original since=%v, adjusted since=%v (buffer: -10s), timestamp=%d",
+		since.Format(time.RFC3339), adjustedSince.Format(time.RFC3339), sinceTimestamp)
 
 	// Find all unique parent paths of files that have been updated
 	// Then get the folder records for those paths
@@ -1250,7 +1281,7 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 		ORDER BY LENGTH(f.path) DESC, f.path
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, since.Unix(), FileTypeFolder)
+	rows, err := d.db.QueryContext(ctx, query, sinceTimestamp, FileTypeFolder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query folders with updated contents: %w", err)
 	}
@@ -1260,7 +1291,19 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 		}
 	}()
 
-	return d.scanMediaFiles(rows)
+	folders, err := d.scanMediaFiles(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	// Log detailed info about each folder found for debugging
+	for _, folder := range folders {
+		logging.Debug("  Found folder with updated contents: path=%s, folder_mod_time=%v, db_timestamp=%d",
+			folder.Path, folder.ModTime.Format(time.RFC3339), folder.ModTime.Unix())
+	}
+
+	logging.Debug("GetFoldersWithUpdatedContents: found %d folders with updated contents since %v", len(folders), since.Format(time.RFC3339))
+	return folders, nil
 }
 
 // GetAllIndexedPaths returns all file paths currently in the index.

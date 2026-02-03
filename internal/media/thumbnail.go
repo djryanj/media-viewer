@@ -1029,7 +1029,10 @@ func (t *ThumbnailGenerator) runGeneration(incremental bool) {
 	var folders []database.MediaFile
 
 	if incremental {
-		logging.Info("Running incremental thumbnail generation (changes since %v)", lastRun)
+		now := time.Now()
+		logging.Info("Running incremental thumbnail generation (changes since %v)", lastRun.Format(time.RFC3339))
+		logging.Debug("Incremental generation: lastRun=%v, age=%v, now=%v",
+			lastRun.Format(time.RFC3339), now.Sub(lastRun), now.Format(time.RFC3339))
 
 		files, err = t.db.GetFilesUpdatedSince(ctx, lastRun)
 		if err != nil {

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [Unreleased]
+## [v0.6.1]
 
 ### Added
 
@@ -82,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Passkey section only appears when passkeys are actually registered (not just WebAuthn enabled)
     - Prevents auto-prompt spam when no passkeys exist
     - Proper cleanup of Conditional UI when user cancels or fails authentication
+- Added a time skew to allow for NFS clock differences to prevent thumbnail generator running every time ([#117](https://github.com/djryanj/media-viewer/issues/117))
 
 ### Security
 
@@ -111,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 WebAuthn requires a secure context. For development:
 
 **Local Testing (Simplest):**
+
 ```bash
 export WEBAUTHN_ENABLED=true
 export WEBAUTHN_RP_ID=localhost
@@ -119,6 +121,7 @@ make dev
 ```
 
 **Mobile Testing with ngrok (Recommended):**
+
 ```bash
 # Terminal 1: Start dev server
 make dev
