@@ -1,0 +1,29 @@
+/* Custom styles for Media Viewer documentation */
+
+:root {
+    --md-primary-fg-color: #e94560;
+    --md-primary-fg-color--light: #ff6b6b;
+    --md-primary-fg-color--dark: #c73e54;
+    --md-accent-fg-color: #e94560;
+}
+
+[data-md-color-scheme='slate'] {
+    --md-default-bg-color: #1a1a2e;
+    --md-default-fg-color: #eaeaea;
+}
+
+/* Keyboard key styling */
+kbd {
+    background-color: var(--md-code-bg-color);
+    border: 1px solid var(--md-default-fg-color--lighter);
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+    font-size: 0.85em;
+}
+
+/* Screenshot styling */
+.screenshot {
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    margin: 1em 0;
+}
