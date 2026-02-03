@@ -9,7 +9,8 @@ DIST_DIR := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 STATIC_DIR := static
 
-.PHONY: all build build-all run dev dev-frontend dev-full test clean \
+.PHONY: all build build-all run dev dev-frontend dev-full \
+        test test-short test-coverage test-coverage-report test-race test-bench test-clean \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fix \
         frontend-format frontend-format-check frontend-check frontend-dev \
@@ -75,11 +76,32 @@ test:
 	@echo "Running tests..."
 	$(GO_TEST) -v ./...
 
+test-short:
+	@echo "Running tests (short mode)..."
+	$(GO_TEST) -short -v ./...
+
 test-coverage:
 	@echo "Running tests with coverage..."
 	$(GO_TEST) -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+test-coverage-report:
+	@echo "Generating coverage report..."
+	go tool cover -func=coverage.out
+
+test-race:
+	@echo "Running tests with race detector..."
+	$(GO_TEST) -race -v ./...
+
+test-bench:
+	@echo "Running benchmarks..."
+	$(GO_TEST) -bench=. -benchmem ./...
+
+test-clean:
+	@echo "Cleaning test artifacts..."
+	rm -f coverage.out coverage.html
+	go clean -testcache
 
 # =============================================================================
 # Lint Targets (Go)
