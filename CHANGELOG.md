@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.7.1] - February 3, 2026
+
+### Fixed
+
+- **Database Migration Error** - Fixed SQLite error when migrating to add `content_updated_at` column
+    - SQLite's `ALTER TABLE ADD COLUMN` doesn't support expressions in DEFAULT clause
+    - Changed from `DEFAULT (strftime('%s', 'now'))` to `DEFAULT 0` with immediate UPDATE
+    - Migration now succeeds on existing databases without "Cannot add a column with non-constant default" error
+
 ## [0.7.0] - February 3, 2026
 
 ### Added
