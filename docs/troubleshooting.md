@@ -72,6 +72,7 @@ Solutions to common issues with Media Viewer.
 2. Check network connection speed
 3. Thumbnails generate on first view; subsequent loads are faster
 4. Consider increasing server resources
+5. Use [Prometheus metrics](admin/metrics.md) to identify bottlenecks
 
 ### High Memory Usage
 
@@ -80,8 +81,23 @@ Solutions to common issues with Media Viewer.
 **Solutions:**
 
 1. Very large libraries require more memory for indexing
-2. Set memory limits in Docker configuration
-3. Restart the container to clear memory
+2. Set memory limits in Docker configuration (`GOMEMLIMIT` environment variable)
+3. Monitor memory metrics: `media_viewer_memory_usage_ratio` and `media_viewer_go_memalloc_bytes`
+4. Restart the container to clear memory
+5. See [Metrics & Monitoring](admin/metrics.md) for memory tuning guidance
+
+### Slow Indexing
+
+**Symptoms:** Media indexing takes a very long time, especially on NFS.
+
+**Solutions:**
+
+1. Monitor filesystem latency metrics: `media_viewer_filesystem_operation_duration_seconds`
+2. Check NFS mount performance with `nfsstat` or `nfsiostat`
+3. Review indexer metrics: `media_viewer_indexer_files_per_second` and `media_viewer_indexer_batch_duration_seconds`
+4. For NFS, ensure `async` mount option is used for better performance
+5. Consider local caching layer for metadata-heavy operations
+6. See [Metrics & Monitoring](admin/metrics.md) for indexing performance analysis
 
 ### Video Playback Issues
 

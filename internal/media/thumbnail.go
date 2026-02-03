@@ -96,18 +96,20 @@ type thumbnailResult struct {
 
 // GenerationStats tracks thumbnail generation progress
 type GenerationStats struct {
-	InProgress     bool      `json:"inProgress"`
-	StartedAt      time.Time `json:"startedAt,omitempty"`
-	LastCompleted  time.Time `json:"lastCompleted,omitempty"`
-	TotalFiles     int       `json:"totalFiles"`
-	Processed      int       `json:"processed"`
-	Generated      int       `json:"generated"`
-	Skipped        int       `json:"skipped"`
-	Failed         int       `json:"failed"`
-	OrphansRemoved int       `json:"orphansRemoved"`
-	FoldersUpdated int       `json:"foldersUpdated"`
-	CurrentFile    string    `json:"currentFile,omitempty"`
-	IsIncremental  bool      `json:"isIncremental"`
+	InProgress         bool      `json:"inProgress"`
+	StartedAt          time.Time `json:"startedAt,omitempty"`
+	LastCompleted      time.Time `json:"lastCompleted,omitempty"`
+	TotalFiles         int       `json:"totalFiles"`
+	Processed          int       `json:"processed"`
+	Generated          int       `json:"generated"`
+	Skipped            int       `json:"skipped"`
+	Failed             int       `json:"failed"`
+	OrphansRemoved     int       `json:"orphansRemoved"`
+	FoldersUpdated     int       `json:"foldersUpdated"`
+	CurrentFile        string    `json:"currentFile,omitempty"`
+	IsIncremental      bool      `json:"isIncremental"`
+	TotalMemoryUsed    uint64    `json:"-"` // Not exposed in JSON, internal tracking
+	MemoryTrackedCount int       `json:"-"` // Count of images where memory was tracked
 }
 
 // ThumbnailStatus represents the current thumbnail system status
@@ -133,6 +135,11 @@ func NewThumbnailGenerator(cacheDir, mediaDir string, enabled bool, db *database
 		logging.Debug("ThumbnailGenerator: enabled, cache dir: %s", cacheDir)
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 			logging.Warn("ThumbnailGenerator: failed to create cache dir: %v", err)
+		}
+
+		// Initialize libvips for memory-efficient image processing
+		if err := InitVips(); err != nil {
+			logging.Warn("Failed to initialize libvips: %v (will use fallback methods)", err)
 		}
 	} else {
 		logging.Debug("ThumbnailGenerator: disabled")
@@ -245,7 +252,9 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 	cachePath := filepath.Join(t.cacheDir, cacheKey)
 
 	// Check cache first
+	cacheReadStart := time.Now()
 	if data, err := os.ReadFile(cachePath); err == nil {
+		metrics.ThumbnailCacheReadLatency.Observe(time.Since(cacheReadStart).Seconds())
 		metrics.ThumbnailCacheHits.Inc()
 		return data, nil
 	}
@@ -267,9 +276,15 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 
 	logging.Debug("Thumbnail generating: %s (type: %s)", filePath, fileType)
 
+	// Track memory before generation
+	var memBefore runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+
 	var img image.Image
 	var err error
 
+	// Decode phase with timing
+	decodeStart := time.Now()
 	switch fileType {
 	case database.FileTypeImage:
 		img, err = t.generateImageThumbnail(ctx, filePath)
@@ -281,6 +296,7 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_unsupported").Inc()
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}
+	metrics.ThumbnailGenerationDurationDetailed.WithLabelValues(fileTypeStr, "decode").Observe(time.Since(decodeStart).Seconds())
 
 	if err != nil {
 		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error").Inc()
@@ -292,29 +308,63 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 		return nil, fmt.Errorf("thumbnail generation returned nil image")
 	}
 
+	// Resize and encode phase with timing
+	// Resize BEFORE encoding to reduce memory footprint
+	resizeStart := time.Now()
+	var thumb image.Image
+	if fileType == database.FileTypeFolder {
+		thumb = img // Folders already at correct size
+	} else {
+		thumb = imaging.Fit(img, 200, 200, imaging.Lanczos)
+		runtime.GC() // Force GC to reclaim memory from large source image
+	}
+	metrics.ThumbnailGenerationDurationDetailed.WithLabelValues(fileTypeStr, "resize").Observe(time.Since(resizeStart).Seconds())
+
 	var buf bytes.Buffer
 
+	// Encode phase with timing
+	encodeStart := time.Now()
 	if fileType == database.FileTypeFolder {
-		if err := png.Encode(&buf, img); err != nil {
+		if err := png.Encode(&buf, thumb); err != nil {
 			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_encode").Inc()
 			return nil, fmt.Errorf("failed to encode thumbnail as PNG: %w", err)
 		}
 	} else {
-		thumb := imaging.Fit(img, 200, 200, imaging.Lanczos)
 		if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 85}); err != nil {
 			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_encode").Inc()
 			return nil, fmt.Errorf("failed to encode thumbnail as JPEG: %w", err)
 		}
 	}
+	metrics.ThumbnailGenerationDurationDetailed.WithLabelValues(fileTypeStr, "encode").Observe(time.Since(encodeStart).Seconds())
 
 	// Cache the result
+	cacheWriteStart := time.Now()
 	if err := os.WriteFile(cachePath, buf.Bytes(), 0o644); err != nil {
 		logging.Warn("Failed to cache thumbnail %s: %v", cachePath, err)
 	} else {
+		metrics.ThumbnailCacheWriteLatency.Observe(time.Since(cacheWriteStart).Seconds())
+		metrics.ThumbnailGenerationDurationDetailed.WithLabelValues(fileTypeStr, "cache").Observe(time.Since(cacheWriteStart).Seconds())
+
 		// Write metadata file for orphan tracking
 		if err := t.writeMetaFile(cacheKey, filePath); err != nil {
 			logging.Debug("Failed to write meta file for %s: %v", cacheKey, err)
 		}
+	}
+
+	// Track memory used
+	var memAfter runtime.MemStats
+	runtime.ReadMemStats(&memAfter)
+	if memAfter.Alloc > memBefore.Alloc {
+		memoryUsed := memAfter.Alloc - memBefore.Alloc
+		metrics.ThumbnailMemoryUsageBytes.WithLabelValues(fileTypeStr).Observe(float64(memoryUsed))
+
+		// Accumulate memory stats for generation run
+		t.generationMu.Lock()
+		if t.generationStats.InProgress {
+			t.generationStats.TotalMemoryUsed += memoryUsed
+			t.generationStats.MemoryTrackedCount++
+		}
+		t.generationMu.Unlock()
 	}
 
 	metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "success").Inc()
@@ -372,6 +422,7 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(ctx context.Context, filePa
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	ffmpegStart := time.Now()
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", filePath,
 		"-vframes", "1",
@@ -387,6 +438,7 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(ctx context.Context, filePa
 	cmd.Stderr = &stderr
 
 	err = cmd.Run()
+	metrics.ThumbnailFFmpegDuration.WithLabelValues("image").Observe(time.Since(ffmpegStart).Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg failed: %w, stderr: %s", err, stderr.String())
 	}
@@ -422,6 +474,7 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	ffmpegStart := time.Now()
 	cmd := exec.CommandContext(timeoutCtx, "ffmpeg",
 		"-i", filePath,
 		"-ss", "00:00:01",
@@ -437,6 +490,7 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	cmd.Stderr = &stderr
 
 	err = cmd.Run()
+	metrics.ThumbnailFFmpegDuration.WithLabelValues("video").Observe(time.Since(ffmpegStart).Seconds())
 	if err != nil {
 		logging.Debug("FFmpeg first attempt failed for %s: %v, stderr: %s", filePath, err, stderr.String())
 
@@ -924,6 +978,11 @@ func (t *ThumbnailGenerator) Stop() {
 	if t.stopChan != nil {
 		close(t.stopChan)
 	}
+
+	// Shutdown libvips if it was initialized
+	if t.enabled {
+		ShutdownVips()
+	}
 }
 
 // cacheMetricsLoop periodically updates cache metrics
@@ -1029,7 +1088,10 @@ func (t *ThumbnailGenerator) runGeneration(incremental bool) {
 	var folders []database.MediaFile
 
 	if incremental {
-		logging.Info("Running incremental thumbnail generation (changes since %v)", lastRun)
+		now := time.Now()
+		logging.Info("Running incremental thumbnail generation (changes since %v)", lastRun.Format(time.RFC3339))
+		logging.Debug("Incremental generation: lastRun=%v, age=%v, now=%v",
+			lastRun.Format(time.RFC3339), now.Sub(lastRun), now.Format(time.RFC3339))
 
 		files, err = t.db.GetFilesUpdatedSince(ctx, lastRun)
 		if err != nil {
@@ -1247,6 +1309,15 @@ func (t *ThumbnailGenerator) finishGeneration(startTime time.Time) {
 		stats.Failed,
 		stats.FoldersUpdated,
 		stats.OrphansRemoved)
+
+	// Log average memory usage if we have data
+	if stats.MemoryTrackedCount > 0 {
+		avgMemoryMB := float64(stats.TotalMemoryUsed) / float64(stats.MemoryTrackedCount) / 1024 / 1024
+		logging.Debug("Average memory per image: %.2f MB (tracked %d images, total %.2f MB)",
+			avgMemoryMB,
+			stats.MemoryTrackedCount,
+			float64(stats.TotalMemoryUsed)/1024/1024)
+	}
 
 	t.UpdateCacheMetrics()
 

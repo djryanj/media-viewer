@@ -16,6 +16,7 @@ echo -e "${BLUE}[INFO] Installing ffmpeg and sqlite...${NC}"
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     ffmpeg \
     sqlite3 \
+    libvips-dev \
     gcc \
     && sudo rm -rf /var/lib/apt/lists/*
 echo -e "${GREEN}[SUCCESS] ffmpeg and sqlite installed${NC}"
@@ -98,7 +99,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -tags 'fts5' -o ./tmp/main ."
+  cmd = "go build -tags 'fts5' -o ./tmp/main ./cmd/media-viewer"
   bin = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
   exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules"]

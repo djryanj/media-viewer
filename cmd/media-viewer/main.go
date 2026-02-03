@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -110,6 +109,7 @@ func main() {
 	trans := transcoder.New(config.TranscodeDir, config.TranscodingEnabled)
 
 	// Initialize thumbnail generator
+	startup.LogThumbnailInit(config.ThumbnailsEnabled)
 	thumbGen := media.NewThumbnailGenerator(
 		config.ThumbnailDir,
 		config.MediaDir,

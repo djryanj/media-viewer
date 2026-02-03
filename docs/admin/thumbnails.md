@@ -108,3 +108,26 @@ Thumbnails are transferred to browsers on demand. For remote access over slow co
 - Initial gallery load transfers visible thumbnails
 - Scrolling loads additional thumbnails
 - PWA installation caches thumbnails locally
+
+## Monitoring
+
+Use [Prometheus metrics](metrics.md) to monitor thumbnail generation performance:
+
+### Key Metrics
+
+- **Cache Hit Rate**: `thumbnail_cache_hits_total` / (`thumbnail_cache_hits_total` + `thumbnail_cache_misses_total`)
+- **Generation Duration**: `thumbnail_generation_duration_seconds` - P50/P95/P99 latencies by type
+- **Memory Usage**: `thumbnail_memory_usage_bytes` - Memory allocated per thumbnail
+- **Phase Timing**: `thumbnail_generation_duration_detailed_seconds` - Breakdown by decode/resize/encode/cache
+- **Cache Size**: `thumbnail_cache_size_bytes` and `thumbnail_cache_count`
+
+### Performance Tuning
+
+Monitor these metrics to optimize:
+
+1. **Cache efficiency**: Low hit rate may indicate cache issues or high user activity
+2. **Generation bottlenecks**: Compare phase timings to identify decode vs resize vs encode issues
+3. **Memory pressure**: High memory usage per thumbnail may require tuning
+4. **FFmpeg performance**: `thumbnail_ffmpeg_duration_seconds` tracks video/image decode time
+
+See the [Metrics & Monitoring](metrics.md) guide for detailed queries and alerting examples.

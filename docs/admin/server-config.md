@@ -183,3 +183,31 @@ healthcheck:
     timeout: 10s
     retries: 3
 ```
+
+## Monitoring
+
+Media Viewer exposes comprehensive Prometheus metrics for performance monitoring and alerting.
+
+### Metrics Endpoint
+
+Prometheus metrics are available at:
+
+```
+GET /metrics
+```
+
+See the [Metrics & Monitoring](metrics.md) guide for:
+
+- Complete metrics reference
+- Prometheus and Grafana configuration
+- Example queries and dashboards
+- Alerting rules
+- Performance tuning guidance
+
+Key metrics include:
+
+- **Indexing Performance**: Run duration, throughput, batch processing times
+- **Thumbnail Generation**: Cache hit rates, memory usage, phase timing
+- **Filesystem I/O**: Critical for NFS deployments - operation latencies
+- **Database Performance**: Transaction durations, query latencies
+- **Memory Usage**: Heap allocation, GC activity, memory pressure

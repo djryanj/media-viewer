@@ -82,7 +82,7 @@ For development or custom deployments:
 2. Build the application:
 
     ```bash
-    go build -tags 'fts5' -o media-viewer .
+    go build -tags 'fts5' -o media-viewer ./cmd/media-viewer
     ```
 
 3. (Optional) Build the password reset utility:

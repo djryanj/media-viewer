@@ -375,3 +375,163 @@ var (
 		},
 	)
 )
+
+// Filesystem I/O metrics
+var (
+	FilesystemOperationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_filesystem_operation_duration_seconds",
+			Help:    "Duration of filesystem operations by directory and operation type",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+		[]string{"directory", "operation"}, // directory: media/cache/database, operation: read/write/stat/readdir
+	)
+
+	FilesystemOperationErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_filesystem_operation_errors_total",
+			Help: "Total number of filesystem operation errors by directory and operation",
+		},
+		[]string{"directory", "operation"},
+	)
+)
+
+// Enhanced indexer metrics
+var (
+	IndexerRunDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_indexer_run_duration_seconds",
+			Help:    "Distribution of indexer run durations",
+			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800}, // 1s to 30min
+		},
+	)
+
+	IndexerBatchProcessingDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_indexer_batch_duration_seconds",
+			Help:    "Duration of indexer batch database operations",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+		},
+	)
+
+	IndexerFilesPerSecond = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_indexer_files_per_second",
+			Help: "Indexing throughput in files per second",
+		},
+	)
+
+	IndexerParallelWorkers = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_indexer_parallel_workers",
+			Help: "Number of parallel workers used in last index run",
+		},
+	)
+)
+
+// Enhanced thumbnail metrics
+var (
+	ThumbnailMemoryUsageBytes = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "media_viewer_thumbnail_memory_usage_bytes",
+			Help: "Memory allocated during thumbnail generation by type",
+			// Buckets from 1MB to 500MB
+			Buckets: []float64{1e6, 5e6, 10e6, 25e6, 50e6, 100e6, 250e6, 500e6},
+		},
+		[]string{"type"}, // image/video/folder
+	)
+
+	ThumbnailGenerationDurationDetailed = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "media_viewer_thumbnail_generation_duration_detailed_seconds",
+			Help: "Detailed distribution of thumbnail generation times by type and phase",
+			// Buckets from 1ms to 60s
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60},
+		},
+		[]string{"type", "phase"}, // phase: decode/resize/encode/cache
+	)
+
+	ThumbnailFFmpegDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_thumbnail_ffmpeg_duration_seconds",
+			Help:    "Duration of FFmpeg operations for thumbnail generation",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 20, 30},
+		},
+		[]string{"media_type"}, // image/video
+	)
+
+	ThumbnailImageDecodeByFormat = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_thumbnail_image_decode_duration_seconds",
+			Help:    "Image decoding duration by format",
+			Buckets: []float64{0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5},
+		},
+		[]string{"format"}, // jpeg/png/gif/webp
+	)
+
+	ThumbnailBatchProcessingRate = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_thumbnail_batch_processing_rate",
+			Help: "Current thumbnail generation rate in files per second",
+		},
+	)
+)
+
+// Database performance metrics
+var (
+	DBTransactionDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_db_transaction_duration_seconds",
+			Help:    "Database transaction duration by type",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10},
+		},
+		[]string{"type"}, // batch_insert/batch_update/cleanup
+	)
+
+	DBRowsAffected = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_db_rows_affected",
+			Help:    "Number of rows affected by database operations",
+			Buckets: []float64{1, 10, 50, 100, 500, 1000, 5000, 10000},
+		},
+		[]string{"operation"},
+	)
+)
+
+// Cache performance metrics
+var (
+	ThumbnailCacheReadLatency = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_thumbnail_cache_read_latency_seconds",
+			Help:    "Latency of thumbnail cache reads",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	ThumbnailCacheWriteLatency = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_thumbnail_cache_write_latency_seconds",
+			Help:    "Latency of thumbnail cache writes",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+		},
+	)
+)
+
+// File processing metrics
+var (
+	FileHashComputeDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_file_hash_compute_duration_seconds",
+			Help:    "Duration of file hash computation",
+			Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	DirectoryWalkDepth = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_directory_walk_depth",
+			Help:    "Distribution of directory depth during walks",
+			Buckets: []float64{1, 2, 3, 5, 10, 15, 20, 30},
+		},
+	)
+)

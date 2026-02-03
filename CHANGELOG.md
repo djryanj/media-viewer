@@ -11,6 +11,159 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive Prometheus Metrics** - Added 50+ metrics across 8 categories for deep observability
+    - **Filesystem I/O Metrics**: Track latency by operation type (stat, readdir) and directory path
+        - `media_viewer_filesystem_operation_duration_seconds{operation, directory}` - Histogram of filesystem operation latencies
+        - `media_viewer_filesystem_operations_total{operation, directory}` - Counter of filesystem operations
+    - **Thumbnail Generation Metrics**: Detailed performance tracking across all phases
+        - `media_viewer_thumbnail_cache_read_latency_seconds` - Cache lookup performance
+        - `media_viewer_thumbnail_memory_usage_bytes{type}` - Memory consumption during generation
+        - `media_viewer_thumbnail_generation_duration_detailed_seconds{type, phase}` - Per-phase timing (decode, resize, encode, cache)
+        - `media_viewer_thumbnail_ffmpeg_duration_seconds` - Video frame extraction time
+        - `media_viewer_thumbnail_cache_hits_total` / `media_viewer_thumbnail_cache_misses_total` - Cache effectiveness
+    - **Indexer Performance Metrics**: Track media library scanning efficiency
+        - `media_viewer_indexer_run_duration_seconds` - Full index run time
+        - `media_viewer_indexer_files_per_second` - Indexing throughput
+        - `media_viewer_indexer_batch_processing_duration_seconds` - Database batch operation timing
+        - `media_viewer_indexer_files_processed_total` / `media_viewer_indexer_files_added_total` / `media_viewer_indexer_files_updated_total` - File operation counters
+    - **Database Transaction Metrics**: Monitor database performance
+        - `media_viewer_db_transaction_duration_seconds{type}` - Transaction latency (commit, rollback)
+        - `media_viewer_db_rows_affected{operation}` - Rows modified by operation (upsert_file, delete_files)
+        - `media_viewer_db_size_bytes{file}` - Database file sizes (main, wal, shm)
+    - **Memory Pressure Gauge**: Single indicator for Go memory health
+        - `media_viewer_memory_pressure_ratio` - Ratio of allocated memory to GOMEMLIMIT (0.0-1.0)
+    - **HTTP Request Metrics**: Fixed high-cardinality issue with path normalization
+        - Paths like `/api/file/*`, `/api/thumbnail/*`, `/api/stream/*` now normalized to prevent metric explosion
+
+- **Complete Metrics Documentation**
+    - New [docs/admin/metrics.md](docs/admin/metrics.md) with comprehensive reference
+    - All 50+ metrics documented with types, labels, descriptions, and units
+    - PromQL query examples for common monitoring scenarios
+    - Example alerting rules for production deployments
+    - Performance tuning guidance for metric collection
+    - Grafana dashboard structure with 7 organized sections
+
+- **Admin Documentation Section**
+    - New [docs/admin/overview.md](docs/admin/overview.md) as landing page for admin guides
+    - Updated navigation in mkdocs.yml with dedicated Admin section
+    - Cross-referenced metrics documentation from configuration guides
+
+- GitHub action definition to automatically build and publish documentation changes to documentation site
+
+### Changed
+
+- **Database Schema - Separated Record Touch from Content Change** - Critical fix for indexer cleanup and thumbnail regeneration
+    - Added `content_updated_at` field to track when file content actually changes
+    - `updated_at` now always updated when indexer touches a file (for "last seen" cleanup logic)
+    - `content_updated_at` only updated when file size, mod_time, type, or hash changes (for thumbnail invalidation)
+    - Fixes catastrophic bug where indexer's cleanup deleted all files as "missing" because `updated_at` was preserved
+    - Fixes thumbnail cache being invalidated on every index run even when no files changed
+    - **Migration**: Schema automatically migrates on first startup; existing files get `content_updated_at` set from `updated_at`
+
+- **Environment Variables Documentation** - Corrected [docs/admin/environment-variables.md](docs/admin/environment-variables.md)
+    - Fixed variable names: `MEDIA_DIR` (not MEDIA_PATH), `CACHE_DIR` and `DATABASE_DIR` (separate, not DATA_PATH)
+    - Corrected duration format examples: Go duration syntax (`24h`, `30m`, `10s`) instead of milliseconds
+    - Added missing variables: `METRICS_PORT`, `METRICS_ENABLED`, `INDEX_INTERVAL`, `POLL_INTERVAL`, `THUMBNAIL_INTERVAL`
+    - Added complete WebAuthn configuration section
+    - Added memory management section: `MEMORY_LIMIT`, `MEMORY_RATIO`, `GOMEMLIMIT`
+    - Added logging and debugging section: `LOG_LEVEL`, `LOG_STATIC_FILES`, `LOG_HEALTH_CHECKS`
+    - Added Docker Compose and Kubernetes configuration examples
+
+- **Documentation Cross-References** - Updated multiple documentation files
+    - [docs/admin/server-config.md](docs/admin/server-config.md) - Added metrics configuration section
+    - [docs/admin/thumbnails.md](docs/admin/thumbnails.md) - Added metrics monitoring section
+    - [docs/troubleshooting.md](docs/troubleshooting.md) - Added metrics-based diagnostics
+    - [docs/index.md](docs/index.md) - Added link to metrics documentation
+
+- Updated reference Grafanace dashboard [hack/grafana/dashboard.json](hack/grafana/dashboard.json) with above metrics
+
+### Fixed
+
+- **Critical: Indexer Deleted All Files on Every Run** - Fixed catastrophic regression
+    - **Root cause**: Indexer cleanup logic deletes files WHERE `updated_at < index_start_time`
+    - **Problem**: Previous fix preserved `updated_at` for unchanged files, causing them to be deleted as "missing"
+    - **Solution**: Separated `updated_at` (always touched) from `content_updated_at` (only on changes)
+    - **Impact**: Database is now properly maintained; files no longer disappear on every index run
+
+- **Unnecessary Thumbnail Regeneration** - Files with unchanged modification times no longer trigger regeneration ([#117](https://github.com/djryanj/media-viewer/issues/117))
+    - **Root cause**: `content_updated_at` was being set even when content hadn't changed
+    - **Fix**: Use COALESCE to handle NULL values properly, only update timestamp when size/modtime/type/hash actually changes
+    - **Benefit**: Thumbnails only regenerate when files actually change, not on every index run
+
+- **Gosec Security Warning** - Fixed potential integer overflow in thumbnail memory tracking
+    - Changed `int64(memAfter.Alloc - memBefore.Alloc)` to direct `float64()` conversion
+    - Prevents gosec G115 warning about potential integer overflow
+
+- **Database Permission Diagnostics** - Added comprehensive permission checking for SQLite WAL mode
+    - Checks and logs database directory, main DB file, WAL file, and SHM file permissions
+    - Automatically attempts to fix read-only WAL/SHM files from previous container runs
+    - Helps diagnose "disk I/O error: read-only file system" errors in Kubernetes deployments
+    - Critical for containers using `readOnlyRootFilesystem: true` with persistent volume mounts
+
+### Performance
+
+- **Optimized Thumbnail Memory Usage with libvips** - Integrated libvips for true decode-time downsampling
+    - **Root cause**: Standard image libraries load full original into memory before resizing
+    - **Solution**: libvips provides decode-time shrinking - never loads full-size image into memory
+    - **Implementation**:
+        - Added govips library with conservative memory settings (50MB cache, single concurrent operation)
+        - JPEG files now use vips decode-time shrinking when available
+        - Fallback to two-stage resize if vips unavailable (Box filter → Lanczos)
+        - Fallback to standard imaging library for non-JPEG or if vips fails
+    - **Memory Impact**: For 6000x4000 JPEG (96MB full decode):
+        - Standard method: Loads 96MB, resizes to 10MB = 106MB peak
+        - libvips: Decodes directly to 10MB = 10MB peak (~90% reduction)
+    - **Quality**: Maintains excellent quality using Lanczos resampling in vips
+    - **Compatibility**: Gracefully degrades if libvips not available (dev environments)
+    - **Benefit**: Dramatic memory reduction for large JPEGs, enables higher concurrency, reduces GC pressure
+
+- **Instrumented Code Paths** - All major operations now emit detailed metrics
+    - `internal/database/database.go` - Transaction duration, rows affected, storage size
+    - `internal/indexer/indexer.go` - Run duration, throughput, batch timing, filesystem operations
+    - `internal/media/thumbnail.go` - Cache latency, memory usage, phase-by-phase timing, FFmpeg duration
+    - `internal/metrics/metrics.go` - Centralized metric definitions with optimized histogram buckets
+
+- **Reduced Metrics Cardinality** - Fixed high-cardinality path metrics
+    - File paths in `/api/file/*`, `/api/thumbnail/*`, `/api/stream/*` now normalized
+    - Prevents Prometheus memory bloat from thousands of unique metric labels
+    - Maintains useful metrics without per-file granularity
+
+### Developer Notes
+
+#### Monitoring Setup
+
+The new metrics enable comprehensive observability. Key areas to monitor:
+
+1. **Filesystem Performance** - Critical for NFS deployments
+
+    ```promql
+    histogram_quantile(0.95, rate(media_viewer_filesystem_operation_duration_seconds_bucket[5m]))
+    ```
+
+2. **Thumbnail Efficiency** - Cache hit rate and generation times
+
+    ```promql
+    rate(media_viewer_thumbnail_cache_hits_total[5m]) /
+    (rate(media_viewer_thumbnail_cache_hits_total[5m]) + rate(media_viewer_thumbnail_cache_misses_total[5m]))
+    ```
+
+3. **Indexer Throughput** - Files processed per second
+
+    ```promql
+    media_viewer_indexer_files_per_second
+    ```
+
+4. **Memory Pressure** - Early warning for memory limits
+    ```promql
+    media_viewer_memory_pressure_ratio > 0.9
+    ```
+
+See [docs/admin/metrics.md](docs/admin/metrics.md) for complete monitoring guide with Grafana dashboard structure, alerting rules, and performance tuning recommendations.
+
+## [v0.6.0] - February 2, 2026
+
+### Added
+
 - **Passkey (WebAuthn) Authentication**
     - Passwordless authentication using biometrics (Face ID, Touch ID, Windows Hello) or security keys (YubiKey, Titan)
     - Support for platform authenticators (built-in device biometrics) and roaming authenticators (USB keys)
@@ -82,6 +235,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Passkey section only appears when passkeys are actually registered (not just WebAuthn enabled)
     - Prevents auto-prompt spam when no passkeys exist
     - Proper cleanup of Conditional UI when user cancels or fails authentication
+- Added a time skew to allow for NFS clock differences to prevent thumbnail generator running every time ([#117](https://github.com/djryanj/media-viewer/issues/117))
 
 ### Security
 
@@ -111,6 +265,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 WebAuthn requires a secure context. For development:
 
 **Local Testing (Simplest):**
+
 ```bash
 export WEBAUTHN_ENABLED=true
 export WEBAUTHN_RP_ID=localhost
@@ -119,6 +274,7 @@ make dev
 ```
 
 **Mobile Testing with ngrok (Recommended):**
+
 ```bash
 # Terminal 1: Start dev server
 make dev

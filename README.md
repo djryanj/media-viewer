@@ -407,6 +407,26 @@ Media Viewer exposes Prometheus metrics on a separate port (default: 9090) for m
 - Node.js 18 or later (for frontend tooling)
 - FFmpeg
 - GCC (for SQLite CGO compilation)
+- **libvips** (for memory-efficient thumbnail generation)
+
+#### Installing libvips
+
+**macOS:**
+```bash
+brew install vips
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install libvips-dev
+```
+
+**Alpine:**
+```bash
+apk add vips-dev
+```
+
+**Note:** The application will work without libvips but will use more memory for thumbnail generation. See [docs/admin/libvips.md](docs/admin/libvips.md) for details.
 
 ### Initial Setup
 

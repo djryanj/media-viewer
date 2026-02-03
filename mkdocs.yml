@@ -93,10 +93,12 @@ nav:
           - Tag Management: features/tag-management.md
           - Selection Mode: features/selection-mode.md
     - Administration:
+          - Overview: admin/overview.md
           - Server Configuration: admin/server-config.md
           - Environment Variables: admin/environment-variables.md
           - WebAuthn Setup: admin/webauthn.md
           - Thumbnail Management: admin/thumbnails.md
+          - Metrics & Monitoring: admin/metrics.md
           - Security: admin/security.md
     - API Reference:
           - Overview: api/overview.md

@@ -64,3 +64,5 @@ cache/
 
 node_modules/
 site/
+
+!**/media-viewer/

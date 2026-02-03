@@ -63,9 +63,9 @@
 
 ## For Administrators
 
-### Initial Setup
+### Initial Setups
 
 1. **Enable HTTPS** on your server (required for production)
-2. **Set environment variables** (see Configuration section)
+2. **Set environment variables** (see [Configuration](admin/server-config.md) section)
 3. **Restart the application**
-4. **Verify configuration** in application logs:
+4. **Verify configuration** in application logs

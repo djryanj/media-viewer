@@ -15,6 +15,7 @@ import (
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
 	"media-viewer/internal/mediatypes"
+	"media-viewer/internal/metrics"
 	"media-viewer/internal/workers"
 )
 
@@ -93,6 +94,9 @@ func NewParallelWalker(mediaDir string, config ParallelWalkerConfig) *ParallelWa
 func (pw *ParallelWalker) Walk() ([]database.MediaFile, error) {
 	logging.Info("Starting parallel directory walk with %d workers", pw.config.NumWorkers)
 	startTime := time.Now()
+
+	// Record worker count metric
+	metrics.IndexerParallelWorkers.Set(float64(pw.config.NumWorkers))
 
 	// Start workers
 	for i := 0; i < pw.config.NumWorkers; i++ {

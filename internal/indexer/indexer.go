@@ -247,7 +247,9 @@ func (idx *Indexer) detectChanges() (bool, error) {
 	}()
 
 	// Check if root directory has been modified
+	fsStat := time.Now()
 	rootInfo, err := os.Stat(idx.mediaDir)
+	metrics.FilesystemOperationDuration.WithLabelValues(idx.mediaDir, "stat").Observe(time.Since(fsStat).Seconds())
 	if err != nil {
 		return false, fmt.Errorf("failed to stat media directory: %w", err)
 	}
@@ -265,7 +267,9 @@ func (idx *Indexer) detectChanges() (bool, error) {
 	}
 
 	// Quick count of top-level entries (not recursive)
+	fsReadDir := time.Now()
 	entries, err := os.ReadDir(idx.mediaDir)
+	metrics.FilesystemOperationDuration.WithLabelValues(idx.mediaDir, "readdir").Observe(time.Since(fsReadDir).Seconds())
 	if err != nil {
 		return false, fmt.Errorf("failed to read media directory: %w", err)
 	}
@@ -327,13 +331,17 @@ func (idx *Indexer) checkSubdirectorySample(entries []fs.DirEntry) bool {
 
 // updateLastKnownState updates the cached state after indexing.
 func (idx *Indexer) updateLastKnownState() {
+	fsStat := time.Now()
 	rootInfo, err := os.Stat(idx.mediaDir)
+	metrics.FilesystemOperationDuration.WithLabelValues(idx.mediaDir, "stat").Observe(time.Since(fsStat).Seconds())
 	if err != nil {
 		logging.Warn("Failed to stat media directory for state update: %v", err)
 		return
 	}
 
+	fsReadDir := time.Now()
 	entries, err := os.ReadDir(idx.mediaDir)
+	metrics.FilesystemOperationDuration.WithLabelValues(idx.mediaDir, "readdir").Observe(time.Since(fsReadDir).Seconds())
 	if err != nil {
 		logging.Warn("Failed to read media directory for state update: %v", err)
 		return
@@ -383,6 +391,26 @@ func (idx *Indexer) Index() error {
 
 	idx.resetCounters(startTime)
 
+	// Start heartbeat to show progress on slow filesystems
+	heartbeatDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				elapsed := time.Since(startTime)
+				logging.Info("Indexer still running, elapsed time: %v", elapsed.Round(time.Second))
+			case <-heartbeatDone:
+				return
+			case <-idx.stopChan:
+				return
+			}
+		}
+	}()
+	defer close(heartbeatDone)
+
 	indexTime := time.Now()
 
 	var result indexResult
@@ -411,11 +439,18 @@ func (idx *Indexer) Index() error {
 	idx.updateLastKnownState()
 
 	// Update metrics
-	duration := time.Since(startTime).Seconds()
+	duration := time.Since(startTime)
 	metrics.IndexerLastRunTimestamp.Set(float64(time.Now().Unix()))
-	metrics.IndexerLastRunDuration.Set(duration)
+	metrics.IndexerLastRunDuration.Set(duration.Seconds())
+	metrics.IndexerRunDuration.Observe(duration.Seconds())
 	metrics.IndexerFilesProcessed.Add(float64(result.totalFiles))
 	metrics.IndexerFoldersProcessed.Add(float64(result.totalFolders))
+
+	// Calculate and record throughput
+	if duration.Seconds() > 0 {
+		filesPerSecond := float64(result.totalFiles+result.totalFolders) / duration.Seconds()
+		metrics.IndexerFilesPerSecond.Set(filesPerSecond)
+	}
 
 	return nil
 }
@@ -423,7 +458,7 @@ func (idx *Indexer) Index() error {
 // parallelWalkAndIndex uses parallel directory walking for faster indexing.
 func (idx *Indexer) parallelWalkAndIndex(startTime time.Time) (indexResult, error) {
 	logging.Info("Using parallel directory walking with %d workers", idx.parallelConfig.NumWorkers)
-
+	metrics.IndexerParallelWorkers.Set(float64(idx.parallelConfig.NumWorkers))
 	walker := NewParallelWalker(idx.mediaDir, idx.parallelConfig)
 
 	go func() {
@@ -702,6 +737,7 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 		return nil
 	}
 
+	start := time.Now()
 	tx, err := idx.db.BeginBatch()
 	if err != nil {
 		return fmt.Errorf("failed to begin batch transaction: %w", err)
@@ -717,6 +753,7 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 		return fmt.Errorf("failed to commit batch: %w", err)
 	}
 
+	metrics.IndexerBatchProcessingDuration.Observe(time.Since(start).Seconds())
 	return nil
 }
 

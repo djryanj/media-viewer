@@ -26,6 +26,8 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
 - [Installation Guide](getting-started/installation.md) - Get Media Viewer running on your server
 - [Quick Start](getting-started/quick-start.md) - Learn the basics in five minutes
 - [User Guide](user-guide/overview.md) - Comprehensive usage documentation
+- [Admin Guide](admin/overview.md) - Server administration and monitoring
+- [Metrics & Monitoring](admin/metrics.md) - Prometheus metrics and performance tuning
 - [Keyboard Shortcuts](user-guide/keyboard-shortcuts.md) - Speed up your workflow
 
 ## System Requirements
