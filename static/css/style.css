@@ -3078,6 +3078,59 @@ select:focus {
     max-width: 400px;
 }
 
+/* Password input with toggle button */
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper input {
+    width: 100%;
+    padding-right: 3rem; /* Make room for the toggle button */
+}
+
+.password-toggle {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition:
+        color var(--transition),
+        background var(--transition);
+    width: 32px;
+    height: 32px;
+}
+
+.password-toggle:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.password-toggle:focus {
+    outline: none;
+    color: var(--border-focus);
+}
+
+.password-toggle i,
+.password-toggle svg {
+    width: 20px;
+    height: 20px;
+}
+
+.password-toggle .hidden {
+    display: none !important;
+}
+
 #password-form .form-group {
     margin-bottom: 1rem;
 }

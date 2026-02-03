@@ -110,6 +110,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - WebAuthN cleanup doesn't try to happen if it's not enabled ([#120](https://github.com/djryanj/media-viewer/issues/120))
 - Entering selection mode on mobile performance enhancements ([#79](https://github.com/djryanj/media-viewer/issues/79))
+- On initial password creation, tab order selected the "eye" icons instead of skipping to the next input box ([#127](https://github.com/djryanj/media-viewer/issues/127))
+- Eye icons were not rendering properly and they were being selected as with the above in the password change modal ([#127](https://github.com/djryanj/media-viewer/issues/127))
+- Dockerfile issues with cross compilation as a result of moving to VIPS package ([#117](https://github.com/djryanj/media-viewer/issues/117))
 
 ### Performance
 
