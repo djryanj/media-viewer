@@ -347,36 +347,64 @@ const ItemSelection = {
         const gallery = this.elements.gallery;
         const items = gallery.querySelectorAll('.gallery-item:not(.skeleton)');
 
-        // Use IntersectionObserver to only add checkboxes to visible items initially
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    if (entry.isIntersecting) {
-                        this.addCheckboxToItem(entry.target);
-                        observer.unobserve(entry.target);
-                    }
-                });
-            },
-            { rootMargin: '200px' }
-        );
+        // Batch add checkboxes using DocumentFragment for better performance
+        const fragment = document.createDocumentFragment();
+        const itemsToUpdate = [];
+
+        // First pass: add checkboxes to all visible items immediately (synchronous)
+        const viewportHeight = window.innerHeight;
+        const immediateThreshold = viewportHeight + 400; // Viewport + 400px buffer
 
         items.forEach((item) => {
             const type = item.dataset.type;
-            if (this.isSelectableType(type)) {
-                // Add checkbox immediately if in viewport, otherwise observe
-                const rect = item.getBoundingClientRect();
-                const inViewport = rect.top < window.innerHeight + 200 && rect.bottom > -200;
+            if (!this.isSelectableType(type)) return;
 
-                if (inViewport) {
-                    this.addCheckboxToItem(item);
-                } else {
-                    observer.observe(item);
+            const rect = item.getBoundingClientRect();
+            const isImmediate = rect.top < immediateThreshold && rect.bottom > -400;
+
+            if (isImmediate) {
+                // Add checkbox immediately (synchronous for instant feedback)
+                const thumbArea = item.querySelector('.gallery-item-thumb');
+                if (thumbArea && !thumbArea.querySelector('.selection-checkbox')) {
+                    const checkbox = document.createElement('div');
+                    checkbox.className = 'selection-checkbox';
+                    checkbox.innerHTML = '<i data-lucide="check"></i>';
+                    thumbArea.appendChild(checkbox);
+
+                    // Check if this item should be selected
+                    const path = item.dataset.path;
+                    if (this.selectedPaths.has(path)) {
+                        item.classList.add('selected');
+                    }
+
+                    itemsToUpdate.push(checkbox);
                 }
+            } else {
+                // For items far outside viewport, use IntersectionObserver
+                if (!this._checkboxObserver) {
+                    this._checkboxObserver = new IntersectionObserver(
+                        (entries) => {
+                            entries.forEach((entry) => {
+                                if (entry.isIntersecting) {
+                                    this.addCheckboxToItem(entry.target);
+                                    this._checkboxObserver.unobserve(entry.target);
+                                }
+                            });
+                        },
+                        { rootMargin: '400px' }
+                    );
+                }
+                this._checkboxObserver.observe(item);
             }
         });
 
-        // Store observer for cleanup
-        this._checkboxObserver = observer;
+        // Update Lucide icons in a single batch
+        if (itemsToUpdate.length > 0) {
+            // Use requestAnimationFrame to avoid blocking
+            requestAnimationFrame(() => {
+                lucide.createIcons({ nodes: itemsToUpdate });
+            });
+        }
     },
 
     /**
@@ -396,7 +424,10 @@ const ItemSelection = {
                 item.classList.add('selected');
             }
 
-            lucide.createIcons({ nodes: [checkbox] });
+            // Initialize icon asynchronously
+            requestAnimationFrame(() => {
+                lucide.createIcons({ nodes: [checkbox] });
+            });
         }
     },
 

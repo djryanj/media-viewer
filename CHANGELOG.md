@@ -109,6 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Enhanced video mode hotzones with additional vertical gradient masks for polished appearance near video controls
 
 - WebAuthN cleanup doesn't try to happen if it's not enabled ([#120](https://github.com/djryanj/media-viewer/issues/120))
+- Entering selection mode on mobile performance enhancements ([#79](https://github.com/djryanj/media-viewer/issues/79))
 
 ### Performance
 
