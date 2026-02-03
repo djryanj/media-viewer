@@ -22,7 +22,9 @@ RUN apk add --no-cache \
     lld \
     make \
     git \
-    pkgconf
+    pkgconf \
+    shared-mime-info
+
 
 # Install target platform dependencies including libvips
 RUN xx-apk add --no-cache \
@@ -40,7 +42,6 @@ RUN go mod download
 COPY . .
 
 # Build the main application using xx-clang
-# Note: libvips requires dynamic linking, so we can't use -static
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=1 \
@@ -48,6 +49,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GOARCH=$(xx-info arch) \
     CC="xx-clang" \
     CXX="xx-clang++" \
+    PKG_CONFIG="$(xx-info)-pkg-config" \
+    PKG_CONFIG_PATH="$(xx-info sysroot)usr/lib/pkgconfig:$(xx-info sysroot)usr/share/pkgconfig" \
     go build \
     -tags 'fts5' \
     -ldflags "-s -w \
@@ -64,6 +67,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GOARCH=$(xx-info arch) \
     CC="xx-clang" \
     CXX="xx-clang++" \
+    PKG_CONFIG="$(xx-info)-pkg-config" \
+    PKG_CONFIG_PATH="$(xx-info sysroot)usr/lib/pkgconfig:$(xx-info sysroot)usr/share/pkgconfig" \
     go build \
     -tags 'fts5' \
     -ldflags "-s -w \
