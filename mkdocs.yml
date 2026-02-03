@@ -1,0 +1,123 @@
+# mkdocs.yml
+
+site_name: Media Viewer Documentation
+site_description: A self-hosted media gallery for your private media collection.
+site_author: Ryan Jacobs
+site_url: https://djryanj.github.io/media-viewer/
+
+repo_name: ghcr.io/djryanj/media-viewer
+repo_url: https://github.com/djryanj/media-viewer
+edit_uri: edit/main/docs/
+
+theme:
+    name: material
+    language: en
+    palette:
+        # Dark mode (matches app theme)
+        - scheme: slate
+          primary: pink
+          accent: pink
+          toggle:
+              icon: material/brightness-7
+              name: Switch to light mode
+        # Light mode
+        - scheme: default
+          primary: pink
+          accent: pink
+          toggle:
+              icon: material/brightness-4
+              name: Switch to dark mode
+    font:
+        text: Roboto
+        code: Roboto Mono
+    icon:
+        repo: fontawesome/brands/github
+        logo: material/image-multiple
+    features:
+        - navigation.instant
+        - navigation.tracking
+        - navigation.tabs
+        - navigation.sections
+        - navigation.expand
+        - navigation.top
+        - search.suggest
+        - search.highlight
+        - content.code.copy
+        - content.code.annotate
+
+plugins:
+    - search:
+          separator: '[\s\-,:!=$$()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+    - minify:
+          minify_html: true
+    - swagger-ui-tag
+
+markdown_extensions:
+    - admonition
+    - pymdownx.details
+    - pymdownx.superfences
+    - pymdownx.highlight:
+          anchor_linenums: true
+    - pymdownx.inlinehilite
+    - pymdownx.snippets:
+          auto_append:
+              - includes/abbreviations.md
+    - pymdownx.tabbed:
+          alternate_style: true
+    - pymdownx.tasklist:
+          custom_checkbox: true
+    - attr_list
+    - md_in_html
+    - tables
+    - footnotes
+    - def_list
+    - abbr
+
+nav:
+    - Home: index.md
+    - Getting Started:
+          - Installation: getting-started/installation.md
+          - Quick Start: getting-started/quick-start.md
+          - Configuration: getting-started/configuration.md
+    - User Guide:
+          - Overview: user-guide/overview.md
+          - Browsing Media: user-guide/browsing.md
+          - Search: user-guide/search.md
+          - Tagging: user-guide/tagging.md
+          - Favorites: user-guide/favorites.md
+          - Playlists: user-guide/playlists.md
+          - WebAuthn/Passkeys: user-guide/webauthn.md
+          - Keyboard Shortcuts: user-guide/keyboard-shortcuts.md
+    - Features:
+          - PWA Support: features/pwa.md
+          - Tag Management: features/tag-management.md
+          - Selection Mode: features/selection-mode.md
+    - Administration:
+          - Server Configuration: admin/server-config.md
+          - Environment Variables: admin/environment-variables.md
+          - WebAuthn Setup: admin/webauthn.md
+          - Thumbnail Management: admin/thumbnails.md
+          - Security: admin/security.md
+    - API Reference:
+          - Overview: api/overview.md
+          - Authentication: api/authentication.md
+          - WebAuthn API: api/webauthn.md
+          - Files & Media: api/files.md
+          - Search: api/search.md
+          - Tags: api/tags.md
+          - Favorites: api/favorites.md
+          - Tags & Favorites: api/tags-favorites.md
+          - System: api/system.md
+          - OpenAPI Spec: api/openapi.md
+    - Development:
+          - Architecture: development/architecture.md
+          - Contributing: development/contributing.md
+    - Troubleshooting: troubleshooting.md
+
+extra:
+    social:
+        - icon: fontawesome/brands/github
+          link: https://github.com/djryanj/media-viewer
+
+extra_css:
+    - stylesheets/extra.css

@@ -1,0 +1,2138 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Media Viewer API",
+        "description": "REST API for Media Viewer - A self-hosted media library browser with WebAuthn/Passkey authentication support",
+        "version": "1.0.0",
+        "contact": {
+            "name": "Media Viewer",
+            "url": "https://github.com/djryanj/media-viewer"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://github.com/djryanj/media-viewer/blob/main/LICENSE"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8080",
+            "description": "Local development server"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Authentication",
+            "description": "Password-based authentication endpoints"
+        },
+        {
+            "name": "WebAuthn",
+            "description": "Passkey/WebAuthn authentication endpoints"
+        },
+        {
+            "name": "Files",
+            "description": "File and folder browsing"
+        },
+        {
+            "name": "Search",
+            "description": "Search and suggestions"
+        },
+        {
+            "name": "Favorites",
+            "description": "Favorite files management"
+        },
+        {
+            "name": "Tags",
+            "description": "File tagging system"
+        },
+        {
+            "name": "Thumbnails",
+            "description": "Thumbnail management and generation"
+        },
+        {
+            "name": "Playlists",
+            "description": "Video playlist support"
+        },
+        {
+            "name": "Streaming",
+            "description": "Video streaming and transcoding"
+        },
+        {
+            "name": "Cache",
+            "description": "Cache management"
+        },
+        {
+            "name": "System",
+            "description": "System information and health checks"
+        }
+    ],
+    "paths": {
+        "/api/auth/setup-required": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Check if initial setup is required",
+                "description": "Returns whether the application needs initial password setup (no users exist)",
+                "responses": {
+                    "200": {
+                        "description": "Setup status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "needsSetup": {
+                                            "type": "boolean",
+                                            "description": "True if no users exist and setup is required"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/setup": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Create initial user password",
+                "description": "Creates the first user account. Only available when no users exist.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "password"
+                                ],
+                                "properties": {
+                                    "password": {
+                                        "type": "string",
+                                        "minLength": 6,
+                                        "description": "Password for the new user"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "User created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or setup already completed"
+                    }
+                }
+            }
+        },
+        "/api/auth/login": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Login with password",
+                "description": "Authenticate using password and receive a session cookie",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "password"
+                                ],
+                                "properties": {
+                                    "password": {
+                                        "type": "string",
+                                        "description": "User password"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login successful",
+                        "headers": {
+                            "Set-Cookie": {
+                                "schema": {
+                                    "type": "string",
+                                    "example": "session=abc123; Path=/; HttpOnly; SameSite=Strict"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid password"
+                    }
+                }
+            }
+        },
+        "/api/auth/logout": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Logout and destroy session",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Logged out successfully"
+                    }
+                }
+            }
+        },
+        "/api/auth/check": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Check authentication status",
+                "description": "Verify if the current session is valid",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authentication status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "username": {
+                                            "type": "string",
+                                            "description": "Empty string for single-user app"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/password": {
+            "put": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Change password",
+                "description": "Update the user's password. Requires current password verification. Invalidates all sessions.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "currentPassword",
+                                    "newPassword"
+                                ],
+                                "properties": {
+                                    "currentPassword": {
+                                        "type": "string"
+                                    },
+                                    "newPassword": {
+                                        "type": "string",
+                                        "minLength": 6
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Password changed successfully"
+                    },
+                    "401": {
+                        "description": "Current password is incorrect"
+                    }
+                }
+            }
+        },
+        "/api/auth/keepalive": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Keep session alive",
+                "description": "Extends the session expiration time",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session refreshed"
+                    },
+                    "401": {
+                        "description": "Invalid or expired session"
+                    }
+                }
+            }
+        },
+        "/api/auth/webauthn/available": {
+            "get": {
+                "tags": [
+                    "WebAuthn"
+                ],
+                "summary": "Check if passkey login is available",
+                "description": "Returns whether WebAuthn is enabled and credentials are registered",
+                "responses": {
+                    "200": {
+                        "description": "Passkey availability status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "available": {
+                                            "type": "boolean",
+                                            "description": "True if WebAuthn is enabled AND credentials exist"
+                                        },
+                                        "enabled": {
+                                            "type": "boolean",
+                                            "description": "True if WebAuthn is configured on the server"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/webauthn/register/begin": {
+            "post": {
+                "tags": [
+                    "WebAuthn"
+                ],
+                "summary": "Begin passkey registration",
+                "description": "Starts the WebAuthn registration ceremony. Returns challenge data for the browser.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Registration challenge created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "options": {
+                                            "type": "object",
+                                            "description": "WebAuthn PublicKeyCredentialCreationOptions"
+                                        },
+                                        "sessionId": {
+                                            "type": "string",
+                                            "description": "Session ID for completing registration"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not authenticated"
+                    },
+                    "503": {
+                        "description": "WebAuthn not configured"
+                    }
+                }
+            }
+        },
+        "/api/auth/webauthn/register/finish": {
+            "post": {
+                "tags": [
+                    "WebAuthn"
+                ],
+                "summary": "Complete passkey registration",
+                "description": "Verifies the credential from the browser and stores the passkey",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "sessionId",
+                                    "credential"
+                                ],
+                                "properties": {
+                                    "sessionId": {
+                                        "type": "string",
+                                        "description": "Session ID from begin endpoint"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "description": "User-friendly name for the passkey",
+                                        "default": "Passkey"
+                                    },
+                                    "credential": {
+                                        "type": "object",
+                                        "description": "WebAuthn credential from navigator.credentials.create()"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Passkey registered successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid credential or expired session"
+                    },
+                    "401": {
+                        "description": "Not authenticated"
+                    }
+                }
+            }
+        },
+        "/api/auth/webauthn/login/begin": {
+            "post": {
+                "tags": [
+                    "WebAuthn"
+                ],
+                "summary": "Begin passkey login",
+                "description": "Starts the WebAuthn authentication ceremony. Returns challenge data.",
+                "responses": {
+                    "200": {
+                        "description": "Authentication challenge created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "options": {
+                                            "type": "object",
+                                            "description": "WebAuthn PublicKeyCredentialRequestOptions"
+                                        },
+                                        "sessionId": {
+                                            "type": "string",
+                                            "description": "Session ID for completing authentication"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No passkeys registered"
+                    },
+                    "503": {
+                        "description": "WebAuthn not configured"
+                    }
+                }
+            }
+        },
+        "/api/auth/webauthn/login/finish": {
+            "post": {
+                "tags": [
+                    "WebAuthn"
+                ],
+                "summary": "Complete passkey login",
+                "description": "Verifies the credential and creates an authenticated session",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "sessionId",
+                                    "credential"
+                                ],
+                                "properties": {
+                                    "sessionId": {
+                                        "type": "string",
+                                        "description": "Session ID from begin endpoint"
+                                    },
+                                    "credential": {
+                                        "type": "object",
+                                        "description": "WebAuthn credential from navigator.credentials.get()"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Authentication successful",
+                        "headers": {
+                            "Set-Cookie": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid credential or expired session"
+                    },
+                    "401": {
+                        "description": "Authentication failed"
+                    }
+                }
+            }
+        },
+        "/api/auth/webauthn/passkeys": {
+            "get": {
+                "tags": [
+                    "WebAuthn"
+                ],
+                "summary": "List registered passkeys",
+                "description": "Returns all passkeys registered for the current user",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of passkeys",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "passkeys": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Passkey"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not authenticated"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "WebAuthn"
+                ],
+                "summary": "Delete a passkey",
+                "description": "Removes a registered passkey by ID",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "integer",
+                                        "format": "int64",
+                                        "description": "Passkey ID to delete"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Passkey deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not authenticated"
+                    },
+                    "404": {
+                        "description": "Passkey not found"
+                    }
+                }
+            }
+        },
+        "/api/files": {
+            "get": {
+                "tags": [
+                    "Files"
+                ],
+                "summary": "List files and folders",
+                "description": "Browse directory contents with pagination and filtering",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "default": ""
+                        },
+                        "description": "Directory path to browse"
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "name",
+                                "date",
+                                "size",
+                                "type"
+                            ],
+                            "default": "name"
+                        }
+                    },
+                    {
+                        "name": "order",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ],
+                            "default": "asc"
+                        }
+                    },
+                    {
+                        "name": "filter",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "all",
+                                "images",
+                                "videos",
+                                "playlists"
+                            ],
+                            "default": "all"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 50
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Directory contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FileList"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/file/{path}": {
+            "get": {
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Get a file",
+                "description": "Retrieve a specific file by path",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "File path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "File content",
+                        "content": {
+                            "image/*": {},
+                            "video/*": {},
+                            "application/*": {}
+                        }
+                    },
+                    "404": {
+                        "description": "File not found"
+                    }
+                }
+            }
+        },
+        "/api/thumbnail/{path}": {
+            "get": {
+                "tags": [
+                    "Thumbnails"
+                ],
+                "summary": "Get thumbnail for a file",
+                "description": "Returns a thumbnail image. Generates if not exists.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Thumbnail image",
+                        "content": {
+                            "image/jpeg": {}
+                        }
+                    },
+                    "404": {
+                        "description": "File not found"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Thumbnails"
+                ],
+                "summary": "Invalidate a thumbnail",
+                "description": "Removes cached thumbnail for regeneration",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Thumbnail invalidated"
+                    }
+                }
+            }
+        },
+        "/api/thumbnails/invalidate": {
+            "post": {
+                "tags": [
+                    "Thumbnails"
+                ],
+                "summary": "Invalidate all thumbnails",
+                "description": "Clears the entire thumbnail cache",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All thumbnails invalidated"
+                    }
+                }
+            }
+        },
+        "/api/thumbnails/rebuild": {
+            "post": {
+                "tags": [
+                    "Thumbnails"
+                ],
+                "summary": "Rebuild all thumbnails",
+                "description": "Triggers full thumbnail regeneration in background",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rebuild started"
+                    }
+                }
+            }
+        },
+        "/api/thumbnails/status": {
+            "get": {
+                "tags": [
+                    "Thumbnails"
+                ],
+                "summary": "Get thumbnail generation status",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Generation status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "generating": {
+                                            "type": "boolean"
+                                        },
+                                        "total": {
+                                            "type": "integer"
+                                        },
+                                        "generated": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/search": {
+            "get": {
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Search files",
+                "description": "Full-text search with pagination",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search query"
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 50
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FileList"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/search/suggestions": {
+            "get": {
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Get search suggestions",
+                "description": "Returns autocomplete suggestions for search",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 10
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Suggestions list",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "suggestions": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/SearchSuggestion"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/favorites": {
+            "get": {
+                "tags": [
+                    "Favorites"
+                ],
+                "summary": "List favorite files",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of favorites",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "favorites": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/MediaFile"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Favorites"
+                ],
+                "summary": "Add a favorite",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "path"
+                                ],
+                                "properties": {
+                                    "path": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Added to favorites"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Favorites"
+                ],
+                "summary": "Remove a favorite",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "path"
+                                ],
+                                "properties": {
+                                    "path": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Removed from favorites"
+                    }
+                }
+            }
+        },
+        "/api/favorites/bulk": {
+            "post": {
+                "tags": [
+                    "Favorites"
+                ],
+                "summary": "Add multiple favorites",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "paths"
+                                ],
+                                "properties": {
+                                    "paths": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Favorites added"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Favorites"
+                ],
+                "summary": "Remove multiple favorites",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "paths"
+                                ],
+                                "properties": {
+                                    "paths": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Favorites removed"
+                    }
+                }
+            }
+        },
+        "/api/favorites/check": {
+            "get": {
+                "tags": [
+                    "Favorites"
+                ],
+                "summary": "Check if file is favorited",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Favorite status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "isFavorite": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tags": {
+            "get": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "List all tags",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of tags",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "tags": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tags/file": {
+            "get": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Get tags for a file",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "File tags",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "tags": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Add tag to file",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "path",
+                                    "tag"
+                                ],
+                                "properties": {
+                                    "path": {
+                                        "type": "string"
+                                    },
+                                    "tag": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tag added"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Remove tag from file",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "path",
+                                    "tag"
+                                ],
+                                "properties": {
+                                    "path": {
+                                        "type": "string"
+                                    },
+                                    "tag": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tag removed"
+                    }
+                }
+            }
+        },
+        "/api/tags/file/set": {
+            "post": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Set all tags for a file",
+                "description": "Replaces all tags for a file with the provided list",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "path",
+                                    "tags"
+                                ],
+                                "properties": {
+                                    "path": {
+                                        "type": "string"
+                                    },
+                                    "tags": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tags updated"
+                    }
+                }
+            }
+        },
+        "/api/tags/batch": {
+            "post": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Get tags for multiple files",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "paths"
+                                ],
+                                "properties": {
+                                    "paths": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tags for each file",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tags/bulk": {
+            "post": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Add tag to multiple files",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "paths",
+                                    "tag"
+                                ],
+                                "properties": {
+                                    "paths": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "tag": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tag added to files"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Remove tag from multiple files",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "paths",
+                                    "tag"
+                                ],
+                                "properties": {
+                                    "paths": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "tag": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tag removed from files"
+                    }
+                }
+            }
+        },
+        "/api/tags/{tag}": {
+            "get": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Get files with a specific tag",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "tag",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Files with tag",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "files": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/MediaFile"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Delete a tag globally",
+                "description": "Removes the tag from all files",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "tag",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tag deleted"
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Rename a tag globally",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "tag",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "newName"
+                                ],
+                                "properties": {
+                                    "newName": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tag renamed"
+                    }
+                }
+            }
+        },
+        "/api/playlists": {
+            "get": {
+                "tags": [
+                    "Playlists"
+                ],
+                "summary": "List all playlists",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of playlists",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "playlists": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "path": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/playlist/{name}": {
+            "get": {
+                "tags": [
+                    "Playlists"
+                ],
+                "summary": "Get playlist contents",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Playlist details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/MediaFile"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stream/{path}": {
+            "get": {
+                "tags": [
+                    "Streaming"
+                ],
+                "summary": "Stream a video file",
+                "description": "Returns video stream with transcoding if needed",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Video stream",
+                        "content": {
+                            "video/mp4": {}
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stream-info/{path}": {
+            "get": {
+                "tags": [
+                    "Streaming"
+                ],
+                "summary": "Get video stream information",
+                "description": "Returns metadata about the video stream",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Stream information",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "needsTranscode": {
+                                            "type": "boolean"
+                                        },
+                                        "cached": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/transcode/clear": {
+            "post": {
+                "tags": [
+                    "Cache"
+                ],
+                "summary": "Clear transcode cache",
+                "description": "Removes all transcoded video files",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cache cleared",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "freedBytes": {
+                                            "type": "integer",
+                                            "format": "int64"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/reindex": {
+            "post": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Trigger media reindex",
+                "description": "Forces a full scan of the media directory",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reindex started"
+                    }
+                }
+            }
+        },
+        "/api/stats": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get library statistics",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Library stats",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Stats"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy"
+                    }
+                }
+            }
+        },
+        "/version": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get version information",
+                "responses": {
+                    "200": {
+                        "description": "Version info",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "version": {
+                                            "type": "string"
+                                        },
+                                        "commit": {
+                                            "type": "string"
+                                        },
+                                        "buildTime": {
+                                            "type": "string"
+                                        },
+                                        "goVersion": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Prometheus metrics",
+                "description": "Available on metrics port (default 9090)",
+                "responses": {
+                    "200": {
+                        "description": "Prometheus metrics",
+                        "content": {
+                            "text/plain": {}
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "cookieAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "session"
+            }
+        },
+        "schemas": {
+            "AuthResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "expiresIn": {
+                        "type": "integer",
+                        "description": "Session duration in seconds"
+                    }
+                }
+            },
+            "Passkey": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "User-friendly name"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "signCount": {
+                        "type": "integer",
+                        "description": "Number of times used"
+                    }
+                }
+            },
+            "MediaFile": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "folder",
+                            "playlist"
+                        ]
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "modifiedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "thumbnailPath": {
+                        "type": "string"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "isFavorite": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "FileList": {
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MediaFile"
+                        }
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "totalPages": {
+                        "type": "integer"
+                    },
+                    "hasMore": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "SearchSuggestion": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "file",
+                            "tag",
+                            "folder"
+                        ]
+                    },
+                    "path": {
+                        "type": "string"
+                    },
+                    "thumbnailPath": {
+                        "type": "string"
+                    }
+                }
+            },
+            "Stats": {
+                "type": "object",
+                "properties": {
+                    "totalFiles": {
+                        "type": "integer"
+                    },
+                    "totalFolders": {
+                        "type": "integer"
+                    },
+                    "totalImages": {
+                        "type": "integer"
+                    },
+                    "totalVideos": {
+                        "type": "integer"
+                    },
+                    "totalPlaylists": {
+                        "type": "integer"
+                    },
+                    "totalFavorites": {
+                        "type": "integer"
+                    },
+                    "totalTags": {
+                        "type": "integer"
+                    }
+                }
+            }
+        }
+    }
+}
