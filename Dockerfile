@@ -21,7 +21,8 @@ RUN apk add --no-cache \
     clang \
     lld \
     make \
-    git
+    git \
+    pkgconf
 
 # Install target platform dependencies including libvips
 RUN xx-apk add --no-cache \
