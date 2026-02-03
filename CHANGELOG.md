@@ -75,7 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - [docs/troubleshooting.md](docs/troubleshooting.md) - Added metrics-based diagnostics
     - [docs/index.md](docs/index.md) - Added link to metrics documentation
 
-- Updated reference Grafanace dashboard [hack/grafana/dashboard.json](hack/grafana/dashboard.json) with above metrics
+- Updated reference Grafana dashboard [hack/grafana/dashboard.json](hack/grafana/dashboard.json) with above metrics
+- Updated README.md to point to documentation for most things ([#110](https://github.com/djryanj/media-viewer/issues/110))
 
 ### Fixed
 
