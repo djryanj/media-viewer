@@ -10,7 +10,7 @@ env:
 jobs:
     cleanup:
         name: Delete PR Docker Image
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         permissions:
             packages: write
 

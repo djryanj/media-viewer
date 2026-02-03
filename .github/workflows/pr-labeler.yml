@@ -11,7 +11,7 @@ permissions:
 jobs:
     label:
         name: Apply Labels
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4

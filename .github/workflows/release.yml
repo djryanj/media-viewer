@@ -17,7 +17,7 @@ jobs:
     # Build and push Docker image first
     docker:
         name: Build and Push Docker
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         outputs:
             digest: ${{ steps.build-push.outputs.digest }}
             tags: ${{ steps.meta.outputs.tags }}
@@ -82,7 +82,7 @@ jobs:
     # Generate SBOM after image is pushed
     sbom:
         name: Generate SBOM
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs: docker
         outputs:
             sbom-file: ${{ steps.sbom.outputs.sbom-file }}
@@ -112,7 +112,7 @@ jobs:
     # Create GitHub Release with changelog and SBOM
     release:
         name: Create GitHub Release
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs: [docker, sbom]
         steps:
             - name: Checkout code
