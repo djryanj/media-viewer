@@ -108,6 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added gradient masks for smooth fade-out at top and bottom edges of all hotzones
     - Enhanced video mode hotzones with additional vertical gradient masks for polished appearance near video controls
 
+- WebAuthN cleanup doesn't try to happen if it's not enabled ([#120](https://github.com/djryanj/media-viewer/issues/120))
+
 ### Performance
 
 - **Optimized Thumbnail Memory Usage with libvips** - Integrated libvips for true decode-time downsampling
