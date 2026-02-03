@@ -1,163 +1,163 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+    push:
+        tags:
+            - 'v*'
 
 permissions:
-  contents: write
-  packages: write
+    contents: write
+    packages: write
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+    REGISTRY: ghcr.io
+    IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Build and push Docker image first
-  docker:
-    name: Build and Push Docker
-    runs-on: ubuntu-latest
-    outputs:
-      digest: ${{ steps.build-push.outputs.digest }}
-      tags: ${{ steps.meta.outputs.tags }}
-      version: ${{ steps.build-info.outputs.version }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    # Build and push Docker image first
+    docker:
+        name: Build and Push Docker
+        runs-on: home-runners
+        outputs:
+            digest: ${{ steps.build-push.outputs.digest }}
+            tags: ${{ steps.meta.outputs.tags }}
+            version: ${{ steps.build-info.outputs.version }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+            - name: Log in to Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=semver,pattern=v{{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=raw,value=latest
+            - name: Extract metadata for Docker
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  tags: |
+                      type=semver,pattern=v{{version}}
+                      type=semver,pattern=v{{major}}.{{minor}}
+                      type=semver,pattern=v{{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+                      type=raw,value=latest
 
-      - name: Get build information
-        id: build-info
-        run: |
-          echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          echo "commit=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
-          echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+            - name: Get build information
+              id: build-info
+              run: |
+                  echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+                  echo "commit=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+                  echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image
-        id: build-push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.build-info.outputs.version }}
-            COMMIT=${{ steps.build-info.outputs.commit }}
-            BUILD_TIME=${{ steps.build-info.outputs.build_time }}
-          cache-from: |
-            type=gha,scope=buildkit-${{ github.ref_name }}
-            type=gha,scope=buildkit-main
-          cache-to: type=gha,mode=max,scope=buildkit-${{ github.ref_name }}
-          provenance: false
-          sbom: false
+            - name: Build and push Docker image
+              id: build-push
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  build-args: |
+                      VERSION=${{ steps.build-info.outputs.version }}
+                      COMMIT=${{ steps.build-info.outputs.commit }}
+                      BUILD_TIME=${{ steps.build-info.outputs.build_time }}
+                  cache-from: |
+                      type=gha,scope=buildkit-${{ github.ref_name }}
+                      type=gha,scope=buildkit-main
+                  cache-to: type=gha,mode=max,scope=buildkit-${{ github.ref_name }}
+                  provenance: false
+                  sbom: false
 
-  # Generate SBOM after image is pushed
-  sbom:
-    name: Generate SBOM
-    runs-on: ubuntu-latest
-    needs: docker
-    outputs:
-      sbom-file: ${{ steps.sbom.outputs.sbom-file }}
-    steps:
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+    # Generate SBOM after image is pushed
+    sbom:
+        name: Generate SBOM
+        runs-on: home-runners
+        needs: docker
+        outputs:
+            sbom-file: ${{ steps.sbom.outputs.sbom-file }}
+        steps:
+            - name: Log in to Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate SBOM
-        id: sbom
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.digest }}
-          format: spdx-json
-          output-file: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
+            - name: Generate SBOM
+              id: sbom
+              uses: anchore/sbom-action@v0
+              with:
+                  image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.digest }}
+                  format: spdx-json
+                  output-file: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
 
-      - name: Upload SBOM as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
-          retention-days: 90
+            - name: Upload SBOM as artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: sbom
+                  path: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
+                  retention-days: 90
 
-  # Create GitHub Release with changelog and SBOM
-  release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [docker, sbom]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    # Create GitHub Release with changelog and SBOM
+    release:
+        name: Create GitHub Release
+        runs-on: home-runners
+        needs: [docker, sbom]
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
-      - name: Download SBOM artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: sbom
-          path: ./artifacts
+            - name: Download SBOM artifact
+              uses: actions/download-artifact@v4
+              with:
+                  name: sbom
+                  path: ./artifacts
 
-      - name: Generate changelog
-        id: changelog
-        uses: mikepenz/release-changelog-builder-action@v5
-        with:
-          configuration: .github/changelog-config.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Generate changelog
+              id: changelog
+              uses: mikepenz/release-changelog-builder-action@v5
+              with:
+                  configuration: .github/changelog-config.json
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body: |
-            ${{ steps.changelog.outputs.changelog }}
-            
-            ---
-            
-            ## Docker Image
-            
-            ```bash
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.docker.outputs.version }}
-            ```
-            
-            **Available tags:**
-            - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.docker.outputs.version }}`
-            - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest`
-            
-            **Digest:** `${{ needs.docker.outputs.digest }}`
-            
-            ## Software Bill of Materials (SBOM)
-            
-            The SBOM for this release is attached below in SPDX JSON format.
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          files: |
-            ./artifacts/*.spdx.json
+            - name: Create Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  body: |
+                      ${{ steps.changelog.outputs.changelog }}
+
+                      ---
+
+                      ## Docker Image
+
+                      ```bash
+                      docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.docker.outputs.version }}
+                      ```
+
+                      **Available tags:**
+                      - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.docker.outputs.version }}`
+                      - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest`
+
+                      **Digest:** `${{ needs.docker.outputs.digest }}`
+
+                      ## Software Bill of Materials (SBOM)
+
+                      The SBOM for this release is attached below in SPDX JSON format.
+                  draft: false
+                  prerelease: ${{ contains(github.ref_name, '-') }}
+                  files: |
+                      ./artifacts/*.spdx.json

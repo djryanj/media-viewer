@@ -1,63 +1,63 @@
 name: Docker PR Cleanup
 
 on:
-  pull_request:
-    types: [closed]
+    pull_request:
+        types: [closed]
 
 env:
-  REGISTRY: ghcr.io
+    REGISTRY: ghcr.io
 
 jobs:
-  cleanup:
-    name: Delete PR Docker Image
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    
-    steps:
-      - name: Delete PR image via GitHub API
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGE_NAME: ${{ github.event.repository.name }}
-          PR_TAG: pr-${{ github.event.pull_request.number }}
-        run: |
-          set -e
-          
-          echo "Looking for image tagged: ${PR_TAG}"
-          
-          # Determine if this is a user or org repository
-          OWNER="${{ github.repository_owner }}"
-          OWNER_TYPE=$(gh api "/users/${OWNER}" --jq '.type' 2>/dev/null || echo "Organization")
-          
-          if [ "$OWNER_TYPE" = "User" ]; then
-            API_PATH="users/${OWNER}"
-          else
-            API_PATH="orgs/${OWNER}"
-          fi
-          
-          echo "Using API path: ${API_PATH}/packages/container/${PACKAGE_NAME}"
-          
-          # Get all versions and find the one with our PR tag
-          VERSION_ID=$(gh api \
-            -H "Accept: application/vnd.github+json" \
-            "/${API_PATH}/packages/container/${PACKAGE_NAME}/versions?per_page=100" \
-            --jq ".[] | select(.metadata.container.tags | index(\"${PR_TAG}\")) | .id" \
-            2>/dev/null || echo "")
-          
-          if [ -z "$VERSION_ID" ]; then
-            echo "No image found with tag '${PR_TAG}' - nothing to delete"
-            exit 0
-          fi
-          
-          echo "Found version ID: ${VERSION_ID}"
-          echo "   Deleting image with tag: ${PR_TAG}"
-          
-          # Delete the specific version
-          HTTP_STATUS=$(gh api \
-            --method DELETE \
-            -H "Accept: application/vnd.github+json" \
-            "/${API_PATH}/packages/container/${PACKAGE_NAME}/versions/${VERSION_ID}" \
-            --silent \
-            2>&1) || true
-          
-          echo "Successfully deleted PR image: ${PR_TAG}"
+    cleanup:
+        name: Delete PR Docker Image
+        runs-on: home-runners
+        permissions:
+            packages: write
+
+        steps:
+            - name: Delete PR image via GitHub API
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  PACKAGE_NAME: ${{ github.event.repository.name }}
+                  PR_TAG: pr-${{ github.event.pull_request.number }}
+              run: |
+                  set -e
+
+                  echo "Looking for image tagged: ${PR_TAG}"
+
+                  # Determine if this is a user or org repository
+                  OWNER="${{ github.repository_owner }}"
+                  OWNER_TYPE=$(gh api "/users/${OWNER}" --jq '.type' 2>/dev/null || echo "Organization")
+
+                  if [ "$OWNER_TYPE" = "User" ]; then
+                    API_PATH="users/${OWNER}"
+                  else
+                    API_PATH="orgs/${OWNER}"
+                  fi
+
+                  echo "Using API path: ${API_PATH}/packages/container/${PACKAGE_NAME}"
+
+                  # Get all versions and find the one with our PR tag
+                  VERSION_ID=$(gh api \
+                    -H "Accept: application/vnd.github+json" \
+                    "/${API_PATH}/packages/container/${PACKAGE_NAME}/versions?per_page=100" \
+                    --jq ".[] | select(.metadata.container.tags | index(\"${PR_TAG}\")) | .id" \
+                    2>/dev/null || echo "")
+
+                  if [ -z "$VERSION_ID" ]; then
+                    echo "No image found with tag '${PR_TAG}' - nothing to delete"
+                    exit 0
+                  fi
+
+                  echo "Found version ID: ${VERSION_ID}"
+                  echo "   Deleting image with tag: ${PR_TAG}"
+
+                  # Delete the specific version
+                  HTTP_STATUS=$(gh api \
+                    --method DELETE \
+                    -H "Accept: application/vnd.github+json" \
+                    "/${API_PATH}/packages/container/${PACKAGE_NAME}/versions/${VERSION_ID}" \
+                    --silent \
+                    2>&1) || true
+
+                  echo "Successfully deleted PR image: ${PR_TAG}"
