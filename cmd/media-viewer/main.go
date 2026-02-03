@@ -160,22 +160,25 @@ func main() {
 		logging.Warn("WebAuthn initialization failed, passkey authentication disabled")
 	}
 
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(bgCtx, 30*time.Second)
-				if err := db.CleanExpiredWebAuthnSessions(ctx); err != nil {
-					logging.Error("Failed to clean expired WebAuthn sessions: %v", err)
+	// Start periodic WebAuthn session cleanup (only if enabled)
+	if config.WebAuthnEnabled {
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					ctx, cancel := context.WithTimeout(bgCtx, 30*time.Second)
+					if err := db.CleanExpiredWebAuthnSessions(ctx); err != nil {
+						logging.Error("Failed to clean expired WebAuthn sessions: %v", err)
+					}
+					cancel()
+				case <-bgCtx.Done():
+					return
 				}
-				cancel()
-			case <-bgCtx.Done():
-				return
 			}
-		}
-	}()
+		}()
+	}
 
 	// Setup router
 	router := setupRouter(h)
@@ -213,7 +216,7 @@ func main() {
 	shutdownComplete := make(chan struct{})
 
 	// Start graceful shutdown handler
-	go handleShutdown(srv, metricsSrv, db, idx, trans, thumbGen, metricsCollector, memMonitor, shutdownComplete)
+	go handleShutdown(srv, metricsSrv, db, idx, trans, thumbGen, metricsCollector, memMonitor, config.WebAuthnEnabled, shutdownComplete)
 
 	// Start server
 	startup.LogServerStarted(startup.ServerConfig{
@@ -348,7 +351,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	return r
 }
 
-func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, metricsCollector *metrics.Collector, memMonitor *memory.Monitor, done chan struct{}) {
+func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *indexer.Indexer, trans *transcoder.Transcoder, thumbGen *media.ThumbnailGenerator, metricsCollector *metrics.Collector, memMonitor *memory.Monitor, webAuthnEnabled bool, done chan struct{}) {
 	defer close(done)
 
 	sigChan := make(chan os.Signal, 1)
@@ -389,11 +392,13 @@ func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *in
 			startup.LogShutdownStepComplete("Metrics server stopped")
 		}
 	}
-	startup.LogShutdownStep("Cleaning up WebAuthn sessions")
-	if err := db.CleanExpiredWebAuthnSessions(ctx); err != nil {
-		logging.Warn("WebAuthn session cleanup error: %v", err)
-	} else {
-		startup.LogShutdownStepComplete("WebAuthn sessions cleaned")
+	if webAuthnEnabled {
+		startup.LogShutdownStep("Cleaning up WebAuthn sessions")
+		if err := db.CleanExpiredWebAuthnSessions(ctx); err != nil {
+			logging.Warn("WebAuthn session cleanup error: %v", err)
+		} else {
+			startup.LogShutdownStepComplete("WebAuthn sessions cleaned")
+		}
 	}
 
 	startup.LogShutdownStep("Shutting down HTTP server")
