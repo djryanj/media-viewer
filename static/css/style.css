@@ -5637,3 +5637,496 @@ select:focus:not(:focus-visible) {
     opacity: 0.6;
     cursor: wait;
 }
+
+/* ===========================================
+   PASTE TAGS MODAL - ADD TAG SECTION
+   =========================================== */
+
+.paste-add-tag-section {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.paste-add-tag-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.paste-add-tag-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.paste-add-tag-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.paste-tag-input-container {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.paste-tag-input {
+    flex: 1;
+    padding: 0.625rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.paste-tag-input:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+}
+
+.paste-tag-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.paste-add-tag-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    white-space: nowrap;
+}
+
+.paste-add-tag-btn [data-lucide] {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Paste tag suggestions */
+.paste-tag-suggestions {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    margin-top: 0.25rem;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.paste-tag-suggestions.hidden {
+    display: none;
+}
+
+.paste-tag-suggestion {
+    padding: 0.625rem 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    border-bottom: 1px solid var(--border-color);
+    transition: background var(--transition);
+}
+
+.paste-tag-suggestion:last-child {
+    border-bottom: none;
+}
+
+.paste-tag-suggestion:hover,
+.paste-tag-suggestion:active {
+    background: var(--bg-secondary);
+}
+
+.paste-tag-suggestion mark {
+    background: rgba(233, 69, 96, 0.3);
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.paste-tag-suggestion .tag-count {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+/* New tag indicator */
+.paste-tag-chip.new-tag {
+    border: 1px dashed var(--accent);
+    background: rgba(233, 69, 96, 0.1);
+}
+
+.paste-tag-chip.new-tag.selected {
+    background: rgba(233, 69, 96, 0.2);
+    border-style: solid;
+}
+
+.paste-tag-new-indicator {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-left: 0.25rem;
+    padding: 0.125rem 0.25rem;
+    background: rgba(233, 69, 96, 0.15);
+    border-radius: 3px;
+}
+
+/* ===========================================
+   PASTE TAGS MODAL - INCLUDE SOURCE OPTION
+   =========================================== */
+
+.paste-include-source-section {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+}
+
+.paste-include-source-section.hidden {
+    display: none;
+}
+
+.paste-include-source-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.paste-include-source-checkbox {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.paste-include-source-checkmark {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    background: var(--bg-secondary);
+}
+
+.paste-include-source-checkmark::after {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background: var(--accent);
+    border-radius: 2px;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.15s ease;
+}
+
+.paste-include-source-checkbox:checked + .paste-include-source-checkmark {
+    border-color: var(--accent);
+    background: var(--bg-tertiary);
+}
+
+.paste-include-source-checkbox:checked + .paste-include-source-checkmark::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.paste-include-source-option:hover .paste-include-source-checkmark {
+    border-color: var(--accent);
+}
+
+.paste-include-source-checkbox:focus-visible + .paste-include-source-checkmark {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+}
+
+.paste-include-source-label {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.paste-include-source-label strong {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .paste-add-tag-header {
+        gap: 0.125rem;
+    }
+
+    .paste-tag-input-container {
+        flex-direction: column;
+    }
+
+    .paste-add-tag-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .paste-include-source-section {
+        padding: 0.625rem;
+    }
+
+    .paste-include-source-label {
+        font-size: 0.8125rem;
+    }
+}
+
+@media (min-width: 600px) {
+    .paste-add-tag-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+}
+
+/* Touch device adjustments */
+@media (hover: none) and (pointer: coarse) {
+    .paste-include-source-option {
+        padding: 0.25rem 0;
+        min-height: 44px;
+    }
+
+    .paste-include-source-checkmark {
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+    }
+
+    .paste-include-source-checkmark::after {
+        width: 12px;
+        height: 12px;
+    }
+}
+
+/* ===========================================
+   TAG MODAL - COPY BUTTONS
+   =========================================== */
+
+.tag-modal-copy-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.tag-modal-copy-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.tag-modal-copy-btn.hidden {
+    display: none;
+}
+
+.tag-modal-copy-btn [data-lucide] {
+    width: 1.125rem;
+    height: 1.125rem;
+    flex-shrink: 0;
+}
+
+.tag-modal-copy-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Responsive adjustments */
+@media (min-width: 600px) {
+    .tag-modal-copy-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .tag-modal-copy-btn {
+        width: auto;
+        flex: 1;
+        min-width: 0;
+        padding: 0.625rem 1rem;
+    }
+}
+
+/* Touch device adjustments */
+@media (hover: none) and (pointer: coarse) {
+    .tag-modal-copy-btn {
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+    }
+}
+
+/* ===========================================
+   TAG MODAL - MERGE BUTTON (for partial tags)
+   =========================================== */
+
+.tag-chip .tag-merge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--success);
+    cursor: pointer;
+    padding: 0.125rem;
+    margin-left: 0.25rem;
+    border-radius: 50%;
+    transition: all var(--transition);
+    vertical-align: middle;
+}
+
+.tag-chip .tag-merge:hover {
+    background: var(--success);
+    color: white;
+}
+
+.tag-chip .tag-merge:active {
+    transform: scale(0.9);
+}
+
+.tag-chip .tag-merge [data-lucide] {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+/* Partial tag styling improvements */
+.tag-chip.partial {
+    opacity: 0.85;
+    border: 1px dashed var(--border-color);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.tag-chip.partial:hover {
+    opacity: 1;
+    border-color: var(--success);
+}
+
+.tag-partial-indicator {
+    color: var(--warning);
+    font-weight: bold;
+    margin-left: 0.125rem;
+    font-size: 0.75rem;
+    cursor: help;
+}
+
+/* Touch device adjustments for merge button */
+@media (hover: none) and (pointer: coarse) {
+    .tag-chip .tag-merge {
+        padding: 0.25rem;
+        margin-left: 0.375rem;
+    }
+
+    .tag-chip .tag-merge [data-lucide] {
+        width: 1rem;
+        height: 1rem;
+    }
+}
+
+/* ===========================================
+   TAG CHIP LAYOUT ADJUSTMENTS
+   =========================================== */
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.625rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition:
+        background var(--transition),
+        transform var(--transition),
+        border-color var(--transition),
+        opacity var(--transition);
+    border: 1px solid transparent;
+}
+
+.tag-chip:hover {
+    background: var(--bg-secondary);
+    transform: scale(1.02);
+}
+
+.tag-chip:active {
+    transform: scale(0.98);
+}
+
+/* Ensure buttons inside tag chips don't interfere with chip click */
+.tag-chip .tag-remove,
+.tag-chip .tag-merge {
+    position: relative;
+    z-index: 1;
+}
+
+.tag-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.125rem;
+    margin-left: 0.25rem;
+    border-radius: 50%;
+    transition: all var(--transition);
+}
+
+.tag-remove:hover {
+    background: var(--error);
+    color: white;
+}
+
+.tag-remove [data-lucide] {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+/* ===========================================
+   KEYBOARD SHORTCUT HINTS
+   =========================================== */
+
+/* Hide hints on mobile/touch devices */
+@media (min-width: 600px) and (hover: hover) {
+    .tag-modal-copy-btn[data-shortcut='ctrl-c'] span::after {
+        content: ' (Ctrl+C)';
+        font-size: 0.75rem;
+        opacity: 0.7;
+        font-weight: normal;
+    }
+
+    .tag-modal-copy-btn[data-shortcut='ctrl-shift-c'] span::after {
+        content: ' (Ctrl+Shift+C)';
+        font-size: 0.75rem;
+        opacity: 0.7;
+        font-weight: normal;
+    }
+}
+
+/* Mac-specific hints (if we want to show Cmd instead of Ctrl) */
+@supports (-webkit-touch-callout: none) {
+    @media (min-width: 600px) and (hover: hover) {
+        .tag-modal-copy-btn[data-shortcut='ctrl-c'] span::after {
+            content: ' (⌘C)';
+        }
+
+        .tag-modal-copy-btn[data-shortcut='ctrl-shift-c'] span::after {
+            content: ' (⌘⇧C)';
+        }
+    }
+}
