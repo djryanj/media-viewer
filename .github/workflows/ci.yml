@@ -379,31 +379,31 @@ jobs:
                   cache-from: type=gha,scope=buildkit-main
                   cache-to: type=gha,mode=max,scope=buildkit-${{ github.ref_name }}
 
-            - name: Comment PR with image info
-              if: github.event_name == 'pull_request'
-              uses: actions/github-script@v7
-              with:
-                  script: |
-                      const prNumber = context.issue.number;
-                      const imageTag = `ghcr.io/${{ github.repository }}:pr-${prNumber}`;
-                      const comment = `## Docker Image Built
+            # - name: Comment PR with image info
+            #   if: github.event_name == 'pull_request'
+            #   uses: actions/github-script@v7
+            #   with:
+            #       script: |
+            #           const prNumber = context.issue.number;
+            #           const imageTag = `ghcr.io/${{ github.repository }}:pr-${prNumber}`;
+            #           const comment = `## Docker Image Built
 
-                      A Docker image has been built and pushed for this PR:
+            #           A Docker image has been built and pushed for this PR:
 
-                      \`\`\`bash
-                      docker pull ${imageTag}
-                      \`\`\`
+            #           \`\`\`bash
+            #           docker pull ${imageTag}
+            #           \`\`\`
 
-                      You can use this image to test changes in your infrastructure before merging.
+            #           You can use this image to test changes in your infrastructure before merging.
 
-                      **Note:** This image is AMD64 only. Multi-arch images are built on release.`;
+            #           **Note:** This image is AMD64 only. Multi-arch images are built on release.`;
 
-                      github.rest.issues.createComment({
-                          issue_number: prNumber,
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          body: comment
-                      });
+            #           github.rest.issues.createComment({
+            #               issue_number: prNumber,
+            #               owner: context.repo.owner,
+            #               repo: context.repo.repo,
+            #               body: comment
+            #           });
 
     ci-success:
         name: CI Success
