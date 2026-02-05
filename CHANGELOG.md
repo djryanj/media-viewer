@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tag Suggestions Styling**: Fixed an issue where tag suggestions in the tag modal appeared visually spread out instead of compact.
 - Fixed inconsistent behavior between single-item tag modal and selection-mode tag modal. ([#118](https://github.com/djryanj/media-viewer/issues/118))
 - Tags copied to clipboard now properly persist between folder navigation ([#118](https://github.com/djryanj/media-viewer/issues/118))
+- **Lightbox Navigation Bug**: Fixed an issue where closing the lightbox while in a subfolder would incorrectly navigate up to the parent folder. The bug was caused by duplicate Escape key handlers in both the lightbox and history manager, each triggering `history.back()`. ([#147](https://github.com/djryanj/media-viewer/issues/147))
 
 ### API Changes
 

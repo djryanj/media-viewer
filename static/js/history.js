@@ -22,6 +22,8 @@ const HistoryManager = {
             }
 
             e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
             this.handleBackAction();
         });
     },
