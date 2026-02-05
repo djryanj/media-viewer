@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.8.0] - February 5, 2026
+
+### New Features
+
+- **Select All Enhancement**: The "Select All" function now selects all items in the current directory, not just those currently loaded in the viewport. A new lightweight API endpoint (`/api/files/paths`) efficiently retrieves item metadata without full file details, enabling selection of thousands of items with minimal overhead.
+
+- **Persistent Selection State**: Selected items now maintain their visual selection state as you scroll through large directories. Items loaded via infinite scroll automatically reflect the correct selection status.
+
+- **Sample Media Download Script**: Added a developer script to download a large number of royalty-free sample media files
+
+### Performance Improvements
+
+- **Database Pagination Limits**: Increased maximum page size from 500 to 100,000 items to support efficient bulk operations. The lightweight file path endpoint can now retrieve metadata for entire large directories in a single request without pagination overhead.
+
+- **Batch Tag Operations**: Tag operations on multiple items now use batch API endpoints, dramatically reducing the number of server requests. Previously, selecting 500 items and applying tags would generate 500+ individual API calls; now this is accomplished with just 2-3 requests.
+
+- **Bulk Tag Limits Increased**: The maximum number of items for bulk tag operations has been increased from 100 to 10,000, supporting large-scale library organization.
+
+- **Optimized Tag Refresh**: After bulk tag operations, gallery items are refreshed using a single batch request instead of individual requests per item.
+
+### Bug Fixes
+
+- **Tag Suggestions Styling**: Fixed an issue where tag suggestions in the tag modal appeared visually spread out instead of compact.
+
+### API Changes
+
+- Added `GET /api/files/paths` - Returns lightweight file metadata (path, name, type) for all items in a directory
+- Added `POST /api/tags/batch` - Retrieves tags for multiple files in a single request
+- Updated `POST /api/tags/bulk` - Now supports up to 10,000 paths per request
+- Updated `DELETE /api/tags/bulk` - Now supports up to 10,000 paths per request
+- Updated database pagination - Maximum page size increased from 500 to 100,000 for bulk operation endpoints
+
+### Documentation
+
+- Added information on downloading sample media using script
+
 ## [0.7.2] - February 4, 2026
 
 This is a bugfix and testing package release with no new features.
