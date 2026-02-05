@@ -218,26 +218,47 @@
         </div>
 
         <!-- Tag Modal -->
-        <div class="modal hidden" id="tag-modal">
+        <div id="tag-modal" class="modal hidden">
             <div class="modal-content">
                 <div class="modal-header">
                     <span><i data-lucide="tag"></i></span>
-                    <h3>Manage Tags</h3>
-                    <button class="modal-close" id="tag-modal-close">
+                    <h2>Manage Tags</h2>
+                    <button id="tag-modal-close" class="modal-close">
                         <i data-lucide="x"></i>
                     </button>
                 </div>
+
                 <div class="modal-body">
-                    <p class="tag-modal-file" id="tag-modal-path"></p>
+                    <div id="tag-modal-path" class="tag-modal-file"></div>
+
                     <div class="tag-input-container">
                         <input type="text" id="tag-input" placeholder="Add a tag..." />
-                        <button class="btn btn-primary" id="add-tag-btn">Add</button>
+                        <button id="add-tag-btn" class="btn btn-primary">Add</button>
                     </div>
-                    <div class="tag-suggestions hidden" id="tag-suggestions"></div>
+
+                    <div id="tag-suggestions" class="tag-suggestions hidden"></div>
+
                     <div class="current-tags-section">
                         <h3>Current Tags</h3>
-                        <div class="current-tags" id="current-tags">
+                        <div id="current-tags" class="current-tags">
                             <span class="no-tags">No tags</span>
+                        </div>
+
+                        <div class="tag-modal-copy-actions">
+                            <button
+                                id="tag-modal-copy-btn"
+                                class="btn btn-secondary tag-modal-copy-btn hidden"
+                            >
+                                <i data-lucide="clipboard-copy"></i>
+                                <span>Copy Tags</span>
+                            </button>
+                            <button
+                                id="tag-modal-copy-all-btn"
+                                class="btn btn-secondary tag-modal-copy-btn hidden"
+                            >
+                                <i data-lucide="clipboard-list"></i>
+                                <span>Copy All Tags</span>
+                            </button>
                         </div>
                     </div>
                 </div>

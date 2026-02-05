@@ -11,25 +11,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New Features
 
-- **Select All Enhancement**: The "Select All" function now selects all items in the current directory, not just those currently loaded in the viewport. A new lightweight API endpoint (`/api/files/paths`) efficiently retrieves item metadata without full file details, enabling selection of thousands of items with minimal overhead.
+- **Select All Enhancement**: The "Select All" function now selects all items in the current directory, not just those currently loaded in the viewport. A new lightweight API endpoint (`/api/files/paths`) efficiently retrieves item metadata without full file details, enabling selection of thousands of items with minimal overhead. ([#141](https://github.com/djryanj/media-viewer/issues/141))
 
-- **Persistent Selection State**: Selected items now maintain their visual selection state as you scroll through large directories. Items loaded via infinite scroll automatically reflect the correct selection status.
+- **Persistent Selection State**: Selected items now maintain their visual selection state as you scroll through large directories. Items loaded via infinite scroll automatically reflect the correct selection status. ([#141](https://github.com/djryanj/media-viewer/issues/141))
 
 - **Sample Media Download Script**: Added a developer script to download a large number of royalty-free sample media files
 
+**Enhanced Select All Functionality** ([#118](https://github.com/djryanj/media-viewer/issues/118))
+
+- The "Select All" function now selects all items in the current directory, including items not yet loaded in the viewport. A new lightweight API endpoint efficiently retrieves item metadata, enabling selection of thousands of items with minimal overhead.
+- Selected items maintain their visual selection state as you scroll through large directories. Items loaded via infinite scroll automatically display the correct selection status.
+
+**Improved Tag Copy/Paste Workflow** ([#118](https://github.com/djryanj/media-viewer/issues/118))
+
+- Added "Copy Tags to Clipboard" button in the tag management modal, allowing you to copy tags from any item for later pasting to other items not currently in view.
+- New "Copy All Tags" option when managing tags for multiple items with different tags, copying all unique tags across the selection.
+- Added ability to add new tags during paste/merge operations, with an option to apply new tags to the source item as well.
+- Partial tags (tags not on all selected items) now display a merge button (+) to quickly apply them to all selected items.
+- Keyboard shortcuts: `Ctrl+C` copies common tags, `Ctrl+Shift+C` copies all unique tags when the tag modal is open.
+
+**Tag Modal Enhancements** ([#118](https://github.com/djryanj/media-viewer/issues/118))
+
+- When multiple items are selected with different tags, the modal now clearly distinguishes between common tags (on all items) and partial tags (on some items).
+- Partial tags display a visual indicator (~) and tooltip showing which items have the tag.
+- Single item selection in bulk mode now displays the item name instead of "1 items selected".
+
 ### Performance Improvements
 
-- **Database Pagination Limits**: Increased maximum page size from 500 to 100,000 items to support efficient bulk operations. The lightweight file path endpoint can now retrieve metadata for entire large directories in a single request without pagination overhead.
+- **Database Pagination Limits**: Increased maximum page size from 500 to 100,000 items to support efficient bulk operations. The lightweight file path endpoint can now retrieve metadata for entire large directories in a single request without pagination overhead. ([#141](https://github.com/djryanj/media-viewer/issues/141))
 
-- **Batch Tag Operations**: Tag operations on multiple items now use batch API endpoints, dramatically reducing the number of server requests. Previously, selecting 500 items and applying tags would generate 500+ individual API calls; now this is accomplished with just 2-3 requests.
+- **Batch Tag Operations**: Tag operations on multiple items now use batch API endpoints, dramatically reducing the number of server requests. Previously, selecting 500 items and applying tags would generate 500+ individual API calls; now this is accomplished with just 2-3 requests. ([#141](https://github.com/djryanj/media-viewer/issues/141))
 
-- **Bulk Tag Limits Increased**: The maximum number of items for bulk tag operations has been increased from 100 to 10,000, supporting large-scale library organization.
+- **Bulk Tag Limits Increased**: The maximum number of items for bulk tag operations has been increased from 100 to 10,000, supporting large-scale library organization. ([#141](https://github.com/djryanj/media-viewer/issues/141))
 
-- **Optimized Tag Refresh**: After bulk tag operations, gallery items are refreshed using a single batch request instead of individual requests per item.
+- **Optimized Tag Refresh**: After bulk tag operations, gallery items are refreshed using a single batch request instead of individual requests per item. ([#141](https://github.com/djryanj/media-viewer/issues/141))
 
 ### Bug Fixes
 
 - **Tag Suggestions Styling**: Fixed an issue where tag suggestions in the tag modal appeared visually spread out instead of compact.
+- Fixed inconsistent behavior between single-item tag modal and selection-mode tag modal. ([#118](https://github.com/djryanj/media-viewer/issues/118))
+- Tags copied to clipboard now properly persist between folder navigation ([#118](https://github.com/djryanj/media-viewer/issues/118))
 
 ### API Changes
 
@@ -42,6 +63,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - Added information on downloading sample media using script
+
+### Keyboard Shortcuts
+
+| Shortcut       | Context        | Action                            |
+| -------------- | -------------- | --------------------------------- |
+| `Ctrl+C`       | Tag modal open | Copy common tags to clipboard     |
+| `Ctrl+Shift+C` | Tag modal open | Copy all unique tags to clipboard |
+| `Ctrl+A`       | Selection mode | Select all items                  |
+| `Ctrl+V`       | Selection mode | Paste tags to selected items      |
 
 ## [0.7.2] - February 4, 2026
 

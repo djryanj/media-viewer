@@ -48,10 +48,12 @@ When in selection mode:
 
 When the tag modal is open:
 
-| Shortcut   | Action                            |
-| ---------- | --------------------------------- |
-| ++enter++  | Add typed tag                     |
-| ++escape++ | Close suggestions, or close modal |
+| Shortcut         | Action                            |
+| ---------------- | --------------------------------- |
+| ++enter++        | Add typed tag                     |
+| ++escape++       | Close suggestions, or close modal |
+| ++ctrl+c++       | Copy common tags to clipboard     |
+| ++ctrl+shift+c++ | Copy all unique tags to clipboard |
 
 ## Playlist Player Shortcuts
 

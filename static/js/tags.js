@@ -7,6 +7,10 @@ const Tags = {
     bulkPaths: [],
     bulkNames: [],
 
+    // Store current tags for copy functionality
+    currentTagsList: [], // Common tags (or all tags in single-item mode)
+    allUniqueTags: [], // All unique tags across selected items (bulk mode only)
+
     init() {
         this.cacheElements();
         this.bindEvents();
@@ -23,6 +27,8 @@ const Tags = {
             tagSuggestions: document.getElementById('tag-suggestions'),
             currentTags: document.getElementById('current-tags'),
             addTagBtn: document.getElementById('add-tag-btn'),
+            copyTagsBtn: document.getElementById('tag-modal-copy-btn'),
+            copyAllTagsBtn: document.getElementById('tag-modal-copy-all-btn'),
         };
     },
 
@@ -65,8 +71,154 @@ const Tags = {
         if (this.elements.addTagBtn) {
             this.elements.addTagBtn.addEventListener('click', () => this.addTagFromInput());
         }
+
+        if (this.elements.copyTagsBtn) {
+            this.elements.copyTagsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.copyTagsToClipboard(false);
+            });
+        }
+
+        if (this.elements.copyAllTagsBtn) {
+            this.elements.copyAllTagsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.copyTagsToClipboard(true);
+            });
+        }
+
+        // Keyboard shortcuts for copy
+        // Ctrl+C = Copy common/regular tags
+        // Ctrl+Shift+C = Copy ALL tags (when available)
+        document.addEventListener('keydown', (e) => {
+            if (!this.isModalOpen()) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                // Don't intercept if user is selecting text in input
+                if (e.target.matches('input, textarea') && window.getSelection().toString()) {
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                if (e.shiftKey) {
+                    // Ctrl+Shift+C = Copy all tags
+                    if (this.allUniqueTags.length > 0) {
+                        this.copyTagsToClipboard(true);
+                    } else {
+                        Gallery.showToast('No tags to copy');
+                    }
+                } else {
+                    // Ctrl+C = Copy common/regular tags
+                    if (this.currentTagsList.length > 0) {
+                        this.copyTagsToClipboard(false);
+                    } else {
+                        Gallery.showToast('No tags to copy');
+                    }
+                }
+            }
+        });
     },
 
+    /**
+     * Check if the tag modal is currently open
+     */
+    isModalOpen() {
+        return this.elements.tagModal && !this.elements.tagModal.classList.contains('hidden');
+    },
+
+    /**
+     * Copy tags to clipboard
+     * @param {boolean} copyAll - If true, copy all unique tags; if false, copy common tags only
+     */
+    copyTagsToClipboard(copyAll = false) {
+        const tagsToCopy = copyAll ? this.allUniqueTags : this.currentTagsList;
+
+        if (!tagsToCopy || tagsToCopy.length === 0) {
+            Gallery.showToast('No tags to copy');
+            return;
+        }
+
+        if (typeof TagClipboard !== 'undefined') {
+            let sourcePath = null;
+            let sourceName = null;
+
+            if (this.isBulkMode && this.bulkPaths.length > 1) {
+                sourceName = `${this.bulkPaths.length} items`;
+                sourcePath = null;
+            } else if (this.isBulkMode && this.bulkPaths.length === 1) {
+                sourceName = this.bulkNames[0];
+                sourcePath = this.bulkPaths[0];
+            } else {
+                sourceName = this.currentName;
+                sourcePath = this.currentPath;
+            }
+
+            // Use copyTagsDirect which also saves to sessionStorage
+            TagClipboard.copyTagsDirect(tagsToCopy, sourcePath, sourceName);
+
+            const tagCount = tagsToCopy.length;
+            const copyType = copyAll ? 'all ' : '';
+            Gallery.showToast(
+                `Copied ${copyType}${tagCount} tag${tagCount !== 1 ? 's' : ''} to clipboard`
+            );
+        } else {
+            Gallery.showToast('Clipboard not available');
+        }
+    },
+    /**
+     * Update copy button states and text
+     */
+    updateCopyButtonState() {
+        const commonCount = this.currentTagsList.length;
+        const allCount = this.allUniqueTags.length;
+        const hasNonCommonTags =
+            this.isBulkMode && this.bulkPaths.length > 1 && allCount > commonCount;
+
+        // Main copy button (common tags or all tags for single item)
+        if (this.elements.copyTagsBtn) {
+            if (commonCount > 0) {
+                this.elements.copyTagsBtn.classList.remove('hidden');
+                this.elements.copyTagsBtn.disabled = false;
+
+                const textSpan = this.elements.copyTagsBtn.querySelector('span');
+                if (textSpan) {
+                    if (hasNonCommonTags) {
+                        textSpan.textContent = `Copy ${commonCount} Common Tag${commonCount !== 1 ? 's' : ''}`;
+                    } else {
+                        textSpan.textContent = `Copy ${commonCount} Tag${commonCount !== 1 ? 's' : ''}`;
+                    }
+                }
+
+                // Update title/tooltip with appropriate shortcut
+                this.elements.copyTagsBtn.title = 'Copy tags to clipboard (Ctrl+C)';
+                this.elements.copyTagsBtn.dataset.shortcut = 'ctrl-c';
+            } else {
+                this.elements.copyTagsBtn.classList.add('hidden');
+            }
+        }
+
+        // Copy all button (only shown when there are non-common tags in multi-item bulk mode)
+        if (this.elements.copyAllTagsBtn) {
+            if (hasNonCommonTags) {
+                this.elements.copyAllTagsBtn.classList.remove('hidden');
+                this.elements.copyAllTagsBtn.disabled = false;
+
+                const textSpan = this.elements.copyAllTagsBtn.querySelector('span');
+                if (textSpan) {
+                    textSpan.textContent = `Copy All ${allCount} Tags`;
+                }
+
+                // Update title/tooltip with appropriate shortcut
+                this.elements.copyAllTagsBtn.title = 'Copy all unique tags (Ctrl+Shift+C)';
+                this.elements.copyAllTagsBtn.dataset.shortcut = 'ctrl-shift-c';
+            } else {
+                this.elements.copyAllTagsBtn.classList.add('hidden');
+            }
+        }
+    },
     async loadAllTags() {
         try {
             const response = await fetch('/api/tags');
@@ -84,6 +236,8 @@ const Tags = {
         this.currentName = name;
         this.bulkPaths = [];
         this.bulkNames = [];
+        this.currentTagsList = [];
+        this.allUniqueTags = [];
 
         if (!this.elements.tagModal) return;
 
@@ -92,12 +246,24 @@ const Tags = {
         this.elements.tagSuggestions.innerHTML = '';
         this.elements.tagSuggestions.classList.add('hidden');
 
+        // Hide copy buttons until tags are loaded
+        if (this.elements.copyTagsBtn) {
+            this.elements.copyTagsBtn.classList.add('hidden');
+        }
+        if (this.elements.copyAllTagsBtn) {
+            this.elements.copyAllTagsBtn.classList.add('hidden');
+        }
+
         await this.loadFileTags(path);
 
         this.elements.tagModal.classList.remove('hidden');
         this.elements.tagInput.focus();
 
-        HistoryManager.pushState('tag-modal');
+        lucide.createIcons();
+
+        if (typeof HistoryManager !== 'undefined') {
+            HistoryManager.pushState('tag-modal');
+        }
     },
 
     async openBulkModal(paths, names) {
@@ -106,25 +272,43 @@ const Tags = {
         this.bulkNames = names;
         this.currentPath = null;
         this.currentName = null;
+        this.currentTagsList = [];
+        this.allUniqueTags = [];
 
         if (!this.elements.tagModal) return;
 
-        this.elements.tagModalPath.textContent = `${paths.length} items selected`;
+        if (paths.length === 1) {
+            this.elements.tagModalPath.textContent = names[0] || paths[0];
+        } else {
+            this.elements.tagModalPath.textContent = `${paths.length} items selected`;
+        }
+
         this.elements.tagInput.value = '';
         this.elements.tagSuggestions.innerHTML = '';
         this.elements.tagSuggestions.classList.add('hidden');
+
+        // Hide copy buttons until tags are loaded
+        if (this.elements.copyTagsBtn) {
+            this.elements.copyTagsBtn.classList.add('hidden');
+        }
+        if (this.elements.copyAllTagsBtn) {
+            this.elements.copyAllTagsBtn.classList.add('hidden');
+        }
 
         await this.loadBulkTags(paths);
 
         this.elements.tagModal.classList.remove('hidden');
         this.elements.tagInput.focus();
 
-        HistoryManager.pushState('tag-modal');
+        lucide.createIcons();
+
+        if (typeof HistoryManager !== 'undefined') {
+            HistoryManager.pushState('tag-modal');
+        }
     },
 
     async loadBulkTags(paths) {
         try {
-            // Use batch endpoint instead of individual requests
             const response = await fetch('/api/tags/batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -137,21 +321,37 @@ const Tags = {
 
             const tagsByPath = await response.json();
 
-            // Convert to array of tag arrays for processing
             const tagSets = paths.map((path) => tagsByPath[path] || []);
 
-            // Find common tags (present in ALL items)
             const commonTags = tagSets.reduce((common, tags, index) => {
                 if (index === 0) return new Set(tags);
                 return new Set([...common].filter((tag) => tags.includes(tag)));
             }, new Set());
 
-            // Find all unique tags
             const allUniqueTags = new Set(tagSets.flat());
+
+            // Store for copy functionality
+            this.currentTagsList = Array.from(commonTags);
+            this.allUniqueTags = Array.from(allUniqueTags);
+
+            // Store tag sources for rendering
+            this.tagSources = new Map();
+            for (let i = 0; i < paths.length; i++) {
+                const tags = tagsByPath[paths[i]] || [];
+                tags.forEach((tag) => {
+                    if (!this.tagSources.has(tag)) {
+                        this.tagSources.set(tag, []);
+                    }
+                    this.tagSources.get(tag).push(this.bulkNames[i] || paths[i]);
+                });
+            }
 
             this.renderBulkTags(Array.from(commonTags), Array.from(allUniqueTags));
         } catch (error) {
             console.error('Error loading bulk tags:', error);
+            this.currentTagsList = [];
+            this.allUniqueTags = [];
+            this.tagSources = new Map();
             this.renderBulkTags([], []);
         }
     },
@@ -161,27 +361,86 @@ const Tags = {
 
         if (allTags.length === 0) {
             this.elements.currentTags.innerHTML = '<span class="no-tags">No tags</span>';
+            this.updateCopyButtonState();
             return;
         }
 
+        const hasNonCommonTags = this.bulkPaths.length > 1 && allTags.length > commonTags.length;
+
         allTags.forEach((tag) => {
             const isCommon = commonTags.includes(tag);
+            const sources = this.tagSources?.get(tag) || [];
             const tagEl = document.createElement('span');
             tagEl.className = 'tag-chip' + (isCommon ? '' : ' partial');
+            tagEl.dataset.tag = tag;
+
+            // Build tooltip showing which items have this tag
+            let tooltipText = '';
+            if (!isCommon && sources.length > 0) {
+                tooltipText = `On ${sources.length}/${this.bulkPaths.length}: ${sources.slice(0, 3).join(', ')}${sources.length > 3 ? '...' : ''}`;
+            }
+
             tagEl.innerHTML = `
                 ${this.escapeHtml(tag)}
-                ${!isCommon ? '<span class="tag-partial-indicator" title="Not on all items">~</span>' : ''}
+                ${!isCommon ? `<span class="tag-partial-indicator" title="${this.escapeHtml(tooltipText)}">~</span>` : ''}
+                ${!isCommon && this.bulkPaths.length > 1 ? `<button class="tag-merge" data-tag="${this.escapeHtml(tag)}" title="Apply to all items"><i data-lucide="plus-circle"></i></button>` : ''}
                 <button class="tag-remove" data-tag="${this.escapeHtml(tag)}" title="${isCommon ? 'Remove from all' : 'Remove from items that have it'}"><i data-lucide="x"></i></button>
             `;
 
-            tagEl.querySelector('.tag-remove').addEventListener('click', () => {
+            // Bind remove handler
+            tagEl.querySelector('.tag-remove').addEventListener('click', (e) => {
+                e.stopPropagation();
                 this.removeBulkTag(tag);
             });
+
+            // Bind merge handler for non-common tags
+            const mergeBtn = tagEl.querySelector('.tag-merge');
+            if (mergeBtn) {
+                mergeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.mergeTagToAll(tag);
+                });
+            }
 
             this.elements.currentTags.appendChild(tagEl);
         });
 
         lucide.createIcons();
+        this.updateCopyButtonState();
+    },
+
+    /**
+     * Merge a partial tag to all selected items
+     */
+    async mergeTagToAll(tagName) {
+        if (this.bulkPaths.length === 0) return;
+
+        try {
+            const response = await fetch('/api/tags/bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    paths: this.bulkPaths,
+                    tag: tagName,
+                }),
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+
+                // Reload tags to reflect the change
+                await this.loadBulkTags(this.bulkPaths);
+                await this.loadAllTags();
+                await this.batchRefreshGalleryItemTags(this.bulkPaths);
+
+                Gallery.showToast(`Applied "${tagName}" to all ${this.bulkPaths.length} items`);
+            } else {
+                throw new Error('Failed to merge tag');
+            }
+        } catch (error) {
+            console.error('Error merging tag:', error);
+            Gallery.showToast('Failed to apply tag to all items', 'error');
+        }
     },
 
     closeModal() {
@@ -193,10 +452,13 @@ const Tags = {
         this.isBulkMode = false;
         this.bulkPaths = [];
         this.bulkNames = [];
+        this.currentTagsList = [];
+        this.allUniqueTags = [];
+        this.tagSources = null;
     },
 
     closeModalWithHistory() {
-        if (HistoryManager.hasState('tag-modal')) {
+        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('tag-modal')) {
             history.back();
         } else {
             this.closeModal();
@@ -208,10 +470,14 @@ const Tags = {
             const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
             if (response.ok) {
                 const tags = await response.json();
+                this.currentTagsList = tags || [];
+                this.allUniqueTags = tags || []; // Same as currentTagsList for single item
                 this.renderCurrentTags(tags);
             }
         } catch (error) {
             console.error('Error loading file tags:', error);
+            this.currentTagsList = [];
+            this.allUniqueTags = [];
         }
     },
 
@@ -220,6 +486,7 @@ const Tags = {
 
         if (!tags || tags.length === 0) {
             this.elements.currentTags.innerHTML = '<span class="no-tags">No tags</span>';
+            this.updateCopyButtonState();
             return;
         }
 
@@ -229,9 +496,9 @@ const Tags = {
             tagEl.dataset.tag = tag;
             tagEl.title = `Click to search for "${tag}"`;
             tagEl.innerHTML = `
-            ${this.escapeHtml(tag)}
-            <button class="tag-remove" data-tag="${this.escapeHtml(tag)}" title="Remove tag"><i data-lucide="x"></i></button>
-        `;
+                ${this.escapeHtml(tag)}
+                <button class="tag-remove" data-tag="${this.escapeHtml(tag)}" title="Remove tag"><i data-lucide="x"></i></button>
+            `;
 
             tagEl.querySelector('.tag-remove').addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -242,6 +509,7 @@ const Tags = {
         });
 
         lucide.createIcons();
+        this.updateCopyButtonState();
     },
 
     showSuggestions(query) {
@@ -264,11 +532,11 @@ const Tags = {
         this.elements.tagSuggestions.innerHTML = matches
             .map(
                 (tag) => `
-            <div class="tag-suggestion" data-tag="${this.escapeHtml(tag.name)}">
-                ${this.highlightMatch(tag.name, query)}
-                <span class="tag-count">(${tag.itemCount})</span>
-            </div>
-        `
+                <div class="tag-suggestion" data-tag="${this.escapeHtml(tag.name)}">
+                    ${this.highlightMatch(tag.name, query)}
+                    <span class="tag-count">(${tag.itemCount})</span>
+                </div>
+            `
             )
             .join('');
 
@@ -351,7 +619,6 @@ const Tags = {
                 await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
 
-                // Batch refresh all affected gallery items
                 await this.batchRefreshGalleryItemTags(this.bulkPaths);
 
                 Gallery.showToast(`Added "${tagName}" to ${result.success} items`);
@@ -405,7 +672,6 @@ const Tags = {
                 await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
 
-                // Batch refresh all affected gallery items
                 await this.batchRefreshGalleryItemTags(this.bulkPaths);
 
                 Gallery.showToast(`Removed "${tagName}" from ${result.success} items`);
@@ -420,10 +686,8 @@ const Tags = {
 
     /**
      * Batch refresh tags for multiple gallery items using a single API call
-     * Only refreshes items that are currently in the DOM
      */
     async batchRefreshGalleryItemTags(paths) {
-        // Filter to only paths that have elements in the DOM
         const visiblePaths = paths.filter((path) =>
             document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`)
         );
@@ -443,7 +707,6 @@ const Tags = {
 
             const tagsByPath = await response.json();
 
-            // Update each visible gallery item
             for (const path of visiblePaths) {
                 const tags = tagsByPath[path] || [];
                 this.updateGalleryItemTagsDOM(path, tags);
@@ -460,13 +723,11 @@ const Tags = {
         document
             .querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`)
             .forEach((item) => {
-                // Update tag button state
                 const tagButton = item.querySelector('.tag-button');
                 if (tagButton) {
                     tagButton.classList.toggle('has-tags', tags && tags.length > 0);
                 }
 
-                // Update mobile info tags
                 const mobileTagsContainer = item.querySelector(
                     '.gallery-item-mobile-info .gallery-item-tags'
                 );
@@ -482,7 +743,6 @@ const Tags = {
                     }
                 }
 
-                // Update desktop info tags
                 const desktopInfo = item.querySelector('.gallery-item-info');
                 if (desktopInfo) {
                     let desktopTagsContainer = desktopInfo.querySelector('.gallery-item-tags');
@@ -503,7 +763,6 @@ const Tags = {
 
     /**
      * Refresh a single gallery item's tags (makes API call)
-     * Use batchRefreshGalleryItemTags for multiple items
      */
     async refreshGalleryItemTags(path) {
         try {
@@ -527,7 +786,6 @@ const Tags = {
             return;
         }
 
-        // Store all tags for tooltip
         container.dataset.allTags = JSON.stringify(tags);
 
         const displayTags = tags.slice(0, 3);
@@ -535,14 +793,12 @@ const Tags = {
 
         displayTags.forEach((tag) => {
             if (isMobile) {
-                // Simple tags for mobile (no remove button)
                 const tagEl = document.createElement('span');
                 tagEl.className = 'item-tag';
                 tagEl.textContent = tag;
                 tagEl.dataset.tag = tag;
                 container.appendChild(tagEl);
             } else {
-                // "X | tag" style for desktop
                 const tagEl = document.createElement('span');
                 tagEl.className = 'item-tag';
                 tagEl.dataset.tag = tag;
@@ -604,7 +860,6 @@ const Tags = {
 
     bindTagClickDelegation() {
         const handleTagInteraction = (e) => {
-            // Handle tag remove button clicks
             const removeBtn = e.target.closest('.item-tag-remove');
             if (removeBtn) {
                 e.preventDefault();
@@ -631,17 +886,14 @@ const Tags = {
                 return;
             }
 
-            // Skip paste modal tag chips
             if (e.target.closest('.paste-tag-chip')) {
                 return;
             }
 
-            // Skip .more tags - TagTooltip handles these
             if (e.target.closest('.item-tag.more')) {
                 return;
             }
 
-            // Handle .item-tag clicks (gallery items)
             const itemTag = e.target.closest('.item-tag:not(.more)');
             if (itemTag && !e.target.closest('.item-tag-remove')) {
                 e.preventDefault();
@@ -653,7 +905,6 @@ const Tags = {
                 return;
             }
 
-            // Handle .tag-tooltip-tag clicks (overflow tooltip)
             const tooltipTag = e.target.closest('.tag-tooltip-tag');
             if (tooltipTag && !e.target.closest('.item-tag-remove')) {
                 e.preventDefault();
@@ -670,9 +921,8 @@ const Tags = {
                 return;
             }
 
-            // Handle .tag-chip clicks (tag modal)
             const tagChip = e.target.closest('.tag-chip:not(.paste-tag-chip)');
-            if (tagChip && !e.target.closest('.tag-remove')) {
+            if (tagChip && !e.target.closest('.tag-remove') && !e.target.closest('.tag-merge')) {
                 e.preventDefault();
                 e.stopPropagation();
                 const tagName = tagChip.dataset.tag || tagChip.childNodes[0]?.textContent?.trim();
@@ -699,10 +949,8 @@ const Tags = {
             });
 
             if (response.ok) {
-                // Refresh the gallery item's tags
                 this.refreshGalleryItemTags(itemPath);
 
-                // Update tooltip if open
                 if (typeof TagTooltip !== 'undefined' && TagTooltip.currentTarget) {
                     const galleryItem = TagTooltip.currentTarget.closest('.gallery-item');
                     if (galleryItem?.dataset.path === itemPath) {
@@ -715,10 +963,8 @@ const Tags = {
                     }
                 }
 
-                // Reload all tags list
                 await this.loadAllTags();
 
-                // Show feedback
                 if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                     Gallery.showToast(`Removed tag "${tagName}"`);
                 }
@@ -738,7 +984,7 @@ const Tags = {
 
         const searchQuery = `tag:${tagName}`;
 
-        if (Search.elements.input) {
+        if (typeof Search !== 'undefined' && Search.elements.input) {
             Search.elements.input.value = searchQuery;
             Search.elements.clear?.classList.remove('hidden');
         }
@@ -754,7 +1000,9 @@ const Tags = {
             }
         }
 
-        Search.performSearch(searchQuery);
+        if (typeof Search !== 'undefined') {
+            Search.performSearch(searchQuery);
+        }
     },
 };
 
