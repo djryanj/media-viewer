@@ -38,6 +38,10 @@ const (
 	FilterTypeClause = " AND f.type = ?"
 	// TagPrefix is the prefix used for tag search queries.
 	TagPrefix = "tag:"
+	// TagSuggestionType is the type identifier for tag suggestions.
+	TagSuggestionType = "tag"
+	// TagExcludeSuggestionType is the type identifier for tag exclusion suggestions.
+	TagExcludeSuggestionType = "tag-exclude"
 )
 
 // ListOptions specifies options for listing directory contents.
@@ -947,10 +951,10 @@ func (d *Database) getTagSuggestionsForExclusionUnlocked(ctx context.Context, qu
 		}
 
 		prefix := "tag:"
-		suggestionType := "tag"
+		suggestionType := TagSuggestionType
 		if isExclusion {
 			prefix = "-tag:"
-			suggestionType = "tag-exclude"
+			suggestionType = TagExcludeSuggestionType
 		}
 
 		highlight := name
@@ -1025,7 +1029,7 @@ func (d *Database) getTagSuggestionsUnlocked(ctx context.Context, query string, 
 		suggestions = append(suggestions, SearchSuggestion{
 			Path:      "tag:" + name,
 			Name:      name,
-			Type:      "tag",
+			Type:      TagSuggestionType,
 			Highlight: highlight,
 			ItemCount: count,
 		})
