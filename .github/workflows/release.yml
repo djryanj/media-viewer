@@ -140,7 +140,7 @@ jobs:
                   output-file: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
 
             - name: Upload SBOM as artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v6
               with:
                   name: sbom
                   path: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
