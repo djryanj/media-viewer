@@ -80,7 +80,7 @@ func main() {
 func printUsage() {
 	fmt.Println("Media Viewer Password Management")
 	fmt.Println("")
-	fmt.Println("Usage: usermgmt <command>")
+	fmt.Println("Usage: resetpw <command>")
 	fmt.Println("")
 	fmt.Println("Commands:")
 	fmt.Println("  reset   - Reset the password")
