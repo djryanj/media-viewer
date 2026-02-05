@@ -1,7 +1,7 @@
 const TagClipboard = {
     copiedTags: [],
     sourceItemName: null,
-    sourcePath: null, // Track source path to exclude from paste destinations
+    sourcePath: null,
 
     async copyTags(path, name) {
         try {
@@ -72,7 +72,11 @@ const TagClipboard = {
             const element = document.querySelector(
                 `.gallery-item[data-path="${CSS.escape(paths[i])}"]`
             );
-            if (element && element.dataset.type !== 'folder') {
+            // Check selectedData if element not in DOM (for select-all scenarios)
+            const itemData = ItemSelection.selectedData.get(paths[i]);
+            const type = element?.dataset.type || itemData?.type;
+
+            if (type && type !== 'folder') {
                 taggableItems.push({ path: paths[i], name: names[i] });
             }
         }
@@ -90,7 +94,7 @@ const TagClipboard = {
     },
 
     /**
-     * Open merge modal - collects tags from all items and pastes to all
+     * Open merge modal - collects tags from all items using batch endpoint
      */
     async openMergeModal(items) {
         if (items.length < 2) {
@@ -98,45 +102,54 @@ const TagClipboard = {
             return;
         }
 
-        // Collect all unique tags from all selected items
-        const allTags = new Set();
-        const tagSources = new Map(); // Track which items have which tags
+        try {
+            // Use batch endpoint to get all tags in ONE request
+            const response = await fetch('/api/tags/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: items.map((i) => i.path) }),
+            });
 
-        for (const item of items) {
-            try {
-                const response = await fetch(
-                    `/api/tags/file?path=${encodeURIComponent(item.path)}`
-                );
-                if (response.ok) {
-                    const tags = await response.json();
-                    tags.forEach((tag) => {
-                        allTags.add(tag);
-                        if (!tagSources.has(tag)) {
-                            tagSources.set(tag, []);
-                        }
-                        tagSources.get(tag).push(item.name);
-                    });
-                }
-            } catch (error) {
-                console.error(`Error fetching tags for ${item.path}:`, error);
+            if (!response.ok) {
+                throw new Error('Failed to fetch tags');
             }
+
+            const tagsByPath = await response.json();
+
+            // Collect all unique tags and track which items have each tag
+            const allTags = new Set();
+            const tagSources = new Map();
+
+            for (const item of items) {
+                const tags = tagsByPath[item.path] || [];
+                tags.forEach((tag) => {
+                    allTags.add(tag);
+                    if (!tagSources.has(tag)) {
+                        tagSources.set(tag, []);
+                    }
+                    tagSources.get(tag).push(item.name);
+                });
+            }
+
+            if (allTags.size === 0) {
+                Gallery.showToast('No tags found on selected items');
+                return;
+            }
+
+            // Store for the modal
+            this.mergeItems = items;
+            this.mergeTags = Array.from(allTags);
+            this.mergeTagSources = tagSources;
+
+            this.showPasteConfirmationModal(
+                items.map((i) => i.path),
+                items.map((i) => i.name),
+                'merge'
+            );
+        } catch (error) {
+            console.error('Error loading tags for merge:', error);
+            Gallery.showToast('Failed to load tags');
         }
-
-        if (allTags.size === 0) {
-            Gallery.showToast('No tags found on selected items');
-            return;
-        }
-
-        // Store for the modal
-        this.mergeItems = items;
-        this.mergeTags = Array.from(allTags);
-        this.mergeTagSources = tagSources;
-
-        this.showPasteConfirmationModal(
-            items.map((i) => i.path),
-            items.map((i) => i.name),
-            'merge'
-        );
     },
 
     showPasteConfirmationModal(paths, names, mode = 'paste') {
@@ -154,7 +167,6 @@ const TagClipboard = {
         const confirmBtn = modal.querySelector('.paste-confirm-btn');
         const description = modal.querySelector('.paste-description');
 
-        // Configure based on mode
         if (mode === 'merge') {
             headerTitle.textContent = 'Merge Tags';
             if (headerIcon) {
@@ -163,10 +175,8 @@ const TagClipboard = {
             description.innerHTML = `Select tags to apply to all <strong class="paste-target-info"></strong>:`;
             confirmBtn.textContent = 'Merge Tags';
 
-            // For merge, show count of all items
             targetInfo.textContent = `${paths.length} items`;
 
-            // Use merged tags
             tagsList.innerHTML = '';
             this.mergeTags.forEach((tag) => {
                 const sources = this.mergeTagSources.get(tag) || [];
@@ -201,7 +211,6 @@ const TagClipboard = {
                 targetInfo.textContent = `${paths.length} items`;
             }
 
-            // Render copied tags as chips
             tagsList.innerHTML = '';
             this.copiedTags.forEach((tag) => {
                 const tagChip = document.createElement('span');
@@ -344,11 +353,14 @@ const TagClipboard = {
         }
     },
 
+    /**
+     * Execute paste/merge operation - one bulk request per tag
+     */
     async executePaste(paths, tags) {
         let successCount = 0;
         let errorCount = 0;
 
-        // Use existing bulk endpoint - one request per tag
+        // Use bulk endpoint - one request per tag
         for (const tag of tags) {
             try {
                 const response = await fetch('/api/tags/bulk', {
@@ -369,10 +381,8 @@ const TagClipboard = {
             }
         }
 
-        // Refresh all affected gallery items
-        for (const path of paths) {
-            Tags.refreshGalleryItemTags(path);
-        }
+        // Batch refresh all affected gallery items (single API call)
+        await Tags.batchRefreshGalleryItemTags(paths);
 
         await Tags.loadAllTags();
 

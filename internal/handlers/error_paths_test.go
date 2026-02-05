@@ -179,8 +179,8 @@ func TestBulkOperationsWithExcessivePaths(t *testing.T) {
 	defer cleanup()
 
 	t.Run("tag many files exceeding limit", func(t *testing.T) {
-		// Try to tag 200 files (limit is 100)
-		paths := make([]string, 200)
+		// Try to tag 20000 files (limit is 10000)
+		paths := make([]string, 20000)
 		for i := range paths {
 			paths[i] = filepath.Join("test", "file"+string(rune(i))+".jpg")
 		}
@@ -191,13 +191,13 @@ func TestBulkOperationsWithExcessivePaths(t *testing.T) {
 		}
 		jsonBody, _ := json.Marshal(body)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/tags/bulk-add", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tags/bulk", bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
 		h.BulkAddTag(w, req)
 
-		// Should either accept request and process only first 100, or reject with 400
+		// Should either accept request and process only first 10000, or reject with 400
 		if w.Code != http.StatusOK && w.Code != http.StatusBadRequest {
 			t.Errorf("expected status 200 or 400, got %d: %s", w.Code, w.Body.String())
 		}
@@ -211,9 +211,9 @@ func TestBulkOperationsWithExcessivePaths(t *testing.T) {
 				t.Fatalf("failed to decode response: %v", err)
 			}
 
-			// Should have processed at most 100
-			if resp.Success+resp.Failed > 100 {
-				t.Errorf("processed more than 100 files: %d", resp.Success+resp.Failed)
+			// Should have processed at most 10000
+			if resp.Success+resp.Failed > 10000 {
+				t.Errorf("processed more than 10000 files: %d", resp.Success+resp.Failed)
 			}
 		}
 	})

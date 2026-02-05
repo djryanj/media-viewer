@@ -396,7 +396,7 @@ func TestGetBatchFileTagsMaxLimitIntegration(t *testing.T) {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
 
-	// Should handle gracefully by limiting to 100 paths
+	// Should handle gracefully - 150 paths is within the 10000 limit
 	var result map[string][]string
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -1093,8 +1093,8 @@ func TestBulkAddTagLargeScaleIntegration(t *testing.T) {
 	defer cleanup()
 
 	// Add many files to database
-	paths := make([]string, 300)
-	for i := 0; i < 300; i++ {
+	paths := make([]string, 10000)
+	for i := 0; i < 10000; i++ {
 		path := fmt.Sprintf("photos/image%04d.jpg", i)
 		paths[i] = path
 		addTagTestFile(t, h.db, h.mediaDir, path, database.FileTypeImage)
@@ -1109,7 +1109,7 @@ func TestBulkAddTagLargeScaleIntegration(t *testing.T) {
 		t.Fatalf("failed to marshal request: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/tags/bulk-add", strings.NewReader(string(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/bulk", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -1135,9 +1135,9 @@ func TestBulkAddTagLargeScaleIntegration(t *testing.T) {
 		t.Fatal("expected 'failed' field in response")
 	}
 
-	// Handler limits to 100 paths max, so only first 100 should be processed
-	if int(successCount) != 100 {
-		t.Errorf("expected 100 successes (handler max limit), got %d successes and %d failures", int(successCount), int(failedCount))
+	// Handler limits to 10000 paths max, so only first 10000 should be processed
+	if int(successCount) != 10000 {
+		t.Errorf("expected 10000 successes (handler max limit), got %d successes and %d failures", int(successCount), int(failedCount))
 	}
 
 	if int(failedCount) != 0 {

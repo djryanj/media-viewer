@@ -1,8 +1,11 @@
 const ItemSelection = {
     isActive: false,
-    // Store only paths and minimal data, not DOM references
     selectedPaths: new Set(),
     selectedData: new Map(), // path -> {name, type}
+
+    // NEW: Track if "all" items are selected (for applying to newly loaded items)
+    isAllSelected: false,
+    allSelectablePaths: null, // Cache of all paths when "select all" is used
 
     isDragging: false,
     lastTouchedElement: null,
@@ -17,7 +20,7 @@ const ItemSelection = {
     selectableTypes: ['image', 'video', 'folder', 'playlist'],
 
     // Batch DOM update settings
-    batchUpdateDelay: 16, // ~1 frame
+    batchUpdateDelay: 16,
     pendingUpdates: new Set(),
     updateScheduled: false,
 
@@ -117,7 +120,6 @@ const ItemSelection = {
                 e.preventDefault();
                 this.pasteTagsToSelection();
             } else if (e.key === 'm' && (e.ctrlKey || e.metaKey)) {
-                // Ctrl+M for merge
                 e.preventDefault();
                 this.mergeTagsInSelection();
             } else if (e.key === 't' || e.key === 'T') {
@@ -285,11 +287,12 @@ const ItemSelection = {
         this.isActive = true;
         this.selectedPaths.clear();
         this.selectedData.clear();
+        this.isAllSelected = false;
+        this.allSelectablePaths = null;
 
         document.body.classList.add('selection-mode');
         this.elements.toolbar.classList.remove('hidden');
 
-        // Add checkboxes only to visible items
         this.addCheckboxesToVisibleItems();
 
         if (initialElement) {
@@ -313,6 +316,8 @@ const ItemSelection = {
         this.isActive = false;
         this.selectedPaths.clear();
         this.selectedData.clear();
+        this.isAllSelected = false;
+        this.allSelectablePaths = null;
         this.isDragging = false;
         this.pendingUpdates.clear();
 
@@ -320,7 +325,6 @@ const ItemSelection = {
         this.elements.toolbar.classList.add('hidden');
         this.removeCheckboxesFromGallery();
 
-        // Batch remove selected class
         document.querySelectorAll('.gallery-item.selected').forEach((item) => {
             item.classList.remove('selected');
         });
@@ -340,20 +344,13 @@ const ItemSelection = {
         }
     },
 
-    /**
-     * Add checkboxes only to currently visible items (performance optimization)
-     */
     addCheckboxesToVisibleItems() {
         const gallery = this.elements.gallery;
         const items = gallery.querySelectorAll('.gallery-item:not(.skeleton)');
 
-        // Batch add checkboxes using DocumentFragment for better performance
-        const fragment = document.createDocumentFragment();
         const itemsToUpdate = [];
-
-        // First pass: add checkboxes to all visible items immediately (synchronous)
         const viewportHeight = window.innerHeight;
-        const immediateThreshold = viewportHeight + 400; // Viewport + 400px buffer
+        const immediateThreshold = viewportHeight + 400;
 
         items.forEach((item) => {
             const type = item.dataset.type;
@@ -363,7 +360,6 @@ const ItemSelection = {
             const isImmediate = rect.top < immediateThreshold && rect.bottom > -400;
 
             if (isImmediate) {
-                // Add checkbox immediately (synchronous for instant feedback)
                 const thumbArea = item.querySelector('.gallery-item-thumb');
                 if (thumbArea && !thumbArea.querySelector('.selection-checkbox')) {
                     const checkbox = document.createElement('div');
@@ -371,7 +367,6 @@ const ItemSelection = {
                     checkbox.innerHTML = '<i data-lucide="check"></i>';
                     thumbArea.appendChild(checkbox);
 
-                    // Check if this item should be selected
                     const path = item.dataset.path;
                     if (this.selectedPaths.has(path)) {
                         item.classList.add('selected');
@@ -380,7 +375,6 @@ const ItemSelection = {
                     itemsToUpdate.push(checkbox);
                 }
             } else {
-                // For items far outside viewport, use IntersectionObserver
                 if (!this._checkboxObserver) {
                     this._checkboxObserver = new IntersectionObserver(
                         (entries) => {
@@ -398,18 +392,13 @@ const ItemSelection = {
             }
         });
 
-        // Update Lucide icons in a single batch
         if (itemsToUpdate.length > 0) {
-            // Use requestAnimationFrame to avoid blocking
             requestAnimationFrame(() => {
                 lucide.createIcons({ nodes: itemsToUpdate });
             });
         }
     },
 
-    /**
-     * Add checkbox to a single item
-     */
     addCheckboxToItem(item) {
         const thumbArea = item.querySelector('.gallery-item-thumb');
         if (thumbArea && !thumbArea.querySelector('.selection-checkbox')) {
@@ -418,13 +407,11 @@ const ItemSelection = {
             checkbox.innerHTML = '<i data-lucide="check"></i>';
             thumbArea.appendChild(checkbox);
 
-            // Check if this item should be selected
             const path = item.dataset.path;
             if (this.selectedPaths.has(path)) {
                 item.classList.add('selected');
             }
 
-            // Initialize icon asynchronously
             requestAnimationFrame(() => {
                 lucide.createIcons({ nodes: [checkbox] });
             });
@@ -433,6 +420,7 @@ const ItemSelection = {
 
     /**
      * Add checkboxes to newly loaded items (called by InfiniteScroll)
+     * Also applies selection state if item is in selectedPaths
      */
     addCheckboxesToNewItems(container) {
         if (!this.isActive) return;
@@ -445,19 +433,21 @@ const ItemSelection = {
             const type = item.dataset.type;
             if (this.isSelectableType(type)) {
                 this.addCheckboxToItem(item);
+
+                // Apply selection state if this item should be selected
+                const path = item.dataset.path;
+                if (this.selectedPaths.has(path)) {
+                    item.classList.add('selected');
+                }
             }
         });
     },
 
-    /**
-     * Alias for backward compatibility
-     */
     addCheckboxesToGallery() {
         this.addCheckboxesToVisibleItems();
     },
 
     removeCheckboxesFromGallery() {
-        // Disconnect observer if exists
         if (this._checkboxObserver) {
             this._checkboxObserver.disconnect();
             this._checkboxObserver = null;
@@ -466,9 +456,6 @@ const ItemSelection = {
         document.querySelectorAll('.selection-checkbox').forEach((cb) => cb.remove());
     },
 
-    /**
-     * Select an item - stores path, not DOM reference
-     */
     selectItem(element) {
         const path = element.dataset.path;
         const name = element.dataset.name || path.split('/').pop();
@@ -476,25 +463,36 @@ const ItemSelection = {
 
         if (!this.isSelectableType(type)) return;
 
-        // Store in Sets/Maps (no DOM reference)
         this.selectedPaths.add(path);
         this.selectedData.set(path, { name, type });
 
-        // Schedule DOM update
         this.scheduleDOMUpdate(path, true);
         this.updateToolbar();
     },
 
     /**
-     * Deselect an item
+     * Select an item by data (without DOM element) - used for select all
      */
+    selectItemByData(path, name, type) {
+        if (!this.isSelectableType(type)) return;
+
+        this.selectedPaths.add(path);
+        this.selectedData.set(path, { name, type });
+
+        // Schedule DOM update only if element exists
+        const element = document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
+        if (element) {
+            this.scheduleDOMUpdate(path, true);
+        }
+    },
+
     deselectItem(element, autoExit = true) {
         const path = element.dataset.path;
 
         this.selectedPaths.delete(path);
         this.selectedData.delete(path);
+        this.isAllSelected = false; // No longer "all" selected
 
-        // Schedule DOM update
         this.scheduleDOMUpdate(path, false);
         this.updateToolbar();
 
@@ -504,8 +502,25 @@ const ItemSelection = {
     },
 
     /**
-     * Schedule batched DOM updates for better performance
+     * Deselect an item by path (without DOM element)
      */
+    deselectItemByPath(path, autoExit = true) {
+        this.selectedPaths.delete(path);
+        this.selectedData.delete(path);
+        this.isAllSelected = false;
+
+        const element = document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
+        if (element) {
+            this.scheduleDOMUpdate(path, false);
+        }
+
+        this.updateToolbar();
+
+        if (autoExit && this.selectedPaths.size === 0) {
+            this.exitSelectionModeWithHistory();
+        }
+    },
+
     scheduleDOMUpdate(path, isSelected) {
         this.pendingUpdates.add({ path, isSelected });
 
@@ -517,9 +532,6 @@ const ItemSelection = {
         }
     },
 
-    /**
-     * Process all pending DOM updates in a single frame
-     */
     processPendingUpdates() {
         this.pendingUpdates.forEach(({ path, isSelected }) => {
             const element = document.querySelector(
@@ -548,15 +560,111 @@ const ItemSelection = {
     },
 
     /**
-     * Select all - optimized for large libraries
+     * Fetch all selectable item paths from the server
      */
-    selectAll() {
-        // Get all items from InfiniteScroll if available, otherwise from DOM
+    async fetchAllSelectablePaths() {
+        try {
+            const params = new URLSearchParams({
+                path: MediaApp.state.currentPath,
+                sort: MediaApp.state.currentSort.field,
+                order: MediaApp.state.currentSort.order,
+            });
+
+            if (MediaApp.state.currentFilter) {
+                params.set('type', MediaApp.state.currentFilter);
+            }
+
+            const response = await fetch(`/api/files/paths?${params}`);
+
+            if (response.status === 401) {
+                window.location.href = '/login.html';
+                return null;
+            }
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch all paths');
+            }
+
+            const data = await response.json();
+
+            // Filter to only selectable types
+            return data.items.filter((item) => this.isSelectableType(item.type));
+        } catch (error) {
+            console.error('Error fetching all selectable paths:', error);
+            return null;
+        }
+    },
+
+    /**
+     * Select all - fetches all paths from server if needed
+     */
+    async selectAll() {
+        // If already all selected, deselect all
+        if (this.isAllSelected && this.allSelectablePaths) {
+            this.deselectAll();
+            return;
+        }
+
+        // Show loading indicator
+        const selectAllBtn = this.elements.selectAllBtn;
+        const originalContent = selectAllBtn.innerHTML;
+        selectAllBtn.innerHTML =
+            '<i data-lucide="loader-2" class="animate-spin"></i><span>Loading...</span>';
+        selectAllBtn.disabled = true;
+        lucide.createIcons({ nodes: [selectAllBtn] });
+
+        try {
+            // Fetch all paths from server
+            const allItems = await this.fetchAllSelectablePaths();
+
+            if (!allItems) {
+                // Fallback to loaded items only
+                Gallery.showToast('Could not fetch all items, selecting loaded items only');
+                this.selectLoadedItems();
+                return;
+            }
+
+            // Store for future reference
+            this.allSelectablePaths = allItems;
+
+            // Select all items
+            allItems.forEach((item) => {
+                this.selectItemByData(item.path, item.name, item.type);
+            });
+
+            this.isAllSelected = true;
+
+            // Update DOM for visible items
+            document.querySelectorAll('.gallery-item:not(.skeleton)').forEach((element) => {
+                const path = element.dataset.path;
+                if (this.selectedPaths.has(path)) {
+                    element.classList.add('selected');
+                }
+            });
+
+            this.updateToolbar();
+
+            Gallery.showToast(`Selected ${allItems.length} items`);
+        } catch (error) {
+            console.error('Error selecting all:', error);
+            Gallery.showToast('Failed to select all items');
+        } finally {
+            // Restore button
+            selectAllBtn.innerHTML = originalContent;
+            selectAllBtn.disabled = false;
+            lucide.createIcons({ nodes: [selectAllBtn] });
+            this.updateToolbar();
+        }
+    },
+
+    /**
+     * Fallback: select only loaded items
+     */
+    selectLoadedItems() {
         let allItems;
         if (typeof InfiniteScroll !== 'undefined') {
             allItems = InfiniteScroll.getAllLoadedItems();
         } else {
-            // Fallback to DOM
             allItems = Array.from(document.querySelectorAll('.gallery-item:not(.skeleton)')).map(
                 (el) => ({
                     path: el.dataset.path,
@@ -568,26 +676,35 @@ const ItemSelection = {
 
         const selectableItems = allItems.filter((item) => this.isSelectableType(item.type));
 
-        // Check if all are already selected
-        const allSelected = selectableItems.every((item) => this.selectedPaths.has(item.path));
+        selectableItems.forEach((item) => {
+            if (!this.selectedPaths.has(item.path)) {
+                this.selectedPaths.add(item.path);
+                this.selectedData.set(item.path, { name: item.name, type: item.type });
+                this.scheduleDOMUpdate(item.path, true);
+            }
+        });
 
-        if (allSelected) {
-            // Deselect all but stay in selection mode
-            selectableItems.forEach((item) => {
-                this.selectedPaths.delete(item.path);
-                this.selectedData.delete(item.path);
-                this.scheduleDOMUpdate(item.path, false);
-            });
-        } else {
-            // Select all
-            selectableItems.forEach((item) => {
-                if (!this.selectedPaths.has(item.path)) {
-                    this.selectedPaths.add(item.path);
-                    this.selectedData.set(item.path, { name: item.name, type: item.type });
-                    this.scheduleDOMUpdate(item.path, true);
-                }
-            });
-        }
+        this.updateToolbar();
+    },
+
+    /**
+     * Deselect all items
+     */
+    deselectAll() {
+        // Clear all selections
+        this.selectedPaths.forEach((path) => {
+            const element = document.querySelector(
+                `.gallery-item[data-path="${CSS.escape(path)}"]`
+            );
+            if (element) {
+                element.classList.remove('selected');
+            }
+        });
+
+        this.selectedPaths.clear();
+        this.selectedData.clear();
+        this.isAllSelected = false;
+        this.allSelectablePaths = null;
 
         this.updateToolbar();
     },
@@ -613,8 +730,7 @@ const ItemSelection = {
               ? 'Select only one item to copy tags'
               : 'Select an item to copy tags';
 
-        // Paste tags: enabled when items selected and clipboard has tags
-        // Exclude source item from count
+        // Paste tags
         const sourcePath = TagClipboard.sourcePath;
         const destinationCount = sourcePath
             ? Array.from(this.selectedPaths).filter((p) => p !== sourcePath).length
@@ -628,7 +744,7 @@ const ItemSelection = {
               ? 'No tags copied'
               : 'Select destination items';
 
-        // Merge tags: enabled when 2+ taggable items selected
+        // Merge tags
         const canMerge = taggableCount >= 2;
         this.elements.mergeTagsBtn.style.display = canMerge ? '' : 'none';
         this.elements.mergeTagsBtn.disabled = !canMerge;
@@ -636,8 +752,6 @@ const ItemSelection = {
             ? `Merge tags across ${taggableCount} items (Ctrl+M)`
             : 'Select at least 2 items to merge tags';
 
-        // Show/hide copy and paste based on selection count
-        // When 2+ items selected, show merge instead of copy
         this.elements.copyTagsBtn.style.display = count <= 1 ? '' : 'none';
         this.elements.pasteTagsBtn.style.display = TagClipboard.hasTags() ? '' : 'none';
 
@@ -645,23 +759,13 @@ const ItemSelection = {
         this.elements.favoriteBtn.disabled = count === 0;
 
         // Update select all button state
-        let totalSelectable = 0;
-        if (typeof InfiniteScroll !== 'undefined') {
-            const allItems = InfiniteScroll.getAllLoadedItems();
-            totalSelectable = allItems.filter((item) => this.isSelectableType(item.type)).length;
-        } else {
-            totalSelectable = document.querySelectorAll('.gallery-item:not(.skeleton)').length;
-        }
-
-        const allSelected = totalSelectable > 0 && this.selectedPaths.size >= totalSelectable;
-
         const selectAllBtn = this.elements.selectAllBtn;
         if (selectAllBtn) {
             const textSpan = selectAllBtn.querySelector('span');
             if (textSpan) {
-                textSpan.textContent = allSelected ? 'None' : 'All';
+                textSpan.textContent = this.isAllSelected ? 'None' : 'All';
             }
-            selectAllBtn.title = allSelected ? 'Deselect all' : 'Select all';
+            selectAllBtn.title = this.isAllSelected ? 'Deselect all' : 'Select all';
         }
     },
 
@@ -691,7 +795,6 @@ const ItemSelection = {
     async bulkFavorite() {
         if (this.selectedPaths.size === 0) return;
 
-        // Filter out items that are already favorites
         const itemsToAdd = Array.from(this.selectedData.entries())
             .filter(([path]) => !Favorites.isPinned(path))
             .map(([path, data]) => ({
@@ -716,7 +819,6 @@ const ItemSelection = {
             if (response.ok) {
                 const result = await response.json();
 
-                // Update local state and UI for each added item
                 for (const item of itemsToAdd) {
                     Favorites.pinnedPaths.add(item.path);
                     Favorites.updateAllPinStates(item.path, true);
@@ -728,7 +830,6 @@ const ItemSelection = {
             }
         } catch (error) {
             console.error('Error adding bulk favorites:', error);
-            // Fall back to individual requests
             await this.bulkFavoriteIndividually(itemsToAdd);
         }
 
@@ -752,18 +853,11 @@ const ItemSelection = {
         }
     },
 
-    /**
-     * Check if item is selected by path (no DOM lookup)
-     */
     isItemSelected(path) {
         return this.selectedPaths.has(path);
     },
 
-    /**
-     * Get selected items data (for backward compatibility)
-     */
     get selectedItems() {
-        // Return a Map-like interface for backward compatibility
         const map = new Map();
         this.selectedData.forEach((data, path) => {
             map.set(path, { ...data, element: null });
@@ -771,9 +865,6 @@ const ItemSelection = {
         return map;
     },
 
-    /**
-     * Copy tags from the selected item (single item only)
-     */
     async copyTagsFromSelection() {
         if (this.selectedPaths.size !== 1) {
             Gallery.showToast('Select exactly one item to copy tags from');
@@ -791,9 +882,6 @@ const ItemSelection = {
         await TagClipboard.copyTags(path, data.name);
     },
 
-    /**
-     * Paste tags to selected items (excludes the source item if it's selected)
-     */
     pasteTagsToSelection() {
         if (this.selectedPaths.size === 0) {
             Gallery.showToast('No items selected');
@@ -805,7 +893,6 @@ const ItemSelection = {
             return;
         }
 
-        // Get selected paths, excluding the source item
         const sourcePath = TagClipboard.sourcePath;
         const paths = Array.from(this.selectedPaths).filter((path) => path !== sourcePath);
 
@@ -821,16 +908,12 @@ const ItemSelection = {
         TagClipboard.openPasteModal(paths, names);
     },
 
-    /**
-     * Merge tags from all selected items and paste to all of them
-     */
     async mergeTagsInSelection() {
         if (this.selectedPaths.size < 2) {
             Gallery.showToast('Select at least 2 items to merge tags');
             return;
         }
 
-        // Filter to taggable items only
         const taggableItems = Array.from(this.selectedData.entries())
             .filter(([, data]) => data.type !== 'folder')
             .map(([path, data]) => ({ path, name: data.name }));

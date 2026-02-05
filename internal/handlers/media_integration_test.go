@@ -1609,3 +1609,349 @@ func TestGetThumbnailStatusActiveIntegration(t *testing.T) {
 		t.Logf("Completed count: %v", completed)
 	}
 }
+
+// =============================================================================
+// ListFilePaths Integration Tests
+// =============================================================================
+
+// TestListFilePathsIntegration tests complete file path listing workflow
+func TestListFilePathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add various file types
+	addTestMediaFile(t, h, "photo1.jpg", database.FileTypeImage, "photo1")
+	addTestMediaFile(t, h, "photo2.jpg", database.FileTypeImage, "photo2")
+	addTestMediaFile(t, h, "video.mp4", database.FileTypeVideo, "video")
+	addTestMediaFile(t, h, "folder/nested.jpg", database.FileTypeImage, "nested")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/paths", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Items []struct {
+			Path string `json:"path"`
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"items"`
+		TotalItems int `json:"totalItems"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Should get at least the files we added (might have test folder too)
+	if len(response.Items) < 3 {
+		t.Errorf("expected at least 3 items, got %d", len(response.Items))
+	}
+
+	// Verify structure
+	foundPhoto := false
+	foundVideo := false
+	for _, item := range response.Items {
+		if item.Path == "photo1.jpg" {
+			foundPhoto = true
+			if item.Name != "photo1.jpg" {
+				t.Errorf("expected name photo1.jpg, got %s", item.Name)
+			}
+			if item.Type != string(database.FileTypeImage) {
+				t.Errorf("expected type image, got %s", item.Type)
+			}
+		}
+		if item.Path == "video.mp4" {
+			foundVideo = true
+			if item.Type != string(database.FileTypeVideo) {
+				t.Errorf("expected type video, got %s", item.Type)
+			}
+		}
+	}
+
+	if !foundPhoto {
+		t.Error("expected to find photo1.jpg in results")
+	}
+	if !foundVideo {
+		t.Error("expected to find video.mp4 in results")
+	}
+}
+
+// TestListFilePathsWithPathFilterIntegration tests path filtering
+func TestListFilePathsWithPathFilterIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add files in different directories
+	addTestMediaFile(t, h, "folder1/photo1.jpg", database.FileTypeImage, "photo1")
+	addTestMediaFile(t, h, "folder1/photo2.jpg", database.FileTypeImage, "photo2")
+	addTestMediaFile(t, h, "folder2/video.mp4", database.FileTypeVideo, "video")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/paths?path=folder1", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Items []struct {
+			Path string `json:"path"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Should only get files from folder1
+	if len(response.Items) != 2 {
+		t.Errorf("expected 2 items from folder1, got %d", len(response.Items))
+	}
+
+	for _, item := range response.Items {
+		if item.Path != "folder1/photo1.jpg" && item.Path != "folder1/photo2.jpg" {
+			t.Errorf("unexpected file in results: %s", item.Path)
+		}
+	}
+}
+
+// TestListFilePathsTypeFilterIntegration tests filtering by file type
+func TestListFilePathsTypeFilterIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	addTestMediaFile(t, h, "photo1.jpg", database.FileTypeImage, "photo1")
+	addTestMediaFile(t, h, "photo2.jpg", database.FileTypeImage, "photo2")
+	addTestMediaFile(t, h, "video.mp4", database.FileTypeVideo, "video")
+	addTestMediaFile(t, h, "playlist.m3u", database.FileTypePlaylist, "playlist")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/paths?type=video", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	var response struct {
+		Items []struct {
+			Path string `json:"path"`
+			Type string `json:"type"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(response.Items) != 1 {
+		t.Errorf("expected 1 video, got %d items", len(response.Items))
+	}
+
+	if len(response.Items) > 0 {
+		if response.Items[0].Type != string(database.FileTypeVideo) {
+			t.Errorf("expected type video, got %s", response.Items[0].Type)
+		}
+		if response.Items[0].Path != "video.mp4" {
+			t.Errorf("expected path video.mp4, got %s", response.Items[0].Path)
+		}
+	}
+}
+
+// TestListFilePathsSortingIntegration tests sorting functionality
+func TestListFilePathsSortingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	addTestMediaFile(t, h, "zebra.jpg", database.FileTypeImage, "zebra")
+	addTestMediaFile(t, h, "alpha.jpg", database.FileTypeImage, "alpha")
+	addTestMediaFile(t, h, "beta.jpg", database.FileTypeImage, "beta")
+
+	// Test ascending
+	req := httptest.NewRequest(http.MethodGet, "/api/files/paths?sort=name&order=asc", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	var response struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(response.Items) >= 3 {
+		// First should be alpha, last should be zebra
+		if response.Items[0].Name != "alpha.jpg" {
+			t.Errorf("expected first item alpha.jpg, got %s", response.Items[0].Name)
+		}
+		if response.Items[len(response.Items)-1].Name != "zebra.jpg" {
+			t.Errorf("expected last item zebra.jpg, got %s", response.Items[len(response.Items)-1].Name)
+		}
+	}
+
+	// Test descending
+	req = httptest.NewRequest(http.MethodGet, "/api/files/paths?sort=name&order=desc", http.NoBody)
+	w = httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(response.Items) >= 3 {
+		// First should be zebra, last should be alpha
+		if response.Items[0].Name != "zebra.jpg" {
+			t.Errorf("expected first item zebra.jpg, got %s", response.Items[0].Name)
+		}
+		if response.Items[len(response.Items)-1].Name != "alpha.jpg" {
+			t.Errorf("expected last item alpha.jpg, got %s", response.Items[len(response.Items)-1].Name)
+		}
+	}
+}
+
+// TestListFilePathsEmptyDirectoryIntegration tests empty directory response
+func TestListFilePathsEmptyDirectoryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Don't add any files
+	req := httptest.NewRequest(http.MethodGet, "/api/files/paths", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Items      []interface{} `json:"items"`
+		TotalItems int           `json:"totalItems"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Should return empty array
+	if response.Items == nil {
+		t.Error("expected empty array, got nil")
+	}
+
+	if len(response.Items) != 0 {
+		t.Errorf("expected 0 items, got %d", len(response.Items))
+	}
+
+	if response.TotalItems != 0 {
+		t.Errorf("expected totalItems 0, got %d", response.TotalItems)
+	}
+}
+
+// TestListFilePathsBulkSelectionUseCaseIntegration tests the bulk selection scenario
+func TestListFilePathsBulkSelectionUseCaseIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add many files to simulate "select all" scenario
+	for i := 0; i < 100; i++ {
+		addTestMediaFile(t, h, fmt.Sprintf("file_%03d.jpg", i), database.FileTypeImage, "file")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/paths", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Items []struct {
+			Path string `json:"path"`
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Should get all files (no pagination limit)
+	if len(response.Items) != 100 {
+		t.Errorf("expected 100 items, got %d", len(response.Items))
+	}
+
+	// Verify lightweight response - only path, name, type
+	for _, item := range response.Items {
+		if item.Path == "" || item.Name == "" || item.Type == "" {
+			t.Error("expected path, name, and type to be populated")
+		}
+	}
+}
+
+// TestListFilePathsPerformanceIntegration tests performance with large dataset
+func TestListFilePathsPerformanceIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add significant number of files
+	numFiles := 1000
+	for i := 0; i < numFiles; i++ {
+		addTestMediaFile(t, h, fmt.Sprintf("file_%04d.jpg", i), database.FileTypeImage, fmt.Sprintf("content %d", i))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/paths", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFilePaths(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Items []struct {
+			Path string `json:"path"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(response.Items) != numFiles {
+		t.Errorf("expected %d items, got %d", numFiles, len(response.Items))
+	}
+}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"media-viewer/internal/database"
@@ -93,10 +94,11 @@ func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit the number of paths to prevent abuse
-	maxPaths := 100
+	// Allow large batch requests for bulk operations
+	maxPaths := 10000
 	if len(req.Paths) > maxPaths {
-		req.Paths = req.Paths[:maxPaths]
+		http.Error(w, fmt.Sprintf("Too many paths (max %d)", maxPaths), http.StatusBadRequest)
+		return
 	}
 
 	// Build result map
@@ -113,10 +115,12 @@ func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Only include paths that have tags
-		if len(tags) > 0 {
-			result[path] = tags
+		// Include all paths, even those without tags (empty array)
+		// This lets the frontend know the request was processed
+		if tags == nil {
+			tags = []string{}
 		}
+		result[path] = tags
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -189,10 +193,10 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit the number of paths to prevent abuse
-	maxPaths := 100
+	maxPaths := 10000
 	if len(req.Paths) > maxPaths {
-		req.Paths = req.Paths[:maxPaths]
+		http.Error(w, fmt.Sprintf("Too many paths (max %d)", maxPaths), http.StatusBadRequest)
+		return
 	}
 
 	response := BulkTagResponse{
@@ -208,7 +212,6 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.db.AddTagToFile(ctx, path, req.Tag); err != nil {
 			response.Failed++
-			// Optionally collect error details (limit to prevent response bloat)
 			if len(response.Errors) < 10 {
 				response.Errors = append(response.Errors, path+": "+err.Error())
 			}
@@ -217,7 +220,6 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Clear errors if empty to keep response clean
 	if len(response.Errors) == 0 {
 		response.Errors = nil
 	}
@@ -247,7 +249,7 @@ func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Limit the number of paths to prevent abuse
-	maxPaths := 100
+	maxPaths := 10000
 	if len(req.Paths) > maxPaths {
 		req.Paths = req.Paths[:maxPaths]
 	}
