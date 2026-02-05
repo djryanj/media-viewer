@@ -102,7 +102,7 @@ tmp_dir = "tmp"
   cmd = "go build -tags 'fts5' -o ./tmp/main ./cmd/media-viewer"
   bin = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
-  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules"]
+  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules", "site", "docs"]
   delay = 1000
 
 [misc]
