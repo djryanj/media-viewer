@@ -106,13 +106,21 @@ const MediaApp = {
 
         // Handle browser back/forward for directory navigation
         window.addEventListener('popstate', (e) => {
+            // Skip if this was an overlay state (lightbox, search, etc.)
+            if (e.state && e.state.isOverlay) {
+                console.debug('MediaApp: skipping - isOverlay');
+                return;
+            }
+
             // Skip if HistoryManager is handling an overlay
             if (typeof HistoryManager !== 'undefined' && HistoryManager.isHandlingPopState) {
+                console.debug('MediaApp: skipping - isHandlingPopState');
                 return;
             }
 
             // Skip if there are overlay states open
             if (typeof HistoryManager !== 'undefined' && HistoryManager.getCurrentStateType()) {
+                console.debug('MediaApp: skipping - has overlay states');
                 return;
             }
 
