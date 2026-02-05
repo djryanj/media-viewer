@@ -80,6 +80,16 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	// Check if a user already exists (single-user system)
+	var count int
+	err = d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check existing users: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("user already exists (single-user system)")
+	}
+
 	// Hash the password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -294,8 +304,17 @@ func (d *Database) deleteSessionByHash(ctx context.Context, tokenHash string) er
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", tokenHash)
-	return err
+	result, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", tokenHash)
+	if err != nil {
+		return err
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("session not found")
+	}
+
+	return nil
 }
 
 // DeleteSession removes a session.

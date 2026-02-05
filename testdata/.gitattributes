@@ -1,0 +1,4 @@
+# Mark test media files as binary
+*.mp4 binary
+*.jpg binary
+*.png binary

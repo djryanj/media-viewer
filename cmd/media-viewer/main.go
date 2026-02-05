@@ -80,7 +80,7 @@ func main() {
 
 	// Initialize database
 	dbStart := time.Now()
-	db, err := database.New(config.DatabasePath)
+	db, err := database.New(bgCtx, config.DatabasePath)
 	if err != nil {
 		startup.LogFatal("Failed to initialize database: %v", err)
 	}

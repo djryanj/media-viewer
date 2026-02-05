@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"media-viewer/internal/database"
 	"media-viewer/internal/playlist"
 
 	"github.com/gorilla/mux"
@@ -16,6 +17,11 @@ func (h *Handlers) ListPlaylists(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Failed to get playlists", http.StatusInternalServerError)
 		return
+	}
+
+	// Ensure playlists is an empty array, not null in JSON
+	if playlists == nil {
+		playlists = []database.MediaFile{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -59,7 +59,7 @@
 //
 // # Example Usage
 //
-//	db, err := database.New("/path/to/media.db")
+//	db, err := database.New(ctx, "/path/to/media.db")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}

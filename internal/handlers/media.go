@@ -55,6 +55,11 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure Items is an empty array, not null in JSON
+	if listing.Items == nil {
+		listing.Items = []database.MediaFile{}
+	}
+
 	logging.Debug("ListFiles completed, found %d items", len(listing.Items))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -98,6 +103,12 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
 
+	// Reject absolute paths before joining
+	if filepath.IsAbs(filePath) {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
 	fullPath := filepath.Join(h.mediaDir, filePath)
 
 	absPath, err := filepath.Abs(fullPath)
@@ -120,6 +131,13 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 	if filePath == "" {
 		logging.Error("Thumbnail: empty path")
 		http.Error(w, "Path is required", http.StatusBadRequest)
+		return
+	}
+
+	// Reject absolute paths before joining
+	if filepath.IsAbs(filePath) {
+		logging.Error("Thumbnail: absolute path not allowed: %s", filePath)
+		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
@@ -241,6 +259,12 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
 
+	// Reject absolute paths before joining
+	if filepath.IsAbs(filePath) {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
 	fullPath := filepath.Join(h.mediaDir, filePath)
 
 	absPath, err := filepath.Abs(fullPath)
@@ -347,7 +371,13 @@ func (h *Handlers) TriggerReindex(w http.ResponseWriter, _ *http.Request) {
 func isSubPath(parent, child string) bool {
 	parent, _ = filepath.Abs(parent)
 	child, _ = filepath.Abs(child)
-	return len(child) >= len(parent) && child[:len(parent)] == parent
+
+	// Ensure paths end with separator for accurate comparison
+	if !strings.HasSuffix(parent, string(filepath.Separator)) {
+		parent += string(filepath.Separator)
+	}
+
+	return strings.HasPrefix(child+string(filepath.Separator), parent)
 }
 
 // InvalidateThumbnail invalidates (deletes) the cached thumbnail for a specific file or folder
@@ -435,6 +465,7 @@ func (h *Handlers) RebuildAllThumbnails(w http.ResponseWriter, _ *http.Request) 
 	h.thumbGen.RebuildAll()
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]string{
 		"status":  "started",
 		"message": "Thumbnail rebuild started in background",

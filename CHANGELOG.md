@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.7.2] - February 4, 2026
+
+This is a bugfix and testing package release with no new features.
+
+### Added
+
+- Comprehensive test suite for the backend with several thousand tests of all kinds (unit, integration, performance) across all packages
+- Integrated testing into GitHub release process
+- Documentation on testing
+
+### Fixed
+
+- Several bugs found during the testing process were addressed
+
 ## [0.7.1] - February 3, 2026
 
 ### Fixed

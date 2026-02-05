@@ -15,6 +15,7 @@ AI tools have been used throughout the development process for:
 - **Code Review**: Identifying potential issues, suggesting improvements, and ensuring best practices
 - **Debugging**: Troubleshooting issues and proposing solutions
 - **Refactoring**: Improving code quality, structure, and maintainability
+- **Test Suite**: Writing comprehensive tests to enure code quality
 
 ## Human Oversight
 
@@ -31,4 +32,4 @@ The project maintainers take full responsibility for all code, documentation, an
 
 ---
 
-*Last updated: February 2, 2026*
+_Last updated: February 2, 2026_

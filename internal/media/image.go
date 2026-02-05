@@ -127,6 +127,16 @@ func LoadImageConstrained(path string, maxDimension, maxPixels int) (image.Image
 		}
 	}
 
+	// Constrain by total pixels if still too large
+	targetPixels := targetWidth * targetHeight
+	if targetPixels > maxPixels {
+		scale := float64(maxPixels) / float64(targetPixels)
+		targetWidth = int(float64(targetWidth) * scale)
+		targetHeight = int(float64(targetHeight) * scale)
+	}
+
+	logging.Info("Constraining large image %s from %dx%d to %dx%d", path, width, height, targetWidth, targetHeight)
+
 	// Try libvips first for all supported formats (most memory efficient with decode-time shrinking)
 	// vips supports: JPEG, PNG, WebP, HEIF/HEIC, GIF, TIFF, SVG, PDF, JP2K, JXL, and more
 	if IsVipsAvailable() {
@@ -147,16 +157,6 @@ func LoadImageConstrained(path string, maxDimension, maxPixels int) (image.Image
 		}
 		logging.Debug("JPEG optimized loading failed for %s: %v, falling back to standard method", path, err)
 	}
-
-	// Then, constrain by total pixels if still too large
-	targetPixels := targetWidth * targetHeight
-	if targetPixels > maxPixels {
-		scale := float64(maxPixels) / float64(targetPixels)
-		targetWidth = int(float64(targetWidth) * scale)
-		targetHeight = int(float64(targetHeight) * scale)
-	}
-
-	logging.Info("Constraining large image %s from %dx%d to %dx%d", path, width, height, targetWidth, targetHeight)
 
 	// Load and resize in one operation using imaging library
 	// Note: imaging.Open still loads full image, but we resize immediately

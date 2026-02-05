@@ -14,6 +14,13 @@ import (
 	"media-viewer/internal/logging"
 )
 
+const (
+	// webAuthnUsername is the username for the single-user WebAuthn implementation
+	webAuthnUsername = "user"
+	// webAuthnDisplayName is the display name for the single-user WebAuthn implementation
+	webAuthnDisplayName = "Media Viewer User"
+)
+
 // WebAuthnCredential represents a stored passkey credential
 type WebAuthnCredential struct {
 	ID              int64     `json:"id"`
@@ -41,12 +48,12 @@ func (u *WebAuthnUser) WebAuthnID() []byte {
 
 // WebAuthnName returns a human-readable name
 func (u *WebAuthnUser) WebAuthnName() string {
-	return "user"
+	return webAuthnUsername
 }
 
 // WebAuthnDisplayName returns the display name
 func (u *WebAuthnUser) WebAuthnDisplayName() string {
-	return "Media Viewer User"
+	return webAuthnDisplayName
 }
 
 // WebAuthnCredentials returns all credentials for this user

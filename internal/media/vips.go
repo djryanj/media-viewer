@@ -17,6 +17,7 @@ var (
 	vipsInitialized bool
 	vipsInitMutex   sync.Mutex
 	vipsAvailable   bool
+	vipsShutdown    bool // Track if vips was ever shut down (cannot restart)
 )
 
 // InitVips initializes the libvips library
@@ -27,6 +28,11 @@ func InitVips() error {
 
 	if vipsInitialized {
 		return nil
+	}
+
+	// govips cannot be restarted after shutdown
+	if vipsShutdown {
+		return fmt.Errorf("libvips was shut down and cannot be restarted")
 	}
 
 	// Map our log level to vips log level
@@ -115,6 +121,7 @@ func ShutdownVips() {
 		vips.Shutdown()
 		vipsInitialized = false
 		vipsAvailable = false
+		vipsShutdown = true // Mark as shut down - cannot restart
 		logging.Info("libvips shutdown complete")
 	}
 }
