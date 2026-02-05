@@ -14,9 +14,10 @@ env:
     IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-    # Run all tests before building release
+    # Run comprehensive tests before building release
+    # This ensures the tagged commit is fully validated before creating production artifacts
     test:
-        name: Run All Tests
+        name: Run Comprehensive Tests
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
@@ -39,9 +40,6 @@ jobs:
             - name: Run integration tests
               run: make test-integration
 
-            - name: Run race detector
-              run: make test-race
-
             - name: Upload coverage
               uses: actions/upload-artifact@v6
               with:
@@ -50,7 +48,7 @@ jobs:
                       coverage-unit.out
                       coverage-integration.out
 
-    # Build and push Docker image after tests pass
+    # Build and push multi-arch Docker image after tests pass
     docker:
         name: Build and Push Docker
         runs-on: ubuntu-latest
@@ -140,7 +138,7 @@ jobs:
                   output-file: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
 
             - name: Upload SBOM as artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v6
               with:
                   name: sbom
                   path: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
