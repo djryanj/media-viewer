@@ -2956,10 +2956,15 @@ select:focus {
     box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
 }
 
+/* ===========================================
+   TAG SUGGESTIONS
+   =========================================== */
+
 .tag-suggestions {
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
+    margin-top: 0.25rem;
     margin-bottom: 1rem;
     max-height: 150px;
     overflow-y: auto;
@@ -2970,21 +2975,37 @@ select:focus {
 }
 
 .tag-suggestion {
-    padding: 0.75rem;
+    padding: 0.625rem 0.75rem;
     cursor: pointer;
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     font-size: 0.875rem;
+    border-bottom: 1px solid var(--border-color);
+    transition: background var(--transition);
 }
 
+.tag-suggestion:last-child {
+    border-bottom: none;
+}
+
+.tag-suggestion:hover,
 .tag-suggestion:active {
     background: var(--bg-secondary);
+}
+
+.tag-suggestion mark {
+    background: rgba(233, 69, 96, 0.3);
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 2px;
 }
 
 .tag-count {
     color: var(--text-secondary);
     font-size: 0.75rem;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .current-tags-section {
