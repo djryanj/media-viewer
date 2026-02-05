@@ -71,6 +71,27 @@ jobs:
                   echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
                   echo "Changed packages: $PACKAGES"
 
+            - name: Detect changed Go packages
+              id: detect-packages
+              if: steps.filter.outputs.go == 'true'
+              run: |
+                  # Get list of changed Go files
+                  if [ "${{ github.event_name }}" = "pull_request" ]; then
+                    CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.go$' || true)
+                  else
+                    CHANGED_FILES=$(git diff --name-only HEAD~1 | grep '\.go$' || true)
+                  fi
+
+                  # Extract unique packages from changed files
+                  PACKAGES=$(echo "$CHANGED_FILES" | xargs -n1 dirname | sort -u | sed 's|^|./|' | tr '\n' ' ')
+
+                  if [ -z "$PACKAGES" ]; then
+                    PACKAGES="./..."
+                  fi
+
+                  echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
+                  echo "Changed packages: $PACKAGES"
+
     lint:
         name: Lint
         runs-on: ubuntu-latest
