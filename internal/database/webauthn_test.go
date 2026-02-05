@@ -45,13 +45,13 @@ func TestWebAuthnUserInterface(t *testing.T) {
 
 	// Test WebAuthnName
 	name := webauthnUser.WebAuthnName()
-	if name != "user" {
+	if name != webAuthnUsername {
 		t.Errorf("WebAuthnName() = %s, want 'user'", name)
 	}
 
 	// Test WebAuthnDisplayName
 	displayName := webauthnUser.WebAuthnDisplayName()
-	if displayName != "Media Viewer User" {
+	if displayName != webAuthnDisplayName {
 		t.Errorf("WebAuthnDisplayName() = %s, want 'Media Viewer User'", displayName)
 	}
 
@@ -178,11 +178,11 @@ func TestWebAuthnUserConstantValues(t *testing.T) {
 	webauthnUser := &WebAuthnUser{user: user}
 
 	// These should always return the same values
-	if webauthnUser.WebAuthnName() != "user" {
+	if webauthnUser.WebAuthnName() != webAuthnUsername {
 		t.Error("WebAuthnName should always return 'user'")
 	}
 
-	if webauthnUser.WebAuthnDisplayName() != "Media Viewer User" {
+	if webauthnUser.WebAuthnDisplayName() != webAuthnDisplayName {
 		t.Error("WebAuthnDisplayName should always return 'Media Viewer User'")
 	}
 
