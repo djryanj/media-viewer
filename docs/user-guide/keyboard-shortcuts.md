@@ -70,11 +70,12 @@ When the playlist player is open:
 
 When using search:
 
-| Shortcut          | Action                      |
-| ----------------- | --------------------------- |
-| ++enter++         | View all search results     |
-| ++escape++        | Close search results        |
-| ++up++ / ++down++ | Navigate search suggestions |
+| Shortcut          | Action                          |
+| ----------------- | ------------------------------- |
+| ++enter++         | View all search results         |
+| ++escape++        | Close search results            |
+| ++up++ / ++down++ | Navigate search suggestions     |
+| ++tab++           | Autocomplete current suggestion |
 
 ## Tips
 

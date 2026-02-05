@@ -1,6 +1,6 @@
 # Tag Management
 
-This page covers advanced tag management features and workflows.
+This page covers advanced tag management features and workflows. For tag-based search features, see the [Search documentation](../user-guide/search.md).
 
 ## Tag Display
 
@@ -52,6 +52,40 @@ Tags can be removed from:
 ### Searching by Tag
 
 Click any tag anywhere in the interface to search for all items with that tag.
+
+### Tag Exclusion in Search
+
+Search supports excluding tags from results to find items that _don't_ have specific tags:
+
+**Exclusion Syntax:**
+
+- `-tag:tagname` - Exclude items with this tag
+- `NOT tag:tagname` - Alternative exclusion syntax
+
+**Combining Filters:**
+
+- `tag:vacation -tag:2023` - Items tagged "vacation" but not "2023"
+- `beach -tag:private` - Text search for "beach" excluding items tagged "private"
+- Mix multiple inclusions and exclusions as needed
+
+**Quick Exclusion:**
+
+- **Hover** over any tag in search results to see the exclude button (−)
+- **Click** the exclude button to add that tag as an exclusion to your current search
+- **Right-click** or **long-press** any tag to access "Search for" or "Exclude" options
+
+**Autocomplete:**
+
+When typing `-` or `-tag:`, autocomplete suggestions show available tags to exclude.
+
+### Search View Tag Behavior
+
+When viewing search results, tag interactions are search-focused:
+
+- Clicking a tag searches for that tag
+- The exclude button (−) adds exclusions to your search
+- Tag modal shows search options rather than editing options
+- This helps you refine your search without leaving the results view
 
 ## Bulk Tag Operations
 
@@ -138,3 +172,14 @@ Periodically review your tags:
     - Selecting all results
     - Adding the new tag
     - Removing the old tag
+
+## Keyboard Shortcuts
+
+| Shortcut         | Context                 | Action                            |
+| ---------------- | ----------------------- | --------------------------------- |
+| ++ctrl+c++       | Tag modal open          | Copy common tags to clipboard     |
+| ++ctrl+shift+c++ | Tag modal open          | Copy all unique tags to clipboard |
+| ++ctrl+v++       | Selection mode          | Paste tags to selected items      |
+| ++slash++        | Anywhere                | Focus search bar                  |
+| ++ctrl+k++       | Anywhere                | Focus search bar                  |
+| ++tab++          | Search with suggestions | Autocomplete current suggestion   |

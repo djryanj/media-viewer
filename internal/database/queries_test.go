@@ -3,6 +3,7 @@ package database
 import (
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -554,6 +555,137 @@ func TestGetSortColumnConsistency(t *testing.T) {
 		if result == "" {
 			t.Errorf("getSortColumn(%q) returned empty string", field)
 		}
+	}
+}
+
+// TestNormalizeLimit tests the normalizeLimit function for search suggestions.
+func TestNormalizeLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    int
+		expected int
+	}{
+		{
+			name:     "zero limit defaults to 10",
+			input:    0,
+			expected: 10,
+		},
+		{
+			name:     "negative limit defaults to 10",
+			input:    -5,
+			expected: 10,
+		},
+		{
+			name:     "valid limit preserved",
+			input:    5,
+			expected: 5,
+		},
+		{
+			name:     "valid limit at lower bound",
+			input:    1,
+			expected: 1,
+		},
+		{
+			name:     "valid limit at upper bound",
+			input:    20,
+			expected: 20,
+		},
+		{
+			name:     "limit above max capped at 20",
+			input:    25,
+			expected: 20,
+		},
+		{
+			name:     "very large limit capped at 20",
+			input:    1000,
+			expected: 20,
+		},
+		{
+			name:     "default suggestion",
+			input:    10,
+			expected: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := normalizeLimit(tt.input)
+
+			if result != tt.expected {
+				t.Errorf("normalizeLimit(%d) = %d, want %d", tt.input, result, tt.expected)
+			}
+
+			// Verify result is always within acceptable bounds
+			if result < 1 || result > 20 {
+				t.Errorf("normalizeLimit(%d) = %d, which is outside bounds [1, 20]", tt.input, result)
+			}
+		})
+	}
+}
+
+// TestConstants tests the exported constants used in queries.
+func TestConstants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		constant string
+		expected string
+	}{
+		{
+			name:     "TagPrefix constant",
+			constant: TagPrefix,
+			expected: "tag:",
+		},
+		{
+			name:     "FilterTypeClause constant",
+			constant: FilterTypeClause,
+			expected: " AND f.type = ?",
+		},
+		{
+			name:     "NameCollation constant",
+			constant: NameCollation,
+			expected: "name COLLATE NOCASE",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if tt.constant != tt.expected {
+				t.Errorf("Constant value = %q, want %q", tt.constant, tt.expected)
+			}
+		})
+	}
+}
+
+// TestTagPrefixUsage tests that TagPrefix constant is correctly formatted.
+func TestTagPrefixUsage(t *testing.T) {
+	t.Parallel()
+
+	// Verify TagPrefix has correct format
+	if TagPrefix != "tag:" {
+		t.Errorf("TagPrefix = %q, want %q", TagPrefix, "tag:")
+	}
+
+	// Verify it can be used in string operations
+	testQuery := TagPrefix + "vacation"
+	if testQuery != "tag:vacation" {
+		t.Errorf("TagPrefix concatenation failed: got %q, want %q", testQuery, "tag:vacation")
+	}
+
+	// Verify prefix check works
+	if !strings.HasPrefix("tag:beach", TagPrefix) {
+		t.Error("TagPrefix should match 'tag:beach'")
+	}
+
+	if strings.HasPrefix("vacation", TagPrefix) {
+		t.Error("TagPrefix should not match 'vacation'")
 	}
 }
 

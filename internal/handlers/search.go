@@ -38,7 +38,16 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.db.Search(r.Context(), opts)
 	if err != nil {
-		http.Error(w, "Search failed", http.StatusInternalServerError)
+		// Return empty results on database errors (graceful degradation)
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(w, database.SearchResult{
+			Items:      []database.MediaFile{},
+			Query:      opts.Query,
+			TotalItems: 0,
+			Page:       opts.Page,
+			PageSize:   opts.PageSize,
+			TotalPages: 0,
+		})
 		return
 	}
 

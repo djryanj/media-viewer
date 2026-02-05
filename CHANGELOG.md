@@ -36,7 +36,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial tags display a visual indicator (~) and tooltip showing which items have the tag.
 - Single item selection in bulk mode now displays the item name instead of "1 items selected".
 
+**Tag Exclusion in Search** ([#18](https://github.com/djryanj/media-viewer/issues/18))
+
+- Search now supports excluding tags from results using `-tag:tagname` or `NOT tag:tagname` syntax.
+- Combine inclusions and exclusions in a single query (e.g., `tag:vacation -tag:2023` finds items tagged "vacation" but not "2023").
+- Mix text search with tag filters (e.g., `beach -tag:private` searches for "beach" excluding items tagged "private").
+- Tag suggestions appear when typing `-` to help discover exclusion options.
+- In search results, tags display an exclude button (−) on hover to quickly add that tag as an exclusion to the current search.
+- Right-click or long-press on any tag in search results to access "Search for" or "Exclude" options.
+
+**Editable Search in Results View** ([#18](https://github.com/djryanj/media-viewer/issues/18))
+
+- Search results now include an editable search bar, allowing you to refine your search without closing the results view.
+- Full autocomplete support with Tab to complete suggestions.
+- Press `/` or `Ctrl+K` to focus the search bar from anywhere in the app.
+
+**Tags in Search View Are Search Focused** ([#18](https://github.com/djryanj/media-viewer/issues/18))
+
+- When in the Search view, the ability to edit tags using the tag chips has been replaced by a search-focused tag modal
+
 ### Performance Improvements
+
+- **Search Query Optimization**: Refactored search suggestion logic for improved maintainability and code quality. Reduced cognitive complexity from 39 to manageable levels by breaking down `SearchSuggestions` into focused helper functions. ([#18](https://github.com/djryanj/media-viewer/issues/18))
 
 - **Database Pagination Limits**: Increased maximum page size from 500 to 100,000 items to support efficient bulk operations. The lightweight file path endpoint can now retrieve metadata for entire large directories in a single request without pagination overhead. ([#141](https://github.com/djryanj/media-viewer/issues/141))
 
@@ -48,10 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug Fixes
 
+- **Search Tag Modal Mobile Layout**: Fixed positioning issues where the search tag modal appeared with unwanted vertical space at the top on mobile devices. Modal now properly fills the screen from top to bottom with correct scrolling behavior. ([#18](https://github.com/djryanj/media-viewer/issues/18))
+- **Search Input State**: Search input field now properly clears when closing the search view, preventing confusion from stale query text. ([#18](https://github.com/djryanj/media-viewer/issues/18))
+- **Escape Key Priority**: Fixed escape key handling to prioritize closing the search tag modal over closing the entire search view when the modal is open. ([#18](https://github.com/djryanj/media-viewer/issues/18))
 - **Tag Suggestions Styling**: Fixed an issue where tag suggestions in the tag modal appeared visually spread out instead of compact.
 - Fixed inconsistent behavior between single-item tag modal and selection-mode tag modal. ([#118](https://github.com/djryanj/media-viewer/issues/118))
 - Tags copied to clipboard now properly persist between folder navigation ([#118](https://github.com/djryanj/media-viewer/issues/118))
 - **Lightbox Navigation Bug**: Fixed an issue where closing the lightbox while in a subfolder would incorrectly navigate up to the parent folder. The bug was caused by duplicate Escape key handlers in both the lightbox and history manager, each triggering `history.back()`. ([#147](https://github.com/djryanj/media-viewer/issues/147))
+- If the database is closed, degrade gracefully (discovered during testing [#18](https://github.com/djryanj/media-viewer/issues/18))
 
 ### API Changes
 
@@ -60,6 +85,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `POST /api/tags/bulk` - Now supports up to 10,000 paths per request
 - Updated `DELETE /api/tags/bulk` - Now supports up to 10,000 paths per request
 - Updated database pagination - Maximum page size increased from 500 to 100,000 for bulk operation endpoints
+- Updated `GET /api/search` - Now supports tag exclusion with `-tag:name` and `NOT tag:name` syntax
+- Updated `GET /api/search/suggestions` - Returns exclusion suggestions when query starts with `-tag:` or `-`
+- Updated `SearchSuggestion` model - Added `itemCount` field, changed `Type` from `FileType` to `string` to support `tag` and `tag-exclude` types
 
 ### Documentation
 
@@ -67,12 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Keyboard Shortcuts
 
-| Shortcut       | Context        | Action                            |
-| -------------- | -------------- | --------------------------------- |
-| `Ctrl+C`       | Tag modal open | Copy common tags to clipboard     |
-| `Ctrl+Shift+C` | Tag modal open | Copy all unique tags to clipboard |
-| `Ctrl+A`       | Selection mode | Select all items                  |
-| `Ctrl+V`       | Selection mode | Paste tags to selected items      |
+| Shortcut        | Context                 | Action                            |
+| --------------- | ----------------------- | --------------------------------- |
+| `Ctrl+C`        | Tag modal open          | Copy common tags to clipboard     |
+| `Ctrl+Shift+C`  | Tag modal open          | Copy all unique tags to clipboard |
+| `Ctrl+A`        | Selection mode          | Select all items                  |
+| `Ctrl+V`        | Selection mode          | Paste tags to selected items      |
+| `/` or `Ctrl+K` | Anywhere                | Focus search bar                  |
+| `Tab`           | Search with suggestions | Autocomplete current suggestion   |
+| `Escape`        | Search results open     | Close search results              |
 
 ## [0.7.2] - February 4, 2026
 
