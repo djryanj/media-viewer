@@ -113,6 +113,39 @@ tag:vacation
 
 ```
 
+### Tag Exclusion
+
+Exclude items with specific tags from search results:
+
+```
+-tag:private
+```
+
+or
+
+```
+NOT tag:private
+```
+
+**Combining Filters:**
+
+```
+tag:vacation -tag:2023
+```
+
+Finds items tagged "vacation" but not "2023".
+
+### Search View Tag Behavior
+
+When viewing search results, tag interactions are search-focused:
+
+- **Hover** over any tag to see the exclude button (−)
+- **Click** the exclude button to add that tag as an exclusion to your search
+- **Right-click** or **long-press** any tag for "Search for" or "Exclude" options
+- Clicking tags searches for them rather than opening the tag editor
+
+This behavior helps you refine searches without leaving the results view.
+
 See [Search](search.md) for more search options.
 
 ## Tag Management Tips

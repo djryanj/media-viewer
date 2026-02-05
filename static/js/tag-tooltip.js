@@ -85,6 +85,11 @@ const TagTooltip = {
             const moreTag = target.closest('.item-tag.more');
 
             if (moreTag) {
+                // If in search results, let Search module handle it entirely
+                if (moreTag.closest('#search-results-gallery')) {
+                    return;
+                }
+
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -121,6 +126,11 @@ const TagTooltip = {
                 const moreTag = target.closest('.item-tag.more');
 
                 if (moreTag) {
+                    // If in search results, let Search module handle it entirely
+                    if (moreTag.closest('#search-results-gallery')) {
+                        return;
+                    }
+
                     e.preventDefault();
                     e.stopPropagation();
 

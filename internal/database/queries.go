@@ -36,6 +36,12 @@ const (
 	NameCollation = "name COLLATE NOCASE"
 	// FilterTypeClause is the SQL filter clause for file type matching.
 	FilterTypeClause = " AND f.type = ?"
+	// TagPrefix is the prefix used for tag search queries.
+	TagPrefix = "tag:"
+	// TagSuggestionType is the type identifier for tag suggestions.
+	TagSuggestionType = "tag"
+	// TagExcludeSuggestionType is the type identifier for tag exclusion suggestions.
+	TagExcludeSuggestionType = "tag-exclude"
 )
 
 // ListOptions specifies options for listing directory contents.
@@ -54,6 +60,12 @@ type SearchOptions struct {
 	FilterType string
 	Page       int
 	PageSize   int
+}
+
+// TagFilter represents an included or excluded tag in a search query
+type TagFilter struct {
+	Name     string
+	Excluded bool
 }
 
 // ListDirectory returns a paginated directory listing.
@@ -344,16 +356,14 @@ func (d *Database) Search(ctx context.Context, opts SearchOptions) (*SearchResul
 	defer func() { recordQuery("search", start, err) }()
 
 	if opts.Query == "" {
-		return &SearchResult{Items: []MediaFile{}}, nil
-	}
-
-	// Check for tag: prefix (case-insensitive)
-	queryLower := strings.ToLower(opts.Query)
-	if strings.HasPrefix(queryLower, "tag:") {
-		tagName := strings.TrimSpace(opts.Query[4:]) // Preserve original case for display
-		if tagName != "" {
-			return d.GetFilesByTag(ctx, tagName, opts.Page, opts.PageSize)
-		}
+		return &SearchResult{
+			Items:      []MediaFile{},
+			Query:      "",
+			TotalItems: 0,
+			Page:       1,
+			PageSize:   opts.PageSize,
+			TotalPages: 0,
+		}, nil
 	}
 
 	// Default pagination
@@ -367,94 +377,103 @@ func (d *Database) Search(ctx context.Context, opts SearchOptions) (*SearchResul
 		opts.PageSize = 200
 	}
 
-	// Prepare search term for FTS
-	searchTerm := prepareSearchTerm(opts.Query)
-	tagPattern := "%" + opts.Query + "%"
+	// Parse tag filters from query
+	textQuery, tagFilters := parseTagFilters(opts.Query)
+
+	// Separate included and excluded tags
+	var includedTags, excludedTags []string
+	for _, tf := range tagFilters {
+		if tf.Excluded {
+			excludedTags = append(excludedTags, tf.Name)
+		} else {
+			includedTags = append(includedTags, tf.Name)
+		}
+	}
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	// First, get files matching FTS
-	ftsQuery := `
+	// If only tag filters (no text query), use tag-based search
+	if textQuery == "" && len(tagFilters) > 0 {
+		return d.searchByTagFiltersUnlocked(ctx, opts, includedTags, excludedTags)
+	}
+
+	// If no tag filters and no text, return empty
+	if textQuery == "" && len(tagFilters) == 0 {
+		return &SearchResult{Items: []MediaFile{}, Query: opts.Query}, nil
+	}
+
+	// Combined search: text + tag filters
+	return d.searchWithTagFiltersUnlocked(ctx, opts, textQuery, includedTags, excludedTags)
+}
+
+// searchByTagFiltersUnlocked handles searches with only tag filters (no text)
+func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOptions, includedTags, excludedTags []string) (*SearchResult, error) {
+	// Build the query dynamically based on filters
+	var conditions []string
+	var args []interface{}
+
+	// Base query - start with all files
+	baseQuery := `
 		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
 		FROM files f
-		INNER JOIN files_fts fts ON f.id = fts.rowid
-		WHERE files_fts MATCH ?
 	`
-	ftsArgs := []interface{}{searchTerm}
 
-	if opts.FilterType != "" {
-		ftsQuery += FilterTypeClause
-		ftsArgs = append(ftsArgs, opts.FilterType)
+	// Add JOINs for included tags
+	for i, tag := range includedTags {
+		alias := fmt.Sprintf("ft_inc_%d", i)
+		tagAlias := fmt.Sprintf("t_inc_%d", i)
+		baseQuery += fmt.Sprintf(`
+			INNER JOIN file_tags %s ON f.path = %s.file_path
+			INNER JOIN tags %s ON %s.tag_id = %s.id AND %s.name = ? COLLATE NOCASE
+		`, alias, alias, tagAlias, alias, tagAlias, tagAlias)
+		args = append(args, tag)
 	}
 
-	// Second, get files matching by tag name
-	tagQuery := `
-		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
-		FROM files f
-		INNER JOIN file_tags ft ON f.path = ft.file_path
-		INNER JOIN tags t ON ft.tag_id = t.id
-		WHERE t.name LIKE ?
-	`
-	tagArgs := []interface{}{tagPattern}
-
-	if opts.FilterType != "" {
-		tagQuery += FilterTypeClause
-		tagArgs = append(tagArgs, opts.FilterType)
-	}
-
-	// Combine with UNION to get unique results
-	combinedQuery := fmt.Sprintf(`
-		SELECT id, name, path, parent_path, type, size, mod_time, mime_type FROM (
-			%s
-			UNION
-			%s
-		) combined
-		ORDER BY name COLLATE NOCASE
-	`, ftsQuery, tagQuery)
-
-	// For counting, we need a similar approach
-	filterClause := ""
-	if opts.FilterType != "" {
-		filterClause = FilterTypeClause
-	}
-
-	countQuery := fmt.Sprintf(`
-		SELECT COUNT(*) FROM (
-			SELECT DISTINCT path FROM (
-				SELECT f.path FROM files f
-				INNER JOIN files_fts fts ON f.id = fts.rowid
-				WHERE files_fts MATCH ?
-				%s
-				UNION
-				SELECT f.path FROM files f
-				INNER JOIN file_tags ft ON f.path = ft.file_path
-				INNER JOIN tags t ON ft.tag_id = t.id
-				WHERE t.name LIKE ?
-				%s
+	// Add exclusion conditions
+	for _, tag := range excludedTags {
+		conditions = append(conditions, `
+			NOT EXISTS (
+				SELECT 1 FROM file_tags ft_exc
+				INNER JOIN tags t_exc ON ft_exc.tag_id = t_exc.id
+				WHERE ft_exc.file_path = f.path AND t_exc.name = ? COLLATE NOCASE
 			)
-		)
-	`, filterClause, filterClause)
+		`)
+		args = append(args, tag)
+	}
 
-	// Build count args
-	countArgs := []interface{}{searchTerm}
+	// Add type filter if specified
 	if opts.FilterType != "" {
-		countArgs = append(countArgs, opts.FilterType)
+		conditions = append(conditions, "f.type = ?")
+		args = append(args, opts.FilterType)
 	}
-	countArgs = append(countArgs, tagPattern)
-	if opts.FilterType != "" {
-		countArgs = append(countArgs, opts.FilterType)
+
+	// Build WHERE clause
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
+
+	// Build count query
+	countBaseQuery := "SELECT DISTINCT f.path FROM files f"
+	for i := range includedTags {
+		alias := fmt.Sprintf("ft_inc_%d", i)
+		tagAlias := fmt.Sprintf("t_inc_%d", i)
+		countBaseQuery += fmt.Sprintf(`
+			INNER JOIN file_tags %s ON f.path = %s.file_path
+			INNER JOIN tags %s ON %s.tag_id = %s.id AND %s.name = ? COLLATE NOCASE
+		`, alias, alias, tagAlias, alias, tagAlias, tagAlias)
+	}
+
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM (%s %s)", countBaseQuery, whereClause)
 
 	var totalItems int
-	err = d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
+	err := d.db.QueryRowContext(ctx, countQuery, args...).Scan(&totalItems)
 	if err != nil {
-		// If FTS fails (e.g., invalid query), fall back to tag-only search
-		return d.searchByTagOnlyUnlocked(ctx, opts, tagPattern)
+		return nil, fmt.Errorf("count query failed: %w", err)
 	}
 
 	totalPages := (totalItems + opts.PageSize - 1) / opts.PageSize
@@ -463,19 +482,15 @@ func (d *Database) Search(ctx context.Context, opts SearchOptions) (*SearchResul
 	}
 	offset := (opts.Page - 1) * opts.PageSize
 
-	// Add pagination to combined query
-	paginatedQuery := combinedQuery + ` LIMIT ? OFFSET ?`
-
-	// Build select args
-	selectArgs := make([]interface{}, 0, len(ftsArgs)+len(tagArgs)+2)
-	selectArgs = append(selectArgs, ftsArgs...)
-	selectArgs = append(selectArgs, tagArgs...)
+	// Full select query with pagination
+	selectQuery := baseQuery + " " + whereClause + " ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?"
+	selectArgs := make([]interface{}, len(args), len(args)+2)
+	copy(selectArgs, args)
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
-	rows, err := d.db.QueryContext(ctx, paginatedQuery, selectArgs...)
+	rows, err := d.db.QueryContext(ctx, selectQuery, selectArgs...)
 	if err != nil {
-		// Fall back to tag-only search on FTS error
-		return d.searchByTagOnlyUnlocked(ctx, opts, tagPattern)
+		return nil, fmt.Errorf("select query failed: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -510,6 +525,10 @@ func (d *Database) Search(ctx context.Context, opts SearchOptions) (*SearchResul
 		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
 
 		items = append(items, file)
+	}
+
+	if items == nil {
+		items = []MediaFile{}
 	}
 
 	return &SearchResult{
@@ -522,28 +541,137 @@ func (d *Database) Search(ctx context.Context, opts SearchOptions) (*SearchResul
 	}, nil
 }
 
-// searchByTagOnlyUnlocked is a fallback when FTS fails.
-// Caller must hold at least a read lock.
-func (d *Database) searchByTagOnlyUnlocked(ctx context.Context, opts SearchOptions, tagPattern string) (*SearchResult, error) {
-	// Count
-	countQuery := `
-		SELECT COUNT(DISTINCT f.path)
+// searchWithTagFiltersUnlocked handles combined text + tag filter searches
+func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts SearchOptions, textQuery string, includedTags, excludedTags []string) (*SearchResult, error) {
+	searchTerm := prepareSearchTerm(textQuery)
+	tagPattern := "%" + textQuery + "%"
+
+	// Build exclusion subquery
+	exclusionConditions := make([]string, 0, len(excludedTags))
+	exclusionArgs := make([]interface{}, 0, len(excludedTags))
+
+	for _, tag := range excludedTags {
+		exclusionConditions = append(exclusionConditions, `
+			NOT EXISTS (
+				SELECT 1 FROM file_tags ft_exc
+				INNER JOIN tags t_exc ON ft_exc.tag_id = t_exc.id
+				WHERE ft_exc.file_path = f.path AND t_exc.name = ? COLLATE NOCASE
+			)
+		`)
+		exclusionArgs = append(exclusionArgs, tag)
+	}
+
+	exclusionClause := ""
+	if len(exclusionConditions) > 0 {
+		exclusionClause = " AND " + strings.Join(exclusionConditions, " AND ")
+	}
+
+	// Build inclusion JOINs
+	var inclusionJoins string
+	inclusionArgs := make([]interface{}, 0, len(includedTags))
+	for i, tag := range includedTags {
+		alias := fmt.Sprintf("ft_req_%d", i)
+		tagAlias := fmt.Sprintf("t_req_%d", i)
+		inclusionJoins += fmt.Sprintf(`
+			INNER JOIN file_tags %s ON f.path = %s.file_path
+			INNER JOIN tags %s ON %s.tag_id = %s.id AND %s.name = ? COLLATE NOCASE
+		`, alias, alias, tagAlias, alias, tagAlias, tagAlias)
+		inclusionArgs = append(inclusionArgs, tag)
+	}
+
+	filterClause := ""
+	var filterArgs []interface{}
+	if opts.FilterType != "" {
+		filterClause = FilterTypeClause
+		filterArgs = append(filterArgs, opts.FilterType)
+	}
+
+	// FTS query with tag filters
+	ftsQuery := fmt.Sprintf(`
+		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+		FROM files f
+		INNER JOIN files_fts fts ON f.id = fts.rowid
+		%s
+		WHERE files_fts MATCH ?
+		%s
+		%s
+	`, inclusionJoins, filterClause, exclusionClause)
+
+	// Tag name matching query with tag filters
+	tagQuery := fmt.Sprintf(`
+		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
 		FROM files f
 		INNER JOIN file_tags ft ON f.path = ft.file_path
 		INNER JOIN tags t ON ft.tag_id = t.id
+		%s
 		WHERE t.name LIKE ?
-	`
-	countArgs := []interface{}{tagPattern}
+		%s
+		%s
+	`, inclusionJoins, filterClause, exclusionClause)
 
-	if opts.FilterType != "" {
-		countQuery += ` AND f.type = ?`
-		countArgs = append(countArgs, opts.FilterType)
-	}
+	// Build args for FTS query
+	ftsArgs := make([]interface{}, 0, len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs))
+	ftsArgs = append(ftsArgs, inclusionArgs...)
+	ftsArgs = append(ftsArgs, searchTerm)
+	ftsArgs = append(ftsArgs, filterArgs...)
+	ftsArgs = append(ftsArgs, exclusionArgs...)
+
+	// Build args for tag query
+	tagArgs := make([]interface{}, 0, len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs))
+	tagArgs = append(tagArgs, inclusionArgs...)
+	tagArgs = append(tagArgs, tagPattern)
+	tagArgs = append(tagArgs, filterArgs...)
+	tagArgs = append(tagArgs, exclusionArgs...)
+
+	// Combined query
+	combinedQuery := fmt.Sprintf(`
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type FROM (
+			%s
+			UNION
+			%s
+		) combined
+		ORDER BY name COLLATE NOCASE
+	`, ftsQuery, tagQuery)
+
+	// Count query
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT DISTINCT path FROM (
+				SELECT f.path FROM files f
+				INNER JOIN files_fts fts ON f.id = fts.rowid
+				%s
+				WHERE files_fts MATCH ?
+				%s
+				%s
+				UNION
+				SELECT f.path FROM files f
+				INNER JOIN file_tags ft ON f.path = ft.file_path
+				INNER JOIN tags t ON ft.tag_id = t.id
+				%s
+				WHERE t.name LIKE ?
+				%s
+				%s
+			)
+		)
+	`, inclusionJoins, filterClause, exclusionClause, inclusionJoins, filterClause, exclusionClause)
+
+	// Build count args (same pattern twice for UNION)
+	countArgs := make([]interface{}, 0, len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs)+len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs))
+	countArgs = append(countArgs, inclusionArgs...)
+	countArgs = append(countArgs, searchTerm)
+	countArgs = append(countArgs, filterArgs...)
+	countArgs = append(countArgs, exclusionArgs...)
+	countArgs = append(countArgs, inclusionArgs...)
+	countArgs = append(countArgs, tagPattern)
+	countArgs = append(countArgs, filterArgs...)
+	countArgs = append(countArgs, exclusionArgs...)
 
 	var totalItems int
 	err := d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
 	if err != nil {
-		return &SearchResult{Items: []MediaFile{}, Query: opts.Query}, nil
+		logging.Warn("Combined search count failed, trying tag-only: %v", err)
+		// Fall back to simpler search
+		return d.searchByTagFiltersUnlocked(ctx, opts, includedTags, excludedTags)
 	}
 
 	totalPages := (totalItems + opts.PageSize - 1) / opts.PageSize
@@ -552,27 +680,19 @@ func (d *Database) searchByTagOnlyUnlocked(ctx context.Context, opts SearchOptio
 	}
 	offset := (opts.Page - 1) * opts.PageSize
 
-	// Select
-	selectQuery := `
-		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
-		FROM files f
-		INNER JOIN file_tags ft ON f.path = ft.file_path
-		INNER JOIN tags t ON ft.tag_id = t.id
-		WHERE t.name LIKE ?
-	`
-	selectArgs := []interface{}{tagPattern}
+	// Add pagination
+	paginatedQuery := combinedQuery + " LIMIT ? OFFSET ?"
 
-	if opts.FilterType != "" {
-		selectQuery += ` AND f.type = ?`
-		selectArgs = append(selectArgs, opts.FilterType)
-	}
-
-	selectQuery += ` ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?`
+	// Build select args
+	selectArgs := make([]interface{}, 0, len(ftsArgs)+len(tagArgs)+2)
+	selectArgs = append(selectArgs, ftsArgs...)
+	selectArgs = append(selectArgs, tagArgs...)
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
-	rows, err := d.db.QueryContext(ctx, selectQuery, selectArgs...)
+	rows, err := d.db.QueryContext(ctx, paginatedQuery, selectArgs...)
 	if err != nil {
-		return &SearchResult{Items: []MediaFile{}, Query: opts.Query}, nil
+		logging.Warn("Combined search select failed: %v", err)
+		return d.searchByTagFiltersUnlocked(ctx, opts, includedTags, excludedTags)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -607,6 +727,9 @@ func (d *Database) searchByTagOnlyUnlocked(ctx context.Context, opts SearchOptio
 		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
 
 		items = append(items, file)
+	}
+	if items == nil {
+		items = []MediaFile{}
 	}
 
 	return &SearchResult{
@@ -625,39 +748,124 @@ func (d *Database) SearchSuggestions(ctx context.Context, query string, limit in
 	var err error
 	defer func() { recordQuery("search_suggestions", start, err) }()
 
-	if query == "" || len(query) < 2 {
+	if query == "" {
 		return []SearchSuggestion{}, nil
 	}
 
-	if limit <= 0 {
-		limit = 10
-	}
-	if limit > 20 {
-		limit = 20
-	}
+	limit = normalizeLimit(limit)
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	queryLower := strings.ToLower(query)
+
+	// Check for tag-specific queries
+	if suggestions, handled := d.handleTagQuery(ctx, query, queryLower, limit); handled {
+		return suggestions, nil
+	}
+
+	// For very short queries (1 char), only return results if it could be a tag prefix
+	if len(query) < 2 {
+		return []SearchSuggestion{}, nil
+	}
+
+	suggestions := d.performRegularSearch(ctx, query, limit)
+	return suggestions, nil
+}
+
+// normalizeLimit ensures the limit is within acceptable bounds
+func normalizeLimit(limit int) int {
+	if limit <= 0 {
+		return 10
+	}
+	if limit > 20 {
+		return 20
+	}
+	return limit
+}
+
+// handleTagQuery processes tag-related queries and returns suggestions if applicable
+func (d *Database) handleTagQuery(ctx context.Context, query, queryLower string, limit int) ([]SearchSuggestion, bool) {
+	// Handle exclusion queries
+	if strings.HasPrefix(query, "-") {
+		return d.handleExclusionQuery(ctx, query, limit), true
+	}
+
+	// Handle "NOT tag:" queries
+	if strings.HasPrefix(queryLower, "not "+TagPrefix) {
+		tagQuery := query[8:] // After "not tag:"
+		suggestions, _ := d.getTagSuggestionsForExclusionUnlocked(ctx, tagQuery, limit, true)
+		return suggestions, true
+	}
+
+	// Handle "NOT " prefix (user typing "NOT t", "NOT ta", etc.)
+	if strings.HasPrefix(queryLower, "not ") {
+		remainder := strings.ToLower(query[4:])
+		if strings.HasPrefix(TagPrefix, remainder) || strings.HasPrefix(remainder, "tag") {
+			suggestions, _ := d.getTagSuggestionsForExclusionUnlocked(ctx, "", limit, true)
+			return suggestions, true
+		}
+	}
+
+	// Handle inclusion tag queries
+	if strings.HasPrefix(queryLower, TagPrefix) {
+		tagQuery := query[4:]
+		suggestions, _ := d.getTagSuggestionsUnlocked(ctx, tagQuery, limit)
+		return suggestions, true
+	}
+
+	return nil, false
+}
+
+// handleExclusionQuery processes exclusion queries starting with "-"
+func (d *Database) handleExclusionQuery(ctx context.Context, query string, limit int) []SearchSuggestion {
+	remainder := query[1:] // Everything after the "-"
+	remainderLower := strings.ToLower(remainder)
+
+	// If it's "-tag:something", search for that tag
+	if strings.HasPrefix(remainderLower, TagPrefix) {
+		tagQuery := remainder[4:] // After "tag:"
+		suggestions, _ := d.getTagSuggestionsForExclusionUnlocked(ctx, tagQuery, limit, true)
+		return suggestions
+	}
+
+	// If it's "-" or "-t" or "-ta" or "-tag" (user is typing the prefix)
+	if strings.HasPrefix(TagPrefix, remainderLower) || strings.HasPrefix(remainderLower, "tag") {
+		suggestions, _ := d.getTagSuggestionsForExclusionUnlocked(ctx, "", limit, true)
+		return suggestions
+	}
+
+	// If it's "-something" where something doesn't match "tag:", treat as exclusion tag search
+	suggestions, _ := d.getTagSuggestionsForExclusionUnlocked(ctx, remainder, limit, true)
+	return suggestions
+}
+
+// performRegularSearch conducts a standard search combining tags and files
+func (d *Database) performRegularSearch(ctx context.Context, query string, limit int) []SearchSuggestion {
 	var suggestions []SearchSuggestion
 
-	// First, get matching tags as suggestions
-	tagSuggestions, tagErr := d.getTagSuggestionsUnlocked(ctx, query, limit/2)
-	if tagErr == nil {
-		suggestions = append(suggestions, tagSuggestions...)
-	}
+	// Get matching tags first
+	tagSuggestions, _ := d.getTagSuggestionsUnlocked(ctx, query, limit/2)
+	suggestions = append(suggestions, tagSuggestions...)
 
 	// Calculate remaining slots for file suggestions
 	remainingLimit := limit - len(suggestions)
 	if remainingLimit <= 0 {
-		return suggestions, nil
+		return suggestions
 	}
 
 	// Use FTS for fast fuzzy matching on files
+	fileSuggestions := d.searchFileSuggestions(ctx, query, remainingLimit)
+	suggestions = append(suggestions, fileSuggestions...)
+
+	return suggestions
+}
+
+// searchFileSuggestions searches for file suggestions using FTS
+func (d *Database) searchFileSuggestions(ctx context.Context, query string, limit int) []SearchSuggestion {
 	searchTerm := prepareSearchTerm(query)
 
 	sqlQuery := `
@@ -669,10 +877,9 @@ func (d *Database) SearchSuggestions(ctx context.Context, query string, limit in
 		LIMIT ?
 	`
 
-	rows, err := d.db.QueryContext(ctx, sqlQuery, searchTerm, remainingLimit)
+	rows, err := d.db.QueryContext(ctx, sqlQuery, searchTerm, limit)
 	if err != nil {
-		// Return tag suggestions even if FTS fails
-		return suggestions, nil
+		return []SearchSuggestion{}
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -680,6 +887,7 @@ func (d *Database) SearchSuggestions(ctx context.Context, query string, limit in
 		}
 	}()
 
+	var suggestions []SearchSuggestion
 	for rows.Next() {
 		var s SearchSuggestion
 		var rank float64
@@ -692,21 +900,37 @@ func (d *Database) SearchSuggestions(ctx context.Context, query string, limit in
 		suggestions = append(suggestions, s)
 	}
 
-	return suggestions, nil
+	return suggestions
 }
 
-// getTagSuggestionsUnlocked returns tags matching the query as search suggestions.
-// Caller must hold at least a read lock.
-func (d *Database) getTagSuggestionsUnlocked(ctx context.Context, query string, limit int) ([]SearchSuggestion, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT t.name, COUNT(ft.id) as item_count
-		FROM tags t
-		LEFT JOIN file_tags ft ON t.id = ft.tag_id
-		WHERE t.name LIKE ?
-		GROUP BY t.id
-		ORDER BY item_count DESC, t.name COLLATE NOCASE
-		LIMIT ?
-	`, "%"+query+"%", limit)
+// getTagSuggestionsForExclusionUnlocked returns tag suggestions for exclusion queries
+func (d *Database) getTagSuggestionsForExclusionUnlocked(ctx context.Context, query string, limit int, isExclusion bool) ([]SearchSuggestion, error) {
+	var rows *sql.Rows
+	var err error
+
+	if query == "" {
+		// Return all tags ordered by usage
+		rows, err = d.db.QueryContext(ctx, `
+			SELECT t.name, COUNT(ft.id) as item_count
+			FROM tags t
+			LEFT JOIN file_tags ft ON t.id = ft.tag_id
+			GROUP BY t.id
+			ORDER BY item_count DESC, t.name COLLATE NOCASE
+			LIMIT ?
+		`, limit)
+	} else {
+		// Search for matching tags
+		searchPattern := "%" + query + "%"
+		rows, err = d.db.QueryContext(ctx, `
+			SELECT t.name, COUNT(ft.id) as item_count
+			FROM tags t
+			LEFT JOIN file_tags ft ON t.id = ft.tag_id
+			WHERE t.name LIKE ?
+			GROUP BY t.id
+			ORDER BY item_count DESC, t.name COLLATE NOCASE
+			LIMIT ?
+		`, searchPattern, limit)
+	}
 
 	if err != nil {
 		return nil, err
@@ -726,11 +950,88 @@ func (d *Database) getTagSuggestionsUnlocked(ctx context.Context, query string, 
 			continue
 		}
 
+		prefix := "tag:"
+		suggestionType := TagSuggestionType
+		if isExclusion {
+			prefix = "-tag:"
+			suggestionType = TagExcludeSuggestionType
+		}
+
+		highlight := name
+		if query != "" {
+			highlight = highlightMatch(name, query)
+		}
+
+		suggestions = append(suggestions, SearchSuggestion{
+			Path:      prefix + name,
+			Name:      name,
+			Type:      suggestionType,
+			Highlight: highlight,
+			ItemCount: count,
+		})
+	}
+
+	return suggestions, nil
+}
+
+// getTagSuggestionsUnlocked returns tags matching the query as search suggestions.
+// Caller must hold at least a read lock.
+func (d *Database) getTagSuggestionsUnlocked(ctx context.Context, query string, limit int) ([]SearchSuggestion, error) {
+	var rows *sql.Rows
+	var err error
+
+	if query == "" {
+		// Return all tags ordered by usage
+		rows, err = d.db.QueryContext(ctx, `
+			SELECT t.name, COUNT(ft.id) as item_count
+			FROM tags t
+			LEFT JOIN file_tags ft ON t.id = ft.tag_id
+			GROUP BY t.id
+			ORDER BY item_count DESC, t.name COLLATE NOCASE
+			LIMIT ?
+		`, limit)
+	} else {
+		// Search for matching tags
+		rows, err = d.db.QueryContext(ctx, `
+			SELECT t.name, COUNT(ft.id) as item_count
+			FROM tags t
+			LEFT JOIN file_tags ft ON t.id = ft.tag_id
+			WHERE t.name LIKE ?
+			GROUP BY t.id
+			ORDER BY item_count DESC, t.name COLLATE NOCASE
+			LIMIT ?
+		`, "%"+query+"%", limit)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
+
+	var suggestions []SearchSuggestion
+	for rows.Next() {
+		var name string
+		var count int
+
+		if err := rows.Scan(&name, &count); err != nil {
+			continue
+		}
+
+		highlight := name
+		if query != "" {
+			highlight = highlightMatch(name, query)
+		}
+
 		suggestions = append(suggestions, SearchSuggestion{
 			Path:      "tag:" + name,
 			Name:      name,
-			Type:      "tag", // Special type for tags
-			Highlight: fmt.Sprintf("🏷 %s <span class=\"tag-count\">(%d items)</span>", highlightMatch(name, query), count),
+			Type:      TagSuggestionType,
+			Highlight: highlight,
+			ItemCount: count,
 		})
 	}
 
@@ -1410,4 +1711,57 @@ func (d *Database) scanMediaFiles(rows *sql.Rows) ([]MediaFile, error) {
 	}
 
 	return files, rows.Err()
+}
+
+// parseTagFilters extracts tag:name and -tag:name patterns from a query
+// Returns the remaining query text and the list of tag filters
+func parseTagFilters(query string) (string, []TagFilter) {
+	var filters []TagFilter
+	remaining := query
+
+	// Pattern for -tag:name or NOT tag:name (case insensitive)
+	// Also matches tag:name for inclusion
+	words := strings.Fields(remaining)
+	var nonTagWords []string
+
+	for i := 0; i < len(words); i++ {
+		word := words[i]
+		wordLower := strings.ToLower(word)
+
+		// Check for NOT tag:name (two words)
+		if wordLower == "not" && i+1 < len(words) {
+			nextWord := words[i+1]
+			nextWordLower := strings.ToLower(nextWord)
+			if strings.HasPrefix(nextWordLower, "tag:") {
+				tagName := nextWord[4:] // Preserve original case
+				if tagName != "" {
+					filters = append(filters, TagFilter{Name: tagName, Excluded: true})
+				}
+				i++ // Skip the next word
+				continue
+			}
+		}
+
+		// Check for -tag:name
+		if strings.HasPrefix(wordLower, "-tag:") {
+			tagName := word[5:] // Preserve original case
+			if tagName != "" {
+				filters = append(filters, TagFilter{Name: tagName, Excluded: true})
+			}
+			continue
+		}
+
+		// Check for tag:name (inclusion)
+		if strings.HasPrefix(wordLower, "tag:") {
+			tagName := word[4:] // Preserve original case
+			if tagName != "" {
+				filters = append(filters, TagFilter{Name: tagName, Excluded: false})
+			}
+			continue
+		}
+
+		nonTagWords = append(nonTagWords, word)
+	}
+
+	return strings.TrimSpace(strings.Join(nonTagWords, " ")), filters
 }

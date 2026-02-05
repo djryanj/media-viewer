@@ -25,6 +25,9 @@ As you type, a dropdown shows matching results:
 Press ++enter++ or click "View all results" to open the full search results view:
 
 - Results display in a gallery grid
+- An editable search bar at the top lets you refine your search
+- Press ++tab++ to autocomplete suggestions
+- Press ++slash++ or ++ctrl+k++ to focus the search bar
 - Use the same interactions as the main gallery
 - Click "Close" or press ++escape++ to return to browsing
 
@@ -54,6 +57,49 @@ You can also search by clicking:
 - Any tag displayed on a gallery item
 - Any tag in the tag manager modal
 - Any tag in the lightbox
+
+### Tag Exclusion
+
+Exclude items with specific tags from your results:
+
+```
+-tag:private
+```
+
+or
+
+```
+NOT tag:private
+```
+
+**Combining Inclusions and Exclusions:**
+
+```
+tag:vacation -tag:2023
+```
+
+Finds items tagged "vacation" but not "2023".
+
+**With Text Search:**
+
+```
+beach -tag:private
+```
+
+Searches for "beach" excluding items tagged "private".
+
+### Tag Interactions in Search Results
+
+When viewing search results, tags have search-focused behavior:
+
+- **Hover** over any tag to see the exclude button (−)
+- **Click** the exclude button to add that tag as an exclusion
+- **Right-click** or **long-press** any tag for options:
+    - "Search for" - Search for items with this tag
+    - "Exclude" - Exclude items with this tag
+- Type `-` or `-tag:` in the search bar for exclusion suggestions
+
+**Note:** In search view, clicking tags searches rather than opening the tag editor. This helps you refine your search without leaving the results.
 
 ## Search Syntax
 

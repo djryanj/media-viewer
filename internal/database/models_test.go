@@ -302,7 +302,7 @@ func TestSearchSuggestionStruct(t *testing.T) {
 	suggestion := SearchSuggestion{
 		Path:      "/media/test.mp4",
 		Name:      "test.mp4",
-		Type:      FileTypeVideo,
+		Type:      "video",
 		Highlight: "<em>test</em>.mp4",
 	}
 
@@ -310,8 +310,8 @@ func TestSearchSuggestionStruct(t *testing.T) {
 		t.Errorf("Expected Path=/media/test.mp4, got %s", suggestion.Path)
 	}
 
-	if suggestion.Type != FileTypeVideo {
-		t.Errorf("Expected Type=FileTypeVideo, got %s", suggestion.Type)
+	if suggestion.Type != "video" {
+		t.Errorf("Expected Type=video, got %s", suggestion.Type)
 	}
 
 	if suggestion.Name != "test.mp4" {

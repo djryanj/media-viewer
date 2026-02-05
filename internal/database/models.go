@@ -92,10 +92,11 @@ type SearchResult struct {
 
 // SearchSuggestion represents an autocomplete suggestion for search.
 type SearchSuggestion struct {
-	Path      string   `json:"path"`
-	Name      string   `json:"name"`
-	Type      FileType `json:"type"`
-	Highlight string   `json:"highlight"`
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Highlight string `json:"highlight"`
+	ItemCount int    `json:"itemCount,omitempty"`
 }
 
 // IndexStats contains statistics about the indexed media library.

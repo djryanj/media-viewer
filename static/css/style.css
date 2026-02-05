@@ -6130,3 +6130,804 @@ select:focus:not(:focus-visible) {
         }
     }
 }
+
+/* ===========================================
+   TAG EXCLUSION - SEARCH DROPDOWN
+   =========================================== */
+
+.search-dropdown-tag-exclude {
+    background: rgba(231, 76, 60, 0.1);
+    border-left: 3px solid var(--error);
+}
+
+.search-dropdown-tag-exclude .search-dropdown-item-icon {
+    color: var(--error);
+}
+
+.search-dropdown-tag-exclude:hover,
+.search-dropdown-tag-exclude:active,
+.search-dropdown-tag-exclude.highlighted {
+    background: rgba(231, 76, 60, 0.15);
+}
+
+/* ===========================================
+   TAG EXCLUSION - QUERY DISPLAY
+   =========================================== */
+
+.search-query-tag {
+    background: rgba(52, 152, 219, 0.15);
+    color: var(--info);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.search-query-exclusion {
+    background: var(--error-bg);
+    color: var(--error);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+/* ===========================================
+   TAG EXCLUSION - EXCLUDE BUTTON ON TAGS
+   =========================================== */
+
+.tag-exclude-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.125rem;
+    height: 1.125rem;
+    padding: 0.1875rem;
+    background: rgba(0, 0, 0, 0.2);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+        opacity var(--transition),
+        background var(--transition),
+        color var(--transition);
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.tag-exclude-btn svg {
+    width: 0.625rem;
+    height: 0.625rem;
+    stroke-width: 2.5;
+}
+
+.tag-exclude-btn:hover,
+.tag-exclude-btn:active {
+    background: var(--error);
+    color: white;
+}
+
+/* Show exclude button in search results on hover */
+#search-results-gallery .item-tag:hover .tag-exclude-btn,
+#search-results-gallery .gallery-item-tags:hover .tag-exclude-btn {
+    display: flex;
+    opacity: 1;
+}
+
+/* Touch devices - always show exclude button */
+@media (hover: none) and (pointer: coarse) {
+    #search-results-gallery .tag-exclude-btn {
+        display: flex;
+        opacity: 0.7;
+    }
+
+    #search-results-gallery .tag-exclude-btn:active {
+        opacity: 1;
+    }
+}
+
+/* ===========================================
+   TAG EXCLUSION - CONTEXT MENU
+   =========================================== */
+
+.tag-context-menu {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    min-width: 200px;
+    animation: contextMenuFadeIn 0.15s ease-out;
+}
+
+@keyframes contextMenuFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.tag-context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: background var(--transition);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.tag-context-menu-item:hover,
+.tag-context-menu-item:active {
+    background: var(--bg-tertiary);
+}
+
+.tag-context-menu-item [data-lucide] {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+}
+
+.tag-context-menu-item[data-action='exclude'] {
+    color: var(--error);
+}
+
+.tag-context-menu-item[data-action='exclude']:hover,
+.tag-context-menu-item[data-action='exclude']:active {
+    background: var(--error-bg);
+}
+
+/* Divider between menu items */
+.tag-context-menu-item + .tag-context-menu-item {
+    border-top: 1px solid var(--border-color);
+}
+
+/* Touch device adjustments */
+@media (hover: none) and (pointer: coarse) {
+    .tag-context-menu-item {
+        padding: 1rem 1.25rem;
+        min-height: 44px;
+    }
+}
+
+/* ===========================================
+   SEARCH DROPDOWN HINT
+   =========================================== */
+
+.search-dropdown-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Make query display clickable */
+#search-query {
+    cursor: pointer;
+    transition: color var(--transition);
+}
+
+#search-query:hover {
+    color: var(--accent);
+}
+
+/* Add edit icon hint on hover */
+.search-results-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.search-results-header h2::after {
+    content: '';
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    opacity: 0;
+    transition: opacity var(--transition);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23b8b8b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+.search-results-header h2:hover::after {
+    opacity: 0.7;
+}
+
+/* ===========================================
+   SEARCH RESULTS SEARCH BAR
+   =========================================== */
+
+.search-results-search-bar {
+    flex: 1;
+    position: relative;
+    min-width: 0;
+}
+
+.search-results-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-results-input-icon {
+    position: absolute;
+    left: 0.75rem;
+    width: 1rem;
+    height: 1rem;
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+
+.search-results-input {
+    width: 100%;
+    padding: 0.5rem 2.5rem 0.5rem 2.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    transition:
+        border-color var(--transition),
+        box-shadow var(--transition);
+}
+
+.search-results-input:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+}
+
+.search-results-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.search-results-clear {
+    position: absolute;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition:
+        color var(--transition),
+        background var(--transition);
+}
+
+.search-results-clear:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.search-results-clear.hidden {
+    display: none;
+}
+
+.search-results-clear [data-lucide] {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Adjust header layout */
+.search-results-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.search-results-header h2 {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+}
+
+/* Mobile adjustments */
+@media (max-width: 599px) {
+    .search-results-input {
+        font-size: 1rem;
+        padding: 0.625rem 2.5rem 0.625rem 2.25rem;
+    }
+}
+
+/* ===========================================
+   SEARCH RESULTS COUNT
+   =========================================== */
+
+.search-results-count {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+@media (max-width: 599px) {
+    .search-results-count {
+        font-size: 0.75rem;
+    }
+}
+
+/* ===========================================
+   SEARCH RESULTS HEADER WITH SEARCH BAR
+   =========================================== */
+
+.search-results-header {
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    z-index: 20;
+    isolation: isolate;
+}
+
+.search-results-search-bar {
+    flex: 1;
+    position: relative;
+    min-width: 0;
+}
+
+.search-results-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-results-input-icon {
+    position: absolute;
+    left: 0.75rem;
+    width: 1rem;
+    height: 1rem;
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+
+.search-results-input {
+    width: 100%;
+    padding: 0.5rem 2.5rem 0.5rem 2.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    transition:
+        border-color var(--transition),
+        box-shadow var(--transition);
+}
+
+.search-results-input:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+}
+
+.search-results-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.search-results-clear {
+    position: absolute;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition:
+        color var(--transition),
+        background var(--transition);
+}
+
+.search-results-clear:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.search-results-clear.hidden {
+    display: none;
+}
+
+.search-results-clear [data-lucide] {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Dropdown positioning within results header */
+.search-results-search-bar .search-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 0.25rem;
+    z-index: 1001;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+/* Results count */
+.search-results-count {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Close button */
+#search-results-close {
+    flex-shrink: 0;
+}
+
+/* Search dropdown hint */
+.search-dropdown-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Mobile adjustments */
+@media (max-width: 599px) {
+    .search-results-header {
+        padding: 0.5rem 0.75rem;
+        gap: 0.5rem;
+    }
+
+    .search-results-input {
+        font-size: 1rem;
+        padding: 0.625rem 2.5rem 0.625rem 2.25rem;
+    }
+
+    .search-results-count {
+        display: none;
+    }
+}
+
+@media (min-width: 600px) {
+    .search-results-header {
+        padding: 1rem 1.5rem;
+        gap: 1rem;
+    }
+
+    .search-results-input {
+        font-size: 1rem;
+        padding: 0.625rem 2.5rem 0.625rem 2.5rem;
+    }
+
+    .search-results-input-icon {
+        width: 1.125rem;
+        height: 1.125rem;
+    }
+}
+
+@media (min-width: 900px) {
+    .search-results-header {
+        padding: 1rem 2rem;
+    }
+
+    .search-results-search-bar {
+        max-width: 600px;
+    }
+}
+
+/* ===========================================
+   SEARCH RESULTS - TAG CHIPS (Search-focused)
+   =========================================== */
+
+/* Tags in search results are simple, tappable labels */
+#search-results-gallery .item-tag {
+    cursor: pointer;
+    transition:
+        background var(--transition),
+        transform var(--transition);
+}
+
+#search-results-gallery .item-tag:not(.more):hover,
+#search-results-gallery .item-tag:not(.more):active {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.02);
+}
+
+/* Remove any old exclude button styling in search results */
+#search-results-gallery .tag-exclude-btn {
+    display: none !important;
+}
+
+/* ===========================================
+   SEARCH TAG MODAL
+   =========================================== */
+
+.search-tag-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+        opacity 0.2s ease,
+        visibility 0.2s ease;
+    overflow: hidden;
+}
+
+.search-tag-modal.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.search-tag-modal-content {
+    background: var(--bg-secondary);
+    border-radius: 0 0 var(--radius) var(--radius);
+    width: 100%;
+    max-width: 500px;
+    height: calc(100vh - 2rem);
+    height: calc(100dvh - 2rem);
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    display: flex;
+    flex-direction: column;
+    transform: translateY(-100%);
+    transition: transform 0.3s ease;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.search-tag-modal.visible .search-tag-modal-content {
+    transform: translateY(0);
+}
+
+.search-tag-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.search-tag-modal-header h3 {
+    font-size: 1rem;
+    font-weight: 500;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.search-tag-modal-header h3 svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--accent);
+}
+
+.search-tag-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.5rem;
+    margin: -0.5rem;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        color var(--transition),
+        background var(--transition);
+}
+
+.search-tag-modal-close:hover,
+.search-tag-modal-close:active {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.search-tag-modal-close svg {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.search-tag-modal-item-info {
+    padding: 0.75rem 1.25rem;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+}
+
+.search-tag-modal-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+}
+
+.search-tag-modal-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.search-tag-modal-hint svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+}
+
+.search-tag-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.search-tag-modal-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    transition: background var(--transition);
+}
+
+.search-tag-modal-tag:hover {
+    background: var(--bg-primary);
+}
+
+.search-tag-modal-tag-name {
+    flex: 1;
+    font-size: 0.9375rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.search-tag-modal-tag-status {
+    font-size: 0.6875rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+.search-tag-modal-tag-status.included {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.search-tag-modal-tag-status.excluded {
+    background: var(--error-bg);
+    color: var(--error);
+}
+
+.search-tag-modal-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.search-tag-modal-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all var(--transition);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+}
+
+.search-tag-modal-btn svg {
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+.search-tag-modal-btn.include:hover,
+.search-tag-modal-btn.include:active {
+    background: var(--success);
+    border-color: var(--success);
+    color: white;
+}
+
+.search-tag-modal-btn.exclude:hover,
+.search-tag-modal-btn.exclude:active {
+    background: var(--error);
+    border-color: var(--error);
+    color: white;
+}
+
+.search-tag-modal-btn.active {
+    color: white;
+}
+
+.search-tag-modal-btn.include.active {
+    background: var(--success);
+    border-color: var(--success);
+}
+
+.search-tag-modal-btn.exclude.active {
+    background: var(--error);
+    border-color: var(--error);
+}
+
+.search-tag-modal-empty {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
+.search-tag-modal-empty svg {
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.5;
+}
+
+/* Desktop adjustments */
+@media (min-width: 600px) {
+    .search-tag-modal {
+        align-items: center;
+        padding: 2rem;
+    }
+
+    .search-tag-modal-content {
+        border-radius: var(--radius);
+        max-height: 80vh;
+    }
+}
+
+/* Touch device adjustments */
+@media (hover: none) and (pointer: coarse) {
+    .search-tag-modal-tag {
+        padding: 1rem;
+    }
+
+    .search-tag-modal-btn {
+        width: 3rem;
+        height: 3rem;
+    }
+
+    .search-tag-modal-btn svg {
+        width: 1.25rem;
+        height: 1.25rem;
+    }
+
+    .search-tag-modal-tag-name {
+        font-size: 1rem;
+    }
+}

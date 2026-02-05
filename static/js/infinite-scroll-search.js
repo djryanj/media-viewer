@@ -76,7 +76,7 @@ const InfiniteScrollSearch = {
      */
     setupIntersectionObserver() {
         const options = {
-            root: this.elements.resultsContainer, // Observe within search results container
+            root: this.elements.resultsContainer,
             rootMargin: this.config.rootMargin,
             threshold: 0,
         };
@@ -97,12 +97,16 @@ const InfiniteScrollSearch = {
         this.resetState();
 
         this.state.query = query;
-        this.state.totalItems = initialResults.totalItems;
-        this.state.hasMore = initialResults.items.length < initialResults.totalItems;
-        this.state.loadedItems = [...initialResults.items];
+        this.state.totalItems = initialResults.totalItems || 0;
+
+        // Ensure items is always an array
+        const items = initialResults.items || [];
+
+        this.state.hasMore = items.length < this.state.totalItems;
+        this.state.loadedItems = [...items];
         this.state.currentPage = 1;
 
-        this.renderItems(initialResults.items, false);
+        this.renderItems(items, false);
         this.startObserving();
         this.updateResultsHeader();
     },
@@ -158,7 +162,7 @@ const InfiniteScrollSearch = {
                 pageSize: String(this.config.batchSize),
             });
 
-            const filterType = document.getElementById('filter-type').value;
+            const filterType = document.getElementById('filter-type')?.value;
             if (filterType) {
                 params.set('type', filterType);
             }
@@ -215,7 +219,10 @@ const InfiniteScrollSearch = {
 
         const fragment = document.createDocumentFragment();
         items.forEach((item) => {
-            const element = Gallery.createGalleryItem(item);
+            const element =
+                typeof Search !== 'undefined' && Search.createSearchResultItem
+                    ? Search.createSearchResultItem(item)
+                    : Gallery.createGalleryItem(item);
             fragment.appendChild(element);
         });
 
@@ -282,7 +289,21 @@ const InfiniteScrollSearch = {
     updateResultsHeader() {
         const loaded = this.state.loadedItems.length;
         const total = this.state.totalItems;
-        this.elements.queryDisplay.innerHTML = `"${Search.escapeHtml(this.state.query)}" <span class="search-count">(${loaded.toLocaleString()} of ${total.toLocaleString()})</span>`;
+
+        // Update the results search input if it exists
+        if (typeof Search !== 'undefined') {
+            if (Search.elements.resultsInput) {
+                Search.elements.resultsInput.value = this.state.query;
+            }
+            if (Search.elements.resultsClear) {
+                Search.elements.resultsClear.classList.toggle(
+                    'hidden',
+                    this.state.query.length === 0
+                );
+            }
+            // Update count via Search
+            Search.updateResultsCount(loaded, total);
+        }
     },
 
     /**
