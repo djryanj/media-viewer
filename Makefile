@@ -16,7 +16,8 @@ STATIC_DIR := static
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fix \
         frontend-format frontend-format-check frontend-check frontend-dev \
-		icons docs-serve docs-build docs-deploy
+		icons docs-serve docs-build docs-deploy \
+		download-sample-media
 
 # Build configuration
 BUILD_TAGS := fts5
@@ -344,6 +345,15 @@ docs-deploy:
 	@echo "Deploying documentation with mkdocs..."
 	mkdocs gh-deploy
 
+# ===========================================
+# Sample Media
+# ===========================================
+
+download-sample-media:
+	@echo "Downloading sample media files..."
+	@chmod +x ./hack/download-sample-media.sh
+	@./hack/download-sample-media.sh
+
 # =============================================================================
 # Help
 # =============================================================================
@@ -417,6 +427,9 @@ help:
 	@echo "  docs-serve       Serve documentation locally (port 8000)"
 	@echo "  docs-build       Build documentation site"
 	@echo "  docs-deploy      Deploy documentation to GitHub Pages"
+	@echo ""
+	@echo "Sample data targets:"
+	@echo "  download-sample-media Download free sample images/videos for testing"
 	@echo ""
 	@echo "Setup targets:"
 	@echo "  setup            Install all development dependencies"

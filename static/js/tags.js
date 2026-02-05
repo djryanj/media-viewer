@@ -53,7 +53,6 @@ const Tags = {
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
-                    // If suggestions are showing, hide them first
                     if (!this.elements.tagSuggestions.classList.contains('hidden')) {
                         this.elements.tagSuggestions.classList.add('hidden');
                     } else {
@@ -125,27 +124,29 @@ const Tags = {
 
     async loadBulkTags(paths) {
         try {
-            const tagSets = await Promise.all(
-                paths.map(async (path) => {
-                    try {
-                        const response = await fetch(
-                            `/api/tags/file?path=${encodeURIComponent(path)}`
-                        );
-                        if (response.ok) {
-                            return await response.json();
-                        }
-                    } catch {
-                        // Ignore individual failures
-                    }
-                    return [];
-                })
-            );
+            // Use batch endpoint instead of individual requests
+            const response = await fetch('/api/tags/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths }),
+            });
 
+            if (!response.ok) {
+                throw new Error('Failed to fetch batch tags');
+            }
+
+            const tagsByPath = await response.json();
+
+            // Convert to array of tag arrays for processing
+            const tagSets = paths.map((path) => tagsByPath[path] || []);
+
+            // Find common tags (present in ALL items)
             const commonTags = tagSets.reduce((common, tags, index) => {
                 if (index === 0) return new Set(tags);
                 return new Set([...common].filter((tag) => tags.includes(tag)));
             }, new Set());
 
+            // Find all unique tags
             const allUniqueTags = new Set(tagSets.flat());
 
             this.renderBulkTags(Array.from(commonTags), Array.from(allUniqueTags));
@@ -350,10 +351,8 @@ const Tags = {
                 await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
 
-                // Refresh all affected gallery items
-                for (const path of this.bulkPaths) {
-                    this.refreshGalleryItemTags(path);
-                }
+                // Batch refresh all affected gallery items
+                await this.batchRefreshGalleryItemTags(this.bulkPaths);
 
                 Gallery.showToast(`Added "${tagName}" to ${result.success} items`);
             } else {
@@ -361,36 +360,8 @@ const Tags = {
             }
         } catch (error) {
             console.error('Error adding bulk tag:', error);
-            await this.addBulkTagIndividually(tagName);
+            Gallery.showToast('Failed to add tag', 'error');
         }
-    },
-
-    async addBulkTagIndividually(tagName) {
-        let successCount = 0;
-
-        for (const path of this.bulkPaths) {
-            try {
-                const response = await fetch('/api/tags/file', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        path: path,
-                        tag: tagName,
-                    }),
-                });
-
-                if (response.ok) {
-                    successCount++;
-                    this.refreshGalleryItemTags(path);
-                }
-            } catch (error) {
-                console.error(`Error adding tag to ${path}:`, error);
-            }
-        }
-
-        await this.loadBulkTags(this.bulkPaths);
-        await this.loadAllTags();
-        Gallery.showToast(`Added "${tagName}" to ${successCount} items`);
     },
 
     async removeTag(tagName) {
@@ -434,10 +405,8 @@ const Tags = {
                 await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
 
-                // Refresh all affected gallery items
-                for (const path of this.bulkPaths) {
-                    this.refreshGalleryItemTags(path);
-                }
+                // Batch refresh all affected gallery items
+                await this.batchRefreshGalleryItemTags(this.bulkPaths);
 
                 Gallery.showToast(`Removed "${tagName}" from ${result.success} items`);
             } else {
@@ -445,87 +414,104 @@ const Tags = {
             }
         } catch (error) {
             console.error('Error removing bulk tag:', error);
-            await this.removeBulkTagIndividually(tagName);
+            Gallery.showToast('Failed to remove tag', 'error');
         }
     },
 
-    async removeBulkTagIndividually(tagName) {
-        let successCount = 0;
+    /**
+     * Batch refresh tags for multiple gallery items using a single API call
+     * Only refreshes items that are currently in the DOM
+     */
+    async batchRefreshGalleryItemTags(paths) {
+        // Filter to only paths that have elements in the DOM
+        const visiblePaths = paths.filter((path) =>
+            document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`)
+        );
 
-        for (const path of this.bulkPaths) {
-            try {
-                const response = await fetch('/api/tags/file', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        path: path,
-                        tag: tagName,
-                    }),
-                });
+        if (visiblePaths.length === 0) return;
 
-                if (response.ok) {
-                    successCount++;
-                    this.refreshGalleryItemTags(path);
-                }
-            } catch (error) {
-                console.error(`Error removing tag from ${path}:`, error);
+        try {
+            const response = await fetch('/api/tags/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: visiblePaths }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch batch tags');
             }
-        }
 
-        await this.loadBulkTags(this.bulkPaths);
-        await this.loadAllTags();
-        Gallery.showToast(`Removed "${tagName}" from ${successCount} items`);
+            const tagsByPath = await response.json();
+
+            // Update each visible gallery item
+            for (const path of visiblePaths) {
+                const tags = tagsByPath[path] || [];
+                this.updateGalleryItemTagsDOM(path, tags);
+            }
+        } catch (error) {
+            console.error('Error batch refreshing tags:', error);
+        }
     },
 
+    /**
+     * Update the DOM for a single gallery item's tags (no API call)
+     */
+    updateGalleryItemTagsDOM(path, tags) {
+        document
+            .querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`)
+            .forEach((item) => {
+                // Update tag button state
+                const tagButton = item.querySelector('.tag-button');
+                if (tagButton) {
+                    tagButton.classList.toggle('has-tags', tags && tags.length > 0);
+                }
+
+                // Update mobile info tags
+                const mobileTagsContainer = item.querySelector(
+                    '.gallery-item-mobile-info .gallery-item-tags'
+                );
+                if (mobileTagsContainer) {
+                    this.renderTagsInContainer(mobileTagsContainer, tags, path, true);
+                } else if (tags && tags.length > 0) {
+                    const mobileInfo = item.querySelector('.gallery-item-mobile-info');
+                    if (mobileInfo) {
+                        const newContainer = document.createElement('div');
+                        newContainer.className = 'gallery-item-tags';
+                        this.renderTagsInContainer(newContainer, tags, path, true);
+                        mobileInfo.appendChild(newContainer);
+                    }
+                }
+
+                // Update desktop info tags
+                const desktopInfo = item.querySelector('.gallery-item-info');
+                if (desktopInfo) {
+                    let desktopTagsContainer = desktopInfo.querySelector('.gallery-item-tags');
+
+                    if (tags && tags.length > 0) {
+                        if (!desktopTagsContainer) {
+                            desktopTagsContainer = document.createElement('div');
+                            desktopTagsContainer.className = 'gallery-item-tags';
+                            desktopInfo.appendChild(desktopTagsContainer);
+                        }
+                        this.renderTagsInContainer(desktopTagsContainer, tags, path, false);
+                    } else if (desktopTagsContainer) {
+                        desktopTagsContainer.innerHTML = '';
+                    }
+                }
+            });
+    },
+
+    /**
+     * Refresh a single gallery item's tags (makes API call)
+     * Use batchRefreshGalleryItemTags for multiple items
+     */
     async refreshGalleryItemTags(path) {
         try {
             const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
             if (!response.ok) return;
 
             const tags = await response.json();
-
-            document
-                .querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`)
-                .forEach((item) => {
-                    // Update tag button state
-                    const tagButton = item.querySelector('.tag-button');
-                    if (tagButton) {
-                        tagButton.classList.toggle('has-tags', tags && tags.length > 0);
-                    }
-
-                    // Update mobile info tags
-                    const mobileTagsContainer = item.querySelector(
-                        '.gallery-item-mobile-info .gallery-item-tags'
-                    );
-                    if (mobileTagsContainer) {
-                        this.renderTagsInContainer(mobileTagsContainer, tags, path, true);
-                    } else if (tags && tags.length > 0) {
-                        const mobileInfo = item.querySelector('.gallery-item-mobile-info');
-                        if (mobileInfo) {
-                            const newContainer = document.createElement('div');
-                            newContainer.className = 'gallery-item-tags';
-                            this.renderTagsInContainer(newContainer, tags, path, true);
-                            mobileInfo.appendChild(newContainer);
-                        }
-                    }
-
-                    // Update desktop info tags
-                    const desktopInfo = item.querySelector('.gallery-item-info');
-                    if (desktopInfo) {
-                        let desktopTagsContainer = desktopInfo.querySelector('.gallery-item-tags');
-
-                        if (tags && tags.length > 0) {
-                            if (!desktopTagsContainer) {
-                                desktopTagsContainer = document.createElement('div');
-                                desktopTagsContainer.className = 'gallery-item-tags';
-                                desktopInfo.appendChild(desktopTagsContainer);
-                            }
-                            this.renderTagsInContainer(desktopTagsContainer, tags, path, false);
-                        } else if (desktopTagsContainer) {
-                            desktopTagsContainer.remove();
-                        }
-                    }
-                });
+            this.updateGalleryItemTagsDOM(path, tags);
         } catch (error) {
             console.error('Error refreshing gallery item tags:', error);
         }
@@ -615,6 +601,7 @@ const Tags = {
 
         return html;
     },
+
     bindTagClickDelegation() {
         const handleTagInteraction = (e) => {
             // Handle tag remove button clicks
@@ -644,7 +631,7 @@ const Tags = {
                 return;
             }
 
-            // Skip paste modal tag chips - they have their own click handler
+            // Skip paste modal tag chips
             if (e.target.closest('.paste-tag-chip')) {
                 return;
             }
@@ -654,7 +641,7 @@ const Tags = {
                 return;
             }
 
-            // Handle .item-tag clicks (gallery items) - not +more, not remove button
+            // Handle .item-tag clicks (gallery items)
             const itemTag = e.target.closest('.item-tag:not(.more)');
             if (itemTag && !e.target.closest('.item-tag-remove')) {
                 e.preventDefault();
@@ -683,7 +670,7 @@ const Tags = {
                 return;
             }
 
-            // Handle .tag-chip clicks (tag modal) - but not the remove button, and not paste modal chips
+            // Handle .tag-chip clicks (tag modal)
             const tagChip = e.target.closest('.tag-chip:not(.paste-tag-chip)');
             if (tagChip && !e.target.closest('.tag-remove')) {
                 e.preventDefault();
@@ -719,13 +706,10 @@ const Tags = {
                 if (typeof TagTooltip !== 'undefined' && TagTooltip.currentTarget) {
                     const galleryItem = TagTooltip.currentTarget.closest('.gallery-item');
                     if (galleryItem?.dataset.path === itemPath) {
-                        // Refresh tooltip content
                         const allTags = TagTooltip.getTagsForItem(galleryItem);
                         if (allTags && allTags.length > 3) {
-                            // Re-render tooltip with updated tags
                             TagTooltip.show(TagTooltip.currentTarget);
                         } else {
-                            // No more overflow, hide tooltip
                             TagTooltip.hide();
                         }
                     }
@@ -744,7 +728,7 @@ const Tags = {
         } catch (error) {
             console.error('Error removing tag:', error);
             if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                Gallery.showToast('Failed to remove tag');
+                Gallery.showToast('Failed to remove tag', 'error');
             }
         }
     },
@@ -754,18 +738,15 @@ const Tags = {
 
         const searchQuery = `tag:${tagName}`;
 
-        // Update search input
         if (Search.elements.input) {
             Search.elements.input.value = searchQuery;
             Search.elements.clear?.classList.remove('hidden');
         }
 
-        // Close any open modals/overlays first (except lightbox - Search.performSearch handles that)
         if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
             ItemSelection.exitSelectionMode();
         }
 
-        // Close tag modal if open
         if (!document.getElementById('tag-modal')?.classList.contains('hidden')) {
             this.closeModal();
             if (typeof HistoryManager !== 'undefined') {
@@ -773,7 +754,6 @@ const Tags = {
             }
         }
 
-        // Perform the search (this will save lightbox state if needed)
         Search.performSearch(searchQuery);
     },
 };

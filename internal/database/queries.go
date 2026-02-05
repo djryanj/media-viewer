@@ -103,8 +103,10 @@ func normalizeListOptions(opts ListOptions) ListOptions {
 	if opts.PageSize < 1 {
 		opts.PageSize = 100
 	}
-	if opts.PageSize > 500 {
-		opts.PageSize = 500
+	// Allow large page sizes for bulk operations (e.g., ListFilePaths)
+	// but cap at a reasonable maximum to prevent memory issues
+	if opts.PageSize > 100000 {
+		opts.PageSize = 100000
 	}
 	return opts
 }

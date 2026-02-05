@@ -5624,3 +5624,16 @@ select:focus:not(:focus-visible) {
     flex: 1;
     min-width: 0;
 }
+
+/* ===========================================
+   SELECTION LOADING STATE
+   =========================================== */
+
+.selection-action-btn .animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+.selection-action-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}

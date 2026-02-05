@@ -398,13 +398,13 @@ const InfiniteScroll = {
         if (!items || items.length === 0) {
             if (!append) {
                 gallery.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">
-                            <i data-lucide="folder-open"></i>
-                        </div>
-                        <p>This folder is empty</p>
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i data-lucide="folder-open"></i>
                     </div>
-                `;
+                    <p>This folder is empty</p>
+                </div>
+            `;
                 lucide.createIcons();
             }
             return;
@@ -416,15 +416,29 @@ const InfiniteScroll = {
         items.forEach((item, i) => {
             const element = Gallery.createGalleryItem(item);
             element.dataset.index = startIndex + i;
+
+            // Apply selection state if item is selected
+            if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+                if (ItemSelection.selectedPaths.has(item.path)) {
+                    element.classList.add('selected');
+                }
+            }
+
             fragment.appendChild(element);
         });
 
         gallery.appendChild(fragment);
         lucide.createIcons();
 
-        // Re-apply selection mode if active
+        // Re-apply selection mode if active (adds checkboxes)
         if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
-            ItemSelection.addCheckboxesToNewItems(fragment);
+            // Pass the fragment's children that are now in the DOM
+            const newItems = Array.from(gallery.children).slice(-items.length);
+            newItems.forEach((item) => {
+                if (!item.classList.contains('skeleton')) {
+                    ItemSelection.addCheckboxToItem(item);
+                }
+            });
         }
     },
 

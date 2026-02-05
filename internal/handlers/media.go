@@ -487,3 +487,65 @@ func (h *Handlers) GetThumbnailStatus(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, status)
 }
+
+// ListFilePaths returns lightweight path/name/type data for all files in a directory
+// Used for bulk selection operations where full file data isn't needed
+func (h *Handlers) ListFilePaths(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logging.Debug("ListFilePaths called: %s", r.URL.String())
+
+	opts := database.ListOptions{
+		Path:       r.URL.Query().Get("path"),
+		SortField:  database.SortField(r.URL.Query().Get("sort")),
+		SortOrder:  database.SortOrder(r.URL.Query().Get("order")),
+		FilterType: r.URL.Query().Get("type"),
+		Page:       1,
+		PageSize:   100000, // Effectively unlimited - get all items
+	}
+
+	if opts.SortField == "" {
+		opts.SortField = database.SortByName
+	}
+	if opts.SortOrder == "" {
+		opts.SortOrder = database.SortAsc
+	}
+
+	logging.Debug("ListFilePaths options: path=%q, sort=%s, order=%s, filter=%s",
+		opts.Path, opts.SortField, opts.SortOrder, opts.FilterType)
+
+	listing, err := h.db.ListDirectory(ctx, opts)
+	if err != nil {
+		logging.Error("ListFilePaths database error: %v", err)
+		http.Error(w, "Failed to list directory", http.StatusInternalServerError)
+		return
+	}
+
+	// Build lightweight response with only path, name, type
+	type FilePathInfo struct {
+		Path string `json:"path"`
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+
+	items := make([]FilePathInfo, 0, len(listing.Items))
+	for _, item := range listing.Items {
+		items = append(items, FilePathInfo{
+			Path: item.Path,
+			Name: item.Name,
+			Type: string(item.Type),
+		})
+	}
+
+	response := struct {
+		Items      []FilePathInfo `json:"items"`
+		TotalItems int            `json:"totalItems"`
+	}{
+		Items:      items,
+		TotalItems: listing.TotalItems,
+	}
+
+	logging.Debug("ListFilePaths completed, found %d items", len(items))
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, response)
+}

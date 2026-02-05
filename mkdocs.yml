@@ -114,6 +114,7 @@ nav:
     - Development:
           - Architecture: development/architecture.md
           - Testing: development/testing.md
+          - Sample Media: development/sample-media.md
           - Contributing: development/contributing.md
     - Troubleshooting: troubleshooting.md
 

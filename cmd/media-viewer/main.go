@@ -302,8 +302,9 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	// Protected API routes
 	api := r.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/files", h.ListFiles).Methods("GET")
-	api.HandleFunc("/media", h.GetMediaFiles).Methods("GET")
+	api.HandleFunc("/files/paths", h.ListFilePaths).Methods("GET")
 	api.HandleFunc("/file/{path:.*}", h.GetFile).Methods("GET")
+	api.HandleFunc("/media", h.GetMediaFiles).Methods("GET")
 	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")
 	api.HandleFunc("/playlists", h.ListPlaylists).Methods("GET")
 	api.HandleFunc("/playlist/{name}", h.GetPlaylist).Methods("GET")

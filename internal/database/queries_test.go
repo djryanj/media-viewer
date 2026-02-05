@@ -581,7 +581,14 @@ func TestListOptionsValidation(t *testing.T) {
 			page:     1,
 			pageSize: 10000,
 			wantPage: 1,
-			wantSize: 500,
+			wantSize: 10000, // Now allowed for bulk operations
+		},
+		{
+			name:     "very large page size exceeds new limit",
+			page:     1,
+			pageSize: 150000,
+			wantPage: 1,
+			wantSize: 100000, // Capped at new maximum
 		},
 		{
 			name:     "page 1 with default size",
