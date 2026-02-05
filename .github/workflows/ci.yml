@@ -137,6 +137,97 @@ jobs:
                   # Run tests excluding integration tests
                   make test-unit
 
+            - name: Generate coverage report
+              if: always()
+              run: |
+                  echo "## Unit Test Coverage" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  go tool cover -func=coverage-unit.out | tail -20 >> $GITHUB_STEP_SUMMARY
+                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+            - name: Comment PR with coverage
+              if: github.event_name == 'pull_request'
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const fs = require('fs');
+                      const { execSync } = require('child_process');
+
+                      // Get coverage summary
+                      const coverage = execSync('go tool cover -func=coverage-unit.out').toString();
+                      const lines = coverage.split('\n');
+                      const totalLine = lines[lines.length - 2] || lines[lines.length - 1];
+                      const totalMatch = totalLine.match(/total:.*?(\d+\.\d+)%/);
+                      const totalCoverage = totalMatch ? totalMatch[1] : 'N/A';
+
+                      // Get top 10 and bottom 10 files by coverage
+                      const fileLines = lines.slice(0, -1).filter(line => line.includes('%'));
+                      const files = fileLines.map(line => {
+                          const match = line.match(/(.*?)\s+(\d+\.\d+)%/);
+                          return match ? { file: match[1].trim(), coverage: parseFloat(match[2]) } : null;
+                      }).filter(Boolean);
+
+                      files.sort((a, b) => a.coverage - b.coverage);
+                      const lowest = files.slice(0, 10);
+                      const highest = files.slice(-10).reverse();
+
+                      const comment = `## 📊 Unit Test Coverage Report
+
+                      **Total Coverage: ${totalCoverage}%**
+
+                      <details>
+                      <summary>🔴 Lowest Coverage (Top 10)</summary>
+
+                      | File | Coverage |
+                      |------|----------|
+                      ${lowest.map(f => `| \`${f.file.split('/').pop()}\` | ${f.coverage}% |`).join('\n')}
+                      </details>
+
+                      <details>
+                      <summary>🟢 Highest Coverage (Top 10)</summary>
+
+                      | File | Coverage |
+                      |------|----------|
+                      ${highest.map(f => `| \`${f.file.split('/').pop()}\` | ${f.coverage}% |`).join('\n')}
+                      </details>
+
+                      <details>
+                      <summary>📄 Full Coverage Report</summary>
+
+                      \`\`\`
+                      ${coverage}
+                      \`\`\`
+                      </details>`;
+
+                      // Find existing coverage comment
+                      const { data: comments } = await github.rest.issues.listComments({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: context.issue.number,
+                      });
+
+                      const botComment = comments.find(comment =>
+                          comment.user.type === 'Bot' &&
+                          comment.body.includes('Unit Test Coverage Report')
+                      );
+
+                      if (botComment) {
+                          await github.rest.issues.updateComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              comment_id: botComment.id,
+                              body: comment
+                          });
+                      } else {
+                          await github.rest.issues.createComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              issue_number: context.issue.number,
+                              body: comment
+                          });
+                      }
+
             - name: Upload test results
               if: always()
               uses: actions/upload-artifact@v6
@@ -173,6 +264,19 @@ jobs:
             - name: Run integration tests
               run: |
                   make test-integration
+
+            - name: Generate integration coverage summary
+              if: always()
+              run: |
+                  echo "## Integration Test Coverage" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  if [ -f coverage-integration.out ]; then
+                      go tool cover -func=coverage-integration.out | tail -20 >> $GITHUB_STEP_SUMMARY
+                  else
+                      echo "No coverage file generated" >> $GITHUB_STEP_SUMMARY
+                  fi
+                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
             - name: Upload coverage
               if: always()
