@@ -65,6 +65,9 @@ func setupMetricsIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 
 // TestMetricsHandlerIntegration tests the metrics handler with a full setup
 func TestMetricsHandlerIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -98,6 +101,9 @@ func TestMetricsHandlerIntegration(t *testing.T) {
 
 // TestMetricsHandlerStandardMetricsIntegration tests that standard Go metrics are present
 func TestMetricsHandlerStandardMetricsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -126,6 +132,9 @@ func TestMetricsHandlerStandardMetricsIntegration(t *testing.T) {
 
 // TestMetricsHandlerCustomMetricsIntegration tests custom application metrics
 func TestMetricsHandlerCustomMetricsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -155,6 +164,9 @@ func TestMetricsHandlerCustomMetricsIntegration(t *testing.T) {
 
 // TestMetricsHandlerHTTPMethodsIntegration tests different HTTP methods
 func TestMetricsHandlerHTTPMethodsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -182,6 +194,9 @@ func TestMetricsHandlerHTTPMethodsIntegration(t *testing.T) {
 
 // TestMetricsHandlerConcurrentRequestsIntegration tests concurrent access
 func TestMetricsHandlerConcurrentRequestsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -218,6 +233,9 @@ func TestMetricsHandlerConcurrentRequestsIntegration(t *testing.T) {
 
 // TestMetricsHandlerIdempotencyIntegration tests that multiple calls return consistent results
 func TestMetricsHandlerIdempotencyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -251,6 +269,9 @@ func TestMetricsHandlerIdempotencyIntegration(t *testing.T) {
 
 // TestMetricsHandlerAfterOperationsIntegration tests metrics after some operations
 func TestMetricsHandlerAfterOperationsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -278,6 +299,9 @@ func TestMetricsHandlerAfterOperationsIntegration(t *testing.T) {
 
 // TestMetricsHandlerResponseSizeIntegration tests that metrics response is reasonable
 func TestMetricsHandlerResponseSizeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -304,6 +328,9 @@ func TestMetricsHandlerResponseSizeIntegration(t *testing.T) {
 
 // TestMetricsHandlerMetricNamesIntegration tests that metric names follow conventions
 func TestMetricsHandlerMetricNamesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -331,6 +358,9 @@ func TestMetricsHandlerMetricNamesIntegration(t *testing.T) {
 
 // TestMetricsHandlerCacheControlIntegration tests cache-control headers
 func TestMetricsHandlerCacheControlIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 
@@ -349,6 +379,9 @@ func TestMetricsHandlerCacheControlIntegration(t *testing.T) {
 
 // TestMetricsHandlerMultipleHandlersIntegration tests that each handler has independent metrics
 func TestMetricsHandlerMultipleHandlersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h1, cleanup1 := setupMetricsIntegrationTest(t)
 	defer cleanup1()
 
@@ -390,6 +423,9 @@ func TestMetricsHandlerMultipleHandlersIntegration(t *testing.T) {
 
 // TestMetricsHandlerTimingIntegration tests metrics endpoint response time
 func TestMetricsHandlerTimingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMetricsIntegrationTest(t)
 	defer cleanup()
 

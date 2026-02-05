@@ -210,6 +210,9 @@ func addTestMediaFile(t *testing.T, h *Handlers, relativePath string, fileType d
 
 // TestListFilesBasicIntegration tests basic file listing functionality
 func TestListFilesBasicIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -241,6 +244,9 @@ func TestListFilesBasicIntegration(t *testing.T) {
 
 // TestListFilesWithPathIntegration tests listing files in a specific subdirectory
 func TestListFilesWithPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -271,6 +277,9 @@ func TestListFilesWithPathIntegration(t *testing.T) {
 
 // TestListFilesWithSortingIntegration tests file listing with sorting options
 func TestListFilesWithSortingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -304,6 +313,9 @@ func TestListFilesWithSortingIntegration(t *testing.T) {
 
 // TestListFilesWithPaginationIntegration tests pagination in file listing
 func TestListFilesWithPaginationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -333,6 +345,9 @@ func TestListFilesWithPaginationIntegration(t *testing.T) {
 
 // TestGetMediaFilesIntegration tests retrieving media files from a directory
 func TestGetMediaFilesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -364,6 +379,9 @@ func TestGetMediaFilesIntegration(t *testing.T) {
 
 // TestGetMediaFilesWithPathIntegration tests retrieving media files from a specific directory
 func TestGetMediaFilesWithPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -390,6 +408,9 @@ func TestGetMediaFilesWithPathIntegration(t *testing.T) {
 
 // TestGetFileIntegration tests serving a file
 func TestGetFileIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -414,6 +435,9 @@ func TestGetFileIntegration(t *testing.T) {
 
 // TestGetFileInvalidPathIntegration tests file access with invalid paths
 func TestGetFileInvalidPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -442,6 +466,9 @@ func TestGetFileInvalidPathIntegration(t *testing.T) {
 
 // TestGetFileNotFoundIntegration tests accessing a non-existent file
 func TestGetFileNotFoundIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -458,6 +485,9 @@ func TestGetFileNotFoundIntegration(t *testing.T) {
 
 // TestGetThumbnailDisabledIntegration tests thumbnail request when thumbnails are disabled
 func TestGetThumbnailDisabledIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -477,6 +507,9 @@ func TestGetThumbnailDisabledIntegration(t *testing.T) {
 
 // TestGetThumbnailInvalidPathIntegration tests thumbnail access with invalid paths
 func TestGetThumbnailInvalidPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -509,6 +542,9 @@ func TestGetThumbnailInvalidPathIntegration(t *testing.T) {
 // Note: This test is skipped because thumbnails are disabled in test setup,
 // so the handler returns 503 before checking if the file exists.
 func TestGetThumbnailNotFoundIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Thumbnails disabled in test setup - would return 503 instead of 404")
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
@@ -527,6 +563,9 @@ func TestGetThumbnailNotFoundIntegration(t *testing.T) {
 
 // TestStreamVideoNotFoundIntegration tests streaming a non-existent video
 func TestStreamVideoNotFoundIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -543,6 +582,9 @@ func TestStreamVideoNotFoundIntegration(t *testing.T) {
 
 // TestStreamVideoInvalidPathIntegration tests video streaming with invalid paths
 func TestStreamVideoInvalidPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -571,6 +613,9 @@ func TestStreamVideoInvalidPathIntegration(t *testing.T) {
 
 // TestGetStreamInfoInvalidPathIntegration tests getting stream info with invalid path
 func TestGetStreamInfoInvalidPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -587,6 +632,9 @@ func TestGetStreamInfoInvalidPathIntegration(t *testing.T) {
 
 // TestGetStatsIntegration tests retrieving library statistics
 func TestGetStatsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -625,6 +673,9 @@ func TestGetStatsIntegration(t *testing.T) {
 
 // TestTriggerReindexIntegration tests triggering a reindex operation
 func TestTriggerReindexIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -649,6 +700,9 @@ func TestTriggerReindexIntegration(t *testing.T) {
 
 // TestTriggerReindexAlreadyRunningIntegration tests reindex when already indexing
 func TestTriggerReindexAlreadyRunningIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	// Note: With an empty directory, indexing completes almost instantly,
 	// so this test can't reliably test the "already_running" case.
 	t.Skip("Cannot reliably test already_running with empty directory - indexing completes too quickly")
@@ -656,6 +710,9 @@ func TestTriggerReindexAlreadyRunningIntegration(t *testing.T) {
 
 // TestInvalidateThumbnailDisabledIntegration tests thumbnail invalidation when disabled
 func TestInvalidateThumbnailDisabledIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -672,6 +729,9 @@ func TestInvalidateThumbnailDisabledIntegration(t *testing.T) {
 
 // TestInvalidateThumbnailEmptyPathIntegration tests thumbnail invalidation with empty path
 func TestInvalidateThumbnailEmptyPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -688,6 +748,9 @@ func TestInvalidateThumbnailEmptyPathIntegration(t *testing.T) {
 
 // TestInvalidateThumbnailInvalidPathIntegration tests thumbnail invalidation with invalid path
 func TestInvalidateThumbnailInvalidPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -704,6 +767,9 @@ func TestInvalidateThumbnailInvalidPathIntegration(t *testing.T) {
 
 // TestInvalidateAllThumbnailsDisabledIntegration tests clearing all thumbnails when disabled
 func TestInvalidateAllThumbnailsDisabledIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -719,6 +785,9 @@ func TestInvalidateAllThumbnailsDisabledIntegration(t *testing.T) {
 
 // TestRebuildAllThumbnailsDisabledIntegration tests rebuilding all thumbnails when disabled
 func TestRebuildAllThumbnailsDisabledIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -734,6 +803,9 @@ func TestRebuildAllThumbnailsDisabledIntegration(t *testing.T) {
 
 // TestGetThumbnailStatusDisabledIntegration tests getting thumbnail status when disabled
 func TestGetThumbnailStatusDisabledIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -759,6 +831,9 @@ func TestGetThumbnailStatusDisabledIntegration(t *testing.T) {
 
 // TestCompleteMediaFlowIntegration tests a complete flow of media operations
 func TestCompleteMediaFlowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -839,6 +914,9 @@ func TestCompleteMediaFlowIntegration(t *testing.T) {
 
 // TestConcurrentFileAccessIntegration tests concurrent access to file operations
 func TestConcurrentFileAccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -870,6 +948,9 @@ func TestConcurrentFileAccessIntegration(t *testing.T) {
 
 // TestListFilesFilterByTypeIntegration tests filtering files by type
 func TestListFilesFilterByTypeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -903,6 +984,9 @@ func TestListFilesFilterByTypeIntegration(t *testing.T) {
 
 // TestGetMediaFilesSortingIntegration tests sorting of media files
 func TestGetMediaFilesSortingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -936,6 +1020,9 @@ func TestGetMediaFilesSortingIntegration(t *testing.T) {
 
 // TestIsSubPathHelperIntegration tests the isSubPath helper function behavior
 func TestIsSubPathHelperIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -959,6 +1046,9 @@ func TestIsSubPathHelperIntegration(t *testing.T) {
 
 // TestListFilesEmptyDirectoryIntegration tests listing an empty directory
 func TestListFilesEmptyDirectoryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -988,6 +1078,9 @@ func TestListFilesEmptyDirectoryIntegration(t *testing.T) {
 
 // TestGetMediaFilesEmptyResultIntegration tests GetMediaFiles with no media files
 func TestGetMediaFilesEmptyResultIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -1023,12 +1116,18 @@ func TestGetMediaFilesEmptyResultIntegration(t *testing.T) {
 // Note: libvips can hang in test environments, so we skip this test for now
 // The error-path tests already verify the handler logic works correctly
 func TestGetThumbnailSuccessImageIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Skipping image thumbnail generation test - libvips hangs in test environment. Handler logic covered by error-path tests.")
 }
 
 // TestGetThumbnailSuccessVideoIntegration tests successful thumbnail generation for a video
 // Note: libvips/ffmpeg can hang in test environments, so we skip this test
 func TestGetThumbnailSuccessVideoIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Skipping video thumbnail generation test - libvips/ffmpeg hangs in test environment")
 
 	h, cleanup := setupMediaIntegrationTestWithThumbnails(t)
@@ -1081,6 +1180,9 @@ func TestGetThumbnailSuccessVideoIntegration(t *testing.T) {
 // TestGetThumbnailSuccessFolderIntegration tests successful thumbnail generation for a folder
 // Note: Folder icon generation uses image processing that might hang in test environment
 func TestGetThumbnailSuccessFolderIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Skipping folder thumbnail generation test - image processing hangs in test environment")
 
 	h, cleanup := setupMediaIntegrationTestWithThumbnails(t)
@@ -1137,6 +1239,9 @@ func TestGetThumbnailSuccessFolderIntegration(t *testing.T) {
 
 // TestStreamVideoSuccessIntegration tests successful video streaming
 func TestStreamVideoSuccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTestWithThumbnails(t)
 	defer cleanup()
 
@@ -1186,6 +1291,9 @@ func TestStreamVideoSuccessIntegration(t *testing.T) {
 
 // TestStreamVideoRangeRequestIntegration tests video streaming with Range header
 func TestStreamVideoRangeRequestIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -1237,6 +1345,9 @@ func TestStreamVideoRangeRequestIntegration(t *testing.T) {
 
 // TestGetStreamInfoSuccessIntegration tests successful stream info retrieval
 func TestGetStreamInfoSuccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
@@ -1281,6 +1392,9 @@ func TestGetStreamInfoSuccessIntegration(t *testing.T) {
 
 // TestInvalidateThumbnailSuccessIntegration tests successful thumbnail invalidation
 func TestInvalidateThumbnailSuccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Skipping thumbnail invalidation test - requires thumbnail generation which hangs")
 	h, cleanup := setupMediaIntegrationTestWithThumbnails(t)
 	defer cleanup()
@@ -1337,6 +1451,9 @@ func TestInvalidateThumbnailSuccessIntegration(t *testing.T) {
 
 // TestInvalidateAllThumbnailsSuccessIntegration tests successful invalidation of all thumbnails
 func TestInvalidateAllThumbnailsSuccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Skipping bulk thumbnail invalidation test - requires thumbnail generation which hangs")
 	h, cleanup := setupMediaIntegrationTestWithThumbnails(t)
 	defer cleanup()
@@ -1382,6 +1499,9 @@ func TestInvalidateAllThumbnailsSuccessIntegration(t *testing.T) {
 
 // TestRebuildAllThumbnailsSuccessIntegration tests successful rebuild of all thumbnails
 func TestRebuildAllThumbnailsSuccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Skipping thumbnail rebuild test - involves background thumbnail generation")
 	h, cleanup := setupMediaIntegrationTestWithThumbnails(t)
 	defer cleanup()
@@ -1427,6 +1547,9 @@ func TestRebuildAllThumbnailsSuccessIntegration(t *testing.T) {
 
 // TestGetThumbnailStatusActiveIntegration tests GetThumbnailStatus during active generation
 func TestGetThumbnailStatusActiveIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	t.Skip("Skipping thumbnail status test - testing during active generation is complex")
 	h, cleanup := setupMediaIntegrationTestWithThumbnails(t)
 	defer cleanup()

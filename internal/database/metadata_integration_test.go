@@ -6,6 +6,9 @@ import (
 )
 
 func TestGetMetadataIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -38,6 +41,9 @@ func TestGetMetadataIntegration(t *testing.T) {
 }
 
 func TestSetMetadataIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -67,6 +73,9 @@ func TestSetMetadataIntegration(t *testing.T) {
 }
 
 func TestMetadataMultipleKeysIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -99,6 +108,9 @@ func TestMetadataMultipleKeysIntegration(t *testing.T) {
 }
 
 func TestMetadataEmptyValueIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -122,6 +134,9 @@ func TestMetadataEmptyValueIntegration(t *testing.T) {
 }
 
 func TestMetadataLongValueIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -150,6 +165,9 @@ func TestMetadataLongValueIntegration(t *testing.T) {
 }
 
 func TestMetadataSpecialCharactersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -173,6 +191,9 @@ func TestMetadataSpecialCharactersIntegration(t *testing.T) {
 }
 
 func TestMetadataConcurrencyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 

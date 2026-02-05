@@ -90,6 +90,9 @@ func addTestFile(t *testing.T, db *database.Database, path, name string, fileTyp
 // =============================================================================
 
 func TestGetFavoritesEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -117,6 +120,9 @@ func TestGetFavoritesEmptyIntegration(t *testing.T) {
 }
 
 func TestGetFavoritesWithDataIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -171,6 +177,9 @@ func TestGetFavoritesWithDataIntegration(t *testing.T) {
 // =============================================================================
 
 func TestAddFavoriteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -200,6 +209,9 @@ func TestAddFavoriteIntegration(t *testing.T) {
 }
 
 func TestAddFavoriteInvalidJSONIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -215,6 +227,9 @@ func TestAddFavoriteInvalidJSONIntegration(t *testing.T) {
 }
 
 func TestAddFavoriteMissingPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -236,6 +251,9 @@ func TestAddFavoriteMissingPathIntegration(t *testing.T) {
 }
 
 func TestAddFavoriteIdempotentIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -283,6 +301,9 @@ func TestAddFavoriteIdempotentIntegration(t *testing.T) {
 // =============================================================================
 
 func TestRemoveFavoriteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -319,6 +340,9 @@ func TestRemoveFavoriteIntegration(t *testing.T) {
 }
 
 func TestRemoveFavoriteInvalidJSONIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -334,6 +358,9 @@ func TestRemoveFavoriteInvalidJSONIntegration(t *testing.T) {
 }
 
 func TestRemoveFavoriteMissingPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -352,6 +379,9 @@ func TestRemoveFavoriteMissingPathIntegration(t *testing.T) {
 }
 
 func TestRemoveNonExistentFavoriteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -377,6 +407,9 @@ func TestRemoveNonExistentFavoriteIntegration(t *testing.T) {
 // =============================================================================
 
 func TestCheckFavoriteExistsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -403,6 +436,9 @@ func TestCheckFavoriteExistsIntegration(t *testing.T) {
 }
 
 func TestCheckFavoriteNotExistsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -426,6 +462,9 @@ func TestCheckFavoriteNotExistsIntegration(t *testing.T) {
 }
 
 func TestCheckFavoriteMissingPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -444,6 +483,9 @@ func TestCheckFavoriteMissingPathIntegration(t *testing.T) {
 // =============================================================================
 
 func TestBulkAddFavoritesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -493,6 +535,9 @@ func TestBulkAddFavoritesIntegration(t *testing.T) {
 }
 
 func TestBulkAddFavoritesEmptyItemsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -513,6 +558,9 @@ func TestBulkAddFavoritesEmptyItemsIntegration(t *testing.T) {
 }
 
 func TestBulkAddFavoritesSkipsEmptyPathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -546,6 +594,9 @@ func TestBulkAddFavoritesSkipsEmptyPathsIntegration(t *testing.T) {
 }
 
 func TestBulkAddFavoritesMaxLimitIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -588,6 +639,9 @@ func TestBulkAddFavoritesMaxLimitIntegration(t *testing.T) {
 // =============================================================================
 
 func TestBulkRemoveFavoritesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -640,6 +694,9 @@ func TestBulkRemoveFavoritesIntegration(t *testing.T) {
 }
 
 func TestBulkRemoveFavoritesEmptyPathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -660,6 +717,9 @@ func TestBulkRemoveFavoritesEmptyPathsIntegration(t *testing.T) {
 }
 
 func TestBulkRemoveFavoritesSkipsEmptyPathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -703,6 +763,9 @@ func TestBulkRemoveFavoritesSkipsEmptyPathsIntegration(t *testing.T) {
 // =============================================================================
 
 func TestCompleteFavoritesFlowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -765,6 +828,9 @@ func TestCompleteFavoritesFlowIntegration(t *testing.T) {
 
 // TestBulkAddFavoritesLargeScaleIntegration tests bulk add with many items (stress test)
 func TestBulkAddFavoritesLargeScaleIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
@@ -834,6 +900,9 @@ func TestBulkAddFavoritesLargeScaleIntegration(t *testing.T) {
 
 // TestFavoritesWithUnicodePathsIntegration tests favorites with Unicode characters
 func TestFavoritesWithUnicodePathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 

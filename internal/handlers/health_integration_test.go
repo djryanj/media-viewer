@@ -56,6 +56,9 @@ func setupHealthIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 // =============================================================================
 
 func TestLivenessCheckIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -83,6 +86,9 @@ func TestLivenessCheckIntegration(t *testing.T) {
 }
 
 func TestLivenessCheckAlwaysSucceedsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -104,6 +110,9 @@ func TestLivenessCheckAlwaysSucceedsIntegration(t *testing.T) {
 // =============================================================================
 
 func TestReadinessCheckNotReadyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -130,6 +139,9 @@ func TestReadinessCheckNotReadyIntegration(t *testing.T) {
 }
 
 func TestReadinessCheckAfterIndexingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -160,6 +172,9 @@ func TestReadinessCheckAfterIndexingIntegration(t *testing.T) {
 // =============================================================================
 
 func TestHealthCheckBasicIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -201,6 +216,9 @@ func TestHealthCheckBasicIntegration(t *testing.T) {
 }
 
 func TestHealthCheckResponseStructureIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -233,6 +251,9 @@ func TestHealthCheckResponseStructureIntegration(t *testing.T) {
 }
 
 func TestHealthCheckWithStatsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -262,6 +283,9 @@ func TestHealthCheckWithStatsIntegration(t *testing.T) {
 }
 
 func TestHealthCheckWhenReadyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -289,6 +313,9 @@ func TestHealthCheckWhenReadyIntegration(t *testing.T) {
 }
 
 func TestHealthCheckStatusTransitionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -323,6 +350,9 @@ func TestHealthCheckStatusTransitionsIntegration(t *testing.T) {
 // =============================================================================
 
 func TestCompleteHealthFlowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 
@@ -375,6 +405,9 @@ func TestCompleteHealthFlowIntegration(t *testing.T) {
 }
 
 func TestHealthCheckConcurrentAccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupHealthIntegrationTest(t)
 	defer cleanup()
 

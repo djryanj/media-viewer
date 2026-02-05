@@ -11,6 +11,9 @@ import (
 )
 
 func TestInitWebAuthnSchemaIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -26,6 +29,9 @@ func TestInitWebAuthnSchemaIntegration(t *testing.T) {
 }
 
 func TestSaveWebAuthnCredentialIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -64,6 +70,9 @@ func TestSaveWebAuthnCredentialIntegration(t *testing.T) {
 }
 
 func TestGetWebAuthnCredentialsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -111,6 +120,9 @@ func TestGetWebAuthnCredentialsIntegration(t *testing.T) {
 }
 
 func TestGetWebAuthnUserIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -159,6 +171,9 @@ func TestGetWebAuthnUserIntegration(t *testing.T) {
 }
 
 func TestDeleteWebAuthnCredentialIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -211,6 +226,9 @@ func TestDeleteWebAuthnCredentialIntegration(t *testing.T) {
 }
 
 func TestListWebAuthnCredentialsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -265,6 +283,9 @@ func TestListWebAuthnCredentialsIntegration(t *testing.T) {
 }
 
 func TestSaveWebAuthnSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -292,6 +313,9 @@ func TestSaveWebAuthnSessionIntegration(t *testing.T) {
 }
 
 func TestGetWebAuthnSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -319,6 +343,9 @@ func TestGetWebAuthnSessionIntegration(t *testing.T) {
 }
 
 func TestCleanExpiredWebAuthnSessionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -349,6 +376,9 @@ func TestCleanExpiredWebAuthnSessionsIntegration(t *testing.T) {
 }
 
 func TestHasWebAuthnCredentialsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -377,6 +407,9 @@ func TestHasWebAuthnCredentialsIntegration(t *testing.T) {
 }
 
 func TestCountWebAuthnCredentialsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -409,6 +442,9 @@ func TestCountWebAuthnCredentialsIntegration(t *testing.T) {
 }
 
 func TestWebAuthnMultipleCredentialsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 

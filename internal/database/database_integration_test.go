@@ -67,6 +67,9 @@ func TestDatabaseClose(t *testing.T) {
 }
 
 func TestUpsertFileIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -130,6 +133,9 @@ func TestUpsertFileIntegration(t *testing.T) {
 }
 
 func TestListDirectoryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -220,6 +226,9 @@ func TestListDirectoryIntegration(t *testing.T) {
 }
 
 func TestSearchIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -309,6 +318,9 @@ func TestSearchIntegration(t *testing.T) {
 }
 
 func TestGetFileByPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -361,6 +373,9 @@ func TestGetFileByPathIntegration(t *testing.T) {
 }
 
 func TestGetFilesUpdatedSinceIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -446,6 +461,9 @@ func TestGetFilesUpdatedSinceIntegration(t *testing.T) {
 }
 
 func TestGetSubfoldersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -496,6 +514,9 @@ func TestGetSubfoldersIntegration(t *testing.T) {
 }
 
 func TestGetMediaFilesInFolderIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -535,6 +556,9 @@ func TestGetMediaFilesInFolderIntegration(t *testing.T) {
 }
 
 func TestGetLastThumbnailRunIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -575,6 +599,9 @@ func TestGetLastThumbnailRunIntegration(t *testing.T) {
 }
 
 func TestCalculateStatsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 

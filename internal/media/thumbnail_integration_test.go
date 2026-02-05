@@ -27,6 +27,9 @@ func init() {
 }
 
 func TestGenerateImageThumbnailIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	tmpDir := t.TempDir()
 	mediaDir := t.TempDir()
 	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
@@ -134,6 +137,9 @@ func TestGenerateImageThumbnailInvalidFile(t *testing.T) {
 }
 
 func TestGenerateImageWithFFmpegIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	// Check if ffmpeg is available
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not available, skipping integration test")
@@ -190,6 +196,9 @@ func TestGenerateImageWithFFmpegTimeout(t *testing.T) {
 }
 
 func TestGenerateVideoThumbnailIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not available, skipping video thumbnail test")
 	}
@@ -239,6 +248,9 @@ func TestGenerateVideoThumbnailNonexistent(t *testing.T) {
 }
 
 func TestGetThumbnailFullIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	tmpDir := t.TempDir()
 	mediaDir := t.TempDir()
 	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
@@ -328,6 +340,9 @@ func TestGetThumbnailFullIntegration(t *testing.T) {
 }
 
 func TestGetThumbnailFolderIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	tmpDir := t.TempDir()
 	mediaDir := t.TempDir()
 	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
@@ -647,6 +662,9 @@ func BenchmarkGetThumbnailGeneration(b *testing.B) {
 // =============================================================================
 
 func TestProcessBatchIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	tmpDir := t.TempDir()
 	mediaDir := t.TempDir()
 	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
@@ -693,6 +711,9 @@ func TestProcessBatchIntegration(t *testing.T) {
 }
 
 func TestProcessBatchEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	tmpDir := t.TempDir()
 	mediaDir := t.TempDir()
 	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)

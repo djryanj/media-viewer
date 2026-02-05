@@ -63,6 +63,9 @@ func setupAuthIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 // =============================================================================
 
 func TestCheckSetupRequiredIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -86,6 +89,9 @@ func TestCheckSetupRequiredIntegration(t *testing.T) {
 }
 
 func TestSetupIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -124,6 +130,9 @@ func TestSetupIntegration(t *testing.T) {
 }
 
 func TestSetupTwiceFailsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -146,6 +155,9 @@ func TestSetupTwiceFailsIntegration(t *testing.T) {
 }
 
 func TestSetupPasswordValidationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	tests := []struct {
 		name           string
 		password       string
@@ -204,6 +216,9 @@ func TestSetupPasswordValidationIntegration(t *testing.T) {
 // =============================================================================
 
 func TestLoginIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -252,6 +267,9 @@ func TestLoginIntegration(t *testing.T) {
 }
 
 func TestLoginInvalidPasswordIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -279,6 +297,9 @@ func TestLoginInvalidPasswordIntegration(t *testing.T) {
 }
 
 func TestLoginNoUserIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -301,6 +322,9 @@ func TestLoginNoUserIntegration(t *testing.T) {
 // =============================================================================
 
 func TestCheckAuthIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -330,6 +354,9 @@ func TestCheckAuthIntegration(t *testing.T) {
 }
 
 func TestCheckAuthNoSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -344,6 +371,9 @@ func TestCheckAuthNoSessionIntegration(t *testing.T) {
 }
 
 func TestCheckAuthInvalidSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -363,6 +393,9 @@ func TestCheckAuthInvalidSessionIntegration(t *testing.T) {
 }
 
 func TestKeepaliveIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -402,6 +435,9 @@ func TestKeepaliveIntegration(t *testing.T) {
 // =============================================================================
 
 func TestLogoutIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -445,6 +481,9 @@ func TestLogoutIntegration(t *testing.T) {
 // =============================================================================
 
 func TestChangePasswordIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -497,6 +536,9 @@ func TestChangePasswordIntegration(t *testing.T) {
 }
 
 func TestChangePasswordWrongCurrentIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -521,6 +563,9 @@ func TestChangePasswordWrongCurrentIntegration(t *testing.T) {
 }
 
 func TestChangePasswordValidationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -574,6 +619,9 @@ func TestChangePasswordValidationIntegration(t *testing.T) {
 // =============================================================================
 
 func TestCompleteAuthFlowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -677,6 +725,9 @@ func TestCompleteAuthFlowIntegration(t *testing.T) {
 // =============================================================================
 
 func TestConcurrentLoginIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
@@ -719,6 +770,9 @@ func TestConcurrentLoginIntegration(t *testing.T) {
 }
 
 func TestConcurrentPasswordChangeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 

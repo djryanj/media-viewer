@@ -7,6 +7,9 @@ import (
 )
 
 func TestHasUsersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -30,6 +33,9 @@ func TestHasUsersIntegration(t *testing.T) {
 }
 
 func TestCreateUserIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -54,6 +60,9 @@ func TestCreateUserIntegration(t *testing.T) {
 }
 
 func TestCreateUserEmptyPasswordIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -78,6 +87,9 @@ func TestCreateUserEmptyPasswordIntegration(t *testing.T) {
 }
 
 func TestValidatePasswordIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -118,6 +130,9 @@ func TestValidatePasswordIntegration(t *testing.T) {
 }
 
 func TestValidatePasswordNoUserIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -131,6 +146,9 @@ func TestValidatePasswordNoUserIntegration(t *testing.T) {
 }
 
 func TestCreateSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -171,6 +189,9 @@ func TestCreateSessionIntegration(t *testing.T) {
 }
 
 func TestCreateMultipleSessionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -201,6 +222,9 @@ func TestCreateMultipleSessionsIntegration(t *testing.T) {
 }
 
 func TestValidateSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -239,6 +263,9 @@ func TestValidateSessionIntegration(t *testing.T) {
 }
 
 func TestExtendSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -276,6 +303,9 @@ func TestExtendSessionIntegration(t *testing.T) {
 }
 
 func TestDeleteSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -312,6 +342,9 @@ func TestDeleteSessionIntegration(t *testing.T) {
 }
 
 func TestDeleteAllSessionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -351,6 +384,9 @@ func TestDeleteAllSessionsIntegration(t *testing.T) {
 }
 
 func TestCleanExpiredSessionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -393,6 +429,9 @@ func TestCleanExpiredSessionsIntegration(t *testing.T) {
 }
 
 func TestUpdatePasswordIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -433,6 +472,9 @@ func TestUpdatePasswordIntegration(t *testing.T) {
 }
 
 func TestUpdatePasswordInvalidatesSessionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -463,6 +505,9 @@ func TestUpdatePasswordInvalidatesSessionsIntegration(t *testing.T) {
 }
 
 func TestPasswordHashingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -496,6 +541,9 @@ func TestPasswordHashingIntegration(t *testing.T) {
 }
 
 func TestSessionExpirationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -519,6 +567,9 @@ func TestSessionExpirationIntegration(t *testing.T) {
 }
 
 func TestAuthConcurrencyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 

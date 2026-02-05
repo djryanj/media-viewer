@@ -144,6 +144,9 @@ func addPlaylistToDatabase(t *testing.T, db *database.Database, playlistPath, me
 
 // TestListPlaylistsEmptyIntegration tests listing playlists with no playlists
 func TestListPlaylistsEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -173,6 +176,9 @@ func TestListPlaylistsEmptyIntegration(t *testing.T) {
 
 // TestListPlaylistsWithPlaylistsIntegration tests listing playlists
 func TestListPlaylistsWithPlaylistsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -212,6 +218,9 @@ func TestListPlaylistsWithPlaylistsIntegration(t *testing.T) {
 
 // TestGetPlaylistByNameIntegration tests getting a playlist by name
 func TestGetPlaylistByNameIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -254,6 +263,9 @@ func TestGetPlaylistByNameIntegration(t *testing.T) {
 
 // TestGetPlaylistByNameWithExtensionIntegration tests getting playlist with .wpl extension
 func TestGetPlaylistByNameWithExtensionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -284,6 +296,9 @@ func TestGetPlaylistByNameWithExtensionIntegration(t *testing.T) {
 
 // TestGetPlaylistNotFoundIntegration tests getting a non-existent playlist
 func TestGetPlaylistNotFoundIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -301,6 +316,9 @@ func TestGetPlaylistNotFoundIntegration(t *testing.T) {
 
 // TestGetPlaylistNestedPathIntegration tests playlist in nested directory
 func TestGetPlaylistNestedPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -340,6 +358,9 @@ func TestGetPlaylistNestedPathIntegration(t *testing.T) {
 
 // TestGetPlaylistEmptyPlaylistIntegration tests an empty playlist
 func TestGetPlaylistEmptyPlaylistIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -375,6 +396,9 @@ func TestGetPlaylistEmptyPlaylistIntegration(t *testing.T) {
 
 // TestListPlaylistsMultipleIntegration tests listing multiple playlists in different directories
 func TestListPlaylistsMultipleIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -428,6 +452,9 @@ func TestListPlaylistsMultipleIntegration(t *testing.T) {
 
 // TestGetPlaylistSpecialCharactersIntegration tests playlist names with special characters
 func TestGetPlaylistSpecialCharactersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -451,6 +478,9 @@ func TestGetPlaylistSpecialCharactersIntegration(t *testing.T) {
 
 // TestGetPlaylistCaseNameMatchingIntegration tests case-sensitive name matching
 func TestGetPlaylistCaseNameMatchingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -474,6 +504,9 @@ func TestGetPlaylistCaseNameMatchingIntegration(t *testing.T) {
 
 // TestGetPlaylistContentTypeIntegration tests response content type
 func TestGetPlaylistContentTypeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -496,6 +529,9 @@ func TestGetPlaylistContentTypeIntegration(t *testing.T) {
 
 // TestCompletePlaylistFlowIntegration tests the complete playlist workflow
 func TestCompletePlaylistFlowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 
@@ -560,6 +596,9 @@ func TestCompletePlaylistFlowIntegration(t *testing.T) {
 
 // TestListPlaylistsResponseStructureIntegration tests the response structure
 func TestListPlaylistsResponseStructureIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
 	defer cleanup()
 

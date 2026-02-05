@@ -90,6 +90,9 @@ func setupWebAuthnIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 
 // TestWebAuthnAvailableDisabledIntegration tests availability when WebAuthn is disabled
 func TestWebAuthnAvailableDisabledIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -120,6 +123,9 @@ func TestWebAuthnAvailableDisabledIntegration(t *testing.T) {
 
 // TestWebAuthnAvailableContentTypeIntegration tests response headers
 func TestWebAuthnAvailableContentTypeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -136,6 +142,9 @@ func TestWebAuthnAvailableContentTypeIntegration(t *testing.T) {
 
 // TestBeginWebAuthnRegistrationNotConfiguredIntegration tests registration when disabled
 func TestBeginWebAuthnRegistrationNotConfiguredIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -152,6 +161,9 @@ func TestBeginWebAuthnRegistrationNotConfiguredIntegration(t *testing.T) {
 
 // TestBeginWebAuthnRegistrationNoSessionIntegration tests registration without session
 func TestBeginWebAuthnRegistrationNoSessionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -169,6 +181,9 @@ func TestBeginWebAuthnRegistrationNoSessionIntegration(t *testing.T) {
 
 // TestFinishWebAuthnRegistrationNotConfiguredIntegration tests finish registration when disabled
 func TestFinishWebAuthnRegistrationNotConfiguredIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -185,6 +200,9 @@ func TestFinishWebAuthnRegistrationNotConfiguredIntegration(t *testing.T) {
 
 // TestBeginWebAuthnLoginNotConfiguredIntegration tests login when disabled
 func TestBeginWebAuthnLoginNotConfiguredIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -201,6 +219,9 @@ func TestBeginWebAuthnLoginNotConfiguredIntegration(t *testing.T) {
 
 // TestFinishWebAuthnLoginNotConfiguredIntegration tests finish login when disabled
 func TestFinishWebAuthnLoginNotConfiguredIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -217,6 +238,9 @@ func TestFinishWebAuthnLoginNotConfiguredIntegration(t *testing.T) {
 
 // TestWebAuthnResponseStructureIntegration tests response structure
 func TestWebAuthnResponseStructureIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -251,6 +275,9 @@ func TestWebAuthnResponseStructureIntegration(t *testing.T) {
 
 // TestWebAuthnMultipleAvailabilityChecksIntegration tests multiple consecutive checks
 func TestWebAuthnMultipleAvailabilityChecksIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -279,6 +306,9 @@ func TestWebAuthnMultipleAvailabilityChecksIntegration(t *testing.T) {
 
 // TestWebAuthnSchemaInitializationIntegration tests database schema is properly initialized
 func TestWebAuthnSchemaInitializationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -301,6 +331,9 @@ func TestWebAuthnSchemaInitializationIntegration(t *testing.T) {
 
 // TestWebAuthnConcurrentAvailabilityChecksIntegration tests concurrent access safety
 func TestWebAuthnConcurrentAvailabilityChecksIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -335,6 +368,9 @@ func TestWebAuthnConcurrentAvailabilityChecksIntegration(t *testing.T) {
 
 // TestWebAuthnErrorHandlingIntegration tests error handling for disabled WebAuthn
 func TestWebAuthnErrorHandlingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 
@@ -367,6 +403,9 @@ func TestWebAuthnErrorHandlingIntegration(t *testing.T) {
 
 // TestWebAuthnAvailabilityHTTPMethodsIntegration tests different HTTP methods
 func TestWebAuthnAvailabilityHTTPMethodsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupWebAuthnIntegrationTest(t)
 	defer cleanup()
 

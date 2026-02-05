@@ -73,6 +73,9 @@ func setupVersionIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 
 // TestGetVersionBasicIntegration tests basic version endpoint functionality
 func TestGetVersionBasicIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -110,6 +113,9 @@ func TestGetVersionBasicIntegration(t *testing.T) {
 
 // TestGetVersionHeadersIntegration tests response headers
 func TestGetVersionHeadersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -133,6 +139,9 @@ func TestGetVersionHeadersIntegration(t *testing.T) {
 
 // TestGetVersionResponseFormatIntegration tests JSON response format
 func TestGetVersionResponseFormatIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -158,6 +167,9 @@ func TestGetVersionResponseFormatIntegration(t *testing.T) {
 
 // TestGetVersionMultipleRequestsIntegration tests multiple consecutive requests
 func TestGetVersionMultipleRequestsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -209,6 +221,9 @@ func TestGetVersionMultipleRequestsIntegration(t *testing.T) {
 
 // TestGetVersionWithDifferentMethodsIntegration tests different HTTP methods
 func TestGetVersionWithDifferentMethodsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -249,6 +264,9 @@ func TestGetVersionWithDifferentMethodsIntegration(t *testing.T) {
 
 // TestGetVersionRuntimeInfoIntegration tests runtime information is accurate
 func TestGetVersionRuntimeInfoIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -294,6 +312,9 @@ func TestGetVersionRuntimeInfoIntegration(t *testing.T) {
 
 // TestGetVersionConcurrentAccessIntegration tests concurrent access safety
 func TestGetVersionConcurrentAccessIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -348,6 +369,9 @@ func TestGetVersionConcurrentAccessIntegration(t *testing.T) {
 
 // TestGetVersionResponseSizeIntegration tests response size is reasonable
 func TestGetVersionResponseSizeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -372,6 +396,9 @@ func TestGetVersionResponseSizeIntegration(t *testing.T) {
 
 // TestGetVersionJSONFieldsIntegration tests all expected JSON fields are present
 func TestGetVersionJSONFieldsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -428,6 +455,9 @@ func TestGetVersionJSONFieldsIntegration(t *testing.T) {
 
 // TestGetVersionIdempotencyIntegration tests that version endpoint is idempotent
 func TestGetVersionIdempotencyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cleanup := setupVersionIntegrationTest(t)
 	defer cleanup()
 
@@ -474,6 +504,9 @@ func TestGetVersionIdempotencyIntegration(t *testing.T) {
 
 // TestGetVersionWithMultipleHandlerInstancesIntegration tests version is consistent across handlers
 func TestGetVersionWithMultipleHandlerInstancesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	// Create two separate handler instances
 	h1, cleanup1 := setupVersionIntegrationTest(t)
 	defer cleanup1()

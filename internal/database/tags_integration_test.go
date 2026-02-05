@@ -7,6 +7,9 @@ import (
 )
 
 func TestGetOrCreateTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -38,6 +41,9 @@ func TestGetOrCreateTagIntegration(t *testing.T) {
 }
 
 func TestAddTagToFileIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -76,6 +82,9 @@ func TestAddTagToFileIntegration(t *testing.T) {
 }
 
 func TestRemoveTagFromFileIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -113,6 +122,9 @@ func TestRemoveTagFromFileIntegration(t *testing.T) {
 }
 
 func TestGetFileTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -144,6 +156,9 @@ func TestGetFileTagsIntegration(t *testing.T) {
 }
 
 func TestSetFileTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -190,6 +205,9 @@ func TestSetFileTagsIntegration(t *testing.T) {
 }
 
 func TestGetAllTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -232,6 +250,9 @@ func TestGetAllTagsIntegration(t *testing.T) {
 }
 
 func TestGetFilesByTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -292,6 +313,9 @@ func TestGetFilesByTagIntegration(t *testing.T) {
 }
 
 func TestGetFilesByTagPaginationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -353,6 +377,9 @@ func TestGetFilesByTagPaginationIntegration(t *testing.T) {
 }
 
 func TestDeleteTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -394,6 +421,9 @@ func TestDeleteTagIntegration(t *testing.T) {
 }
 
 func TestRenameTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -428,6 +458,9 @@ func TestRenameTagIntegration(t *testing.T) {
 }
 
 func TestTagsConcurrencyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 

@@ -7,6 +7,9 @@ import (
 )
 
 func TestAddFavoriteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -30,6 +33,9 @@ func TestAddFavoriteIntegration(t *testing.T) {
 }
 
 func TestRemoveFavoriteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -60,6 +66,9 @@ func TestRemoveFavoriteIntegration(t *testing.T) {
 }
 
 func TestIsFavoriteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -83,6 +92,9 @@ func TestIsFavoriteIntegration(t *testing.T) {
 }
 
 func TestGetFavoritesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -146,6 +158,9 @@ func TestGetFavoritesIntegration(t *testing.T) {
 }
 
 func TestGetFavoritesEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -162,6 +177,9 @@ func TestGetFavoritesEmptyIntegration(t *testing.T) {
 }
 
 func TestGetFavoriteCountIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
@@ -202,6 +220,9 @@ func TestGetFavoriteCountIntegration(t *testing.T) {
 }
 
 func TestFavoritesConcurrencyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 

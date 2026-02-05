@@ -116,6 +116,9 @@ func addSearchTestFile(t *testing.T, db *database.Database, mediaDir, relPath st
 
 // TestSearchEmptyQueryIntegration tests search with empty query
 func TestSearchEmptyQueryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -153,6 +156,9 @@ func TestSearchEmptyQueryIntegration(t *testing.T) {
 
 // TestSearchBasicQueryIntegration tests basic search functionality
 func TestSearchBasicQueryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -192,6 +198,9 @@ func TestSearchBasicQueryIntegration(t *testing.T) {
 
 // TestSearchWithTypeFilterIntegration tests search with type filtering
 func TestSearchWithTypeFilterIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -224,6 +233,9 @@ func TestSearchWithTypeFilterIntegration(t *testing.T) {
 
 // TestSearchWithPaginationIntegration tests search pagination
 func TestSearchWithPaginationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -263,6 +275,9 @@ func TestSearchWithPaginationIntegration(t *testing.T) {
 
 // TestSearchNoResultsIntegration tests search with no matches
 func TestSearchNoResultsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -294,6 +309,9 @@ func TestSearchNoResultsIntegration(t *testing.T) {
 
 // TestSearchResponseStructureIntegration tests search response structure
 func TestSearchResponseStructureIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -329,6 +347,9 @@ func TestSearchResponseStructureIntegration(t *testing.T) {
 
 // TestSearchSuggestionsEmptyQueryIntegration tests suggestions with empty query
 func TestSearchSuggestionsEmptyQueryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -354,6 +375,9 @@ func TestSearchSuggestionsEmptyQueryIntegration(t *testing.T) {
 
 // TestSearchSuggestionsBasicIntegration tests basic suggestions functionality
 func TestSearchSuggestionsBasicIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -388,6 +412,9 @@ func TestSearchSuggestionsBasicIntegration(t *testing.T) {
 
 // TestSearchSuggestionsLimitIntegration tests suggestions limit parameter
 func TestSearchSuggestionsLimitIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -418,6 +445,9 @@ func TestSearchSuggestionsLimitIntegration(t *testing.T) {
 
 // TestSearchSuggestionsNoMatchesIntegration tests suggestions with no matches
 func TestSearchSuggestionsNoMatchesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -444,6 +474,9 @@ func TestSearchSuggestionsNoMatchesIntegration(t *testing.T) {
 
 // TestSearchCaseInsensitiveIntegration tests case-insensitive search
 func TestSearchCaseInsensitiveIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -479,6 +512,9 @@ func TestSearchCaseInsensitiveIntegration(t *testing.T) {
 
 // TestSearchSpecialCharactersIntegration tests search with special characters
 func TestSearchSpecialCharactersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -505,6 +541,9 @@ func TestSearchSpecialCharactersIntegration(t *testing.T) {
 
 // TestSearchNestedPathsIntegration tests search in nested directories
 func TestSearchNestedPathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -529,6 +568,9 @@ func TestSearchNestedPathsIntegration(t *testing.T) {
 
 // TestCompleteSearchFlowIntegration tests the complete search workflow
 func TestCompleteSearchFlowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -575,6 +617,9 @@ func TestCompleteSearchFlowIntegration(t *testing.T) {
 
 // TestSearchInvalidPaginationIntegration tests search with invalid pagination parameters
 func TestSearchInvalidPaginationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 
@@ -618,6 +663,9 @@ func TestSearchInvalidPaginationIntegration(t *testing.T) {
 
 // TestSearchSuggestionsInvalidLimitIntegration tests suggestions with invalid limit
 func TestSearchSuggestionsInvalidLimitIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupSearchIntegrationTest(t)
 	defer cleanup()
 

@@ -121,6 +121,9 @@ func addTagTestFile(t *testing.T, db *database.Database, mediaDir, relPath strin
 
 // TestGetAllTagsEmptyIntegration tests getting all tags when none exist
 func TestGetAllTagsEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -150,6 +153,9 @@ func TestGetAllTagsEmptyIntegration(t *testing.T) {
 
 // TestGetAllTagsWithTagsIntegration tests getting all tags
 func TestGetAllTagsWithTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -192,6 +198,9 @@ func TestGetAllTagsWithTagsIntegration(t *testing.T) {
 
 // TestGetFileTagsIntegration tests getting tags for a specific file
 func TestGetFileTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -229,6 +238,9 @@ func TestGetFileTagsIntegration(t *testing.T) {
 
 // TestGetFileTagsMissingPathIntegration tests getting tags without path parameter
 func TestGetFileTagsMissingPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -244,6 +256,9 @@ func TestGetFileTagsMissingPathIntegration(t *testing.T) {
 
 // TestGetFileTagsNoTagsIntegration tests getting tags for file with no tags
 func TestGetFileTagsNoTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -276,6 +291,9 @@ func TestGetFileTagsNoTagsIntegration(t *testing.T) {
 
 // TestGetBatchFileTagsIntegration tests getting tags for multiple files
 func TestGetBatchFileTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -322,6 +340,9 @@ func TestGetBatchFileTagsIntegration(t *testing.T) {
 
 // TestGetBatchFileTagsEmptyPathsIntegration tests batch get with empty paths
 func TestGetBatchFileTagsEmptyPathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -342,6 +363,9 @@ func TestGetBatchFileTagsEmptyPathsIntegration(t *testing.T) {
 
 // TestGetBatchFileTagsMaxLimitIntegration tests batch get with max paths limit
 func TestGetBatchFileTagsMaxLimitIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -381,6 +405,9 @@ func TestGetBatchFileTagsMaxLimitIntegration(t *testing.T) {
 
 // TestAddTagToFileIntegration tests adding a tag to a file
 func TestAddTagToFileIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -420,6 +447,9 @@ func TestAddTagToFileIntegration(t *testing.T) {
 
 // TestAddTagToFileMissingFieldsIntegration tests adding tag with missing fields
 func TestAddTagToFileMissingFieldsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -450,6 +480,9 @@ func TestAddTagToFileMissingFieldsIntegration(t *testing.T) {
 
 // TestRemoveTagFromFileIntegration tests removing a tag from a file
 func TestRemoveTagFromFileIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -488,6 +521,9 @@ func TestRemoveTagFromFileIntegration(t *testing.T) {
 
 // TestBulkAddTagIntegration tests adding a tag to multiple files
 func TestBulkAddTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -531,6 +567,9 @@ func TestBulkAddTagIntegration(t *testing.T) {
 
 // TestBulkAddTagPartialFailureIntegration tests bulk add with some failures
 func TestBulkAddTagPartialFailureIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -564,6 +603,9 @@ func TestBulkAddTagPartialFailureIntegration(t *testing.T) {
 
 // TestBulkRemoveTagIntegration tests removing a tag from multiple files
 func TestBulkRemoveTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -610,6 +652,9 @@ func TestBulkRemoveTagIntegration(t *testing.T) {
 
 // TestSetFileTagsIntegration tests replacing all tags for a file
 func TestSetFileTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -648,6 +693,9 @@ func TestSetFileTagsIntegration(t *testing.T) {
 
 // TestSetFileTagsEmptyIntegration tests setting empty tags (clear all)
 func TestSetFileTagsEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -686,6 +734,9 @@ func TestSetFileTagsEmptyIntegration(t *testing.T) {
 
 // TestGetFilesByTagIntegration tests getting files with a specific tag
 func TestGetFilesByTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -731,6 +782,9 @@ func TestGetFilesByTagIntegration(t *testing.T) {
 
 // TestDeleteTagIntegration tests deleting a tag entirely
 func TestDeleteTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -766,6 +820,9 @@ func TestDeleteTagIntegration(t *testing.T) {
 
 // TestRenameTagIntegration tests renaming a tag
 func TestRenameTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -810,6 +867,9 @@ func TestRenameTagIntegration(t *testing.T) {
 
 // TestCompleteTagsFlowIntegration tests the complete tags workflow
 func TestCompleteTagsFlowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -878,6 +938,9 @@ func TestCompleteTagsFlowIntegration(t *testing.T) {
 
 // TestBulkAddTagEmptyPathsIntegration tests bulk add with empty paths
 func TestBulkAddTagEmptyPathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -899,6 +962,9 @@ func TestBulkAddTagEmptyPathsIntegration(t *testing.T) {
 
 // TestBulkAddTagMissingTagIntegration tests bulk add with missing tag
 func TestBulkAddTagMissingTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -920,6 +986,9 @@ func TestBulkAddTagMissingTagIntegration(t *testing.T) {
 
 // TestBulkOperationsSkipEmptyPathsIntegration tests that bulk operations skip empty paths
 func TestBulkOperationsSkipEmptyPathsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -959,6 +1028,9 @@ func TestBulkOperationsSkipEmptyPathsIntegration(t *testing.T) {
 
 // TestRenameTagMissingNameIntegration tests renaming without new name
 func TestRenameTagMissingNameIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -981,6 +1053,9 @@ func TestRenameTagMissingNameIntegration(t *testing.T) {
 
 // TestContentTypeHeadersIntegration tests that all responses have proper content types
 func TestContentTypeHeadersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -1011,6 +1086,9 @@ func TestContentTypeHeadersIntegration(t *testing.T) {
 
 // TestBulkAddTagLargeScaleIntegration tests bulk tag add with many files (stress test)
 func TestBulkAddTagLargeScaleIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -1069,6 +1147,9 @@ func TestBulkAddTagLargeScaleIntegration(t *testing.T) {
 
 // TestTagsWithUnicodeNamesIntegration tests tags with Unicode characters
 func TestTagsWithUnicodeNamesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 
@@ -1143,6 +1224,9 @@ func TestTagsWithUnicodeNamesIntegration(t *testing.T) {
 
 // TestBulkRemoveTagPartialFailureIntegration tests bulk remove with some invalid paths
 func TestBulkRemoveTagPartialFailureIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
 	defer cleanup()
 

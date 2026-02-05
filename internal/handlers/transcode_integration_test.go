@@ -103,6 +103,9 @@ func createCacheDir(t *testing.T, cacheDir, dirname string, fileCount int, fileS
 
 // TestClearTranscodeCacheEmptyIntegration tests clearing an empty cache
 func TestClearTranscodeCacheEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -131,6 +134,9 @@ func TestClearTranscodeCacheEmptyIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheWithFilesIntegration tests clearing cache with files
 func TestClearTranscodeCacheWithFilesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -176,6 +182,9 @@ func TestClearTranscodeCacheWithFilesIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheWithDirectoriesIntegration tests clearing cache with directories
 func TestClearTranscodeCacheWithDirectoriesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -216,6 +225,9 @@ func TestClearTranscodeCacheWithDirectoriesIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheMixedContentIntegration tests clearing cache with mixed files and directories
 func TestClearTranscodeCacheMixedContentIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -257,6 +269,9 @@ func TestClearTranscodeCacheMixedContentIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheMethodValidationIntegration tests HTTP method validation
 func TestClearTranscodeCacheMethodValidationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, _, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -286,6 +301,9 @@ func TestClearTranscodeCacheMethodValidationIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheResponseStructureIntegration tests response structure
 func TestClearTranscodeCacheResponseStructureIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -324,6 +342,9 @@ func TestClearTranscodeCacheResponseStructureIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheMultipleCallsIntegration tests multiple consecutive calls
 func TestClearTranscodeCacheMultipleCallsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -368,6 +389,9 @@ func TestClearTranscodeCacheMultipleCallsIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheLargeFilesIntegration tests clearing large files
 func TestClearTranscodeCacheLargeFilesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -408,6 +432,9 @@ func TestClearTranscodeCacheLargeFilesIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheNestedDirectoriesIntegration tests clearing nested directories
 func TestClearTranscodeCacheNestedDirectoriesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -456,6 +483,9 @@ func TestClearTranscodeCacheNestedDirectoriesIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheSpecialFilenamesIntegration tests clearing files with special names
 func TestClearTranscodeCacheSpecialFilenamesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -494,6 +524,9 @@ func TestClearTranscodeCacheSpecialFilenamesIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheResponseFormatIntegration tests JSON response format
 func TestClearTranscodeCacheResponseFormatIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -522,6 +555,9 @@ func TestClearTranscodeCacheResponseFormatIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheIdempotencyIntegration tests that multiple clears are safe
 func TestClearTranscodeCacheIdempotencyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -560,6 +596,9 @@ func TestClearTranscodeCacheIdempotencyIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheCompleteWorkflowIntegration tests the complete workflow
 func TestClearTranscodeCacheCompleteWorkflowIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
@@ -624,6 +663,9 @@ func TestClearTranscodeCacheCompleteWorkflowIntegration(t *testing.T) {
 
 // TestClearTranscodeCacheZeroByteFilesIntegration tests clearing empty files
 func TestClearTranscodeCacheZeroByteFilesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	h, cacheDir, cleanup := setupTranscodeIntegrationTest(t)
 	defer cleanup()
 
