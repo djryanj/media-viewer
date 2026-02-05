@@ -30,7 +30,7 @@ func TestGetVideoInfo_ParsesFFProbeOutput(t *testing.T) {
 echo '{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"125.5"}}'
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		t.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestGetVideoInfo_NeedsTranscodeForIncompatibleCodec(t *testing.T) {
 echo '{"streams":[{"codec_name":"hevc","width":1920,"height":1080}],"format":{"duration":"100.0"}}'
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		t.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestGetVideoInfo_NeedsTranscodeForIncompatibleContainer(t *testing.T) {
 echo '{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"100.0"}}'
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		t.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -150,7 +150,7 @@ echo "Error: invalid file" >&2
 exit 1
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		t.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestGetVideoInfo_RespectsContext(t *testing.T) {
 sleep 10
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		t.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func TestStreamVideo_DirectStreamWhenNoTranscodingNeeded(t *testing.T) {
 	// Create test video file
 	testFile := filepath.Join(tmpDir, "test.mp4")
 	testContent := []byte("fake video content for direct streaming")
-	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
+	if err := os.WriteFile(testFile, testContent, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -236,7 +236,7 @@ cat << 'EOF'
 EOF
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		t.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -266,7 +266,7 @@ func TestStreamVideo_ErrorWhenTranscodingDisabled(t *testing.T) {
 
 	// Create test video file
 	testFile := filepath.Join(tmpDir, "test.mkv")
-	if err := os.WriteFile(testFile, []byte("fake"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("fake"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -289,7 +289,7 @@ cat << 'EOF'
 EOF
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		t.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func TestStreamVideo_ErrorWhenFileNotFound(t *testing.T) {
 func TestClearCache_RemovesFilesAndReturnsSize(t *testing.T) {
 	tmpDir := t.TempDir()
 	cacheDir := filepath.Join(tmpDir, "cache")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatalf("Failed to create cache dir: %v", err)
 	}
 
@@ -344,10 +344,10 @@ func TestClearCache_RemovesFilesAndReturnsSize(t *testing.T) {
 	content1 := []byte("test content 1")
 	content2 := []byte("test content 2 is longer")
 
-	if err := os.WriteFile(file1, content1, 0644); err != nil {
+	if err := os.WriteFile(file1, content1, 0o644); err != nil {
 		t.Fatalf("Failed to create file1: %v", err)
 	}
-	if err := os.WriteFile(file2, content2, 0644); err != nil {
+	if err := os.WriteFile(file2, content2, 0o644); err != nil {
 		t.Fatalf("Failed to create file2: %v", err)
 	}
 
@@ -375,19 +375,19 @@ func TestClearCache_RemovesFilesAndReturnsSize(t *testing.T) {
 func TestClearCache_HandlesSubdirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 	cacheDir := filepath.Join(tmpDir, "cache")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatalf("Failed to create cache dir: %v", err)
 	}
 
 	// Create subdirectory with files
 	subDir := filepath.Join(cacheDir, "subdir")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 
 	file1 := filepath.Join(subDir, "file1.mp4")
 	content := []byte("test content in subdir")
-	if err := os.WriteFile(file1, content, 0644); err != nil {
+	if err := os.WriteFile(file1, content, 0o644); err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
@@ -411,7 +411,7 @@ func TestClearCache_HandlesSubdirectories(t *testing.T) {
 func TestClearCache_ReturnsZeroWhenCacheDirEmpty(t *testing.T) {
 	tmpDir := t.TempDir()
 	cacheDir := filepath.Join(tmpDir, "cache")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatalf("Failed to create cache dir: %v", err)
 	}
 
@@ -510,7 +510,7 @@ func TestCleanup_HandlesEmptyProcessMap(t *testing.T) {
 	}
 }
 
-func TestCleanup_HandlesNilProcess(t *testing.T) {
+func TestCleanup_HandlesNilProcess(_ *testing.T) {
 	trans := New("/tmp/cache", true)
 
 	// Add nil process (edge case)
@@ -536,10 +536,10 @@ func TestGetDirSize_CalculatesCorrectSize(t *testing.T) {
 	content1 := []byte("test content 1")
 	content2 := []byte("test content 2 with more data")
 
-	if err := os.WriteFile(file1, content1, 0644); err != nil {
+	if err := os.WriteFile(file1, content1, 0o644); err != nil {
 		t.Fatalf("Failed to create file1: %v", err)
 	}
-	if err := os.WriteFile(file2, content2, 0644); err != nil {
+	if err := os.WriteFile(file2, content2, 0o644); err != nil {
 		t.Fatalf("Failed to create file2: %v", err)
 	}
 
@@ -559,7 +559,7 @@ func TestGetDirSize_CalculatesCorrectSize(t *testing.T) {
 func TestGetDirSize_HandlesSubdirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "subdir")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 
@@ -569,10 +569,10 @@ func TestGetDirSize_HandlesSubdirectories(t *testing.T) {
 	content1 := []byte("content 1")
 	content2 := []byte("content 2")
 
-	if err := os.WriteFile(file1, content1, 0644); err != nil {
+	if err := os.WriteFile(file1, content1, 0o644); err != nil {
 		t.Fatalf("Failed to create file1: %v", err)
 	}
-	if err := os.WriteFile(file2, content2, 0644); err != nil {
+	if err := os.WriteFile(file2, content2, 0o644); err != nil {
 		t.Fatalf("Failed to create file2: %v", err)
 	}
 
@@ -622,7 +622,7 @@ func TestStreamFile_StreamsFileContent(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.mp4")
 	testContent := []byte("test video content for streaming")
 
-	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
+	if err := os.WriteFile(testFile, testContent, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -657,7 +657,7 @@ func TestStreamFile_RespectsContext(t *testing.T) {
 
 	// Create a large file to stream
 	largeContent := bytes.Repeat([]byte("x"), 1024*1024) // 1MB
-	if err := os.WriteFile(testFile, largeContent, 0644); err != nil {
+	if err := os.WriteFile(testFile, largeContent, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -690,7 +690,7 @@ cat << 'EOF'
 EOF
 `
 
-	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0755); err != nil {
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
 		b.Fatalf("Failed to create mock ffprobe: %v", err)
 	}
 
@@ -714,7 +714,7 @@ func BenchmarkStreamFile(b *testing.B) {
 	testFile := filepath.Join(tmpDir, "test.mp4")
 	testContent := bytes.Repeat([]byte("x"), 1024*100) // 100KB
 
-	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
+	if err := os.WriteFile(testFile, testContent, 0o644); err != nil {
 		b.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -738,12 +738,12 @@ func BenchmarkClearCache(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		// Recreate cache with files for each iteration
-		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 			b.Fatalf("Failed to create cache dir: %v", err)
 		}
 		for j := 0; j < 10; j++ {
 			file := filepath.Join(cacheDir, "file"+string(rune(j))+".mp4")
-			if err := os.WriteFile(file, []byte("test"), 0644); err != nil {
+			if err := os.WriteFile(file, []byte("test"), 0o644); err != nil {
 				b.Fatalf("Failed to create file: %v", err)
 			}
 		}
@@ -906,10 +906,10 @@ func TestGetVideoInfoIntegration_VariousFormats(t *testing.T) {
 	checkFFmpegAvailable(t)
 
 	tests := []struct {
-		name           string
-		filename       string
-		expectedCodec  string
-		shouldExist    bool
+		name          string
+		filename      string
+		expectedCodec string
+		shouldExist   bool
 	}{
 		{
 			name:        "MP4 video",

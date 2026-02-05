@@ -139,3 +139,48 @@ func TestLoggingFunctions(t *testing.T) {
 		})
 	}
 }
+
+func TestPrintfAndPrintln(t *testing.T) {
+	// Test that Printf and Println don't panic
+	t.Run("Printf doesn't panic", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Printf panicked: %v", r)
+			}
+		}()
+		Printf("test message")
+		Printf("test %s %d", "message", 123)
+	})
+
+	t.Run("Println doesn't panic", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Println panicked: %v", r)
+			}
+		}()
+		Println("test message")
+		Println("test", "message", 123)
+	})
+}
+
+func TestLogLevelString(t *testing.T) {
+	tests := []struct {
+		level    LogLevel
+		expected string
+	}{
+		{LevelDebug, "debug"},
+		{LevelInfo, "info"},
+		{LevelWarn, "warn"},
+		{LevelError, "error"},
+		{LogLevel(99), "unknown(99)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			got := tt.level.String()
+			if got != tt.expected {
+				t.Errorf("LogLevel.String() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

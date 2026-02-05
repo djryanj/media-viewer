@@ -380,6 +380,120 @@ func TestTimeoutWriterFlush(t *testing.T) {
 	}
 }
 
+func TestTimeoutWriterConcurrentWrites(t *testing.T) {
+	ctx := context.Background()
+	w := httptest.NewRecorder()
+	config := DefaultTimeoutWriterConfig()
+
+	tw := NewTimeoutWriter(ctx, w, config)
+	defer tw.Close()
+
+	// Perform concurrent writes
+	const numGoroutines = 5
+	const writesPerGoroutine = 10
+
+	done := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			for j := 0; j < writesPerGoroutine; j++ {
+				data := []byte{byte(id), byte(j)}
+				_, err := tw.Write(data)
+				if err != nil {
+					done <- err
+					return
+				}
+			}
+			done <- nil
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numGoroutines; i++ {
+		if err := <-done; err != nil {
+			t.Errorf("Concurrent write failed: %v", err)
+		}
+	}
+}
+
+func TestTimeoutWriterOnProgressCallback(t *testing.T) {
+	ctx := context.Background()
+	w := httptest.NewRecorder()
+
+	var progressCalled bool
+	config := DefaultTimeoutWriterConfig()
+	config.OnProgress = func(bytes int64, duration time.Duration) {
+		progressCalled = true
+		if bytes < 0 {
+			t.Errorf("Expected non-negative bytes, got %d", bytes)
+		}
+		if duration < 0 {
+			t.Errorf("Expected non-negative duration, got %v", duration)
+		}
+	}
+
+	tw := NewTimeoutWriter(ctx, w, config)
+	defer tw.Close()
+
+	// Write enough data to potentially trigger callback
+	data := make([]byte, 1024*1024+1) // Slightly over 1MB
+	_, err := tw.Write(data)
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Give callback time to execute
+	time.Sleep(10 * time.Millisecond)
+
+	// Use the variable to avoid unused warning
+	_ = progressCalled
+	// Callback may or may not be called depending on exact byte boundaries
+	// Just verify no panic occurred
+}
+
+func TestTimeoutWriterChunkedWrites(t *testing.T) {
+	ctx := context.Background()
+	w := httptest.NewRecorder()
+	config := DefaultTimeoutWriterConfig()
+	config.ChunkSize = 10 // Small chunks
+
+	tw := NewTimeoutWriter(ctx, w, config)
+	defer tw.Close()
+
+	// Write data larger than chunk size
+	data := make([]byte, 100)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	n, err := tw.Write(data)
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if n != len(data) {
+		t.Errorf("Expected to write %d bytes, wrote %d", len(data), n)
+	}
+
+	bytesWritten, _ := tw.Stats()
+	if bytesWritten != int64(len(data)) {
+		t.Errorf("Expected %d bytes written total, got %d", len(data), bytesWritten)
+	}
+}
+
+func TestTimeoutWriterCloseIdempotent(_ *testing.T) {
+	ctx := context.Background()
+	w := httptest.NewRecorder()
+	config := DefaultTimeoutWriterConfig()
+
+	tw := NewTimeoutWriter(ctx, w, config)
+
+	// Close multiple times should not panic
+	tw.Close()
+	tw.Close()
+	tw.Close()
+}
+
 func BenchmarkTimeoutWriterWrite(b *testing.B) {
 	ctx := context.Background()
 	w := httptest.NewRecorder()

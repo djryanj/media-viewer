@@ -15,8 +15,12 @@ import (
 	"golang.org/x/term"
 )
 
-// Default timeout for database operations
-const defaultTimeout = 30 * time.Second
+const (
+	// Default timeout for database operations
+	defaultTimeout = 30 * time.Second
+	// Default database directory path
+	defaultDatabaseDir = "/database"
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -42,7 +46,7 @@ func main() {
 	// Get database directory from env or default
 	databaseDir := os.Getenv("DATABASE_DIR")
 	if databaseDir == "" {
-		databaseDir = "/database"
+		databaseDir = defaultDatabaseDir
 	}
 	dbPath := filepath.Join(databaseDir, "media.db")
 
@@ -83,7 +87,7 @@ func printUsage() {
 	fmt.Println("  status  - Check if password is configured")
 	fmt.Println("")
 	fmt.Println("Environment:")
-	fmt.Println("  DATABASE_DIR - Path to database directory (default: /database)")
+	fmt.Printf("  DATABASE_DIR - Path to database directory (default: %s)\n", defaultDatabaseDir)
 }
 
 func resetPassword(ctx context.Context, db *database.Database) bool {
