@@ -749,6 +749,10 @@ func prepareSearchTerm(query string) string {
 
 // highlightMatch wraps matching text in <mark> tags.
 func highlightMatch(text, query string) string {
+	if query == "" {
+		return text
+	}
+
 	lowerText := strings.ToLower(text)
 	lowerQuery := strings.ToLower(query)
 

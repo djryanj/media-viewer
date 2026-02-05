@@ -11,6 +11,8 @@ STATIC_DIR := static
 
 .PHONY: all build build-all run dev dev-frontend dev-full \
         test test-short test-coverage test-coverage-report test-race test-bench test-clean \
+        test-unit test-integration test-all test-coverage-merge \
+        test-package test-failures \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fix \
         frontend-format frontend-format-check frontend-check frontend-dev \
@@ -72,6 +74,11 @@ dev-full:
 # Test Targets
 # =============================================================================
 
+# Variables for test filtering
+PKG ?= ./...
+TESTARGS ?=
+TESTTIMEOUT ?= 10m
+
 test:
 	@echo "Running tests..."
 	$(GO_TEST) -v ./...
@@ -80,11 +87,60 @@ test-short:
 	@echo "Running tests (short mode)..."
 	$(GO_TEST) -short -v ./...
 
+# Test a specific package or set of tests
+# Automatically resolves short package names (e.g., "indexer" -> "./internal/indexer")
+# Examples:
+#   make test-package PKG=indexer
+#   make test-package PKG=indexer TESTARGS="-run=TestNew"
+#   make test-package PKG=handlers TESTARGS="-run=TestHealth"
+#   make test-package PKG=./internal/indexer (also works with full paths)
+test-package:
+	@if [ "$(PKG)" = "./..." ]; then \
+		echo "Running all tests..."; \
+		$(GO_TEST) -v ./... $(TESTARGS) -timeout $(TESTTIMEOUT); \
+	elif echo "$(PKG)" | grep -q "^\./"; then \
+		echo "Running tests for $(PKG) $(TESTARGS)..."; \
+		$(GO_TEST) -v $(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+	else \
+		echo "Running tests for ./internal/$(PKG) $(TESTARGS)..."; \
+		$(GO_TEST) -v ./internal/$(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+	fi
+
+# Run tests and show only failures
+# Examples:
+#   make test-failures PKG=database
+#   make test-failures                          (all packages)
+#   make test-failures PKG=handlers TESTARGS="-run=TestHealth"
+test-failures:
+	@echo "Running tests and showing failures only..."
+	@if [ "$(PKG)" = "./..." ] || [ -z "$(PKG)" ]; then \
+		$(GO_TEST) -v ./... $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | grep -E "FAIL|--- FAIL|panic" || echo "✓ All tests passed!"; \
+	elif echo "$(PKG)" | grep -q "^\./"; then \
+		$(GO_TEST) -v $(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | grep -E "FAIL|--- FAIL|panic" || echo "✓ All tests passed!"; \
+	else \
+		$(GO_TEST) -v ./internal/$(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | grep -E "FAIL|--- FAIL|panic" || echo "✓ All tests passed!"; \
+	fi
+
+# Run tests with coverage report
+# Automatically resolves short package names (e.g., "indexer" -> "./internal/indexer")
+# Examples:
+#   make test-coverage                           (all packages)
+#   make test-coverage PKG=indexer               (specific package)
+#   make test-coverage PKG=handlers TESTARGS="-run=TestHealth"
 test-coverage:
-	@echo "Running tests with coverage..."
-	$(GO_TEST) -v -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
+	@if [ "$(PKG)" = "./..." ] || [ -z "$(PKG)" ]; then \
+		echo "Running tests with coverage for all packages..."; \
+		$(GO_TEST) -v -coverprofile=coverage.out ./... $(TESTARGS) -timeout $(TESTTIMEOUT); \
+	elif echo "$(PKG)" | grep -q "^\./"; then \
+		echo "Running tests with coverage for $(PKG) $(TESTARGS)..."; \
+		$(GO_TEST) -v -coverprofile=coverage.out $(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+	else \
+		echo "Running tests with coverage for ./internal/$(PKG) $(TESTARGS)..."; \
+		$(GO_TEST) -v -coverprofile=coverage.out ./internal/$(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+	fi
+	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+	@go tool cover -func=coverage.out | grep total
 
 test-coverage-report:
 	@echo "Generating coverage report..."
@@ -98,9 +154,51 @@ test-bench:
 	@echo "Running benchmarks..."
 	$(GO_TEST) -bench=. -benchmem ./...
 
+# Run only unit tests (fast, no integration tag)
+# Unit tests are tests that don't require external dependencies
+# They use t.Parallel() and should complete quickly
+test-unit:
+	@echo "Running unit tests (excluding integration)..."
+	$(GO_TEST) -short -v -coverprofile=coverage-unit.out -json ./... 2>&1 | tee test-unit.json | grep -v '"Action":"output"' || true
+	@echo "\nUnit test coverage:"
+	@go tool cover -func=coverage-unit.out | grep total || true
+
+# Run only integration tests
+# Integration tests require external dependencies (database files, ffmpeg, etc.)
+# They are marked with integration build tag or skip when testing.Short()
+test-integration:
+	@echo "Running integration tests only..."
+	@echo "Note: Integration tests may take longer as they test with real dependencies"
+	$(GO_TEST) -v -run=Integration -coverprofile=coverage-integration.out -json ./... 2>&1 | tee test-integration.json | grep -v '"Action":"output"' || true
+	@if [ -f coverage-integration.out ]; then \
+		echo "\nIntegration test coverage:"; \
+		go tool cover -func=coverage-integration.out | grep total || true; \
+	fi
+
+# Run all tests (unit + integration)
+test-all:
+	@echo "Running all tests (unit + integration)..."
+	$(GO_TEST) -v -coverprofile=coverage-all.out ./...
+	@echo "\nOverall test coverage:"
+	@go tool cover -func=coverage-all.out | grep total
+
+# Merge coverage from unit and integration tests
+test-coverage-merge:
+	@echo "Merging coverage reports..."
+	@if [ -f coverage-unit.out ] && [ -f coverage-integration.out ]; then \
+		echo "mode: set" > coverage-merged.out; \
+		grep -h -v "^mode:" coverage-unit.out coverage-integration.out | sort -u >> coverage-merged.out; \
+		go tool cover -html=coverage-merged.out -o coverage-merged.html; \
+		echo "Merged coverage report: coverage-merged.html"; \
+		go tool cover -func=coverage-merged.out | grep total; \
+	else \
+		echo "Error: Both coverage-unit.out and coverage-integration.out must exist"; \
+		exit 1; \
+	fi
+
 test-clean:
 	@echo "Cleaning test artifacts..."
-	rm -f coverage.out coverage.html
+	rm -f coverage.out coverage.html coverage-*.out coverage-*.html test-*.json
 	go clean -testcache
 
 # =============================================================================
@@ -266,8 +364,24 @@ help:
 	@echo "  dev-full         Run both Go and frontend dev servers"
 	@echo ""
 	@echo "Test targets:"
-	@echo "  test             Run all tests"
-	@echo "  test-coverage    Run tests with coverage report"
+	@echo "  test                     Run all tests"
+	@echo "  test-short               Run tests in short mode"
+	@echo "  test-package             Run tests for a specific package"
+	@echo "                           Usage: make test-package PKG=<package> [TESTARGS='-run=TestName'] [TESTTIMEOUT=10m]"
+	@echo "                           Examples:"
+	@echo "                             make test-package PKG=indexer"
+	@echo "                             make test-package PKG=handlers TESTARGS='-run=TestHealth'"
+	@echo "                             make test-package PKG=./internal/indexer (full path also works)"
+	@echo "  test-coverage            Run tests with coverage report"
+	@echo "                           Usage: make test-coverage [PKG=<package>] [TESTARGS='-run=TestName']"
+	@echo "                           Examples:"
+	@echo "                             make test-coverage (all packages)"
+	@echo "                             make test-coverage PKG=indexer"
+	@echo "                             make test-coverage PKG=handlers TESTARGS='-run=TestHealth'"
+	@echo "  test-coverage-report     Display coverage report summary"
+	@echo "  test-race                Run tests with race detector"
+	@echo "  test-bench               Run benchmarks"
+	@echo "  test-clean               Clean test artifacts"
 	@echo ""
 	@echo "Lint targets (Go):"
 	@echo "  lint             Lint Go code"

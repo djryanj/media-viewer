@@ -115,18 +115,22 @@ func (t *Transcoder) GetVideoInfo(ctx context.Context, filePath string) (*VideoI
 	// Extract dimensions
 	if idx := strings.Index(output, `"width"`); idx != -1 {
 		start := strings.Index(output[idx:], ":") + idx + 1
-		end := strings.Index(output[start:], ",")
-		if end == -1 {
-			end = strings.Index(output[start:], "}")
+		endComma := strings.Index(output[start:], ",")
+		endBrace := strings.Index(output[start:], "}")
+		end := endComma
+		if end == -1 || (endBrace != -1 && endBrace < end) {
+			end = endBrace
 		}
 		widthStr := strings.TrimSpace(output[start : start+end])
 		info.Width, _ = strconv.Atoi(widthStr)
 	}
 	if idx := strings.Index(output, `"height"`); idx != -1 {
 		start := strings.Index(output[idx:], ":") + idx + 1
-		end := strings.Index(output[start:], ",")
-		if end == -1 {
-			end = strings.Index(output[start:], "}")
+		endComma := strings.Index(output[start:], ",")
+		endBrace := strings.Index(output[start:], "}")
+		end := endComma
+		if end == -1 || (endBrace != -1 && endBrace < end) {
+			end = endBrace
 		}
 		heightStr := strings.TrimSpace(output[start : start+end])
 		info.Height, _ = strconv.Atoi(heightStr)

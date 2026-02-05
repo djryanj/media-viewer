@@ -16,3 +16,19 @@ stylelintrc.json
 .env
 **/node_modules
 site/
+
+# Ignore test files
+*_test.go
+**/*_test.go
+
+# Ignore test data files
+internal/handlers/testdata/*
+internal/handlers/testdata/.*.gitattributes
+**/testdata
+
+# Ignore coverage reports
+coverage.out
+coverage.html
+
+# Ignore log files
+*.log

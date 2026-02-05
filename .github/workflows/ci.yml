@@ -21,9 +21,12 @@ jobs:
         outputs:
             go: ${{ steps.filter.outputs.go }}
             docker: ${{ steps.filter.outputs.docker }}
+            go-packages: ${{ steps.detect-packages.outputs.packages }}
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
             - name: Check for changes
               uses: dorny/paths-filter@v3
@@ -37,6 +40,27 @@ jobs:
                       docker:
                         - 'Dockerfile'
                         - '.dockerignore'
+
+            - name: Detect changed Go packages
+              id: detect-packages
+              if: steps.filter.outputs.go == 'true'
+              run: |
+                  # Get list of changed Go files
+                  if [ "${{ github.event_name }}" = "pull_request" ]; then
+                    CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.go$' || true)
+                  else
+                    CHANGED_FILES=$(git diff --name-only HEAD~1 | grep '\.go$' || true)
+                  fi
+
+                  # Extract unique packages from changed files
+                  PACKAGES=$(echo "$CHANGED_FILES" | xargs -n1 dirname | sort -u | sed 's|^|./|' | tr '\n' ' ')
+
+                  if [ -z "$PACKAGES" ]; then
+                    PACKAGES="./..."
+                  fi
+
+                  echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
+                  echo "Changed packages: $PACKAGES"
 
     lint:
         name: Lint
@@ -64,13 +88,111 @@ jobs:
                   version: latest
                   args: --timeout=5m
 
+    test-unit:
+        name: Unit Tests
+        runs-on: ubuntu-latest
+        needs: changes
+        if: needs.changes.outputs.go == 'true' || github.event_name == 'push'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install libvips
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run unit tests
+              run: |
+                  # Run tests excluding integration tests
+                  make test-unit
+
+            - name: Upload test results
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: unit-test-results
+                  path: |
+                      coverage-unit.out
+                      test-unit.json
+
+    test-integration:
+        name: Integration Tests
+        runs-on: ubuntu-latest
+        needs: changes
+        # Only run integration tests on main branch or when explicitly requested
+        if: |
+            (needs.changes.outputs.go == 'true' || github.event_name == 'push') &&
+            (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test:integration'))
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run integration tests
+              run: |
+                  make test-integration
+
+            - name: Upload coverage
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: integration-test-results
+                  path: |
+                      coverage-integration.out
+                      test-integration.json
+
+    test-race:
+        name: Race Detector
+        runs-on: ubuntu-latest
+        needs: changes
+        # Run on main or when label is present
+        if: |
+            (needs.changes.outputs.go == 'true' || github.event_name == 'push') &&
+            (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test:race'))
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install libvips and ffmpeg
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run tests with race detector
+              run: |
+                  make test-race
+
     build-docker:
         name: Build Docker Image
         runs-on: ubuntu-latest
-        needs: [changes, lint]
+        needs: [changes, lint, test-unit]
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
             (needs.changes.outputs.docker == 'true' || needs.changes.outputs.go == 'true' || github.event_name == 'push')
         permissions:
             contents: read
@@ -94,14 +216,39 @@ jobs:
     ci-success:
         name: CI Success
         runs-on: ubuntu-latest
-        needs: [lint, build-docker]
+        needs: [lint, test-unit, test-integration, test-race, build-docker]
         if: always()
         steps:
-            - name: Check all jobs passed
+            - name: Check required jobs passed
               run: |
-                  if [[ "${{ needs.lint.result }}" == "failure" ]] || \
-                     [[ "${{ needs.build-docker.result }}" == "failure" ]]; then
-                    echo "One or more jobs failed"
+                  # Check lint (required)
+                  if [[ "${{ needs.lint.result }}" == "failure" ]]; then
+                    echo "❌ Lint failed"
                     exit 1
                   fi
-                  echo "All CI checks passed"
+
+                  # Check unit tests (required)
+                  if [[ "${{ needs.test-unit.result }}" == "failure" ]]; then
+                    echo "❌ Unit tests failed"
+                    exit 1
+                  fi
+
+                  # Check integration tests (required on main, optional on PR unless labeled)
+                  if [[ "${{ needs.test-integration.result }}" == "failure" ]]; then
+                    echo "❌ Integration tests failed"
+                    exit 1
+                  fi
+
+                  # Check race detector (optional, only fails if it ran and failed)
+                  if [[ "${{ needs.test-race.result }}" == "failure" ]]; then
+                    echo "❌ Race detector found issues"
+                    exit 1
+                  fi
+
+                  # Check docker build (required)
+                  if [[ "${{ needs.build-docker.result }}" == "failure" ]]; then
+                    echo "❌ Docker build failed"
+                    exit 1
+                  fi
+
+                  echo "✅ All CI checks passed!"

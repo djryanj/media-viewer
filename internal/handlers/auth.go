@@ -74,6 +74,11 @@ func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Password) > 72 {
+		http.Error(w, "Password must not exceed 72 characters", http.StatusBadRequest)
+		return
+	}
+
 	// Create user
 	if err := h.db.CreateUser(ctx, req.Password); err != nil {
 		logging.Error("Failed to create user: %v", err)
@@ -174,10 +179,7 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 
 	cookie, err := r.Cookie(SessionCookieName)
 	if err != nil || cookie.Value == "" {
-		w.Header().Set("Content-Type", "application/json")
-		writeJSON(w, AuthResponse{
-			Success: false,
-		})
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -192,10 +194,7 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true,
 		})
 
-		w.Header().Set("Content-Type", "application/json")
-		writeJSON(w, AuthResponse{
-			Success: false,
-		})
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -304,6 +303,11 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	// Validate new password
 	if len(req.NewPassword) < 6 {
 		http.Error(w, "New password must be at least 6 characters", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.NewPassword) > 72 {
+		http.Error(w, "New password must not exceed 72 characters", http.StatusBadRequest)
 		return
 	}
 

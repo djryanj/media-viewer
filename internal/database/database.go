@@ -33,7 +33,7 @@ type Database struct {
 // IMPORTANT: dbPath should be the full path to the database FILE (e.g., "/database/media.db"),
 // and the parent directory must already exist and be writable.
 // Use startup.LoadConfig() to ensure proper directory validation before calling this.
-func New(dbPath string) (*Database, error) {
+func New(ctx context.Context, dbPath string) (*Database, error) {
 	logging.Info("Database path: %s", dbPath)
 
 	// Diagnose potential permission issues
@@ -50,10 +50,10 @@ func New(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	pingCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
+	if err := db.PingContext(pingCtx); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			logging.Error("failed to close database after ping failure: %v", closeErr)
 		}
@@ -70,7 +70,7 @@ func New(dbPath string) (*Database, error) {
 		dbPath: dbPath,
 	}
 
-	if err := d.initialize(); err != nil {
+	if err := d.initialize(ctx); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			logging.Error("failed to close database after initialization failure: %v", closeErr)
 		}
@@ -81,7 +81,7 @@ func New(dbPath string) (*Database, error) {
 	return d, nil
 }
 
-func (d *Database) initialize() error {
+func (d *Database) initialize(ctx context.Context) error {
 	schema := `
 	-- Main files table
 	CREATE TABLE IF NOT EXISTS files (
@@ -187,9 +187,6 @@ func (d *Database) initialize() error {
 		value TEXT
 	);
 	`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	_, err := d.db.ExecContext(ctx, schema)
 	if err != nil {

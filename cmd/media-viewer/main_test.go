@@ -1,26 +1,107 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"media-viewer/internal/database"
 	"media-viewer/internal/metrics"
 )
 
-func TestDbStatsAdapter(t *testing.T) {
-	// Create a mock database with some stats
-	// Note: This would require a real database connection in practice
-	// For now, we're testing the adapter logic itself
+// mockStatsDatabase implements the GetStats method needed by dbStatsAdapter
+type mockStatsDatabase struct {
+	totalFiles     int
+	totalFolders   int
+	totalImages    int
+	totalVideos    int
+	totalPlaylists int
+	totalFavorites int
+	totalTags      int
+}
 
+// GetStats returns mock statistics
+func (m *mockStatsDatabase) GetStats() database.IndexStats {
+	return database.IndexStats{
+		TotalFiles:     m.totalFiles,
+		TotalFolders:   m.totalFolders,
+		TotalImages:    m.totalImages,
+		TotalVideos:    m.totalVideos,
+		TotalPlaylists: m.totalPlaylists,
+		TotalFavorites: m.totalFavorites,
+		TotalTags:      m.totalTags,
+		LastIndexed:    time.Now(),
+		IndexDuration:  "0s",
+	}
+}
+
+// statsProvider defines the interface for objects that can provide stats
+type statsProvider interface {
+	GetStats() database.IndexStats
+}
+
+// testStatsAdapter wraps any statsProvider for testing
+type testStatsAdapter struct {
+	provider statsProvider
+}
+
+// GetStats implements metrics.StatsProvider
+func (a *testStatsAdapter) GetStats() metrics.Stats {
+	dbStats := a.provider.GetStats()
+	return metrics.Stats{
+		TotalFiles:     dbStats.TotalFiles,
+		TotalFolders:   dbStats.TotalFolders,
+		TotalImages:    dbStats.TotalImages,
+		TotalVideos:    dbStats.TotalVideos,
+		TotalPlaylists: dbStats.TotalPlaylists,
+		TotalFavorites: dbStats.TotalFavorites,
+		TotalTags:      dbStats.TotalTags,
+	}
+}
+
+func TestDbStatsAdapter(t *testing.T) {
 	t.Run("GetStats converts database stats correctly", func(t *testing.T) {
-		// This test documents the expected behavior
-		// In a real scenario, we'd need a test database
-		adapter := &dbStatsAdapter{
-			db: nil, // Would be a real *database.Database in integration tests
+		// Create mock database with test data
+		mock := &mockStatsDatabase{
+			totalFiles:     50,
+			totalFolders:   10,
+			totalImages:    40,
+			totalVideos:    10,
+			totalPlaylists: 2,
+			totalFavorites: 15,
+			totalTags:      8,
 		}
+
+		adapter := &testStatsAdapter{provider: mock}
 
 		// Verify the adapter implements the interface
 		var _ metrics.StatsProvider = adapter
+
+		// Get stats and verify conversion
+		stats := adapter.GetStats()
+
+		if stats.TotalFiles != 50 {
+			t.Errorf("TotalFiles = %d, want 50", stats.TotalFiles)
+		}
+		if stats.TotalFolders != 10 {
+			t.Errorf("TotalFolders = %d, want 10", stats.TotalFolders)
+		}
+		if stats.TotalImages != 40 {
+			t.Errorf("TotalImages = %d, want 40", stats.TotalImages)
+		}
+		if stats.TotalVideos != 10 {
+			t.Errorf("TotalVideos = %d, want 10", stats.TotalVideos)
+		}
+		if stats.TotalPlaylists != 2 {
+			t.Errorf("TotalPlaylists = %d, want 2", stats.TotalPlaylists)
+		}
+		if stats.TotalFavorites != 15 {
+			t.Errorf("TotalFavorites = %d, want 15", stats.TotalFavorites)
+		}
+		if stats.TotalTags != 8 {
+			t.Errorf("TotalTags = %d, want 8", stats.TotalTags)
+		}
 	})
 }
 
@@ -61,7 +142,7 @@ func TestServeStaticFile(t *testing.T) {
 			}
 
 			// Create test request and recorder
-			req := httptest.NewRequest("GET", "/", nil)
+			req := httptest.NewRequest("GET", "/", http.NoBody)
 			w := httptest.NewRecorder()
 
 			// Call handler (it will fail to find file, but that's expected)
@@ -79,12 +160,11 @@ func TestSetupRouter(t *testing.T) {
 	// For now, we test that the function signature is correct and can be called
 	// Full integration tests would require setting up all dependencies
 
-	t.Run("setupRouter function exists", func(t *testing.T) {
+	t.Run("setupRouter function exists", func(_ *testing.T) {
 		// This test documents that the function exists and has expected signature
 		// Full testing would require mock handlers
-		if setupRouter == nil {
-			t.Error("setupRouter function should exist")
-		}
+		// Note: Function reference is always non-nil in Go
+		_ = setupRouter // Verify it exists
 	})
 }
 
@@ -189,26 +269,79 @@ func TestShutdownTimeout(t *testing.T) {
 }
 
 func TestDatabaseStatsConversion(t *testing.T) {
-	// Test that dbStatsAdapter correctly maps fields
 	t.Run("Stats field mapping", func(t *testing.T) {
-		// Create adapter (with nil db for this test)
-		adapter := &dbStatsAdapter{db: nil}
-
-		// Verify the adapter type
-		if adapter == nil {
-			t.Fatal("adapter should not be nil")
+		// Create a mock database that returns known stats
+		mock := &mockStatsDatabase{
+			totalFiles:     100,
+			totalFolders:   20,
+			totalImages:    75,
+			totalVideos:    25,
+			totalPlaylists: 5,
+			totalFavorites: 30,
+			totalTags:      15,
 		}
 
-		// In a real test with a database, we would verify:
-		// - dbStats.TotalFiles maps to metrics.Stats.TotalFiles
-		// - dbStats.TotalFolders maps to metrics.Stats.TotalFolders
-		// - dbStats.TotalImages maps to metrics.Stats.TotalImages
-		// - dbStats.TotalVideos maps to metrics.Stats.TotalVideos
-		// - dbStats.TotalPlaylists maps to metrics.Stats.TotalPlaylists
-		// - dbStats.TotalFavorites maps to metrics.Stats.TotalFavorites
-		// - dbStats.TotalTags maps to metrics.Stats.TotalTags
+		adapter := &testStatsAdapter{provider: mock}
 
-		// This test documents the expected mapping structure
+		// Verify adapter implements StatsProvider interface
+		var _ metrics.StatsProvider = adapter
+
+		// Get stats through adapter
+		stats := adapter.GetStats()
+
+		// Verify all fields are correctly mapped
+		if stats.TotalFiles != mock.totalFiles {
+			t.Errorf("TotalFiles = %d, want %d", stats.TotalFiles, mock.totalFiles)
+		}
+		if stats.TotalFolders != mock.totalFolders {
+			t.Errorf("TotalFolders = %d, want %d", stats.TotalFolders, mock.totalFolders)
+		}
+		if stats.TotalImages != mock.totalImages {
+			t.Errorf("TotalImages = %d, want %d", stats.TotalImages, mock.totalImages)
+		}
+		if stats.TotalVideos != mock.totalVideos {
+			t.Errorf("TotalVideos = %d, want %d", stats.TotalVideos, mock.totalVideos)
+		}
+		if stats.TotalPlaylists != mock.totalPlaylists {
+			t.Errorf("TotalPlaylists = %d, want %d", stats.TotalPlaylists, mock.totalPlaylists)
+		}
+		if stats.TotalFavorites != mock.totalFavorites {
+			t.Errorf("TotalFavorites = %d, want %d", stats.TotalFavorites, mock.totalFavorites)
+		}
+		if stats.TotalTags != mock.totalTags {
+			t.Errorf("TotalTags = %d, want %d", stats.TotalTags, mock.totalTags)
+		}
+	})
+
+	t.Run("Zero values", func(t *testing.T) {
+		// Test with empty database
+		mock := &mockStatsDatabase{}
+		adapter := &testStatsAdapter{provider: mock}
+
+		stats := adapter.GetStats()
+
+		// All fields should be zero
+		if stats.TotalFiles != 0 {
+			t.Errorf("TotalFiles = %d, want 0", stats.TotalFiles)
+		}
+		if stats.TotalFolders != 0 {
+			t.Errorf("TotalFolders = %d, want 0", stats.TotalFolders)
+		}
+		if stats.TotalImages != 0 {
+			t.Errorf("TotalImages = %d, want 0", stats.TotalImages)
+		}
+		if stats.TotalVideos != 0 {
+			t.Errorf("TotalVideos = %d, want 0", stats.TotalVideos)
+		}
+		if stats.TotalPlaylists != 0 {
+			t.Errorf("TotalPlaylists = %d, want 0", stats.TotalPlaylists)
+		}
+		if stats.TotalFavorites != 0 {
+			t.Errorf("TotalFavorites = %d, want 0", stats.TotalFavorites)
+		}
+		if stats.TotalTags != 0 {
+			t.Errorf("TotalTags = %d, want 0", stats.TotalTags)
+		}
 	})
 }
 

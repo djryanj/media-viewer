@@ -13,6 +13,11 @@ const (
 	// DefaultMemoryRatio is the percentage of container memory to use for Go heap
 	// Reserve the rest for FFmpeg, image processing, goroutine stacks, etc.
 	DefaultMemoryRatio = 0.85
+
+	// Memory configuration source constants
+	sourceGOMEMLIMIT  = "GOMEMLIMIT"
+	sourceMEMORYLIMIT = "MEMORY_LIMIT"
+	sourceNone        = "none"
 )
 
 // ConfigResult holds the result of memory configuration
@@ -21,7 +26,7 @@ type ConfigResult struct {
 	Configured bool
 
 	// Source indicates where the configuration came from
-	Source string // "GOMEMLIMIT", "MEMORY_LIMIT", or "none"
+	Source string // sourceGOMEMLIMIT, sourceMEMORYLIMIT, or sourceNone
 
 	// ContainerLimit is the container memory limit in bytes (0 if not set)
 	ContainerLimit int64
@@ -48,7 +53,7 @@ func ConfigureFromEnv() ConfigResult {
 		// Parse the value to report it
 		if limit := debug.SetMemoryLimit(-1); limit > 0 && limit < math.MaxInt64 {
 			result.Configured = true
-			result.Source = "GOMEMLIMIT"
+			result.Source = sourceGOMEMLIMIT
 			result.GoMemLimit = limit
 		}
 		logging.Info("GOMEMLIMIT set via environment: %s", goMemLimitEnv)
@@ -59,14 +64,14 @@ func ConfigureFromEnv() ConfigResult {
 	memLimitStr := os.Getenv("MEMORY_LIMIT")
 	if memLimitStr == "" {
 		logging.Debug("MEMORY_LIMIT not set, GOMEMLIMIT will not be configured automatically")
-		result.Source = "none"
+		result.Source = sourceNone
 		return result
 	}
 
 	memLimit, err := strconv.ParseInt(memLimitStr, 10, 64)
 	if err != nil {
 		logging.Warn("Failed to parse MEMORY_LIMIT %q: %v", memLimitStr, err)
-		result.Source = "none"
+		result.Source = sourceNone
 		return result
 	}
 
@@ -95,7 +100,7 @@ func ConfigureFromEnv() ConfigResult {
 	debug.SetMemoryLimit(goMemLimit)
 
 	result.Configured = true
-	result.Source = "MEMORY_LIMIT"
+	result.Source = sourceMEMORYLIMIT
 	result.GoMemLimit = goMemLimit
 
 	logging.Info("Configured GOMEMLIMIT: %s (%.1f%% of %s container limit)",

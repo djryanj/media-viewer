@@ -3,11 +3,12 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
 // GetMetadata retrieves a metadata value by key.
-// Returns empty string if the key doesn't exist.
+// Returns error if the key doesn't exist.
 func (d *Database) GetMetadata(ctx context.Context, key string) (string, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -18,7 +19,7 @@ func (d *Database) GetMetadata(ctx context.Context, key string) (string, error) 
 	var value string
 	err := d.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key = ?", key).Scan(&value)
 	if err == sql.ErrNoRows {
-		return "", nil
+		return "", sql.ErrNoRows
 	}
 	if err != nil {
 		return "", err
@@ -45,6 +46,10 @@ func (d *Database) SetMetadata(ctx context.Context, key, value string) error {
 // Returns zero time if never run.
 func (d *Database) GetLastThumbnailRun(ctx context.Context) (time.Time, error) {
 	value, err := d.GetMetadata(ctx, "last_thumbnail_run")
+	if errors.Is(err, sql.ErrNoRows) {
+		// Key doesn't exist, never run
+		return time.Time{}, nil
+	}
 	if err != nil {
 		return time.Time{}, err
 	}

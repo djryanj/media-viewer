@@ -7,6 +7,12 @@ import (
 	"media-viewer/internal/startup"
 )
 
+const (
+	statusHealthy  = "healthy"
+	statusStarting = "starting"
+	statusDegraded = "degraded"
+)
+
 // HealthResponse contains the health check response
 type HealthResponse struct {
 	Status            string `json:"status"`
@@ -49,9 +55,9 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	if healthStatus.Ready {
-		response.Status = "healthy"
+		response.Status = statusHealthy
 	} else {
-		response.Status = "starting"
+		response.Status = statusStarting
 	}
 
 	if !healthStatus.LastIndexed.IsZero() {
@@ -60,7 +66,7 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, _ *http.Request) {
 
 	if healthStatus.InitialIndexError != "" {
 		response.InitialIndexError = healthStatus.InitialIndexError
-		response.Status = "degraded"
+		response.Status = statusDegraded
 	}
 
 	// Include stats if available
