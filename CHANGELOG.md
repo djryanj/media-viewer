@@ -12,18 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - **WebAuthn Error Messaging**: Fixed misleading "not supported by browser" message that appeared when the real issue was server misconfiguration or missing credentials. The system now accurately distinguishes between four distinct states:
-  - Server configuration errors (RP_ID/Origins mismatch) - shows specific configuration guidance
-  - Missing passkey credentials (enabled but not yet registered)
-  - Insecure context (HTTP instead of HTTPS)
-  - Browser not supporting WebAuthn
-  
-  Added runtime validation to detect RP_ID and origin mismatches, and extended error messaging to both the settings modal and login page with context-appropriate warnings. Fixed several related bugs including constructor order in WebAuthnManager, duplicate const declarations, and conditional UI null checks. ([#165](https://github.com/djryanj/media-viewer/issues/165))
+    - Server configuration errors (RP_ID/Origins mismatch) - shows specific configuration guidance
+    - Missing passkey credentials (enabled but not yet registered)
+    - Insecure context (HTTP instead of HTTPS)
+    - Browser not supporting WebAuthn
+
+    Added runtime validation to detect RP_ID and origin mismatches, and extended error messaging to both the settings modal and login page with context-appropriate warnings. Fixed several related bugs including constructor order in WebAuthnManager, duplicate const declarations, and conditional UI null checks. ([#165](https://github.com/djryanj/media-viewer/issues/165))
+
+- **PWA Logout Behavior**: Fixed two issues when logging out in PWA mode:
+    - Automatic passkey login now skips for 3 seconds after logout, preventing the immediate passkey prompt that would re-authenticate the user
+    - Back button on the login screen after logout now closes the PWA instead of returning to the authenticated app by using `window.location.replace()` instead of `window.location.href`
+      ([#167](https://github.com/djryanj/media-viewer/issues/167))
 
 ### API Changes
 
 - **WebAuthn Available Endpoint**: Extended `/api/auth/webauthn/available` response with two new fields:
-  - `hasCredentials` (boolean) - indicates if any passkey credentials are registered
-  - `configError` (string) - contains validation error message if server configuration is incorrect
+    - `hasCredentials` (boolean) - indicates if any passkey credentials are registered
+    - `configError` (string) - contains validation error message if server configuration is incorrect
 
 ## [0.8.3] - 2026-02-06
 

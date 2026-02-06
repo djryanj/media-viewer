@@ -283,7 +283,11 @@ const MediaApp = {
         } catch (error) {
             console.error('Logout error:', error);
         }
-        window.location.href = '/login.html';
+        // Set a flag to prevent automatic passkey login after logout
+        sessionStorage.setItem('skipAutoPasskey', Date.now().toString());
+        // Use replace() to avoid adding to history stack
+        // This allows back button to close the PWA instead of returning to app
+        window.location.replace('/login.html');
     },
 
     handleInitialPath() {
