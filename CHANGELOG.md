@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.8.4] - 2026-02-06
+
+### Bug Fixes
+
+- **WebAuthn Error Messaging**: Fixed misleading "not supported by browser" message that appeared when the real issue was server misconfiguration or missing credentials. The system now accurately distinguishes between four distinct states:
+  - Server configuration errors (RP_ID/Origins mismatch) - shows specific configuration guidance
+  - Missing passkey credentials (enabled but not yet registered)
+  - Insecure context (HTTP instead of HTTPS)
+  - Browser not supporting WebAuthn
+  
+  Added runtime validation to detect RP_ID and origin mismatches, and extended error messaging to both the settings modal and login page with context-appropriate warnings. Fixed several related bugs including constructor order in WebAuthnManager, duplicate const declarations, and conditional UI null checks. ([#165](https://github.com/djryanj/media-viewer/issues/165))
+
+### API Changes
+
+- **WebAuthn Available Endpoint**: Extended `/api/auth/webauthn/available` response with two new fields:
+  - `hasCredentials` (boolean) - indicates if any passkey credentials are registered
+  - `configError` (string) - contains validation error message if server configuration is incorrect
+
 ## [0.8.3] - 2026-02-06
 
 ### Bug Fixes

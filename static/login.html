@@ -22,6 +22,34 @@
                         <span>Invalid password</span>
                     </div>
 
+                    <!-- Passkey Warning Messages -->
+                    <div id="passkey-config-error" class="warning-message hidden">
+                        <i data-lucide="alert-triangle"></i>
+                        <span></span>
+                    </div>
+
+                    <div id="passkey-insecure-error" class="warning-message hidden">
+                        <i data-lucide="alert-triangle"></i>
+                        <span
+                            >Passkeys require HTTPS. You're currently accessing over HTTP.
+                            <a
+                                href="https://djryanj.github.io/media-viewer/admin/webauthn/#secure-context-requirement"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                >Learn how to set up HTTPS</a
+                            >
+                            to enable passkey authentication.</span
+                        >
+                    </div>
+
+                    <div id="passkey-browser-error" class="info-message hidden">
+                        <i data-lucide="info"></i>
+                        <span
+                            >Passkeys are not supported in this browser. Try using a modern browser
+                            like Chrome, Safari, or Edge.</span
+                        >
+                    </div>
+
                     <!-- Passkey Login Section -->
                     <div id="passkey-section" class="passkey-section hidden">
                         <button type="button" id="passkey-login-btn" class="btn btn-passkey">

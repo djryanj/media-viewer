@@ -382,19 +382,112 @@ class SettingsManager {
         const emptyContainer = document.getElementById('passkeys-empty');
         const loadingContainer = document.getElementById('passkeys-loading');
         const notSupportedContainer = document.getElementById('passkeys-not-supported');
+        const insecureContainer = document.getElementById('passkeys-insecure-context');
+        const notEnabledContainer = document.getElementById('passkeys-not-enabled');
         const addBtn = document.getElementById('add-passkey-btn');
 
-        // Check WebAuthn support
-        if (!window.webAuthnManager || !window.webAuthnManager.supported) {
+        // Show loading while we check
+        this.showElement('passkeys-loading');
+        this.hideElement('passkeys-list');
+        this.hideElement('passkeys-empty');
+        this.hideElement('passkeys-not-supported');
+        this.hideElement('passkeys-insecure-context');
+        if (notEnabledContainer) this.hideElement('passkeys-not-enabled');
+
+        if (!window.webAuthnManager) {
             this.hideElement('passkeys-loading');
-            this.hideElement('passkeys-list');
-            this.hideElement('passkeys-empty');
             this.showElement('passkeys-not-supported');
             if (addBtn) addBtn.style.display = 'none';
             return;
         }
 
+        // Check server configuration FIRST (most likely issue)
+        try {
+            const response = await fetch('/api/auth/webauthn/available');
+
+            if (response.ok) {
+                const data = await response.json();
+                console.debug('Settings: Server response:', data);
+
+                // If WebAuthn is not enabled on server, show specific message
+                if (data.enabled !== true) {
+                    this.hideElement('passkeys-loading');
+                    if (notEnabledContainer) {
+                        this.showElement('passkeys-not-enabled');
+                    } else {
+                        this.showElement('passkeys-not-supported');
+                    }
+                    if (addBtn) addBtn.style.display = 'none';
+                    return;
+                }
+
+                // If there's a configuration error, show it
+                if (data.configError) {
+                    console.error('WebAuthn configuration error:', data.configError);
+                    this.hideElement('passkeys-loading');
+                    if (notEnabledContainer) {
+                        this.showElement('passkeys-not-enabled');
+                    } else {
+                        this.showElement('passkeys-not-supported');
+                    }
+                    if (addBtn) addBtn.style.display = 'none';
+                    return;
+                }
+
+                // If enabled but not available due to other issues (not just missing credentials)
+                // Check: if hasCredentials is false, that's OK - we just show empty state
+                // But if available is false AND hasCredentials is true, something is wrong
+                if (data.available !== true && data.hasCredentials === true) {
+                    this.hideElement('passkeys-loading');
+                    if (notEnabledContainer) {
+                        this.showElement('passkeys-not-enabled');
+                    } else {
+                        this.showElement('passkeys-not-supported');
+                    }
+                    if (addBtn) addBtn.style.display = 'none';
+                    return;
+                }
+
+                // If enabled but no credentials yet, continue to show empty state
+                // (don't return early - let it proceed to show passkeys-empty)
+            }
+        } catch (err) {
+            console.error('Failed to check WebAuthn server status:', err);
+            // Continue to check client-side issues
+        }
+
+        // Server is ready (or we couldn't check), now check client-side issues
+        // Check for insecure context
+        if (!window.webAuthnManager.isSecureContext) {
+            console.debug('Settings: Not secure context');
+            this.hideElement('passkeys-loading');
+            this.hideElement('passkeys-list');
+            this.hideElement('passkeys-empty');
+            this.hideElement('passkeys-not-supported');
+            if (notEnabledContainer) this.hideElement('passkeys-not-enabled');
+            this.showElement('passkeys-insecure-context');
+            if (addBtn) addBtn.style.display = 'none';
+            return;
+        }
+
+        // Check browser WebAuthn support
+        if (!window.webAuthnManager.supported) {
+            console.debug('Settings: WebAuthn not supported by browser');
+            this.hideElement('passkeys-loading');
+            this.hideElement('passkeys-list');
+            this.hideElement('passkeys-empty');
+            this.hideElement('passkeys-insecure-context');
+            if (notEnabledContainer) this.hideElement('passkeys-not-enabled');
+            this.showElement('passkeys-not-supported');
+            if (addBtn) addBtn.style.display = 'none';
+            return;
+        }
+
+        console.debug('Settings: All checks passed, loading passkeys');
+        // All checks passed, proceed to load passkeys
         this.hideElement('passkeys-not-supported');
+        this.hideElement('passkeys-insecure-context');
+        if (notEnabledContainer) this.hideElement('passkeys-not-enabled');
         this.showElement('passkeys-loading');
         this.hideElement('passkeys-list');
         this.hideElement('passkeys-empty');

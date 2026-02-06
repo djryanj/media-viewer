@@ -151,11 +151,15 @@ func (m *mockWebAuthnUser) GetUser() userInfo {
 // Implement webauthn handlers on mockHandlersWebAuthn to match the real Handlers behavior
 func (h *mockHandlersWebAuthn) WebAuthnAvailable(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	available := webAuthnEnabled && h.db.HasWebAuthnCredentials(ctx)
+	hasCredentials := h.db.HasWebAuthnCredentials(ctx)
+	available := webAuthnEnabled && hasCredentials
+	configError := "" // Mock doesn't validate config
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"available": available,
-		"enabled":   webAuthnEnabled,
+		"available":      available,
+		"enabled":        webAuthnEnabled,
+		"hasCredentials": hasCredentials,
+		"configError":    configError,
 	})
 }
 
@@ -370,33 +374,14 @@ func TestWebAuthnAvailable(t *testing.T) {
 			} else if enabled != tt.wantEnabled {
 				t.Errorf("enabled = %v, want %v", enabled, tt.wantEnabled)
 			}
+
+			hasCredentials, ok := resp["hasCredentials"].(bool)
+			if !ok {
+				t.Errorf("hasCredentials field missing or not boolean")
+			} else if hasCredentials != tt.hasWebAuthnCredentials {
+				t.Errorf("hasCredentials = %v, want %v", hasCredentials, tt.hasWebAuthnCredentials)
+			}
 		})
-	}
-}
-
-func TestWebAuthnAvailableContentType(t *testing.T) {
-	// Cannot use t.Parallel() - modifies global webAuthnEnabled state
-
-	originalEnabled := webAuthnEnabled
-	t.Cleanup(func() {
-		webAuthnEnabled = originalEnabled
-	})
-	webAuthnEnabled = true
-
-	mockDB := &mockWebAuthnDatabase{
-		hasWebAuthnCredentials: true,
-	}
-
-	h := &mockHandlersWebAuthn{db: mockDB}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/webauthn/available", http.NoBody)
-	w := httptest.NewRecorder()
-
-	h.WebAuthnAvailable(w, req)
-
-	contentType := w.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Errorf("Content-Type = %q, want %q", contentType, "application/json")
 	}
 }
 

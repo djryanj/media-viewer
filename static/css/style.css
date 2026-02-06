@@ -5130,6 +5130,22 @@ body.selection-mode .stats-bar {
     display: none;
 }
 
+.error-message a,
+.success-message a,
+.warning-message a,
+.info-message a {
+    color: inherit;
+    text-decoration: underline;
+    font-weight: 500;
+}
+
+.error-message a:hover,
+.success-message a:hover,
+.warning-message a:hover,
+.info-message a:hover {
+    text-decoration: none;
+}
+
 /* ===========================================
    PWA & SAFE AREA SUPPORT
    =========================================== */
