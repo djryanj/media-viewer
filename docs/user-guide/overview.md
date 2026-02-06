@@ -22,7 +22,7 @@ Favorites are bookmarked items that appear in a quick-access strip at the top of
 
 ### Playlists
 
-Playlists are collections of videos that play in sequence. They are defined as text files in your media library.
+Playlists are Windows Media Player (.wpl) files that define an ordered sequence of videos. Media Viewer can read and play these playlist files from your media library.
 
 ## Interface Elements
 
@@ -57,6 +57,6 @@ The bottom bar displays library statistics including total images, videos, folde
 - [Browsing Media](browsing.md) - Navigate and view your library
 - [Tagging](tagging.md) - Organize with tags
 - [Favorites](favorites.md) - Bookmark items for quick access
-- [Playlists](playlists.md) - Create and play video playlists
+- [Playlists](playlists.md) - Play Windows Media Player (.wpl) playlist files
 - [Search](search.md) - Find media quickly
 - [Keyboard Shortcuts](keyboard-shortcuts.md) - Efficiency shortcuts

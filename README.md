@@ -4,6 +4,33 @@
 
 A lightweight, containerized, single-user web application for browsing and viewing images and videos from a mounted directory.
 
+## Screenshots
+
+### Desktop Experience
+
+<div align="center">
+  <img src="docs/images/basics-desktop.gif" alt="Desktop browsing and viewing" width="800">
+  <p><em>Gallery browsing, lightbox viewer, and favorites</em></p>
+</div>
+
+<div align="center">
+  <img src="docs/images/search-desktop.gif" alt="Search functionality" width="800">
+  <p><em>Full-text search with tag filtering</em></p>
+</div>
+
+### Mobile Experience
+
+<div align="center">
+  <img src="docs/images/basics-mobile.gif" alt="Mobile browsing" width="300">
+  <img src="docs/images/bulk-tagging-mobile.gif" alt="Bulk tagging" width="300">
+  <p><em>Responsive mobile interface with selection mode and bulk operations</em></p>
+</div>
+
+<div align="center">
+  <img src="docs/images/passkeys-mobile.gif" alt="Passkey authentication" width="300">
+  <p><em>Biometric authentication with passkeys (WebAuthn)</em></p>
+</div>
+
 ## Features
 
 - Browse folders and files with thumbnail previews
@@ -19,7 +46,7 @@ A lightweight, containerized, single-user web application for browsing and viewi
 
 ## Documentation
 
-**📖 Full documentation is available at: [https://djryanj.github.io/media-viewer/](https://djryanj.github.io/media-viewer/)**
+**Full documentation is available at: [https://djryanj.github.io/media-viewer/](https://djryanj.github.io/media-viewer/)**
 
 - [Quick Start Guide](https://djryanj.github.io/media-viewer/getting-started/quick-start/)
 - [Installation](https://djryanj.github.io/media-viewer/getting-started/installation/)

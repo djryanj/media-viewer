@@ -2,6 +2,11 @@
 
 Media Viewer provides powerful search capabilities to quickly find media in your library.
 
+<div align="center">
+  <img src="../images/search-desktop.gif" alt="Search functionality" width="700">
+  <p><em>Full-text search with tag filtering and autocomplete</em></p>
+</div>
+
 ## Basic Search
 
 Type in the search box at the top of the page to search by filename.

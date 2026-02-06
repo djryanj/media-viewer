@@ -8,6 +8,35 @@
 
 Media Viewer is a self-hosted web application for browsing, organizing, and viewing your personal media collection. It provides a responsive gallery interface that works seamlessly across desktop and mobile devices, with support for images, videos, and playlists.
 
+## Demo
+
+### Desktop Interface
+
+<div align="center">
+  <img src="images/basics-desktop.gif" alt="Desktop browsing and viewing" width="800">
+  <p><em>Gallery browsing, lightbox viewer, and favorites on desktop</em></p>
+</div>
+
+<div align="center">
+  <img src="images/search-desktop.gif" alt="Search functionality" width="800">
+  <p><em>Full-text search with tag filtering</em></p>
+</div>
+
+### Mobile Experience
+
+<div align="center">
+  <img src="images/basics-mobile.gif" alt="Mobile browsing" width="300" style="display: inline-block; margin: 10px;">
+  <img src="images/bulk-tagging-mobile.gif" alt="Bulk tagging" width="300" style="display: inline-block; margin: 10px;">
+</div>
+<div align="center">
+  <p><em>Responsive mobile interface with selection mode and bulk tagging</em></p>
+</div>
+
+<div align="center">
+  <img src="images/passkeys-mobile.gif" alt="Passkey authentication" width="300">
+  <p><em>Biometric authentication with passkeys</em></p>
+</div>
+
 ## Key Features
 
 - **Gallery Browsing**: Navigate your media library with an intuitive grid-based interface
@@ -15,7 +44,7 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
 - **Tagging System**: Organize media with custom tags for easy categorization and retrieval
 - **Favorites**: Mark frequently accessed items for quick access
 - **Search**: Full-text fuzzy search by name, tag, or file type with suggestions
-- **Playlists**: Create and play video playlists
+- **Playlists**: Play Windows Media Player (.wpl) playlist files
 - **Progressive Web App**: Install on mobile devices for a native app experience
 - **Responsive Design**: Optimized for desktop, tablet, and mobile viewing
 - **Video Transcoding**: Automatic transcoding for browser compatibility

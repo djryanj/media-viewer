@@ -10,9 +10,9 @@ Solutions to common issues with Media Viewer.
 
 **Solutions:**
 
-1. Check that the `PASSWORD` environment variable is set correctly
-2. Ensure there are no extra spaces or quotes in the password
-3. Passwords are case-sensitive
+1. Verify you're entering the correct password (passwords are case-sensitive)
+2. Try using the `resetpw` utility if you've forgotten your password
+3. Check server logs for authentication errors
 4. Try restarting the container
 
 ### Session Expires Quickly
@@ -80,7 +80,7 @@ Solutions to common issues with Media Viewer.
 
 **Solutions:**
 
-1. Very large libraries require more memory for indexing
+1. Very large libraries require more memory for thumbnail generation and steady state afterwards
 2. Set memory limits in Docker configuration (`GOMEMLIMIT` environment variable)
 3. Monitor memory metrics: `media_viewer_memory_usage_ratio` and `media_viewer_go_memalloc_bytes`
 4. Restart the container to clear memory
@@ -153,9 +153,9 @@ Solutions to common issues with Media Viewer.
 **Solutions:**
 
 1. Check logs: `docker logs media-viewer`
-2. Verify the `PASSWORD` environment variable is set
-3. Ensure ports aren't already in use
-4. Check volume mount paths exist
+2. Ensure ports aren't already in use
+3. Check volume mount paths exist
+4. Verify all required directories are properly mounted
 
 ### Permission Denied Errors
 

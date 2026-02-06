@@ -1,31 +1,41 @@
 # Playlists
 
-Playlists allow you to create ordered collections of videos that play in sequence. Media Viewer reads playlist files from your media library and provides a dedicated player interface.
+Media Viewer can read and play Windows Media Player (.wpl) playlist files from your media library. These playlists provide an ordered collection of videos that play in sequence.
 
 ## Playlist Format
 
-Playlists are plain text files with a `.playlist` extension. Each line contains the path to a video file, relative to the playlist file location.
+Media Viewer supports **Windows Media Player (.wpl) format** only. These are XML-based playlist files typically created by Windows Media Player or other compatible software.
 
-### Example Playlist
+### WPL File Structure
 
-Create a file named `my-playlist.playlist`:
+WPL files are XML documents with this basic structure:
 
+```xml
+<?xml version="1.0"?>
+<smil>
+  <head>
+    <title>My Playlist</title>
+  </head>
+  <body>
+    <seq>
+      <media src="video1.mp4" />
+      <media src="video2.mp4" />
+      <media src="subfolder\video3.mp4" />
+    </seq>
+  </body>
+</smil>
 ```
 
-video1.mp4
-video2.mp4
-subfolder/video3.mp4
-../other-folder/video4.mp4
+### Path Resolution
 
-```
+Media Viewer uses intelligent path resolution to locate videos:
 
-### Path Rules
+- Handles Windows-style paths (backslashes and drive letters)
+- Handles UNC network paths
+- Resolves relative paths from the playlist location
+- Falls back to filename matching if direct paths fail
 
-- Paths are relative to the playlist file location
-- Use forward slashes (`/`) for directory separators
-- Lines starting with `#` are treated as comments
-- Empty lines are ignored
-- Videos that cannot be found are marked as unavailable
+This allows playlists created on different systems or with different directory structures to work as long as the video files exist in your media directory.
 
 ## Playing Playlists
 
@@ -78,30 +88,32 @@ Each playlist entry shows:
 
 ## Creating Playlists
 
-### Manual Creation
+Media Viewer does not have a built-in playlist creation feature. To create playlists:
 
-1. Create a new text file with the `.playlist` extension
-2. Add video paths, one per line
-3. Save the file in your media library
-4. Refresh Media Viewer to see the playlist
+### Using Windows Media Player
 
-### Tips for Playlists
+1. Open Windows Media Player
+2. Add videos to your library
+3. Create a new playlist
+4. Add videos to the playlist
+5. Save the playlist as a .wpl file in your media directory
 
-- Keep playlist files in the same folder as the videos for simpler paths
-- Use descriptive playlist names
-- Add comments to document the playlist purpose:
+### Using Third-Party Tools
 
-```
+Any software that creates Windows Media Player (.wpl) format playlists will work with Media Viewer.
 
-# Summer vacation highlights
+### Manual WPL Creation
 
-# Created: 2024-07-15
+For advanced users, you can create .wpl files manually:
 
-beach-day.mp4
-hiking-trip.mp4
-sunset-timelapse.mp4
+1. Create a new file with the `.wpl` extension
+2. Use the XML structure shown above
+3. Add `<media src="path/to/video.mp4" />` entries for each video
+4. Save the file in your media library
+5. Refresh or re-index Media Viewer to see the playlist
 
-```
+!!! tip "Path Format"
+Use forward slashes (`/`) or backslashes (`\`) for paths. Relative paths are resolved from the playlist file location.
 
 ## Playback Features
 
