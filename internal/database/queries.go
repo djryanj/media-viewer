@@ -950,7 +950,7 @@ func (d *Database) getTagSuggestionsForExclusionUnlocked(ctx context.Context, qu
 			continue
 		}
 
-		prefix := "tag:"
+		prefix := TagPrefix
 		suggestionType := TagSuggestionType
 		if isExclusion {
 			prefix = "-tag:"
@@ -1027,7 +1027,7 @@ func (d *Database) getTagSuggestionsUnlocked(ctx context.Context, query string, 
 		}
 
 		suggestions = append(suggestions, SearchSuggestion{
-			Path:      "tag:" + name,
+			Path:      TagPrefix + name,
 			Name:      name,
 			Type:      TagSuggestionType,
 			Highlight: highlight,
@@ -1717,51 +1717,106 @@ func (d *Database) scanMediaFiles(rows *sql.Rows) ([]MediaFile, error) {
 // Returns the remaining query text and the list of tag filters
 func parseTagFilters(query string) (string, []TagFilter) {
 	var filters []TagFilter
-	remaining := query
+	result := strings.Builder{}
+	i := 0
 
-	// Pattern for -tag:name or NOT tag:name (case insensitive)
-	// Also matches tag:name for inclusion
-	words := strings.Fields(remaining)
-	var nonTagWords []string
-
-	for i := 0; i < len(words); i++ {
-		word := words[i]
-		wordLower := strings.ToLower(word)
-
-		// Check for NOT tag:name (two words)
-		if wordLower == "not" && i+1 < len(words) {
-			nextWord := words[i+1]
-			nextWordLower := strings.ToLower(nextWord)
-			if strings.HasPrefix(nextWordLower, "tag:") {
-				tagName := nextWord[4:] // Preserve original case
-				if tagName != "" {
-					filters = append(filters, TagFilter{Name: tagName, Excluded: true})
-				}
-				i++ // Skip the next word
-				continue
-			}
+	for i < len(query) {
+		// Skip leading whitespace
+		i = skipWhitespace(query, i)
+		if i >= len(query) {
+			break
 		}
 
-		// Check for -tag:name
-		if strings.HasPrefix(wordLower, "-tag:") {
-			tagName := word[5:] // Preserve original case
-			if tagName != "" {
-				filters = append(filters, TagFilter{Name: tagName, Excluded: true})
+		// Try to parse tag patterns
+		tagFilter, newPos, found := tryParseTagPattern(query, i)
+		if found {
+			if tagFilter.Name != "" {
+				filters = append(filters, tagFilter)
 			}
+			i = newPos
 			continue
 		}
 
-		// Check for tag:name (inclusion)
-		if strings.HasPrefix(wordLower, "tag:") {
-			tagName := word[4:] // Preserve original case
-			if tagName != "" {
-				filters = append(filters, TagFilter{Name: tagName, Excluded: false})
-			}
-			continue
-		}
-
-		nonTagWords = append(nonTagWords, word)
+		// Not a tag pattern, add word to remaining text
+		i = addWordToResult(&result, query, i)
 	}
 
-	return strings.TrimSpace(strings.Join(nonTagWords, " ")), filters
+	return strings.TrimSpace(result.String()), filters
+}
+
+// skipWhitespace advances the position past any whitespace characters
+func skipWhitespace(s string, pos int) int {
+	for pos < len(s) && s[pos] == ' ' {
+		pos++
+	}
+	return pos
+}
+
+// tryParseTagPattern attempts to parse a tag pattern at the given position
+// Returns the tag filter, new position, and whether a pattern was found
+func tryParseTagPattern(s string, pos int) (TagFilter, int, bool) {
+	// Check for "NOT tag:" (case insensitive)
+	if pos+8 <= len(s) && strings.ToLower(s[pos:pos+8]) == "not tag:" {
+		tagName := extractTagName(s, pos+8)
+		return TagFilter{Name: tagName, Excluded: true}, findTagEnd(s, pos+8), true
+	}
+
+	// Check for "-tag:"
+	if pos+5 <= len(s) && strings.ToLower(s[pos:pos+5]) == "-tag:" {
+		tagName := extractTagName(s, pos+5)
+		return TagFilter{Name: tagName, Excluded: true}, findTagEnd(s, pos+5), true
+	}
+
+	// Check for "tag:"
+	if pos+4 <= len(s) && strings.ToLower(s[pos:pos+4]) == TagPrefix {
+		tagName := extractTagName(s, pos+4)
+		return TagFilter{Name: tagName, Excluded: false}, findTagEnd(s, pos+4), true
+	}
+
+	return TagFilter{}, pos, false
+}
+
+// extractTagName extracts and trims the tag name from the given position to the end
+func extractTagName(s string, start int) string {
+	end := findTagEnd(s, start)
+	return strings.TrimSpace(s[start:end])
+}
+
+// addWordToResult adds the next word from the query to the result builder
+// Returns the new position after the word
+func addWordToResult(result *strings.Builder, s string, pos int) int {
+	wordEnd := pos
+	for wordEnd < len(s) && s[wordEnd] != ' ' {
+		wordEnd++
+	}
+	if result.Len() > 0 {
+		result.WriteByte(' ')
+	}
+	result.WriteString(s[pos:wordEnd])
+	return wordEnd
+}
+
+// findTagEnd finds where a tag name ends by looking for the next tag pattern or end of string
+func findTagEnd(s string, start int) int {
+	end := start
+	for end < len(s) {
+		// Check if we're at the start of another tag pattern
+		remaining := s[end:]
+
+		// Look for " tag:", " -tag:", or " NOT tag:" at word boundaries
+		if remaining != "" && remaining[0] == ' ' {
+			afterSpace := strings.TrimLeft(remaining, " ")
+			afterSpaceLower := strings.ToLower(afterSpace)
+
+			if strings.HasPrefix(afterSpaceLower, TagPrefix) ||
+				strings.HasPrefix(afterSpaceLower, "-tag:") ||
+				strings.HasPrefix(afterSpaceLower, "not tag:") {
+				// Found another tag pattern
+				return end
+			}
+		}
+
+		end++
+	}
+	return end
 }
