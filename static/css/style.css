@@ -1604,6 +1604,16 @@ select:focus {
     object-fit: contain;
 }
 
+/* Style video controls for more consistent sizing */
+.lightbox-video::-webkit-media-controls-panel {
+    background-color: rgba(0, 0, 0, 0.8);
+}
+
+.lightbox-video::-webkit-media-controls-enclosure {
+    background-color: transparent;
+    max-height: 50px;
+}
+
 .lightbox-image.hidden,
 .lightbox-video.hidden {
     display: none;
@@ -2117,7 +2127,8 @@ select:focus {
 
 /* Lightbox Video Mode */
 .lightbox.video-mode .lightbox-hot-zone {
-    bottom: 40%;
+    /* Bottom position is now set dynamically via JavaScript */
+    /* based on actual video height to end 50px above video bottom */
     width: 15%;
     min-width: 50px;
     max-width: 100px;
@@ -2137,7 +2148,7 @@ select:focus {
 
 @media (hover: none) and (pointer: coarse) {
     .lightbox.video-mode .lightbox-hot-zone {
-        bottom: 50%;
+        /* Bottom position is dynamically set via JavaScript */
         -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
         mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
     }

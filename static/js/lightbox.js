@@ -301,6 +301,43 @@ const Lightbox = {
         lucide.createIcons();
     },
 
+    updateHotZonePositions() {
+        const video = this.elements.video;
+        const leftZone = this.elements.hotZoneLeft;
+        const rightZone = this.elements.hotZoneRight;
+
+        if (!leftZone || !rightZone) return;
+
+        // Reset to default for non-video mode
+        if (!this.elements.lightbox.classList.contains('video-mode')) {
+            leftZone.style.bottom = '';
+            rightZone.style.bottom = '';
+            return;
+        }
+
+        // Calculate bottom position based on video size
+        if (video && !video.classList.contains('hidden')) {
+            // Check if video metadata has loaded (videoHeight/videoWidth are only set after loadedmetadata)
+            // If not, skip calculation - it will be done when loadedmetadata event fires
+            if (!video.videoHeight || !video.videoWidth) {
+                return;
+            }
+
+            const videoRect = video.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+
+            // Calculate distance from bottom of viewport to bottom of video
+            const videoBottom = viewportHeight - videoRect.bottom;
+
+            // Position hotzones to end 50px above the bottom of the video
+            // This keeps them clear of video controls which are typically 40-50px tall
+            const bottomPosition = videoBottom + 50;
+
+            leftZone.style.bottom = `${bottomPosition}px`;
+            rightZone.style.bottom = `${bottomPosition}px`;
+        }
+    },
+
     createLoadingIndicator() {
         const loader = document.createElement('div');
         loader.className = 'lightbox-loader hidden';
@@ -373,8 +410,8 @@ const Lightbox = {
             }
         });
 
-        // Swipe handling
-        this.elements.content.addEventListener(
+        // Swipe handling - attach to lightbox element so swipes work anywhere
+        this.elements.lightbox.addEventListener(
             'touchstart',
             (e) => {
                 this.touchStartX = e.changedTouches[0].screenX;
@@ -384,7 +421,7 @@ const Lightbox = {
             { passive: true }
         );
 
-        this.elements.content.addEventListener(
+        this.elements.lightbox.addEventListener(
             'touchmove',
             (e) => {
                 const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
@@ -397,7 +434,7 @@ const Lightbox = {
             { passive: true }
         );
 
-        this.elements.content.addEventListener(
+        this.elements.lightbox.addEventListener(
             'touchend',
             (e) => {
                 if (this.isSwiping) {
@@ -417,6 +454,23 @@ const Lightbox = {
         if (this.elements.tagBtn) {
             this.elements.tagBtn.addEventListener('click', () => this.openTagModal());
         }
+
+        // Update hotzone positions when window resizes
+        window.addEventListener('resize', () => {
+            if (this.elements.lightbox.classList.contains('video-mode')) {
+                requestAnimationFrame(() => {
+                    this.updateHotZonePositions();
+                });
+            }
+        });
+
+        // Update hotzone positions when video metadata loads
+        this.elements.video.addEventListener('loadedmetadata', () => {
+            // Use RAF to ensure browser has finished layout after metadata loads
+            requestAnimationFrame(() => {
+                this.updateHotZonePositions();
+            });
+        });
     },
 
     handleSwipe() {
@@ -607,6 +661,15 @@ const Lightbox = {
         const showLoopButton = this.shouldShowLoopButton(file);
 
         this.elements.lightbox.classList.toggle('video-mode', isVideo);
+
+        // Update hotzone positions for video mode
+        if (isVideo) {
+            // Will be updated again when video loads, but set initial position
+            this.updateHotZonePositions();
+        } else {
+            // Reset hotzone positions for image mode
+            this.updateHotZonePositions();
+        }
 
         if (this.elements.autoplayBtn) {
             this.elements.autoplayBtn.classList.toggle('hidden', !isVideo);
@@ -880,6 +943,11 @@ const Lightbox = {
             }
             video.classList.remove('hidden');
             this.hideLoading();
+
+            // Update hotzone positions after video is visible and browser has laid it out
+            requestAnimationFrame(() => {
+                this.updateHotZonePositions();
+            });
 
             if (Preferences.isVideoAutoplayEnabled()) {
                 video.play().catch((err) => {
