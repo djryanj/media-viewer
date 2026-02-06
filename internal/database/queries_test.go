@@ -755,10 +755,10 @@ func TestParseTagFilters(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		query           string
-		wantRemaining   string
-		wantFilters     []TagFilter
+		name          string
+		query         string
+		wantRemaining string
+		wantFilters   []TagFilter
 	}{
 		{
 			name:          "no tags",
@@ -981,10 +981,10 @@ func TestFindTagEnd(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		input    string
-		start    int
-		wantEnd  int
+		name    string
+		input   string
+		start   int
+		wantEnd int
 	}{
 		{
 			name:    "end of string",
@@ -1019,7 +1019,7 @@ func TestFindTagEnd(t *testing.T) {
 		{
 			name:    "start mid-string",
 			input:   "tag:summer vacation -tag:work",
-			start:   4, // Start after "tag:"
+			start:   4,  // Start after "tag:"
 			wantEnd: 19, // Stops at the space before "-tag:"
 		},
 		{
@@ -1071,6 +1071,359 @@ func TestFindTagEnd(t *testing.T) {
 				if end < len(tt.input) {
 					t.Logf("stopped at: %q", tt.input[tt.start:end])
 				}
+			}
+		})
+	}
+}
+
+// TestSkipWhitespace tests the skipWhitespace helper function.
+func TestSkipWhitespace(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		pos     int
+		wantPos int
+	}{
+		{
+			name:    "no whitespace",
+			input:   "hello",
+			pos:     0,
+			wantPos: 0,
+		},
+		{
+			name:    "single space",
+			input:   " hello",
+			pos:     0,
+			wantPos: 1,
+		},
+		{
+			name:    "multiple spaces",
+			input:   "    hello",
+			pos:     0,
+			wantPos: 4,
+		},
+		{
+			name:    "mid-string spaces",
+			input:   "hello    world",
+			pos:     5,
+			wantPos: 9,
+		},
+		{
+			name:    "trailing spaces",
+			input:   "hello     ",
+			pos:     5,
+			wantPos: 10,
+		},
+		{
+			name:    "already past whitespace",
+			input:   "  hello",
+			pos:     2,
+			wantPos: 2,
+		},
+		{
+			name:    "at end of string",
+			input:   "hello",
+			pos:     5,
+			wantPos: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			pos := skipWhitespace(tt.input, tt.pos)
+
+			if pos != tt.wantPos {
+				t.Errorf("skipWhitespace(%q, %d) = %d, want %d", tt.input, tt.pos, pos, tt.wantPos)
+			}
+		})
+	}
+}
+
+// TestTryParseTagPattern tests the tryParseTagPattern helper function.
+func TestTryParseTagPattern(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		input      string
+		pos        int
+		wantFilter TagFilter
+		wantNewPos int
+		wantFound  bool
+	}{
+		{
+			name:       "tag pattern",
+			input:      "tag:vacation",
+			pos:        0,
+			wantFilter: TagFilter{Name: "vacation", Excluded: false},
+			wantNewPos: 12,
+			wantFound:  true,
+		},
+		{
+			name:       "excluded tag pattern",
+			input:      "-tag:work",
+			pos:        0,
+			wantFilter: TagFilter{Name: "work", Excluded: true},
+			wantNewPos: 9,
+			wantFound:  true,
+		},
+		{
+			name:       "NOT tag pattern",
+			input:      "NOT tag:private",
+			pos:        0,
+			wantFilter: TagFilter{Name: "private", Excluded: true},
+			wantNewPos: 15,
+			wantFound:  true,
+		},
+		{
+			name:       "tag with spaces",
+			input:      "tag:summer vacation",
+			pos:        0,
+			wantFilter: TagFilter{Name: "summer vacation", Excluded: false},
+			wantNewPos: 19,
+			wantFound:  true,
+		},
+		{
+			name:       "tag with trailing pattern",
+			input:      "tag:beach tag:2024",
+			pos:        0,
+			wantFilter: TagFilter{Name: "beach", Excluded: false},
+			wantNewPos: 9,
+			wantFound:  true,
+		},
+		{
+			name:       "not a tag pattern",
+			input:      "hello world",
+			pos:        0,
+			wantFilter: TagFilter{},
+			wantNewPos: 0,
+			wantFound:  false,
+		},
+		{
+			name:       "tag-like text",
+			input:      "tagging photos",
+			pos:        0,
+			wantFilter: TagFilter{},
+			wantNewPos: 0,
+			wantFound:  false,
+		},
+		{
+			name:       "case insensitive TAG",
+			input:      "TAG:vacation",
+			pos:        0,
+			wantFilter: TagFilter{Name: "vacation", Excluded: false},
+			wantNewPos: 12,
+			wantFound:  true,
+		},
+		{
+			name:       "case insensitive -TAG",
+			input:      "-TAG:work",
+			pos:        0,
+			wantFilter: TagFilter{Name: "work", Excluded: true},
+			wantNewPos: 9,
+			wantFound:  true,
+		},
+		{
+			name:       "case insensitive not tag",
+			input:      "not tag:private",
+			pos:        0,
+			wantFilter: TagFilter{Name: "private", Excluded: true},
+			wantNewPos: 15,
+			wantFound:  true,
+		},
+		{
+			name:       "empty tag name",
+			input:      "tag:",
+			pos:        0,
+			wantFilter: TagFilter{Name: "", Excluded: false},
+			wantNewPos: 4,
+			wantFound:  true,
+		},
+		{
+			name:       "mid-string tag pattern",
+			input:      "hello tag:world",
+			pos:        6,
+			wantFilter: TagFilter{Name: "world", Excluded: false},
+			wantNewPos: 15,
+			wantFound:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			filter, newPos, found := tryParseTagPattern(tt.input, tt.pos)
+
+			if found != tt.wantFound {
+				t.Errorf("found = %v, want %v", found, tt.wantFound)
+			}
+			if newPos != tt.wantNewPos {
+				t.Errorf("newPos = %d, want %d", newPos, tt.wantNewPos)
+			}
+			if filter.Name != tt.wantFilter.Name {
+				t.Errorf("filter.Name = %q, want %q", filter.Name, tt.wantFilter.Name)
+			}
+			if filter.Excluded != tt.wantFilter.Excluded {
+				t.Errorf("filter.Excluded = %v, want %v", filter.Excluded, tt.wantFilter.Excluded)
+			}
+		})
+	}
+}
+
+// TestExtractTagName tests the extractTagName helper function.
+func TestExtractTagName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		start   int
+		wantTag string
+	}{
+		{
+			name:    "simple tag",
+			input:   "vacation",
+			start:   0,
+			wantTag: "vacation",
+		},
+		{
+			name:    "tag with trailing space",
+			input:   "vacation ",
+			start:   0,
+			wantTag: "vacation",
+		},
+		{
+			name:    "tag with leading space",
+			input:   " vacation",
+			start:   0,
+			wantTag: "vacation",
+		},
+		{
+			name:    "tag with spaces in name",
+			input:   "summer vacation",
+			start:   0,
+			wantTag: "summer vacation",
+		},
+		{
+			name:    "tag until next pattern",
+			input:   "beach tag:2024",
+			start:   0,
+			wantTag: "beach",
+		},
+		{
+			name:    "tag with multiple words",
+			input:   "summer vacation photos",
+			start:   0,
+			wantTag: "summer vacation photos",
+		},
+		{
+			name:    "mid-string extraction",
+			input:   "tag:vacation photos",
+			start:   4,
+			wantTag: "vacation photos",
+		},
+		{
+			name:    "empty tag",
+			input:   "",
+			start:   0,
+			wantTag: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tag := extractTagName(tt.input, tt.start)
+
+			if tag != tt.wantTag {
+				t.Errorf("extractTagName(%q, %d) = %q, want %q", tt.input, tt.start, tag, tt.wantTag)
+			}
+		})
+	}
+}
+
+// TestAddWordToResult tests the addWordToResult helper function.
+func TestAddWordToResult(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		initial    string
+		input      string
+		pos        int
+		wantResult string
+		wantNewPos int
+	}{
+		{
+			name:       "first word",
+			initial:    "",
+			input:      "hello world",
+			pos:        0,
+			wantResult: "hello",
+			wantNewPos: 5,
+		},
+		{
+			name:       "second word",
+			initial:    "hello",
+			input:      "world",
+			pos:        0,
+			wantResult: "hello world",
+			wantNewPos: 5,
+		},
+		{
+			name:       "word until space",
+			initial:    "",
+			input:      "beach tag:vacation",
+			pos:        0,
+			wantResult: "beach",
+			wantNewPos: 5,
+		},
+		{
+			name:       "word from middle",
+			initial:    "sunset",
+			input:      "beach photo",
+			pos:        6,
+			wantResult: "sunset photo",
+			wantNewPos: 11,
+		},
+		{
+			name:       "single character word",
+			initial:    "",
+			input:      "a test",
+			pos:        0,
+			wantResult: "a",
+			wantNewPos: 1,
+		},
+		{
+			name:       "word at end",
+			initial:    "hello",
+			input:      "world",
+			pos:        0,
+			wantResult: "hello world",
+			wantNewPos: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var result strings.Builder
+			result.WriteString(tt.initial)
+
+			newPos := addWordToResult(&result, tt.input, tt.pos)
+
+			if result.String() != tt.wantResult {
+				t.Errorf("result = %q, want %q", result.String(), tt.wantResult)
+			}
+			if newPos != tt.wantNewPos {
+				t.Errorf("newPos = %d, want %d", newPos, tt.wantNewPos)
 			}
 		})
 	}
