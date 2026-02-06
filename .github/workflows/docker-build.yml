@@ -21,10 +21,6 @@ on:
                 description: 'Image tags'
                 value: ${{ jobs.build.outputs.tags }}
 
-    pull_request:
-        branches:
-            - main
-
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: ${{ github.repository }}
