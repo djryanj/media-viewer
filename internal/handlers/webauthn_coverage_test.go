@@ -122,6 +122,18 @@ func TestWebAuthnAvailableWithCredentials(t *testing.T) {
 	if available, ok := resp["available"].(bool); !ok || available {
 		t.Errorf("available = %v, want false (no credentials yet)", available)
 	}
+
+	// hasCredentials should be false since no credentials exist
+	if hasCredentials, ok := resp["hasCredentials"].(bool); !ok {
+		t.Error("expected hasCredentials field to be present")
+	} else if hasCredentials {
+		t.Errorf("hasCredentials = %v, want false (no credentials yet)", hasCredentials)
+	}
+
+	// configError should be present (string, may be empty)
+	if _, ok := resp["configError"]; !ok {
+		t.Error("expected configError field to be present")
+	}
 }
 
 // TestListPasskeysSuccess tests listing passkeys with valid session

@@ -176,6 +176,9 @@
     async function checkAuth() {
         try {
             const response = await fetch('/api/auth/check');
+            if (!response.ok) {
+                return false;
+            }
             const data = await response.json();
             return data.success === true;
         } catch (err) {
@@ -190,6 +193,9 @@
     async function checkSetupRequired() {
         try {
             const response = await fetch('/api/auth/setup-required');
+            if (!response.ok) {
+                return false;
+            }
             const data = await response.json();
             return data.needsSetup === true;
         } catch (err) {
@@ -207,6 +213,7 @@
 
         // Ensure passkey section stays hidden until we confirm availability
         hidePasskeySection();
+        hidePasskeyErrors();
 
         // Check if passkeys are available
         const passkeysAvailable = await checkPasskeyAvailability();
@@ -293,6 +300,7 @@
     /**
      * Check if passkey login is available
      * Returns true only if WebAuthn is supported, enabled, AND passkeys are registered
+     * Shows error messages if credentials exist but can't be used
      */
     async function checkPasskeyAvailability() {
         if (!passkeySection) {
@@ -305,11 +313,7 @@
             return false;
         }
 
-        if (!window.webAuthnManager.supported) {
-            console.debug('Passkey: WebAuthn not supported by browser');
-            return false;
-        }
-
+        // Check server configuration FIRST (most likely issue)
         try {
             const response = await fetch('/api/auth/webauthn/available');
 
@@ -321,17 +325,48 @@
             const data = await response.json();
             console.debug('Passkey: Server response', data);
 
-            const isAvailable = data.enabled === true && data.available === true;
-            console.debug(
-                'Passkey: enabled=' +
-                    data.enabled +
-                    ', available=' +
-                    data.available +
-                    ', showing=' +
-                    isAvailable
-            );
+            // If server says it's not enabled, don't show (but no error if no credentials)
+            if (data.enabled !== true) {
+                console.debug('Passkey: Server not enabled');
+                return false;
+            }
 
-            return isAvailable;
+            // If there's a configuration error AND credentials exist, show warning
+            if (data.configError && data.hasCredentials) {
+                console.debug('Passkey: Configuration error -', data.configError);
+                showPasskeyError('config', data.configError);
+                return false;
+            }
+
+            // If no credentials registered yet, don't show login option (no error)
+            if (data.hasCredentials !== true) {
+                console.debug('Passkey: No credentials registered yet');
+                return false;
+            }
+
+            // Credentials exist, now check client-side issues
+            if (!window.webAuthnManager.isSecureContext) {
+                console.debug('Passkey: Not in secure context (HTTPS required)');
+                showPasskeyError('insecure');
+                return false;
+            }
+
+            if (!window.webAuthnManager.supported) {
+                console.debug('Passkey: WebAuthn not supported by browser');
+                showPasskeyError('browser');
+                return false;
+            }
+
+            // If enabled with credentials but not available (misconfigured), show error
+            if (data.available !== true) {
+                console.debug('Passkey: Server misconfigured - enabled but not available');
+                showPasskeyError('config', 'WebAuthn is misconfigured on the server.');
+                return false;
+            }
+
+            // Everything checks out
+            console.debug('Passkey: Available and ready');
+            return true;
         } catch (err) {
             console.error('Passkey: Availability check failed', err);
             return false;
@@ -542,6 +577,49 @@
         if (element) {
             element.classList.add('hidden');
         }
+    }
+
+    /**
+     * Show passkey-specific error message
+     */
+    function showPasskeyError(type, message) {
+        const configError = document.getElementById('passkey-config-error');
+        const insecureError = document.getElementById('passkey-insecure-error');
+        const browserError = document.getElementById('passkey-browser-error');
+
+        // Hide all first
+        if (configError) configError.classList.add('hidden');
+        if (insecureError) insecureError.classList.add('hidden');
+        if (browserError) browserError.classList.add('hidden');
+
+        // Show the appropriate one
+        if (type === 'config' && configError) {
+            const span = configError.querySelector('span');
+            if (span) {
+                span.innerHTML =
+                    'Passkey login is unavailable: ' +
+                    message +
+                    ' <a href="https://djryanj.github.io/media-viewer/admin/webauthn/#configuration" target="_blank" rel="noopener noreferrer">See configuration guide</a>.';
+            }
+            configError.classList.remove('hidden');
+        } else if (type === 'insecure' && insecureError) {
+            insecureError.classList.remove('hidden');
+        } else if (type === 'browser' && browserError) {
+            browserError.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Hide all passkey error messages
+     */
+    function hidePasskeyErrors() {
+        const configError = document.getElementById('passkey-config-error');
+        const insecureError = document.getElementById('passkey-insecure-error');
+        const browserError = document.getElementById('passkey-browser-error');
+
+        if (configError) configError.classList.add('hidden');
+        if (insecureError) insecureError.classList.add('hidden');
+        if (browserError) browserError.classList.add('hidden');
     }
 
     /**

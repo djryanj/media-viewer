@@ -119,6 +119,13 @@ func TestWebAuthnAvailableDisabledIntegration(t *testing.T) {
 	if available, ok := response["available"].(bool); !ok || available {
 		t.Error("expected available to be false when WebAuthn is disabled")
 	}
+
+	// hasCredentials should be false (no credentials in test setup)
+	if hasCredentials, ok := response["hasCredentials"].(bool); !ok {
+		t.Error("expected hasCredentials field to be present")
+	} else if hasCredentials {
+		t.Error("expected hasCredentials to be false when no credentials exist")
+	}
 }
 
 // TestWebAuthnAvailableContentTypeIntegration tests response headers
@@ -263,6 +270,14 @@ func TestWebAuthnResponseStructureIntegration(t *testing.T) {
 		t.Error("response missing 'enabled' field")
 	}
 
+	if _, ok := response["hasCredentials"]; !ok {
+		t.Error("response missing 'hasCredentials' field")
+	}
+
+	if _, ok := response["configError"]; !ok {
+		t.Error("response missing 'configError' field")
+	}
+
 	// Verify field types
 	if _, ok := response["available"].(bool); !ok {
 		t.Error("available field is not a boolean")
@@ -270,6 +285,14 @@ func TestWebAuthnResponseStructureIntegration(t *testing.T) {
 
 	if _, ok := response["enabled"].(bool); !ok {
 		t.Error("enabled field is not a boolean")
+	}
+
+	if _, ok := response["hasCredentials"].(bool); !ok {
+		t.Error("hasCredentials field is not a boolean")
+	}
+
+	if _, ok := response["configError"].(string); !ok {
+		t.Error("configError field is not a string")
 	}
 }
 

@@ -28,13 +28,18 @@ func InitWebAuthn(config *startup.Config, db *database.Database) error {
 	startup.LogWebAuthnInit(config.WebAuthnEnabled, config.WebAuthnRPID)
 
 	if !config.WebAuthnEnabled {
+		logging.Debug("WebAuthn initialization skipped: WEBAUTHN_ENABLED is false")
 		webAuthnEnabled = false
 		return nil
 	}
 
+	logging.Debug("WebAuthn init: RPID=%s, RPOrigins=%v, DisplayName=%s",
+		config.WebAuthnRPID, config.WebAuthnRPOrigins, config.WebAuthnRPDisplayName)
+
 	// Initialize database schema
 	if err := db.InitWebAuthnSchema(); err != nil {
 		startup.LogWebAuthnInitError(err)
+		logging.Debug("WebAuthn initialization failed during schema init: %v", err)
 		webAuthnEnabled = false
 		return nil
 	}
@@ -53,6 +58,7 @@ func InitWebAuthn(config *startup.Config, db *database.Database) error {
 
 	if err != nil {
 		startup.LogWebAuthnInitError(err)
+		logging.Debug("WebAuthn initialization failed during webauthn.New: %v", err)
 		webAuthnEnabled = false
 		return nil
 	}
@@ -60,6 +66,7 @@ func InitWebAuthn(config *startup.Config, db *database.Database) error {
 	webAuthnEnabled = true
 	credCount := db.CountWebAuthnCredentials(context.TODO())
 	startup.LogWebAuthnInitComplete(credCount)
+	logging.Debug("WebAuthn initialization successful: %d credentials registered", credCount)
 
 	return nil
 }
@@ -77,16 +84,97 @@ func credentialsToDescriptors(creds []webauthn.Credential) []protocol.Credential
 	return descriptors
 }
 
+// validateWebAuthnConfig checks if the WebAuthn configuration matches the current request
+// Returns an error message if misconfigured, empty string if OK
+func validateWebAuthnConfig(r *http.Request) string {
+	if !webAuthnEnabled || webAuthnInstance == nil {
+		return ""
+	}
+
+	// Get the request origin
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	// Check X-Forwarded-Proto for reverse proxy scenarios
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+
+	requestOrigin := scheme + "://" + r.Host
+
+	logging.Debug("WebAuthn config validation: requestOrigin=%s, configuredOrigins=%v",
+		requestOrigin, webAuthnInstance.Config.RPOrigins)
+
+	// Check if request origin is in configured origins
+	originMatch := false
+	for _, allowedOrigin := range webAuthnInstance.Config.RPOrigins {
+		if allowedOrigin == requestOrigin {
+			originMatch = true
+			break
+		}
+	}
+
+	if !originMatch {
+		logging.Debug("WebAuthn config error: request origin %s not in WEBAUTHN_ORIGINS", requestOrigin)
+		return "Request origin does not match WEBAUTHN_ORIGINS. Update environment variables."
+	}
+
+	// Validate RP ID matches the request host
+	// RP ID should be the domain or a registrable suffix
+	host := r.Host
+	if colonIdx := len(host) - 1; colonIdx >= 0 {
+		for i := len(host) - 1; i >= 0; i-- {
+			if host[i] == ':' {
+				host = host[:i]
+				break
+			}
+		}
+	}
+
+	// RP ID must be the host or a registrable domain suffix
+	rpID := webAuthnInstance.Config.RPID
+	if host != rpID && !hasSuffix(host, "."+rpID) {
+		logging.Debug("WebAuthn config error: RPID %s does not match host %s", rpID, host)
+		return "WEBAUTHN_RP_ID does not match request host. Update environment variables."
+	}
+
+	return ""
+}
+
+// hasSuffix checks if s ends with suffix (case-insensitive for domains)
+func hasSuffix(s, suffix string) bool {
+	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
 // WebAuthnAvailable returns whether passkey login is available
 func (h *Handlers) WebAuthnAvailable(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	available := webAuthnEnabled && h.db.HasWebAuthnCredentials(ctx)
+	hasCredentials := h.db.HasWebAuthnCredentials(ctx)
+	available := webAuthnEnabled && hasCredentials
+
+	// Validate configuration against current request
+	configError := validateWebAuthnConfig(r)
+
+	logging.Debug("WebAuthnAvailable check: enabled=%v, hasCredentials=%v, available=%v, configError=%q",
+		webAuthnEnabled, hasCredentials, available, configError)
+
+	switch {
+	case !webAuthnEnabled:
+		logging.Debug("WebAuthn is not enabled (WEBAUTHN_ENABLED=false or missing configuration)")
+	case configError != "":
+		logging.Debug("WebAuthn configuration error: %s", configError)
+	case !hasCredentials:
+		logging.Debug("WebAuthn is enabled but no credentials are registered yet")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"available": available,
-		"enabled":   webAuthnEnabled,
+		"available":      available,
+		"enabled":        webAuthnEnabled,
+		"hasCredentials": hasCredentials,
+		"configError":    configError,
 	})
 }
 

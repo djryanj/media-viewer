@@ -4,6 +4,7 @@
 class WebAuthnManager {
     constructor() {
         this.available = false;
+        this.isSecureContext = window.isSecureContext || false;
         this.supported = this.isWebAuthnSupported();
         this.conditionalUISupported = false;
         this.conditionalUIAbortController = null;
@@ -18,7 +19,8 @@ class WebAuthnManager {
     isWebAuthnSupported() {
         return (
             window.PublicKeyCredential !== undefined &&
-            typeof window.PublicKeyCredential === 'function'
+            typeof window.PublicKeyCredential === 'function' &&
+            this.isSecureContext
         );
     }
 
@@ -135,6 +137,12 @@ class WebAuthnManager {
                 signal: this.conditionalUIAbortController.signal,
             });
 
+            // Check if user actually selected a passkey
+            if (!credential) {
+                console.debug('Conditional UI: No credential selected');
+                return null;
+            }
+
             // User selected a passkey - complete the login
             console.debug('Conditional UI: User selected a passkey');
             return await this.finishLogin(sessionId, credential);
@@ -164,6 +172,10 @@ class WebAuthnManager {
     async registerPasskey(name = 'Passkey') {
         if (!this.supported) {
             throw new Error('WebAuthn is not supported in this browser');
+        }
+
+        if (!this.isSecureContext) {
+            throw new Error('Passkeys require HTTPS. See documentation for setup requirements.');
         }
 
         // Step 1: Get registration options from server
@@ -465,6 +477,10 @@ class WebAuthnManager {
 window.webAuthnManager = new WebAuthnManager();
 
 // Log initialization status
+console.debug('WebAuthn: isSecureContext=', window.webAuthnManager.isSecureContext);
+console.debug('WebAuthn: PublicKeyCredential=', typeof window.PublicKeyCredential);
+console.debug('WebAuthn: supported=', window.webAuthnManager.supported);
+
 if (window.webAuthnManager.supported) {
     console.debug('WebAuthn: Supported');
 } else {
