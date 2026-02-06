@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.8.3] - 2026-02-06
+
+### Bug Fixes
+
+- **Tag Modal Touch Events (Mobile)**: Fixed tag management modal on mobile devices where taps would pass through to the underlying UI, causing unintended screen jumps and accidental activation of multiple actions. The modal now properly prevents body scroll and captures all touch events. ([#161](https://github.com/djryanj/media-viewer/issues/161))
+
 ## [0.8.2] - 2026-02-06
 
 ### Bug Fixes

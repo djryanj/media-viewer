@@ -45,6 +45,18 @@ const Tags = {
                     this.closeModalWithHistory();
                 }
             });
+
+            // Prevent touch events from propagating through modal on mobile
+            this.elements.tagModal.addEventListener(
+                'touchstart',
+                (e) => {
+                    if (e.target === this.elements.tagModal) {
+                        e.preventDefault();
+                        this.closeModalWithHistory();
+                    }
+                },
+                { passive: false }
+            );
         }
 
         if (this.elements.tagInput) {
@@ -257,6 +269,7 @@ const Tags = {
         await this.loadFileTags(path);
 
         this.elements.tagModal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
         this.elements.tagInput.focus();
 
         lucide.createIcons();
@@ -298,6 +311,7 @@ const Tags = {
         await this.loadBulkTags(paths);
 
         this.elements.tagModal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
         this.elements.tagInput.focus();
 
         lucide.createIcons();
@@ -447,6 +461,7 @@ const Tags = {
         if (this.elements.tagModal) {
             this.elements.tagModal.classList.add('hidden');
         }
+        document.body.style.overflow = '';
         this.currentPath = null;
         this.currentName = null;
         this.isBulkMode = false;
