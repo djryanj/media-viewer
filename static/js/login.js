@@ -241,6 +241,28 @@
             return;
         }
 
+        // Check if we should skip auto passkey (e.g., user just logged out)
+        const skipAutoPasskey = sessionStorage.getItem('skipAutoPasskey');
+        if (skipAutoPasskey) {
+            const timestamp = parseInt(skipAutoPasskey, 10);
+            const elapsed = Date.now() - timestamp;
+
+            // Skip auto passkey for 3 seconds after logout
+            if (elapsed < 3000) {
+                console.debug('Skipping auto passkey login (recent logout)');
+
+                // Clear the flag after the cooldown period
+                setTimeout(() => {
+                    sessionStorage.removeItem('skipAutoPasskey');
+                }, 3000 - elapsed);
+
+                return;
+            }
+
+            // Flag is old, remove it
+            sessionStorage.removeItem('skipAutoPasskey');
+        }
+
         // Check if Conditional UI is supported
         if (window.webAuthnManager.conditionalUISupported) {
             // Start Conditional UI - passkeys will appear in autofill dropdown
