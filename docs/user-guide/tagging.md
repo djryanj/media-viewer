@@ -2,6 +2,11 @@
 
 Tags are labels you assign to media items for organization and quick retrieval. Media Viewer provides a flexible tagging system that supports individual and bulk operations.
 
+<div align="center">
+  <img src="../images/bulk-tagging-mobile.gif" alt="Bulk tagging in action" width="400">
+  <p><em>Selection mode enables efficient bulk tagging on mobile</em></p>
+</div>
+
 ## Understanding Tags
 
 - Tags are simple text labels (e.g., "vacation", "family", "2024")

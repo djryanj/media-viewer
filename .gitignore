@@ -67,4 +67,6 @@ site/
 
 !**/media-viewer/
 
-.tgz
+*.tgz
+
+*.mp4
