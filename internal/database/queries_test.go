@@ -749,3 +749,329 @@ func TestListOptionsValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestParseTagFilters tests the parseTagFilters function with various inputs.
+func TestParseTagFilters(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		query           string
+		wantRemaining   string
+		wantFilters     []TagFilter
+	}{
+		{
+			name:          "no tags",
+			query:         "sunset beach",
+			wantRemaining: "sunset beach",
+			wantFilters:   nil,
+		},
+		{
+			name:          "single tag",
+			query:         "tag:vacation",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation", Excluded: false},
+			},
+		},
+		{
+			name:          "single excluded tag",
+			query:         "-tag:vacation",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation", Excluded: true},
+			},
+		},
+		{
+			name:          "single NOT tag",
+			query:         "NOT tag:vacation",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation", Excluded: true},
+			},
+		},
+		{
+			name:          "tag with spaces",
+			query:         "tag:my vacation photos",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "my vacation photos", Excluded: false},
+			},
+		},
+		{
+			name:          "excluded tag with spaces",
+			query:         "-tag:my vacation photos",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "my vacation photos", Excluded: true},
+			},
+		},
+		{
+			name:          "NOT tag with spaces",
+			query:         "NOT tag:my vacation photos",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "my vacation photos", Excluded: true},
+			},
+		},
+		{
+			name:          "tag with spaces and other search terms",
+			query:         "sunset tag:beach vacation -tag:photo",
+			wantRemaining: "sunset",
+			wantFilters: []TagFilter{
+				{Name: "beach vacation", Excluded: false},
+				{Name: "photo", Excluded: true},
+			},
+		},
+		{
+			name:          "multiple tags without spaces",
+			query:         "tag:vacation tag:beach",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation", Excluded: false},
+				{Name: "beach", Excluded: false},
+			},
+		},
+		{
+			name:          "multiple tags with spaces",
+			query:         "tag:my vacation tag:summer beach",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "my vacation", Excluded: false},
+				{Name: "summer beach", Excluded: false},
+			},
+		},
+		{
+			name:          "mixed included and excluded tags",
+			query:         "tag:vacation -tag:work",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation", Excluded: false},
+				{Name: "work", Excluded: true},
+			},
+		},
+		{
+			name:          "mixed tags with search terms",
+			query:         "sunset tag:beach photo -tag:private",
+			wantRemaining: "sunset",
+			wantFilters: []TagFilter{
+				{Name: "beach photo", Excluded: false},
+				{Name: "private", Excluded: true},
+			},
+		},
+		{
+			name:          "tag at end with spaces",
+			query:         "sunset photo tag:vacation 2024",
+			wantRemaining: "sunset photo",
+			wantFilters: []TagFilter{
+				{Name: "vacation 2024", Excluded: false},
+			},
+		},
+		{
+			name:          "tag at beginning with spaces",
+			query:         "tag:summer vacation photo",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "summer vacation photo", Excluded: false},
+			},
+		},
+		{
+			name:          "multiple excluded tags with spaces",
+			query:         "-tag:work stuff -tag:private files",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "work stuff", Excluded: true},
+				{Name: "private files", Excluded: true},
+			},
+		},
+		{
+			name:          "complex query with mixed patterns",
+			query:         "beach tag:summer vacation -tag:work files photo tag:2024 trip",
+			wantRemaining: "beach",
+			wantFilters: []TagFilter{
+				{Name: "summer vacation", Excluded: false},
+				{Name: "work files photo", Excluded: true},
+				{Name: "2024 trip", Excluded: false},
+			},
+		},
+		{
+			name:          "case insensitive tag prefix",
+			query:         "TAG:vacation -TAG:work NOT TAG:private",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation", Excluded: false},
+				{Name: "work", Excluded: true},
+				{Name: "private", Excluded: true},
+			},
+		},
+		{
+			name:          "empty tag name",
+			query:         "tag: -tag: NOT tag:",
+			wantRemaining: "",
+			wantFilters:   nil, // Empty tag names are ignored
+		},
+		{
+			name:          "whitespace heavy",
+			query:         "  tag:vacation    photo   -tag:work  ",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation    photo", Excluded: false},
+				{Name: "work", Excluded: true},
+			},
+		},
+		{
+			name:          "tag with trailing whitespace before next pattern",
+			query:         "tag:vacation   tag:beach",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "vacation", Excluded: false},
+				{Name: "beach", Excluded: false},
+			},
+		},
+		{
+			name:          "tag containing special characters",
+			query:         "tag:2024-summer tag:day_1",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "2024-summer", Excluded: false},
+				{Name: "day_1", Excluded: false},
+			},
+		},
+		{
+			name:          "consecutive spaces in tag name",
+			query:         "tag:my  vacation  photos",
+			wantRemaining: "",
+			wantFilters: []TagFilter{
+				{Name: "my  vacation  photos", Excluded: false},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			remaining, filters := parseTagFilters(tt.query)
+
+			if remaining != tt.wantRemaining {
+				t.Errorf("remaining = %q, want %q", remaining, tt.wantRemaining)
+			}
+
+			if len(filters) != len(tt.wantFilters) {
+				t.Errorf("got %d filters, want %d", len(filters), len(tt.wantFilters))
+				t.Logf("got: %+v", filters)
+				t.Logf("want: %+v", tt.wantFilters)
+				return
+			}
+
+			for i := range filters {
+				if filters[i].Name != tt.wantFilters[i].Name {
+					t.Errorf("filter[%d].Name = %q, want %q", i, filters[i].Name, tt.wantFilters[i].Name)
+				}
+				if filters[i].Excluded != tt.wantFilters[i].Excluded {
+					t.Errorf("filter[%d].Excluded = %v, want %v", i, filters[i].Excluded, tt.wantFilters[i].Excluded)
+				}
+			}
+		})
+	}
+}
+
+// TestFindTagEnd tests the findTagEnd helper function.
+func TestFindTagEnd(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		start    int
+		wantEnd  int
+	}{
+		{
+			name:    "end of string",
+			input:   "vacation",
+			start:   0,
+			wantEnd: 8,
+		},
+		{
+			name:    "until next tag pattern",
+			input:   "vacation tag:beach",
+			start:   0,
+			wantEnd: 8, // Stops at the space before "tag:"
+		},
+		{
+			name:    "until next excluded tag pattern",
+			input:   "vacation -tag:work",
+			start:   0,
+			wantEnd: 8, // Stops at the space before "-tag:"
+		},
+		{
+			name:    "until next NOT tag pattern",
+			input:   "vacation NOT tag:private",
+			start:   0,
+			wantEnd: 8, // Stops at the space before "NOT tag:"
+		},
+		{
+			name:    "tag with multiple words",
+			input:   "summer vacation photo tag:2024",
+			start:   0,
+			wantEnd: 21, // Stops at the space before "tag:2024"
+		},
+		{
+			name:    "start mid-string",
+			input:   "tag:summer vacation -tag:work",
+			start:   4, // Start after "tag:"
+			wantEnd: 19, // Stops at the space before "-tag:"
+		},
+		{
+			name:    "no following tag pattern",
+			input:   "summer vacation photo",
+			start:   0,
+			wantEnd: 21, // Goes to end of string
+		},
+		{
+			name:    "consecutive spaces",
+			input:   "vacation    tag:beach",
+			start:   0,
+			wantEnd: 8, // Stops at first space before tag pattern
+		},
+		{
+			name:    "case insensitive tag detection",
+			input:   "vacation TAG:beach",
+			start:   0,
+			wantEnd: 8, // Detects "TAG:" as tag pattern
+		},
+		{
+			name:    "NOT with different case",
+			input:   "vacation not tag:beach",
+			start:   0,
+			wantEnd: 8, // Detects "not tag:" as tag pattern
+		},
+		{
+			name:    "tag-like text in middle",
+			input:   "tagging photos",
+			start:   0,
+			wantEnd: 14, // "tagging" is not a tag pattern
+		},
+		{
+			name:    "hyphen not followed by tag:",
+			input:   "2024-summer vacation",
+			start:   0,
+			wantEnd: 20, // Hyphen is part of the tag name
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			end := findTagEnd(tt.input, tt.start)
+
+			if end != tt.wantEnd {
+				t.Errorf("findTagEnd(%q, %d) = %d, want %d", tt.input, tt.start, end, tt.wantEnd)
+				if end < len(tt.input) {
+					t.Logf("stopped at: %q", tt.input[tt.start:end])
+				}
+			}
+		})
+	}
+}

@@ -147,38 +147,44 @@
         <!-- Search Results -->
         <section class="search-results hidden" id="search-results">
             <div class="search-results-header">
-                <div class="search-results-search-bar">
-                    <div class="search-results-input-wrapper">
-                        <i data-lucide="search" class="search-results-input-icon"></i>
-                        <input
-                            type="text"
-                            id="search-results-input"
-                            class="search-results-input"
-                            placeholder="Modify search..."
-                            autocomplete="off"
-                            autocorrect="off"
-                            autocapitalize="off"
-                            spellcheck="false"
-                        />
-                        <button
-                            id="search-results-clear"
-                            class="search-results-clear hidden"
-                            type="button"
-                            aria-label="Clear search"
-                        >
-                            <i data-lucide="x"></i>
-                        </button>
+                <div class="search-results-header-inner">
+                    <div class="search-results-logo">
+                        <img src="/icons/icon.svg" alt="Media Viewer" class="header-logo" />
+                        <h1>Media Viewer</h1>
                     </div>
-                    <div id="search-results-dropdown" class="search-dropdown hidden"></div>
+                    <div class="search-results-search-bar">
+                        <div class="search-results-input-wrapper">
+                            <i data-lucide="search" class="search-results-input-icon"></i>
+                            <input
+                                type="text"
+                                id="search-results-input"
+                                class="search-results-input"
+                                placeholder="Modify search..."
+                                autocomplete="off"
+                                autocorrect="off"
+                                autocapitalize="off"
+                                spellcheck="false"
+                            />
+                            <button
+                                id="search-results-clear"
+                                class="search-results-clear hidden"
+                                type="button"
+                                aria-label="Clear search"
+                            >
+                                <i data-lucide="x"></i>
+                            </button>
+                        </div>
+                        <div id="search-results-dropdown" class="search-dropdown hidden"></div>
+                    </div>
+                    <span class="search-results-count" id="search-results-count"></span>
+                    <button
+                        class="btn-icon"
+                        id="search-results-close"
+                        aria-label="Close search results"
+                    >
+                        <i data-lucide="x"></i>
+                    </button>
                 </div>
-                <span class="search-results-count" id="search-results-count"></span>
-                <button
-                    class="btn-icon"
-                    id="search-results-close"
-                    aria-label="Close search results"
-                >
-                    <i data-lucide="x"></i>
-                </button>
             </div>
             <div class="search-results-gallery" id="search-results-gallery"></div>
             <div id="search-pagination" class="pagination hidden">

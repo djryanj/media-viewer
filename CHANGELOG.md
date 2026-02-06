@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.8.1] - 2026-02-05
+
+### Bug Fixes
+
+- **Search Tag Parsing**: Fixed critical bug where tags with spaces in their names could not be searched. The tag filter parser now correctly handles tag names containing spaces by parsing character-by-character until the next tag pattern is encountered. (e.g., `tag:summer vacation` now correctly searches for the tag "summer vacation") ([#156](https://github.com/djryanj/media-viewer/issues/156))
+- **Search Results Header Layout**: Fixed search results header to match the main page header layout on desktop:
+    - Added Media Viewer logo and title to the left side of the search header on desktop (hidden on mobile/tablet)
+    - Fixed header width constraint - now properly limited to 1800px and centered like the main header
+    - Moved padding from outer container to inner container for consistent spacing
+    - Removed duplicate CSS rules that were causing layout conflicts
+      ([#156](https://github.com/djryanj/media-viewer/issues/156))
+
+### Code Quality
+
+- **Search Query Refactoring**: Added comprehensive unit tests for `parseTagFilters` and `findTagEnd` helper functions with 37 test cases covering edge cases, whitespace handling, case sensitivity, and complex multi-pattern queries. ([#156](https://github.com/djryanj/media-viewer/issues/156))
+
 ## [0.8.0] - February 5, 2026
 
 ### New Features
