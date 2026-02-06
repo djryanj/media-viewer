@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.8.2] - 2026-02-06
+
+### Bug Fixes
+
+- **Sorting Controls**: Fixed broken sorting functionality where sort field and direction controls were not working. The JavaScript was referencing incorrect element IDs (`sort-field` and `sort-order`) that didn't match the actual HTML element IDs (`sort-select` and `sort-direction`). ([#159](https://github.com/djryanj/media-viewer/issues/159))
+
 ## [0.8.1] - 2026-02-05
 
 ### Bug Fixes
