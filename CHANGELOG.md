@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Back button on the login screen after logout now closes the PWA instead of returning to the authenticated app by using `window.location.replace()` instead of `window.location.href`
       ([#167](https://github.com/djryanj/media-viewer/issues/167))
 
+- **Lightbox Video Mode Hotzones**: Fixed navigation hotzone positioning in video mode to dynamically adapt to actual video size instead of using fixed percentages. Hotzones now end 50px above the video bottom, keeping them clear of native video controls regardless of video dimensions or aspect ratio. Added proper timing checks using `videoHeight`/`videoWidth` properties and `requestAnimationFrame` to ensure calculations happen after video metadata loads and layout completes.
+
+- **Lightbox Swipe Gestures**: Fixed swipe gestures in lightbox only working when touching the image or video itself. Swipe events are now attached to the full lightbox overlay, allowing navigation from anywhere on screen.
+
 ### API Changes
 
 - **WebAuthn Available Endpoint**: Extended `/api/auth/webauthn/available` response with two new fields:
