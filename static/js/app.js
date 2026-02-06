@@ -49,9 +49,9 @@ const MediaApp = {
         this.elements = {
             gallery: document.getElementById('gallery'),
             breadcrumb: document.getElementById('breadcrumb'),
-            sortField: document.getElementById('sort-field'),
-            sortOrder: document.getElementById('sort-order'),
-            filterType: document.getElementById('filter-type'),
+            sortField: document.getElementById('sort-select'),
+            sortOrder: document.getElementById('sort-direction'),
+            filterType: document.getElementById('filter-select'),
             loading: document.getElementById('loading'),
             pagination: document.getElementById('pagination'),
             pageInfo: document.getElementById('page-info'),
