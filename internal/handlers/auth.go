@@ -35,29 +35,24 @@ type AuthResponse struct {
 	ExpiresIn int    `json:"expiresIn,omitempty"` // Seconds until session expires
 }
 
+// AuthCheckResponse represents the response from the auth check endpoint
+type AuthCheckResponse struct {
+	Authenticated bool `json:"authenticated"`
+	SetupRequired bool `json:"setupRequired"`
+	ExpiresIn     int  `json:"expiresIn,omitempty"` // Seconds until session expires
+}
+
 const (
 	// SessionCookieName is the name of the session cookie
 	SessionCookieName = "media_viewer_session"
 )
 
-// CheckSetupRequired returns whether initial setup is needed
-func (h *Handlers) CheckSetupRequired(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	needsSetup := !h.db.HasUsers(ctx)
-
-	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, map[string]bool{
-		"needsSetup": needsSetup,
-	})
-}
-
 // Setup creates the initial password
 func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Only allow setup if no users exist
-	if h.db.HasUsers(ctx) {
+	// Only allow setup if not already complete
+	if h.db.IsSetupComplete(ctx) {
 		http.Error(w, "Setup already completed", http.StatusForbidden)
 		return
 	}
@@ -173,13 +168,21 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CheckAuth verifies the current session
+// CheckAuth verifies the current session and returns setup status
 func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Check if setup is complete
+	setupComplete := h.db.IsSetupComplete(ctx)
+
 	cookie, err := r.Cookie(SessionCookieName)
 	if err != nil || cookie.Value == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		// Not authenticated - return setup status
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(w, AuthCheckResponse{
+			Authenticated: false,
+			SetupRequired: !setupComplete,
+		})
 		return
 	}
 
@@ -194,15 +197,21 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true,
 		})
 
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		// Invalid session - return setup status
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(w, AuthCheckResponse{
+			Authenticated: false,
+			SetupRequired: !setupComplete,
+		})
 		return
 	}
 
+	// Authenticated successfully
 	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, AuthResponse{
-		Success:   true,
-		Username:  "",
-		ExpiresIn: int(database.GetSessionDuration().Seconds()),
+	writeJSON(w, AuthCheckResponse{
+		Authenticated: true,
+		SetupRequired: false,
+		ExpiresIn:     int(database.GetSessionDuration().Seconds()),
 	})
 }
 

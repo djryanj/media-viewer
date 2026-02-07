@@ -165,7 +165,8 @@ func (d *Database) initialize(ctx context.Context) error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		password_hash TEXT NOT NULL,
 		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		setup_complete INTEGER NOT NULL DEFAULT 0
 	);
 
 	-- Sessions table
@@ -232,6 +233,40 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		}
 
 		logging.Info("Migration complete: content_updated_at column added and initialized")
+	}
+
+	// Migration 2: Add setup_complete column to users table if it doesn't exist
+	var setupCompleteExists bool
+	err = d.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('users')
+		WHERE name='setup_complete'
+	`).Scan(&setupCompleteExists)
+
+	if err != nil {
+		return fmt.Errorf("failed to check for setup_complete column: %w", err)
+	}
+
+	if !setupCompleteExists {
+		logging.Info("Migrating database: adding setup_complete column to users table")
+
+		// Add the column
+		_, err = d.db.ExecContext(ctx, `
+			ALTER TABLE users ADD COLUMN setup_complete INTEGER NOT NULL DEFAULT 0
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add setup_complete column: %w", err)
+		}
+
+		// Set setup_complete=1 for any existing users (they must have completed setup)
+		_, err = d.db.ExecContext(ctx, `
+			UPDATE users SET setup_complete = 1 WHERE id IS NOT NULL
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to initialize setup_complete values: %w", err)
+		}
+
+		logging.Info("Migration complete: setup_complete column added and initialized")
 	}
 
 	return err

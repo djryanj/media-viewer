@@ -33,6 +33,7 @@ type mockAuthDB struct {
 	nextUserID          int64
 	nextSessionID       int64
 	hasUsersVal         bool
+	setupCompleteVal    bool
 	createUserErr       error
 	validatePasswordErr error
 	createSessionErr    error
@@ -49,6 +50,10 @@ func newMockAuthDB() *mockAuthDB {
 		nextUserID:    1,
 		nextSessionID: 1,
 	}
+}
+
+func (m *mockAuthDB) IsSetupComplete(_ context.Context) bool {
+	return m.setupCompleteVal
 }
 
 func (m *mockAuthDB) HasUsers(_ context.Context) bool {
@@ -73,6 +78,7 @@ func (m *mockAuthDB) CreateUser(_ context.Context, password string) error {
 	m.users[m.nextUserID] = user
 	m.nextUserID++
 	m.hasUsersVal = true
+	m.setupCompleteVal = true
 
 	return nil
 }
@@ -194,19 +200,10 @@ func newMockHandlersAuth() *mockHandlersAuth {
 }
 
 // Override methods to use mock DB
-func (h *mockHandlersAuth) CheckSetupRequired(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	needsSetup := !h.db.HasUsers(ctx)
-	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, map[string]bool{
-		"setupRequired": needsSetup,
-	})
-}
-
 func (h *mockHandlersAuth) Setup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	if h.db.HasUsers(ctx) {
+	if h.db.IsSetupComplete(ctx) {
 		http.Error(w, "Setup already completed", http.StatusConflict)
 		return
 	}
@@ -397,80 +394,6 @@ func (h *mockHandlersAuth) Keepalive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, AuthResponse{
 		Success: true,
 	})
-}
-
-// =============================================================================
-// CheckSetupRequired Tests
-// =============================================================================
-
-func TestCheckSetupRequiredMock(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name           string
-		setupUser      bool
-		expectedStatus int
-		expectedSetup  bool
-	}{
-		{
-			name:           "Setup required when no users",
-			setupUser:      false,
-			expectedStatus: http.StatusOK,
-			expectedSetup:  true,
-		},
-		{
-			name:           "Setup not required when user exists",
-			setupUser:      true,
-			expectedStatus: http.StatusOK,
-			expectedSetup:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			h := newMockHandlersAuth()
-			if tt.setupUser {
-				ctx := context.Background()
-				_ = h.db.CreateUser(ctx, "testpassword123")
-			}
-
-			req := httptest.NewRequest(http.MethodGet, "/api/auth/setup-required", http.NoBody)
-			w := httptest.NewRecorder()
-
-			h.CheckSetupRequired(w, req)
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("Expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
-
-			var response map[string]bool
-			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-				t.Fatalf("Failed to decode response: %v", err)
-			}
-
-			if response["setupRequired"] != tt.expectedSetup {
-				t.Errorf("Expected setupRequired=%v, got %v", tt.expectedSetup, response["setupRequired"])
-			}
-		})
-	}
-}
-
-func TestCheckSetupRequiredContentTypeMock(t *testing.T) {
-	t.Parallel()
-
-	h := newMockHandlersAuth()
-
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/setup-required", http.NoBody)
-	w := httptest.NewRecorder()
-
-	h.CheckSetupRequired(w, req)
-
-	contentType := w.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Errorf("Expected Content-Type application/json, got %s", contentType)
-	}
 }
 
 // =============================================================================

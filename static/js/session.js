@@ -244,7 +244,7 @@ const SessionManager = {
 
             if (response.ok) {
                 const data = await response.json();
-                if (data.success && data.expiresIn) {
+                if (data.authenticated && data.expiresIn) {
                     this.state.sessionExpiresAt = Date.now() + data.expiresIn * 1000;
                     this.log(`Session info: expires in ${data.expiresIn}s`);
                 }

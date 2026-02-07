@@ -6,6 +6,32 @@ import (
 	"time"
 )
 
+func TestIsSetupCompleteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Initially setup should not be complete
+	if db.IsSetupComplete(ctx) {
+		t.Error("Expected IsSetupComplete=false initially")
+	}
+
+	// Create a user
+	err := db.CreateUser(ctx, "testpassword")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	// Setup should be complete now
+	if !db.IsSetupComplete(ctx) {
+		t.Error("Expected IsSetupComplete=true after creating user")
+	}
+}
+
 func TestHasUsersIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

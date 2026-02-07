@@ -204,7 +204,7 @@ const MediaApp = {
 
             const data = await response.json();
 
-            if (!data.success) {
+            if (!data.authenticated) {
                 console.debug('MediaApp: auth invalid on resume, redirecting');
                 window.location.replace('/login.html');
             }
@@ -219,7 +219,7 @@ const MediaApp = {
             const response = await fetch('/api/auth/check');
             const data = await response.json();
 
-            if (!data.success) {
+            if (!data.authenticated) {
                 window.location.replace('/login.html');
                 return;
             }

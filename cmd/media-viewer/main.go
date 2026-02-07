@@ -282,7 +282,6 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 
 	// Auth routes
 	auth := r.PathPrefix("/api/auth").Subrouter()
-	auth.HandleFunc("/setup-required", h.CheckSetupRequired).Methods("GET")
 	auth.HandleFunc("/setup", h.Setup).Methods("POST")
 	auth.HandleFunc("/login", h.Login).Methods("POST")
 	auth.HandleFunc("/logout", h.Logout).Methods("POST")
