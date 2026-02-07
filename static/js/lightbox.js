@@ -19,6 +19,9 @@ const Lightbox = {
     animationCheckInterval: null,
     lastImageData: null,
 
+    // Video player component instance
+    videoPlayer: null,
+
     init() {
         this.cacheElements();
         this.createHotZones();
@@ -539,6 +542,12 @@ const Lightbox = {
         this.clearPreloadCache();
         this.stopAnimationLoopDetection();
         this.releaseWakeLock();
+
+        // Clean up video player
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
     },
 
     async acquireWakeLock() {
@@ -659,6 +668,12 @@ const Lightbox = {
 
         const isVideo = file.type === 'video';
         const showLoopButton = this.shouldShowLoopButton(file);
+
+        // Clean up video player when switching to image
+        if (!isVideo && this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
 
         this.elements.lightbox.classList.toggle('video-mode', isVideo);
 
@@ -991,6 +1006,26 @@ const Lightbox = {
         video.src = videoUrl;
         video.classList.remove('hidden');
         video.load();
+
+        // Initialize VideoPlayer component
+        this.initVideoPlayer();
+    },
+
+    initVideoPlayer() {
+        // Clean up previous video player instance
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
+
+        // Create new VideoPlayer instance
+        if (typeof VideoPlayer !== 'undefined') {
+            this.videoPlayer = new VideoPlayer({
+                video: this.elements.video,
+                container: this.elements.content,
+                showNavigation: false,
+            });
+        }
     },
 
     clearPreloadCache() {
