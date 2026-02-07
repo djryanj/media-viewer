@@ -21,11 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **File Rename**: Renamed `player.js` to `playlist.js` and `Player` object to `Playlist` for better clarity and consistency. ([#173](https://github.com/djryanj/media-viewer/issues/173))
 
+### Removed
+
+- **Favorites Prometheus Metric**: Removed `media_viewer_favorites_total` Prometheus metric as it did not provide useful monitoring information. The `TotalFavorites` field remains in the database statistics for use by the frontend UI.
+
 ### Fixed
 
 - **Prometheus Metrics for Streaming Endpoints**: Fixed false positive high-latency alarms for `/api/stream/` endpoints in Prometheus monitoring. The metrics middleware now tracks time-to-first-byte (TTFB) instead of total streaming duration for video/audio streaming endpoints. This prevents p95 latency metrics from incorrectly showing 10+ seconds when users are simply watching videos for extended periods. Non-streaming endpoints continue to use total request duration as before.
 
 - **Prometheus Metrics Cardinality**: Fixed metrics cardinality explosion for static assets and playlist endpoints. Paths like `/js/gallery.js`, `/css/style.css`, `/icons/icon-192.png`, and `/api/playlist/12345` are now normalized to `/js/{path}`, `/css/{path}`, `/icons/{path}`, and `/api/playlist/{path}` respectively, preventing individual file metrics from creating thousands of unique metric series.
+
+- **Tags Metric Always Zero**: Fixed `media_viewer_tags_total` Prometheus metric always reporting zero. The `CalculateStats()` function was missing a query to count tags from the `tags` table. The metric now correctly reflects the actual number of unique tags in the database. ([#153](https://github.com/djryanj/media-viewer/issues/153))
 
 ## [0.8.4] - 2026-02-06
 

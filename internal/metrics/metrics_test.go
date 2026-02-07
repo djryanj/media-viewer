@@ -388,7 +388,6 @@ func TestMediaLibraryMetrics(t *testing.T) {
 	}{
 		{"MediaFilesTotal", MediaFilesTotal},
 		{"MediaFoldersTotal", MediaFoldersTotal},
-		{"MediaFavoritesTotal", MediaFavoritesTotal},
 		{"MediaTagsTotal", MediaTagsTotal},
 	}
 
@@ -410,10 +409,6 @@ func TestMediaLibraryMetricOperations(t *testing.T) {
 
 	t.Run("MediaFoldersTotal", func(_ *testing.T) {
 		MediaFoldersTotal.Set(50)
-	})
-
-	t.Run("MediaFavoritesTotal", func(_ *testing.T) {
-		MediaFavoritesTotal.Set(100)
 	})
 
 	t.Run("MediaTagsTotal", func(_ *testing.T) {

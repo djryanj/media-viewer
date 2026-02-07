@@ -89,7 +89,6 @@ func (c *Collector) collect() {
 	MediaFilesTotal.WithLabelValues("video").Set(float64(stats.TotalVideos))
 	MediaFilesTotal.WithLabelValues("playlist").Set(float64(stats.TotalPlaylists))
 	MediaFoldersTotal.Set(float64(stats.TotalFolders))
-	MediaFavoritesTotal.Set(float64(stats.TotalFavorites))
 	MediaTagsTotal.Set(float64(stats.TotalTags))
 
 	logging.Debug("Metrics collected: files=%d, folders=%d, favorites=%d, tags=%d",

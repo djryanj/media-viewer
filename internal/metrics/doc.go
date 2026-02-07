@@ -57,7 +57,6 @@
 // Track media library contents:
 //   - MediaFilesTotal: Gauge of files by type (image/video/playlist)
 //   - MediaFoldersTotal: Gauge of total folders
-//   - MediaFavoritesTotal: Gauge of favorited items
 //   - MediaTagsTotal: Gauge of total tags
 //
 // ## Transcoder Metrics
@@ -127,7 +126,7 @@
 //	defer collector.Stop()
 //
 // The collector automatically updates:
-//   - Media library statistics (files, folders, favorites, tags)
+//   - Media library statistics (files, folders, tags)
 //   - Database file sizes
 //   - Go runtime memory statistics
 //
