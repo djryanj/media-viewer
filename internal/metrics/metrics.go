@@ -221,13 +221,6 @@ var (
 		},
 	)
 
-	MediaFavoritesTotal = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "media_viewer_favorites_total",
-			Help: "Total number of favorites",
-		},
-	)
-
 	MediaTagsTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "media_viewer_tags_total",

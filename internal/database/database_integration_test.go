@@ -1272,4 +1272,38 @@ func TestStatsWithNoData(t *testing.T) {
 	if stats.TotalFolders != 0 {
 		t.Errorf("TotalFolders = %d, want 0 for empty database", stats.TotalFolders)
 	}
+
+	if stats.TotalTags != 0 {
+		t.Errorf("TotalTags = %d, want 0 for empty database", stats.TotalTags)
+	}
+}
+
+func TestStatsWithTags(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Add some tags
+	tagNames := []string{"action", "thriller", "comedy", "drama"}
+	for _, name := range tagNames {
+		if err := db.AddTagToFile(ctx, "/test/video.mp4", name); err != nil {
+			t.Fatalf("AddTagToFile failed: %v", err)
+		}
+	}
+
+	// Calculate stats
+	stats, err := db.CalculateStats()
+	if err != nil {
+		t.Fatalf("CalculateStats failed: %v", err)
+	}
+
+	if stats.TotalTags != len(tagNames) {
+		t.Errorf("TotalTags = %d, want %d", stats.TotalTags, len(tagNames))
+	}
+
+	t.Logf("Stats with tags: %+v", stats)
 }

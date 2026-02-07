@@ -30,9 +30,7 @@ func TestNewCollector(t *testing.T) {
 			TotalFolders:   10,
 			TotalImages:    80,
 			TotalVideos:    20,
-			TotalPlaylists: 5,
-			TotalFavorites: 15,
-			TotalTags:      8,
+			TotalPlaylists: 5, TotalFavorites: 15, TotalTags: 8,
 		},
 	}
 
@@ -349,6 +347,7 @@ func TestStatsStructFields(t *testing.T) {
 		TotalImages:    80,
 		TotalVideos:    15,
 		TotalPlaylists: 5,
+
 		TotalFavorites: 20,
 		TotalTags:      8,
 	}

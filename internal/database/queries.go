@@ -1270,6 +1270,7 @@ func (d *Database) CalculateStats() (IndexStats, error) {
 		{"SELECT COUNT(*) FROM files WHERE type = 'video'", &stats.TotalVideos},
 		{"SELECT COUNT(*) FROM files WHERE type = 'playlist'", &stats.TotalPlaylists},
 		{"SELECT COUNT(*) FROM favorites", &stats.TotalFavorites},
+		{"SELECT COUNT(*) FROM tags", &stats.TotalTags},
 	}
 
 	for _, q := range queries {

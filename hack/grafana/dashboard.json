@@ -367,68 +367,6 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "orange",
-                                "value": null
-                            }
-                        ]
-                    },
-                    "unit": "short"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 3,
-                "w": 2,
-                "x": 17,
-                "y": 1
-            },
-            "id": 201,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "percentChangeColorMode": "standard",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "showPercentChange": false,
-                "textMode": "auto",
-                "wideLayout": true
-            },
-            "pluginVersion": "12.3.1",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${datasource}"
-                    },
-                    "expr": "media_viewer_favorites_total{job=~\"$instance\"}",
-                    "refId": "A"
-                }
-            ],
-            "title": "Favorites",
-            "type": "stat"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
                                 "color": "green",
                                 "value": null
                             }
