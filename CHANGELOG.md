@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Download Button**: Added download button to both lightbox and gallery views. In the lightbox, the button appears in the bottom right corner. In the gallery, it appears on hover in the bottom right of each thumbnail. Keyboard shortcut 'D' added for lightbox download. Extended `/api/file/{path}` endpoint to support `?download=true` query parameter for forcing file downloads with proper Content-Disposition headers. ([#166](https://github.com/djryanj/media-viewer/issues/166))
 
+### Changed
+
+- **Setup Check Optimization**: Refactored authentication to use a database `setup_complete` flag and consolidated the setup check into `/api/auth/check`. This eliminates the redundant `/api/auth/setup-required` endpoint and reduces login page load from 2 API calls to 1, improving both performance and API design. The `/api/auth/check` endpoint now returns both authentication status and setup requirements in a single response. Includes automatic migration for existing databases. ([#83](https://github.com/djryanj/media-viewer/issues/83))
+
 ### Fixed
 
 - **Lightbox Tag Button State**: Fixed tag button in lightbox not updating immediately when tags are applied or removed via the tag manager. The button now correctly shows the highlighted state when tags are present. ([#175](https://github.com/djryanj/media-viewer/issues/175))

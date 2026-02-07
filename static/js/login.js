@@ -147,18 +147,28 @@
      */
     async function checkInitialState() {
         try {
-            // Check if already authenticated
-            if (await checkAuth()) {
+            // Single API call to check both auth and setup status
+            const response = await fetch('/api/auth/check');
+
+            if (!response.ok) {
+                console.error('Auth check failed:', response.status);
+                hideLoading();
+                await showLoginForm();
+                return;
+            }
+
+            const data = await response.json();
+
+            // If already authenticated, redirect to app
+            if (data.authenticated) {
                 redirectToApp();
                 return;
             }
 
-            // Check if setup is required (first-time use)
-            const needsSetup = await checkSetupRequired();
-
             hideLoading();
 
-            if (needsSetup) {
+            // Show setup form if setup is required, otherwise show login
+            if (data.setupRequired) {
                 showSetupForm();
             } else {
                 await showLoginForm();
@@ -167,40 +177,6 @@
             console.error('Failed to check initial state:', err);
             hideLoading();
             await showLoginForm();
-        }
-    }
-
-    /**
-     * Check if user is already authenticated
-     */
-    async function checkAuth() {
-        try {
-            const response = await fetch('/api/auth/check');
-            if (!response.ok) {
-                return false;
-            }
-            const data = await response.json();
-            return data.success === true;
-        } catch (err) {
-            console.error('Auth check failed:', err);
-            return false;
-        }
-    }
-
-    /**
-     * Check if initial setup is required
-     */
-    async function checkSetupRequired() {
-        try {
-            const response = await fetch('/api/auth/setup-required');
-            if (!response.ok) {
-                return false;
-            }
-            const data = await response.json();
-            return data.needsSetup === true;
-        } catch (err) {
-            console.error('Setup check failed:', err);
-            return false;
         }
     }
 

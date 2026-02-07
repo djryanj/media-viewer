@@ -16,13 +16,49 @@ Media Viewer uses session-based authentication with HTTP-only cookies. After suc
 
 ## Endpoints
 
-### Check Setup Required
+### Check Authentication Status
 
-Check if initial password setup is needed.
+Check if the user is authenticated and whether initial setup is required. This single endpoint provides both authentication state and setup requirements.
 
 ```
-GET /api/auth/check-setup
+GET /api/auth/check
 ```
+
+### Response
+
+**Success (200):**
+
+When authenticated:
+
+```json
+{
+    "authenticated": true,
+    "setupRequired": false,
+    "expiresIn": 86400
+}
+```
+
+When not authenticated (no setup required):
+
+```json
+{
+    "authenticated": false,
+    "setupRequired": false
+}
+```
+
+When not authenticated (setup required):
+
+```json
+{
+    "authenticated": false,
+    "setupRequired": true
+}
+```
+
+- `authenticated`: `true` if the user has a valid session
+- `setupRequired`: `true` if initial password setup is needed, `false` otherwise
+- `expiresIn`: Seconds until session expires (only present when authenticated)
 
 ### Login
 

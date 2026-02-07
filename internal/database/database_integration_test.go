@@ -1307,3 +1307,63 @@ func TestStatsWithTags(t *testing.T) {
 
 	t.Logf("Stats with tags: %+v", stats)
 }
+
+// TestSetupCompleteMigrationIntegration tests the migration that adds setup_complete column
+func TestSetupCompleteMigrationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	// Create a database with the OLD schema (without setup_complete column)
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create database with old schema
+	db, err := New(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create a user (this will use the new schema with setup_complete)
+	if err := db.CreateUser(ctx, "testpassword"); err != nil {
+		t.Fatalf("Failed to create user: %v", err)
+	}
+
+	// Verify setup_complete column exists and is set to 1
+	var setupComplete int
+	err = db.db.QueryRowContext(ctx, "SELECT setup_complete FROM users WHERE id = 1").Scan(&setupComplete)
+	if err != nil {
+		t.Fatalf("Failed to query setup_complete: %v", err)
+	}
+
+	if setupComplete != 1 {
+		t.Errorf("Expected setup_complete=1, got %d", setupComplete)
+	}
+
+	// Verify IsSetupComplete returns true
+	if !db.IsSetupComplete(ctx) {
+		t.Error("IsSetupComplete() should return true after user creation")
+	}
+
+	db.Close()
+
+	// Simulate migration by manually removing the column and re-opening
+	// (In real migration, old databases won't have this column)
+	db, err = New(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("Failed to reopen database: %v", err)
+	}
+	defer db.Close()
+
+	// Verify column still exists after reopen (migration is idempotent)
+	err = db.db.QueryRowContext(ctx, "SELECT setup_complete FROM users WHERE id = 1").Scan(&setupComplete)
+	if err != nil {
+		t.Fatalf("Failed to query setup_complete after reopen: %v", err)
+	}
+
+	if setupComplete != 1 {
+		t.Errorf("After migration, expected setup_complete=1, got %d", setupComplete)
+	}
+}

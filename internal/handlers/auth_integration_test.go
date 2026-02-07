@@ -62,29 +62,33 @@ func setupAuthIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 // Setup and Initial Configuration Tests
 // =============================================================================
 
-func TestCheckSetupRequiredIntegration(t *testing.T) {
+func TestCheckAuthWithSetupRequiredIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	h, cleanup := setupAuthIntegrationTest(t)
 	defer cleanup()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/setup-required", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/check", http.NoBody)
 	w := httptest.NewRecorder()
 
-	h.CheckSetupRequired(w, req)
+	h.CheckAuth(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected status 200, got %d", w.Code)
 	}
 
-	var response map[string]bool
+	var response AuthCheckResponse
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if !response["needsSetup"] {
-		t.Error("Expected needsSetup=true for fresh database")
+	if response.Authenticated {
+		t.Error("Expected authenticated=false for fresh database")
+	}
+
+	if !response.SetupRequired {
+		t.Error("Expected setupRequired=true for fresh database")
 	}
 }
 
@@ -118,14 +122,14 @@ func TestSetupIntegration(t *testing.T) {
 	}
 
 	// Verify setup is no longer required
-	req = httptest.NewRequest(http.MethodGet, "/api/auth/setup-required", http.NoBody)
+	req = httptest.NewRequest(http.MethodGet, "/api/auth/check", http.NoBody)
 	w = httptest.NewRecorder()
-	h.CheckSetupRequired(w, req)
+	h.CheckAuth(w, req)
 
-	var checkResp map[string]bool
+	var checkResp AuthCheckResponse
 	json.NewDecoder(w.Body).Decode(&checkResp)
-	if checkResp["needsSetup"] {
-		t.Error("Expected needsSetup=false after setup")
+	if checkResp.SetupRequired {
+		t.Error("Expected setupRequired=false after setup")
 	}
 }
 
@@ -365,8 +369,17 @@ func TestCheckAuthNoSessionIntegration(t *testing.T) {
 
 	h.CheckAuth(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("Expected status 401, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response AuthCheckResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response.Authenticated {
+		t.Error("Expected authenticated=false when no session")
 	}
 }
 
@@ -387,8 +400,17 @@ func TestCheckAuthInvalidSessionIntegration(t *testing.T) {
 
 	h.CheckAuth(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("Expected status 401, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response AuthCheckResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response.Authenticated {
+		t.Error("Expected authenticated=false when session is invalid")
 	}
 }
 
@@ -471,8 +493,14 @@ func TestLogoutIntegration(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.CheckAuth(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Error("Expected CheckAuth to fail after logout")
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var checkResp AuthCheckResponse
+	json.NewDecoder(w.Body).Decode(&checkResp)
+	if checkResp.Authenticated {
+		t.Error("Expected authenticated=false after logout")
 	}
 }
 
@@ -626,13 +654,13 @@ func TestCompleteAuthFlowIntegration(t *testing.T) {
 	defer cleanup()
 
 	// Step 1: Check setup is required
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/setup-required", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/check", http.NoBody)
 	w := httptest.NewRecorder()
-	h.CheckSetupRequired(w, req)
+	h.CheckAuth(w, req)
 
-	var setupCheck map[string]bool
+	var setupCheck AuthCheckResponse
 	json.NewDecoder(w.Body).Decode(&setupCheck)
-	if !setupCheck["needsSetup"] {
+	if !setupCheck.SetupRequired {
 		t.Fatal("Expected initial setup to be required")
 	}
 
@@ -703,8 +731,14 @@ func TestCompleteAuthFlowIntegration(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.CheckAuth(w, req)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Error("Auth check should fail after logout")
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var logoutCheck AuthCheckResponse
+	json.NewDecoder(w.Body).Decode(&logoutCheck)
+	if logoutCheck.Authenticated {
+		t.Error("Expected authenticated=false after logout")
 	}
 
 	// Step 8: Login with new password

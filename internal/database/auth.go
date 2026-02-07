@@ -52,6 +52,23 @@ func GetSessionDuration() time.Duration {
 	return sessionDuration
 }
 
+// IsSetupComplete checks if initial setup has been completed.
+// This is more efficient than HasUsers() as it avoids COUNT(*) queries.
+func (d *Database) IsSetupComplete(ctx context.Context) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var setupComplete int
+	err := d.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(setup_complete), 0) FROM users").Scan(&setupComplete)
+	if err != nil {
+		return false
+	}
+	return setupComplete == 1
+}
+
 // HasUsers checks if a user exists (single-user app).
 func (d *Database) HasUsers(ctx context.Context) bool {
 	d.mu.RLock()
@@ -97,7 +114,7 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 	}
 
 	_, err = d.db.ExecContext(ctx,
-		"INSERT INTO users (password_hash) VALUES (?)",
+		"INSERT INTO users (password_hash, setup_complete) VALUES (?, 1)",
 		string(hash),
 	)
 	if err != nil {
