@@ -748,6 +748,39 @@ select:focus {
     box-shadow: 0 0 0 2px var(--accent);
 }
 
+/* Download button */
+.download-button {
+    position: absolute;
+    bottom: 0.25rem;
+    right: 0.25rem;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--text-secondary);
+    font-size: 0.625rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        opacity var(--transition),
+        background var(--transition),
+        color var(--transition);
+    z-index: 10;
+    opacity: 0;
+}
+
+.gallery-item-thumb:active .download-button {
+    opacity: 1;
+}
+
+.download-button:hover {
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+}
+
 /* Video indicator */
 .video-indicator {
     position: absolute;
@@ -812,13 +845,15 @@ select:focus {
     }
 
     .pin-button,
-    .tag-button {
+    .tag-button,
+    .download-button {
         width: 28px;
         height: 28px;
         font-size: 0.875rem;
     }
 
-    .tag-button {
+    .tag-button,
+    .download-button {
         font-size: 0.75rem;
     }
 
@@ -1020,14 +1055,16 @@ select:focus {
 
     /* Pin/tag buttons - show on hover */
     .pin-button,
-    .tag-button {
+    .tag-button,
+    .download-button {
         opacity: 0;
         width: 32px;
         height: 32px;
     }
 
     .gallery-item-thumb:hover .pin-button,
-    .gallery-item-thumb:hover .tag-button {
+    .gallery-item-thumb:hover .tag-button,
+    .gallery-item-thumb:hover .download-button {
         opacity: 1;
     }
 
@@ -1037,7 +1074,8 @@ select:focus {
     }
 
     .pin-button:hover,
-    .tag-button:hover {
+    .tag-button:hover,
+    .download-button:hover {
         background: rgba(0, 0, 0, 0.8);
         color: var(--text-primary);
     }
@@ -1670,6 +1708,28 @@ select:focus {
         box-shadow var(--transition);
 }
 
+.lightbox-download {
+    position: absolute;
+    bottom: 4rem;
+    right: 0.5rem;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        background var(--transition),
+        color var(--transition),
+        box-shadow var(--transition);
+    z-index: 10;
+}
+
 .lightbox-pin {
     left: 0.5rem;
 }
@@ -1679,8 +1739,14 @@ select:focus {
 }
 
 .lightbox-pin:active,
-.lightbox-tag:active {
+.lightbox-tag:active,
+.lightbox-download:active {
     background: rgba(255, 255, 255, 0.2);
+}
+
+.lightbox-download:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
 }
 
 .lightbox-pin.pinned {
@@ -1726,7 +1792,7 @@ select:focus {
 .lightbox-hot-zone {
     position: fixed;
     top: 60px;
-    bottom: 80px;
+    bottom: 120px;
     width: 20%;
     min-width: 60px;
     max-width: 150px;
@@ -1742,10 +1808,10 @@ select:focus {
         to bottom,
         transparent 0%,
         black 15%,
-        black 85%,
+        black 80%,
         transparent 100%
     );
-    mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 80%, transparent 100%);
 }
 
 .lightbox-hot-zone:hover,

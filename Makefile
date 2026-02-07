@@ -57,7 +57,7 @@ dev:
 	WEBAUTHN_RP_ORIGINS=http://localhost:8080 \
 	INDEX_INTERVAL=2m \
 	THUMBNAIL_INTERVAL=4m \
-	SESSION_TIMEOUT=1h \
+	SESSION_DURATION=1h \
 	air
 
 dev-frontend:

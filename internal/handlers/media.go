@@ -117,6 +117,13 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if download=true query parameter is present
+	if r.URL.Query().Get("download") == "true" {
+		// Set Content-Disposition header to force download
+		filename := filepath.Base(filePath)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	}
+
 	http.ServeFile(w, r, fullPath)
 }
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] - 2026-02-07
 
+### Added
+
+- **Download Button**: Added download button to both lightbox and gallery views. In the lightbox, the button appears in the bottom right corner. In the gallery, it appears on hover in the bottom right of each thumbnail. Keyboard shortcut 'D' added for lightbox download. Extended `/api/file/{path}` endpoint to support `?download=true` query parameter for forcing file downloads with proper Content-Disposition headers. ([#166](https://github.com/djryanj/media-viewer/issues/166))
+
 ### Fixed
 
 - **Lightbox Tag Button State**: Fixed tag button in lightbox not updating immediately when tags are applied or removed via the tag manager. The button now correctly shows the highlighted state when tags are present. ([#175](https://github.com/djryanj/media-viewer/issues/175))

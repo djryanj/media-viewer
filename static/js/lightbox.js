@@ -46,6 +46,7 @@ const Lightbox = {
             content: document.querySelector('.lightbox-content'),
             pinBtn: document.getElementById('lightbox-pin'),
             tagBtn: document.getElementById('lightbox-tag'),
+            downloadBtn: document.getElementById('lightbox-download'),
         };
     },
 
@@ -422,6 +423,10 @@ const Lightbox = {
                         this.toggleLoop();
                     }
                     break;
+                case 'd':
+                case 'D':
+                    this.downloadCurrent();
+                    break;
             }
         });
 
@@ -474,6 +479,10 @@ const Lightbox = {
 
         if (this.elements.tagBtn) {
             this.elements.tagBtn.addEventListener('click', () => this.openTagModal());
+        }
+
+        if (this.elements.downloadBtn) {
+            this.elements.downloadBtn.addEventListener('click', () => this.downloadCurrent());
         }
 
         // Update hotzone positions when window resizes
@@ -1255,6 +1264,23 @@ const Lightbox = {
         this.elements.tagBtn.innerHTML = '<i data-lucide="tag"></i>';
         this.elements.tagBtn.title = 'Manage tags (T)';
         lucide.createIcons({ nodes: [this.elements.tagBtn] });
+    },
+
+    downloadCurrent() {
+        if (this.items.length === 0) return;
+        const file = this.items[this.currentIndex];
+        if (!file || file.type === 'folder') return;
+
+        const link = document.createElement('a');
+        link.href = `/api/file/${file.path}?download=true`;
+        link.download = file.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+            Gallery.showToast(`Downloading ${file.name}`);
+        }
     },
 };
 
