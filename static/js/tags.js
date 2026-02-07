@@ -458,6 +458,15 @@ const Tags = {
     },
 
     closeModal() {
+        // Update lightbox tag button if it's open
+        if (
+            typeof Lightbox !== 'undefined' &&
+            Lightbox.elements?.lightbox &&
+            !Lightbox.elements.lightbox.classList.contains('hidden')
+        ) {
+            Lightbox.refreshCurrentItemTags();
+        }
+
         if (this.elements.tagModal) {
             this.elements.tagModal.classList.add('hidden');
         }
@@ -798,6 +807,7 @@ const Tags = {
         container.innerHTML = '';
 
         if (!tags || tags.length === 0) {
+            delete container.dataset.allTags;
             return;
         }
 
