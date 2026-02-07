@@ -776,6 +776,26 @@ func TestNormalizePath(t *testing.T) {
 			expected: "/api/stream-info/{path}",
 		},
 		{
+			name:     "API playlist path",
+			path:     "/api/playlist/12345",
+			expected: "/api/playlist/{path}",
+		},
+		{
+			name:     "JS file path",
+			path:     "/js/gallery.js",
+			expected: "/js/{path}",
+		},
+		{
+			name:     "CSS file path",
+			path:     "/css/style.css",
+			expected: "/css/{path}",
+		},
+		{
+			name:     "Icons file path",
+			path:     "/icons/icon-192.png",
+			expected: "/icons/{path}",
+		},
+		{
 			name:     "Regular API path",
 			path:     "/api/favorites",
 			expected: "/api/favorites",

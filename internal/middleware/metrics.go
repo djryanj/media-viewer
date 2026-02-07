@@ -140,6 +140,10 @@ func normalizePath(path string) string {
 		"/api/thumbnail/",
 		"/api/stream/",
 		"/api/stream-info/",
+		"/api/playlist/",
+		"/js/",
+		"/css/",
+		"/icons/",
 	}
 
 	// Check if this path matches a known wildcard route
