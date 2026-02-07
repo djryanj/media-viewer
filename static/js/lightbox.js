@@ -1230,6 +1230,24 @@ const Lightbox = {
         }
     },
 
+    /**
+     * Refresh tags for the current item from the gallery
+     * Called when tags are updated via the tag modal
+     */
+    refreshCurrentItemTags() {
+        if (this.items.length === 0) return;
+        const file = this.items[this.currentIndex];
+        if (!file) return;
+
+        // Get updated tags from gallery
+        const updatedTags = this.getTagsFromGallery(file.path);
+        if (updatedTags !== null) {
+            file.tags = updatedTags;
+            this.updateTagButton(file);
+            this.updateTagsOverlay(file);
+        }
+    },
+
     updateTagButton(file) {
         if (!this.elements.tagBtn) return;
         const hasTags = file.tags && file.tags.length > 0;
