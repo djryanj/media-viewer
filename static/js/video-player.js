@@ -66,7 +66,7 @@ class VideoPlayer {
     createControls() {
         // Create controls overlay structure
         const controlsHTML = `
-            <div class="video-controls show" data-video-controls>
+            <div class="video-controls" data-video-controls>
                 <!-- Center play/pause button -->
                 <button class="video-control-btn video-play-pause" data-play-pause-center title="Play/Pause">
                     <i data-lucide="play"></i>
@@ -106,20 +106,6 @@ class VideoPlayer {
                                min="0" max="100" value="100" title="Volume" />
                         <div class="volume-tooltip" data-volume-tooltip>Video has no sound</div>
                         <span class="video-time" data-time-display>0:00 / 0:00</span>
-
-                        ${
-                            this.showNavigation
-                                ? `
-                        <div class="video-controls-spacer"></div>
-                        <button class="video-control-btn video-control-sm" data-prev-bottom title="Previous video">
-                            <i data-lucide="skip-back"></i>
-                        </button>
-                        <button class="video-control-btn video-control-sm" data-next-bottom title="Next video">
-                            <i data-lucide="skip-forward"></i>
-                        </button>
-                        `
-                                : ''
-                        }
                     </div>
                 </div>
             </div>
@@ -144,8 +130,6 @@ class VideoPlayer {
         if (this.showNavigation) {
             this.prevBtn = this.container.querySelector('[data-video-prev]');
             this.nextBtn = this.container.querySelector('[data-video-next]');
-            this.prevBottomBtn = this.container.querySelector('[data-prev-bottom]');
-            this.nextBottomBtn = this.container.querySelector('[data-next-bottom]');
         }
 
         // Initialize lucide icons
@@ -205,17 +189,13 @@ class VideoPlayer {
                 e.stopPropagation();
                 this.onNext();
             });
-            this.prevBottomBtn?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.onPrevious();
-            });
-            this.nextBottomBtn?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.onNext();
-            });
         }
 
         // Video events
+        this.video.addEventListener('loadstart', () => {
+            // Hide controls when video starts loading
+            this.controls.classList.remove('show');
+        });
         this.video.addEventListener('play', () => this.updatePlayPauseIcon());
         this.video.addEventListener('pause', () => {
             this.updatePlayPauseIcon();
@@ -225,6 +205,8 @@ class VideoPlayer {
         this.video.addEventListener('loadedmetadata', () => {
             this.updateTimeDisplay();
             this.checkAudioTracks();
+            // Show controls once video metadata is loaded
+            this.showControls();
         });
         this.video.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -239,9 +221,6 @@ class VideoPlayer {
                 togglePlayPause();
             }
         });
-
-        // Show controls initially
-        this.showControls();
     }
 
     toggleMute() {

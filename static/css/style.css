@@ -1791,6 +1791,8 @@ select:focus {
     border-top-color: #ffffff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+    transform-origin: center;
+    will-change: transform;
 }
 
 #lightbox-image.loading,
@@ -2294,10 +2296,26 @@ select:focus {
     min-height: 200px;
 }
 
+.video-container {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 100%;
+}
+
 .video-wrapper video {
     width: 100%;
     max-height: 100%;
+    display: block;
     z-index: 1;
+}
+
+#playlist-video.loading {
+    opacity: 0.3;
+}
+
+#playlist-video {
+    transition: opacity 0.15s ease-in-out;
 }
 
 .playlist-sidebar {
@@ -2390,11 +2408,20 @@ select:focus {
     position: relative;
 }
 
+/* Lightbox video wrapper for proper control positioning */
+.lightbox-video-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 100%;
+}
+
 /* Adjust lightbox video to use native controls */
 .lightbox-video {
     object-fit: contain;
     max-width: 100%;
     max-height: 100%;
+    display: block;
 }
 
 /* Video Controls Overlay */
@@ -2735,6 +2762,8 @@ select:focus {
     border-top-color: #ffffff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+    transform-origin: center;
+    will-change: transform;
 }
 
 .player-modal .video-wrapper video.loading {
@@ -4514,6 +4543,9 @@ select:focus {
 }
 
 @keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
     to {
         transform: rotate(360deg);
     }

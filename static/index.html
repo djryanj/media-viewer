@@ -216,7 +216,10 @@
             </button>
             <div class="lightbox-content">
                 <img id="lightbox-image" class="lightbox-image" src="" alt="" />
-                <video id="lightbox-video" class="lightbox-video hidden"></video>
+                <div class="lightbox-video-wrapper">
+                    <video id="lightbox-video" class="lightbox-video hidden"></video>
+                    <!-- VideoPlayer component will create controls here -->
+                </div>
             </div>
             <div class="lightbox-info">
                 <span id="lightbox-title"></span>
@@ -243,88 +246,9 @@
                 </div>
                 <div class="player-body">
                     <div class="video-wrapper">
-                        <video id="playlist-video"></video>
-                        <div class="video-controls" id="video-controls">
-                            <div class="video-controls-overlay"></div>
-                            <button
-                                class="video-control-btn video-prev"
-                                id="video-prev"
-                                title="Previous video"
-                            >
-                                <i data-lucide="skip-back"></i>
-                            </button>
-                            <button
-                                class="video-control-btn video-play-pause"
-                                id="video-play-pause"
-                                title="Play/Pause"
-                            >
-                                <i data-lucide="play"></i>
-                            </button>
-                            <button
-                                class="video-control-btn video-next"
-                                id="video-next"
-                                title="Next video"
-                            >
-                                <i data-lucide="skip-forward"></i>
-                            </button>
-                            <div class="video-controls-bottom">
-                                <div class="video-progress-container">
-                                    <div class="video-progress-bar" id="video-progress-bar">
-                                        <div
-                                            class="video-progress-filled"
-                                            id="video-progress-filled"
-                                        ></div>
-                                        <div
-                                            class="video-progress-handle"
-                                            id="video-progress-handle"
-                                        ></div>
-                                    </div>
-                                </div>
-                                <div class="video-controls-row">
-                                    <button
-                                        class="video-control-btn video-control-sm"
-                                        id="video-play-pause-bottom"
-                                        title="Play/Pause"
-                                    >
-                                        <i data-lucide="play"></i>
-                                    </button>
-                                    <button
-                                        class="video-control-btn video-control-sm"
-                                        id="video-mute"
-                                        title="Mute/Unmute"
-                                    >
-                                        <i data-lucide="volume-2"></i>
-                                    </button>
-                                    <input
-                                        type="range"
-                                        class="video-volume-slider"
-                                        id="video-volume"
-                                        min="0"
-                                        max="100"
-                                        value="100"
-                                        title="Volume"
-                                    />
-                                    <div class="volume-tooltip" id="volume-tooltip">
-                                        Video has no sound
-                                    </div>
-                                    <span class="video-time" id="video-time">0:00 / 0:00</span>
-                                    <div class="video-controls-spacer"></div>
-                                    <button
-                                        class="video-control-btn video-control-sm"
-                                        id="video-prev-bottom"
-                                        title="Previous video"
-                                    >
-                                        <i data-lucide="skip-back"></i>
-                                    </button>
-                                    <button
-                                        class="video-control-btn video-control-sm"
-                                        id="video-next-bottom"
-                                        title="Next video"
-                                    >
-                                        <i data-lucide="skip-forward"></i>
-                                    </button>
-                                </div>
-                            </div>
+                        <div class="video-container">
+                            <video id="playlist-video"></video>
+                            <!-- VideoPlayer component will create controls dynamically -->
                         </div>
                     </div>
                     <aside class="playlist-sidebar">
@@ -833,7 +757,7 @@
         <script src="/js/video-player.js"></script>
         <script src="/js/video-controls.js"></script>
         <script src="/js/lightbox.js"></script>
-        <script src="/js/player.js"></script>
+        <script src="/js/playlist.js"></script>
         <script src="/js/selection.js"></script>
         <script src="/js/tag-tooltip.js"></script>
         <script src="/js/tag-clipboard.js"></script>

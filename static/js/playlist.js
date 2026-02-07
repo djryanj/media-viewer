@@ -1,4 +1,4 @@
-const Player = {
+const Playlist = {
     elements: {},
     playlist: null,
     currentIndex: 0,
@@ -17,50 +17,20 @@ const Player = {
     edgeSwipeThreshold: 30,
     itemTags: new Map(),
     _videoErrorHandler: null,
-    savedVolume: 1,
-    isMuted: false,
-    isDraggingProgress: false,
+    videoPlayer: null,
+    isLoading: false,
 
     init() {
         this.cacheElements();
         this.createHotZones();
+        this.createLoadingIndicator();
         this.createPlaylistToggle();
         this.createEdgeSwipeZone();
         this.createPlaylistOverlay();
         this.createPlaylistCloseBtn();
         this.createEdgeHint();
-        this.loadVolumePreferences();
         this.bindEvents();
         this.checkOrientation();
-    },
-
-    loadVolumePreferences() {
-        // Load saved volume (default to 1.0 if not set)
-        const savedVolume = localStorage.getItem('playerVolume');
-        const savedMuted = localStorage.getItem('playerMuted');
-
-        console.log('[Player] Loading volume preferences:', { savedVolume, savedMuted });
-
-        if (savedVolume !== null) {
-            this.savedVolume = parseFloat(savedVolume);
-        } else {
-            this.savedVolume = 1.0;
-        }
-
-        // Default to false (unmuted) if not explicitly saved as 'true'
-        this.isMuted = savedMuted === 'true';
-
-        console.log('[Player] Loaded preferences:', {
-            savedVolume: this.savedVolume,
-            isMuted: this.isMuted,
-        });
-    },
-
-    saveVolumePreferences() {
-        localStorage.setItem('playerVolume', this.savedVolume.toString());
-        localStorage.setItem('playerMuted', this.elements.video.muted.toString());
-        // Update our cached muted state so next video uses the correct value
-        this.isMuted = this.elements.video.muted;
     },
 
     cacheElements() {
@@ -70,6 +40,7 @@ const Player = {
             header: document.querySelector('.player-header'),
             title: document.getElementById('playlist-title'),
             video: document.getElementById('playlist-video'),
+            videoContainer: document.querySelector('.player-modal .video-container'),
             items: document.getElementById('playlist-items'),
             closeBtn: document.querySelector('.player-close'),
             maximizeBtn: document.getElementById('player-maximize'),
@@ -77,22 +48,6 @@ const Player = {
             videoWrapper: document.querySelector('.video-wrapper'),
             sidebar: document.querySelector('.playlist-sidebar'),
             body: document.querySelector('.player-body'),
-            // Custom video controls
-            videoControls: document.getElementById('video-controls'),
-            playPauseBtn: document.getElementById('video-play-pause'),
-            playPauseBottomBtn: document.getElementById('video-play-pause-bottom'),
-            videoPrevBtn: document.getElementById('video-prev'),
-            videoNextBtn: document.getElementById('video-next'),
-            videoPrevBottomBtn: document.getElementById('video-prev-bottom'),
-            videoNextBottomBtn: document.getElementById('video-next-bottom'),
-            muteBtn: document.getElementById('video-mute'),
-            volumeSlider: document.getElementById('video-volume'),
-            progressBar: document.getElementById('video-progress-bar'),
-            progressFilled: document.getElementById('video-progress-filled'),
-            progressHandle: document.getElementById('video-progress-handle'),
-            timeDisplay: document.getElementById('video-time'),
-            progressContainer: document.querySelector('.video-progress-container'),
-            controlsBottom: document.querySelector('.video-controls-bottom'),
         };
     },
 
@@ -122,6 +77,14 @@ const Player = {
         this.elements.hotZoneRight = rightZone;
 
         lucide.createIcons();
+    },
+
+    createLoadingIndicator() {
+        const loader = document.createElement('div');
+        loader.className = 'player-loader hidden';
+        loader.innerHTML = '<div class="player-spinner"></div>';
+        this.elements.videoWrapper.appendChild(loader);
+        this.elements.loader = loader;
     },
 
     createPlaylistToggle() {
@@ -236,79 +199,8 @@ const Player = {
         this.elements.maximizeBtn.addEventListener('click', () => this.toggleTheaterMode());
         this.elements.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
 
-        // Custom video controls
-        this.elements.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
-        this.elements.playPauseBottomBtn.addEventListener('click', () => this.togglePlayPause());
-        this.elements.videoPrevBtn.addEventListener('click', () => this.prev());
-        this.elements.videoNextBtn.addEventListener('click', () => this.next());
-        this.elements.videoPrevBottomBtn.addEventListener('click', () => this.prev());
-        this.elements.videoNextBottomBtn.addEventListener('click', () => this.next());
-        this.elements.muteBtn.addEventListener('click', () => this.toggleMute());
-        this.elements.volumeSlider.addEventListener('input', (e) => this.setVolume(e.target.value));
-        // Prevent volume slider from triggering swipe gestures
-        this.elements.volumeSlider.addEventListener('touchstart', (e) => e.stopPropagation());
-        this.elements.volumeSlider.addEventListener('touchmove', (e) => e.stopPropagation());
-        this.elements.volumeSlider.addEventListener('touchend', (e) => e.stopPropagation());
-        this.elements.volumeSlider.addEventListener('mousedown', (e) => e.stopPropagation());
-
-        // Progress bar drag handling
-        this.elements.progressBar.addEventListener('mousedown', (e) => this.startProgressDrag(e));
-        this.elements.progressBar.addEventListener('touchstart', (e) => this.startProgressDrag(e));
-
-        // Prevent on progress container and bottom controls (but allow drag events to bubble)
-        this.elements.progressContainer.addEventListener('touchstart', (e) => e.stopPropagation());
-        this.elements.progressContainer.addEventListener('touchmove', (e) => {
-            if (!this.isDraggingProgress) e.stopPropagation();
-        });
-        this.elements.progressContainer.addEventListener('touchend', (e) => e.stopPropagation());
-        this.elements.controlsBottom.addEventListener('touchstart', (e) => e.stopPropagation());
-        this.elements.controlsBottom.addEventListener('touchmove', (e) => {
-            if (!this.isDraggingProgress) e.stopPropagation();
-        });
-        this.elements.controlsBottom.addEventListener('touchend', (e) => e.stopPropagation());
-
-        // Video events
-        this.elements.video.addEventListener('play', () => this.updatePlayPauseIcon());
-        this.elements.video.addEventListener('pause', () => {
-            this.updatePlayPauseIcon();
-            this.showVideoControls();
-        });
-        this.elements.video.addEventListener('timeupdate', () => this.updateProgress());
-        this.elements.video.addEventListener('loadedmetadata', () => {
-            this.updateTimeDisplay();
-            this.checkAudioTracks();
-        });
+        // Video ended event - advance to next
         this.elements.video.addEventListener('ended', () => this.next());
-
-        // Auto-hide controls
-        this.elements.videoWrapper.addEventListener('mousemove', () => this.showVideoControls());
-        this.elements.videoWrapper.addEventListener('mouseleave', () =>
-            this.hideVideoControlsDelayed()
-        );
-
-        // Click video or controls overlay to play/pause
-        this.elements.video.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.togglePlayPause();
-        });
-        this.elements.videoControls.addEventListener('click', (e) => {
-            // Only toggle if clicking on the overlay itself, not controls
-            if (
-                e.target === this.elements.videoControls ||
-                e.target.classList.contains('video-controls-overlay')
-            ) {
-                this.togglePlayPause();
-            }
-        });
-
-        // Touch support for controls
-        this.elements.videoWrapper.addEventListener('touchstart', () => {
-            if (this.elements.videoControls.classList.contains('show')) {
-                this.hideVideoControlsDelayed();
-            } else {
-                this.showVideoControls();
-            }
-        });
 
         // Listen for fullscreen changes (e.g., user presses Esc)
         document.addEventListener('fullscreenchange', () => this.handleFullscreenChange());
@@ -333,6 +225,14 @@ const Player = {
                 case 'ArrowRight':
                     this.next();
                     break;
+                case ' ': // Spacebar
+                    e.preventDefault(); // Prevent page scroll
+                    if (this.elements.video.paused) {
+                        this.elements.video.play();
+                    } else {
+                        this.elements.video.pause();
+                    }
+                    break;
                 case 'p':
                 case 'P':
                     this.togglePlaylist();
@@ -352,7 +252,8 @@ const Player = {
                 if (
                     e.target.closest('.player-hot-zone') ||
                     e.target.closest('.playlist-toggle') ||
-                    e.target.closest('.playlist-swipe-zone')
+                    e.target.closest('.playlist-swipe-zone') ||
+                    e.target.closest('.video-controls')
                 )
                     return;
 
@@ -366,7 +267,8 @@ const Player = {
         this.elements.videoWrapper.addEventListener(
             'touchmove',
             (e) => {
-                if (e.target.closest('.playlist-swipe-zone')) return;
+                if (e.target.closest('.playlist-swipe-zone') || e.target.closest('.video-controls'))
+                    return;
 
                 const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
                 const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
@@ -381,7 +283,8 @@ const Player = {
         this.elements.videoWrapper.addEventListener(
             'touchend',
             (e) => {
-                if (e.target.closest('.playlist-swipe-zone')) return;
+                if (e.target.closest('.playlist-swipe-zone') || e.target.closest('.video-controls'))
+                    return;
 
                 if (this.isSwiping) {
                     this.touchEndX = e.changedTouches[0].screenX;
@@ -613,275 +516,6 @@ const Player = {
         }
     },
 
-    // Custom Video Controls
-    togglePlayPause() {
-        if (this.elements.video.paused) {
-            this.elements.video.play();
-        } else {
-            this.elements.video.pause();
-        }
-    },
-
-    updatePlayPauseIcon() {
-        const iconName = this.elements.video.paused ? 'play' : 'pause';
-        this.elements.playPauseBtn.innerHTML = `<i data-lucide="${iconName}"></i>`;
-        this.elements.playPauseBottomBtn.innerHTML = `<i data-lucide="${iconName}"></i>`;
-        lucide.createIcons();
-    },
-
-    toggleMute() {
-        if (this.elements.video.muted) {
-            // Unmute and restore previous volume
-            this.elements.video.muted = false;
-            this.elements.video.volume = this.savedVolume;
-            this.elements.volumeSlider.value = this.savedVolume * 100;
-            // Update slider fill
-            const value = this.savedVolume * 100;
-            this.elements.volumeSlider.style.background = `linear-gradient(to right, white 0%, white ${value}%, rgba(255, 255, 255, 0.3) ${value}%, rgba(255, 255, 255, 0.3) 100%)`;
-        } else {
-            // Save current volume and mute
-            this.savedVolume = this.elements.video.volume;
-            this.elements.video.muted = true;
-            this.elements.volumeSlider.value = 0;
-            // Update slider fill to empty
-            this.elements.volumeSlider.style.background = 'rgba(255, 255, 255, 0.3)';
-        }
-        this.updateVolumeIcon();
-        this.saveVolumePreferences();
-    },
-
-    updateVolumeIcon() {
-        let iconName;
-        if (this.elements.video.muted) {
-            iconName = 'volume-x';
-        } else if (this.elements.video.volume > 0.5) {
-            iconName = 'volume-2';
-        } else if (this.elements.video.volume > 0) {
-            iconName = 'volume-1';
-        } else {
-            iconName = 'volume-x';
-        }
-        this.elements.muteBtn.innerHTML = `<i data-lucide="${iconName}"></i>`;
-        lucide.createIcons();
-    },
-
-    setVolume(value) {
-        const volume = value / 100;
-        this.elements.video.volume = volume;
-
-        // Unmute if slider is moved while muted
-        if (this.elements.video.muted) {
-            this.elements.video.muted = false;
-        }
-
-        // Save as the new volume preference
-        this.savedVolume = volume;
-
-        // Update slider fill
-        this.elements.volumeSlider.style.background = `linear-gradient(to right, white 0%, white ${value}%, rgba(255, 255, 255, 0.3) ${value}%, rgba(255, 255, 255, 0.3) 100%)`;
-
-        this.updateVolumeIcon();
-        this.saveVolumePreferences();
-    },
-
-    startProgressDrag(e) {
-        e.stopPropagation();
-        this.isDraggingProgress = true;
-        this.seekToPosition(e);
-
-        const handleMove = (e) => {
-            if (this.isDraggingProgress) {
-                e.stopPropagation();
-                e.preventDefault();
-                this.seekToPosition(e);
-            }
-        };
-
-        const handleEnd = (e) => {
-            e.stopPropagation();
-            this.isDraggingProgress = false;
-            document.removeEventListener('mousemove', handleMove);
-            document.removeEventListener('touchmove', handleMove);
-            document.removeEventListener('mouseup', handleEnd);
-            document.removeEventListener('touchend', handleEnd);
-        };
-
-        document.addEventListener('mousemove', handleMove);
-        document.addEventListener('touchmove', handleMove, { passive: false });
-        document.addEventListener('mouseup', handleEnd);
-        document.addEventListener('touchend', handleEnd);
-    },
-
-    seekToPosition(e) {
-        const rect = this.elements.progressBar.getBoundingClientRect();
-        let clientX;
-
-        if (e.type.includes('touch')) {
-            // For touchmove, use touches[0]; for touchend, use changedTouches[0]
-            clientX = e.touches?.[0]?.clientX || e.changedTouches?.[0]?.clientX;
-        } else {
-            clientX = e.clientX;
-        }
-
-        if (clientX === undefined) return;
-
-        let percent = (clientX - rect.left) / rect.width;
-        percent = Math.max(0, Math.min(1, percent)); // Clamp between 0 and 1
-        this.elements.video.currentTime = percent * this.elements.video.duration;
-    },
-
-    checkAudioTracks() {
-        const video = this.elements.video;
-        let hasAudio = null; // null = unknown, true = has audio, false = no audio
-
-        // Method 1: Check audioTracks API (standard but not universally supported)
-        if (video.audioTracks && video.audioTracks.length > 0) {
-            hasAudio = true;
-        }
-        // Method 2: Firefox-specific property
-        else if (video.mozHasAudio !== undefined) {
-            hasAudio = video.mozHasAudio;
-        }
-        // Method 3: WebKit-specific property (Chrome/Safari)
-        else if (video.webkitAudioDecodedByteCount !== undefined) {
-            // Check after a brief delay to see if any audio has been decoded
-            if (!this._audioCheckTimeout) {
-                this._audioCheckTimeout = setTimeout(() => {
-                    this._audioCheckTimeout = null;
-                    const hasDecodedAudio = video.webkitAudioDecodedByteCount > 0;
-                    this.updateVolumeControlsVisibility(hasDecodedAudio);
-                }, 500); // Check after 500ms of playback
-            }
-            return; // Don't update visibility yet, wait for the timeout
-        }
-
-        // If we couldn't determine, show controls (better to show than hide incorrectly)
-        if (hasAudio === null) {
-            hasAudio = true;
-        }
-
-        this.updateVolumeControlsVisibility(hasAudio);
-    },
-
-    updateVolumeControlsVisibility(hasAudio) {
-        const tooltip = document.getElementById('volume-tooltip');
-
-        if (!hasAudio) {
-            // Dim and disable volume controls
-            this.elements.muteBtn.style.opacity = '0.4';
-            this.elements.muteBtn.style.cursor = 'not-allowed';
-            this.elements.volumeSlider.style.opacity = '0.4';
-            this.elements.volumeSlider.style.cursor = 'not-allowed';
-            this.elements.volumeSlider.disabled = true;
-
-            // Show tooltip on hover/touch
-            this.elements.muteBtn.addEventListener(
-                'mouseenter',
-                (this._showVolumeTooltip = () => tooltip?.classList.add('visible'))
-            );
-            this.elements.muteBtn.addEventListener(
-                'mouseleave',
-                (this._hideVolumeTooltip = () => tooltip?.classList.remove('visible'))
-            );
-            this.elements.volumeSlider.addEventListener('mouseenter', this._showVolumeTooltip);
-            this.elements.volumeSlider.addEventListener('mouseleave', this._hideVolumeTooltip);
-            this.elements.muteBtn.addEventListener(
-                'touchstart',
-                (this._toggleVolumeTooltip = (e) => {
-                    e.preventDefault();
-                    tooltip?.classList.toggle('visible');
-                })
-            );
-            this.elements.volumeSlider.addEventListener('touchstart', this._toggleVolumeTooltip);
-
-            // Set to muted state visually
-            this.elements.volumeSlider.value = 0;
-            this.elements.volumeSlider.style.background =
-                'linear-gradient(to right, white 0%, white 0%, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.3) 100%)';
-
-            // Set mute icon
-            this.elements.muteBtn.innerHTML = '<i data-lucide="volume-x"></i>';
-            lucide.createIcons();
-        } else {
-            // Re-enable volume controls
-            this.elements.muteBtn.style.opacity = '';
-            this.elements.muteBtn.style.cursor = '';
-            this.elements.volumeSlider.style.opacity = '';
-            this.elements.volumeSlider.style.cursor = '';
-            this.elements.volumeSlider.disabled = false;
-            tooltip?.classList.remove('visible');
-
-            // Remove tooltip listeners
-            if (this._showVolumeTooltip) {
-                this.elements.muteBtn.removeEventListener('mouseenter', this._showVolumeTooltip);
-                this.elements.muteBtn.removeEventListener('mouseleave', this._hideVolumeTooltip);
-                this.elements.volumeSlider.removeEventListener(
-                    'mouseenter',
-                    this._showVolumeTooltip
-                );
-                this.elements.volumeSlider.removeEventListener(
-                    'mouseleave',
-                    this._hideVolumeTooltip
-                );
-                this.elements.muteBtn.removeEventListener('touchstart', this._toggleVolumeTooltip);
-                this.elements.volumeSlider.removeEventListener(
-                    'touchstart',
-                    this._toggleVolumeTooltip
-                );
-            }
-
-            // Restore volume to saved or default
-            const volume = this.savedVolume || this.elements.video.volume;
-            // Only update slider if not muted - if muted, leave it at 0
-            if (!this.elements.video.muted) {
-                this.elements.volumeSlider.value = volume * 100;
-                this.elements.volumeSlider.style.background = `linear-gradient(to right, white 0%, white ${volume * 100}%, rgba(255, 255, 255, 0.3) ${volume * 100}%, rgba(255, 255, 255, 0.3) 100%)`;
-            }
-            this.updateVolumeIcon();
-        }
-    },
-
-    formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    },
-
-    updateProgress() {
-        const percent = (this.elements.video.currentTime / this.elements.video.duration) * 100;
-        this.elements.progressFilled.style.width = `${percent}%`;
-        this.elements.progressHandle.style.left = `${percent}%`;
-        this.updateTimeDisplay();
-    },
-
-    updateTimeDisplay() {
-        if (!this.elements.currentTime || !this.elements.duration) return;
-
-        const current = this.formatTime(this.elements.video.currentTime);
-        const duration = this.formatTime(this.elements.video.duration);
-
-        this.elements.currentTime.textContent = current;
-        this.elements.duration.textContent = duration;
-    },
-
-    showVideoControls() {
-        this.elements.videoControls.classList.add('show');
-        this.hideVideoControlsDelayed();
-    },
-
-    hideVideoControlsDelayed() {
-        if (this.videoControlsTimeout) {
-            clearTimeout(this.videoControlsTimeout);
-        }
-
-        // Don't hide controls if video is paused
-        if (this.elements.video.paused) return;
-
-        this.videoControlsTimeout = setTimeout(() => {
-            this.elements.videoControls.classList.remove('show');
-        }, 3000);
-    },
-
     showHint() {
         if (!this.isLandscape) return;
 
@@ -894,6 +528,25 @@ const Player = {
         this.hintTimeout = setTimeout(() => {
             this.elements.modal.classList.remove('show-hint');
         }, 3000);
+    },
+
+    initVideoPlayer() {
+        // Clean up previous video player instance
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
+
+        // Create new VideoPlayer instance with navigation
+        if (typeof VideoPlayer !== 'undefined') {
+            this.videoPlayer = new VideoPlayer({
+                video: this.elements.video,
+                container: this.elements.videoContainer,
+                showNavigation: true,
+                onPrevious: () => this.prev(),
+                onNext: () => this.next(),
+            });
+        }
     },
 
     showControls() {
@@ -1109,6 +762,12 @@ const Player = {
             this.exitFullscreen();
         }
 
+        // Clean up video player
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
+
         this.elements.modal.classList.add('hidden');
         this.elements.modal.classList.remove('landscape-mode');
         this.elements.modal.classList.remove('theater-mode');
@@ -1151,6 +810,18 @@ const Player = {
         }
 
         this.releaseWakeLock();
+    },
+
+    showLoading() {
+        this.isLoading = true;
+        this.elements.loader?.classList.remove('hidden');
+        this.elements.video.classList.add('loading');
+    },
+
+    hideLoading() {
+        this.isLoading = false;
+        this.elements.loader?.classList.add('hidden');
+        this.elements.video.classList.remove('loading');
     },
 
     async acquireWakeLock() {
@@ -1266,24 +937,30 @@ const Player = {
 
         video.addEventListener('error', this._videoErrorHandler);
 
-        // Apply saved volume preferences BEFORE loading video
-        video.volume = this.savedVolume;
-        video.muted = this.isMuted;
+        // Show loading indicator
+        this.showLoading();
 
-        // Initialize volume slider UI immediately with saved preferences
-        // Check actual video.muted state after setting it
-        if (video.muted) {
-            this.elements.volumeSlider.value = 0;
-            this.elements.volumeSlider.style.background = 'rgba(255, 255, 255, 0.3)';
-        } else {
-            const volumePercent = this.savedVolume * 100;
-            this.elements.volumeSlider.value = volumePercent;
-            this.elements.volumeSlider.style.background = `linear-gradient(to right, white 0%, white ${volumePercent}%, rgba(255, 255, 255, 0.3) ${volumePercent}%, rgba(255, 255, 255, 0.3) 100%)`;
-        }
-        this.updateVolumeIcon();
+        // Hide loading when video data is loaded
+        const hideLoadingOnData = () => {
+            this.hideLoading();
+            video.removeEventListener('loadeddata', hideLoadingOnData);
+            video.removeEventListener('error', hideLoadingOnError);
+        };
+
+        const hideLoadingOnError = () => {
+            this.hideLoading();
+            video.removeEventListener('loadeddata', hideLoadingOnData);
+            video.removeEventListener('error', hideLoadingOnError);
+        };
+
+        video.addEventListener('loadeddata', hideLoadingOnData);
+        video.addEventListener('error', hideLoadingOnError);
 
         video.src = videoUrl;
         video.load();
+
+        // Initialize VideoPlayer component
+        this.initVideoPlayer();
 
         if (typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled()) {
             video.play().catch((err) => {
@@ -1295,10 +972,6 @@ const Player = {
         if (activeItem) {
             activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
-
-        // Show video controls initially and set correct play/pause icon
-        this.showVideoControls();
-        this.updatePlayPauseIcon();
     },
 
     /**
@@ -1357,5 +1030,5 @@ const Player = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    Player.init();
+    Playlist.init();
 });
