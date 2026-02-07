@@ -13,7 +13,7 @@ const PRECACHE_ASSETS = [
     '/js/app.js',
     '/js/gallery.js',
     '/js/lightbox.js',
-    '/js/player.js',
+    '/js/playlist.js',
     '/js/search.js',
     '/js/favorites.js',
     '/js/tags.js',

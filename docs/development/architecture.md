@@ -165,7 +165,7 @@ The frontend is organized into independent modules:
 | Favorites            | `favorites.js`              | Favorites management               |
 | ItemSelection        | `selection.js`              | Multi-select mode                  |
 | TagClipboard         | `tag-clipboard.js`          | Tag copy/paste                     |
-| Player               | `player.js`                 | Playlist player                    |
+| Player               | `playlist.js`               | Playlist player                    |
 | HistoryManager       | `history.js`                | Browser history management         |
 | InfiniteScroll       | `infinite-scroll.js`        | Gallery pagination                 |
 | InfiniteScrollSearch | `infinite-scroll-search.js` | Search pagination                  |

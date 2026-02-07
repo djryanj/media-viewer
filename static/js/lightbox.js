@@ -19,6 +19,9 @@ const Lightbox = {
     animationCheckInterval: null,
     lastImageData: null,
 
+    // Video player component instance
+    videoPlayer: null,
+
     init() {
         this.cacheElements();
         this.createHotZones();
@@ -34,6 +37,7 @@ const Lightbox = {
             lightbox: document.getElementById('lightbox'),
             image: document.getElementById('lightbox-image'),
             video: document.getElementById('lightbox-video'),
+            videoWrapper: document.querySelector('.lightbox-video-wrapper'),
             title: document.getElementById('lightbox-title'),
             counter: document.getElementById('lightbox-counter'),
             closeBtn: document.querySelector('.lightbox-close'),
@@ -385,6 +389,17 @@ const Lightbox = {
                 case 'ArrowRight':
                     this.next();
                     break;
+                case ' ': // Spacebar
+                    // Toggle play/pause for video
+                    if (this.elements.video && !this.elements.video.classList.contains('hidden')) {
+                        e.preventDefault(); // Prevent page scroll
+                        if (this.elements.video.paused) {
+                            this.elements.video.play();
+                        } else {
+                            this.elements.video.pause();
+                        }
+                    }
+                    break;
                 case 'f':
                 case 'F':
                     this.togglePin();
@@ -414,6 +429,9 @@ const Lightbox = {
         this.elements.lightbox.addEventListener(
             'touchstart',
             (e) => {
+                // Ignore touches on video controls
+                if (e.target.closest('.video-controls')) return;
+
                 this.touchStartX = e.changedTouches[0].screenX;
                 this.touchStartY = e.changedTouches[0].screenY;
                 this.isSwiping = false;
@@ -424,6 +442,9 @@ const Lightbox = {
         this.elements.lightbox.addEventListener(
             'touchmove',
             (e) => {
+                // Ignore touches on video controls
+                if (e.target.closest('.video-controls')) return;
+
                 const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
                 const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
 
@@ -539,6 +560,12 @@ const Lightbox = {
         this.clearPreloadCache();
         this.stopAnimationLoopDetection();
         this.releaseWakeLock();
+
+        // Clean up video player
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
     },
 
     async acquireWakeLock() {
@@ -550,8 +577,8 @@ const Lightbox = {
     releaseWakeLock() {
         if (typeof WakeLock !== 'undefined') {
             const playerOpen =
-                typeof Player !== 'undefined' &&
-                !Player.elements?.modal?.classList.contains('hidden');
+                typeof Playlist !== 'undefined' &&
+                !Playlist.elements?.modal?.classList.contains('hidden');
 
             if (!playerOpen) {
                 WakeLock.release();
@@ -659,6 +686,12 @@ const Lightbox = {
 
         const isVideo = file.type === 'video';
         const showLoopButton = this.shouldShowLoopButton(file);
+
+        // Clean up video player when switching to image
+        if (!isVideo && this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
 
         this.elements.lightbox.classList.toggle('video-mode', isVideo);
 
@@ -991,6 +1024,26 @@ const Lightbox = {
         video.src = videoUrl;
         video.classList.remove('hidden');
         video.load();
+
+        // Initialize VideoPlayer component
+        this.initVideoPlayer();
+    },
+
+    initVideoPlayer() {
+        // Clean up previous video player instance
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
+
+        // Create new VideoPlayer instance
+        if (typeof VideoPlayer !== 'undefined') {
+            this.videoPlayer = new VideoPlayer({
+                video: this.elements.video,
+                container: this.elements.videoWrapper,
+                showNavigation: false,
+            });
+        }
     },
 
     clearPreloadCache() {

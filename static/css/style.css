@@ -1791,6 +1791,8 @@ select:focus {
     border-top-color: #ffffff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+    transform-origin: center;
+    will-change: transform;
 }
 
 #lightbox-image.loading,
@@ -2251,15 +2253,30 @@ select:focus {
     text-overflow: ellipsis;
 }
 
+.player-header-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.player-maximize,
+.player-fullscreen,
 .player-close {
     background: none;
     border: none;
     color: var(--text-primary);
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     cursor: pointer;
     padding: 0.25rem 0.5rem;
     border-radius: var(--radius);
     flex-shrink: 0;
+    transition: background var(--transition);
+}
+
+.player-maximize:hover,
+.player-fullscreen:hover,
+.player-close:hover {
+    background: var(--bg-secondary);
 }
 
 .player-body {
@@ -2279,10 +2296,26 @@ select:focus {
     min-height: 200px;
 }
 
+.video-container {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 100%;
+}
+
 .video-wrapper video {
     width: 100%;
     max-height: 100%;
+    display: block;
     z-index: 1;
+}
+
+#playlist-video.loading {
+    opacity: 0.3;
+}
+
+#playlist-video {
+    transition: opacity 0.15s ease-in-out;
 }
 
 .playlist-sidebar {
@@ -2370,13 +2403,302 @@ select:focus {
     color: var(--accent);
 }
 
-.player-controls {
+/* Make lightbox content positioned */
+.lightbox-content {
+    position: relative;
+}
+
+/* Lightbox video wrapper for proper control positioning */
+.lightbox-video-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* Adjust lightbox video to use native controls */
+.lightbox-video {
+    object-fit: contain;
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+}
+
+/* Video Controls Overlay */
+.video-controls {
+    position: absolute;
+    inset: 0;
     display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 2rem;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 15;
+    pointer-events: none;
+}
+
+.video-controls.show {
+    pointer-events: auto;
+}
+
+.video-controls.show {
+    opacity: 1;
+}
+
+.video-controls-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.3) 0%,
+        transparent 20%,
+        transparent 80%,
+        rgba(0, 0, 0, 0.5) 100%
+    );
+    pointer-events: none;
+}
+
+.video-control-btn {
+    position: relative;
+    background: rgba(0, 0, 0, 0.7);
+    border: none;
+    color: white;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    z-index: 1;
+}
+
+.video-control-btn:hover {
+    background: rgba(0, 0, 0, 0.9);
+    transform: scale(1.1);
+}
+
+.video-control-btn [data-lucide] {
+    width: 28px;
+    height: 28px;
+}
+
+.video-control-sm {
+    width: 36px !important;
+    height: 36px !important;
+}
+
+.video-control-sm [data-lucide] {
+    width: 20px !important;
+    height: 20px !important;
+}
+
+.video-prev,
+.video-next {
+    position: absolute;
+}
+
+.video-prev {
+    left: 2rem;
+}
+
+.video-next {
+    right: 2rem;
+}
+
+.player-modal.theater-mode .video-next {
+    right: 5rem;
+}
+
+/* Mobile portrait - reduce button size and adjust spacing */
+@media (max-width: 767px) and (orientation: portrait) {
+    .video-prev {
+        left: 0.5rem;
+    }
+
+    .video-next {
+        right: 0.5rem;
+    }
+
+    .video-control-btn {
+        width: 50px;
+        height: 50px;
+    }
+
+    .video-control-btn [data-lucide] {
+        width: 24px;
+        height: 24px;
+    }
+
+    /* Stack playlist toggle above next button on right side */
+    .player-modal.theater-mode .playlist-toggle {
+        top: auto;
+        bottom: 7rem;
+        transform: none;
+    }
+
+    .player-modal.theater-mode .video-next {
+        right: 0.5rem;
+    }
+
+    /* When playlist is visible, move toggle with it */
+    .player-modal.theater-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
+    .player-modal.theater-mode .playlist-toggle.active {
+        right: calc(40vw - 20px);
+    }
+}
+
+.video-controls-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1rem;
+    z-index: 1;
+}
+
+.video-progress-container {
+    width: 100%;
+    padding: 0.5rem 0;
+    cursor: pointer;
+}
+
+.video-progress-bar {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2.5px;
+    position: relative;
+    overflow: visible;
+}
+
+.video-progress-bar:hover {
+    height: 8px;
+}
+
+/* Always show handle when controls are visible */
+@media (hover: none) and (pointer: coarse) {
+    .video-progress-bar {
+        height: 8px;
+    }
+}
+
+.video-progress-filled {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.1s linear;
+    pointer-events: none;
+}
+
+.video-progress-handle {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 13px;
+    height: 13px;
+    background: white;
+    border-radius: 50%;
+    transform: translateX(-50%) translateY(-50%) scale(0);
+    opacity: 0;
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease;
+    pointer-events: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    z-index: 2;
+}
+
+.video-controls.show .video-progress-handle {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-50%) scale(1);
+}
+
+.video-progress-bar:hover .video-progress-handle {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-50%) scale(1);
+}
+
+.video-controls-row {
+    display: flex;
+    align-items: center;
     gap: 0.75rem;
-    padding: 0.75rem;
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
+    margin-top: 0.5rem;
+}
+
+.video-time {
+    color: white;
+    font-size: 0.875rem;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    white-space: nowrap;
+}
+
+.video-volume-slider {
+    width: 80px;
+    height: 5px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2.5px;
+    outline: none;
+    cursor: pointer;
+}
+
+.video-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+}
+
+.video-volume-slider::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: white;
+    border: none;
+    cursor: pointer;
+}
+
+.volume-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    font-size: 12px;
+    white-space: nowrap;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 1000;
+}
+
+.volume-tooltip.visible {
+    opacity: 1;
+}
+
+.volume-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.9);
+}
+
+.video-controls-spacer {
+    flex: 1;
 }
 
 /* Player Hot Zones */
@@ -2387,7 +2709,7 @@ select:focus {
     width: 15%;
     min-width: 50px;
     max-width: 100px;
-    display: flex;
+    display: none; /* Hidden by default, shown only in landscape/theater/fullscreen */
     align-items: center;
     justify-content: center;
     cursor: pointer;
@@ -2440,6 +2762,8 @@ select:focus {
     border-top-color: #ffffff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+    transform-origin: center;
+    will-change: transform;
 }
 
 .player-modal .video-wrapper video.loading {
@@ -2501,6 +2825,126 @@ select:focus {
     }
 }
 
+/* Player Theater Mode (maximized within viewport) */
+.player-modal.theater-mode {
+    padding: 0;
+}
+
+.player-modal.theater-mode .player-container {
+    max-width: 100%;
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+}
+
+.player-modal.theater-mode .player-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
+    border-bottom: none;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    padding: 0.5rem 1rem;
+}
+
+.player-modal.theater-mode .player-header h2 {
+    font-size: 0.875rem;
+    color: white;
+}
+
+.player-modal.theater-mode .player-maximize,
+.player-modal.theater-mode .player-fullscreen,
+.player-modal.theater-mode .player-close {
+    color: white;
+}
+
+.player-modal.theater-mode:hover .player-header,
+.player-modal.theater-mode.controls-visible .player-header {
+    opacity: 1;
+}
+
+.player-modal.theater-mode .player-body {
+    height: 100%;
+    flex-direction: row;
+}
+
+.player-modal.theater-mode .video-wrapper {
+    height: 100%;
+    flex: 1;
+}
+
+.player-modal.theater-mode .video-wrapper video {
+    max-height: 100vh;
+    height: 100%;
+    width: 100%;
+    object-fit: contain;
+}
+
+.player-modal.theater-mode .playlist-sidebar {
+    position: absolute;
+    right: 0;
+    top: 3rem;
+    bottom: 0;
+    width: 280px;
+    max-width: 40vw;
+    max-height: 100%;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 15;
+    border-left: 1px solid var(--border-color);
+    background: rgba(22, 33, 62, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.player-modal.theater-mode .playlist-sidebar.visible {
+    transform: translateX(0);
+}
+
+.player-modal.theater-mode .player-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+    border-top: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 20;
+    padding: 1rem;
+}
+
+.player-modal.theater-mode:hover .player-controls,
+.player-modal.theater-mode.controls-visible .player-controls {
+    opacity: 1;
+}
+
+.player-modal.theater-mode .playlist-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.player-modal.theater-mode .playlist-toggle.active {
+    animation: none;
+    background: var(--accent);
+}
+
+.player-modal.theater-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
+.player-modal.theater-mode .playlist-toggle.active {
+    right: 260px;
+}
+
+@media (max-width: 1200px) {
+    .player-modal.theater-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
+    .player-modal.theater-mode .playlist-toggle.active {
+        right: calc(40vw - 20px);
+    }
+}
+
 /* Player Landscape Mode */
 .player-modal.landscape-mode {
     padding: 0;
@@ -2558,7 +3002,7 @@ select:focus {
 .player-modal.landscape-mode .playlist-sidebar {
     position: absolute;
     right: 0;
-    top: 0;
+    top: 3rem;
     bottom: 0;
     width: 280px;
     max-width: 40vw;
@@ -2648,6 +3092,28 @@ select:focus {
     right: 260px;
 }
 
+/* Landscape mode video controls adjustments */
+.player-modal.landscape-mode .video-control-btn {
+    width: 50px;
+    height: 50px;
+}
+
+.player-modal.landscape-mode .video-prev {
+    left: 1rem;
+}
+
+.player-modal.landscape-mode .video-next {
+    right: 4rem;
+}
+
+.player-modal.landscape-mode .video-controls-bottom {
+    padding: 0.5rem;
+}
+
+.player-modal.landscape-mode .video-time {
+    font-size: 0.75rem;
+}
+
 .playlist-swipe-zone {
     display: none;
     position: absolute;
@@ -2686,12 +3152,6 @@ select:focus {
 .playlist-close-btn:hover,
 .playlist-close-btn:active {
     background: rgba(255, 255, 255, 0.2);
-}
-
-.player-modal.landscape-mode .playlist-close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 .playlist-overlay {
@@ -2804,19 +3264,6 @@ select:focus {
 
 .player-modal.landscape-mode .playlist-tag {
     font-size: 0.5625rem;
-}
-
-.player-modal.landscape-mode .player-hot-zone {
-    bottom: 45%;
-    width: 12%;
-    min-width: 40px;
-    max-width: 80px;
-}
-
-@media (hover: none) and (pointer: coarse) {
-    .player-modal.landscape-mode .player-hot-zone {
-        bottom: 55%;
-    }
 }
 
 /* ===========================================
@@ -4096,6 +4543,9 @@ select:focus {
 }
 
 @keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
     to {
         transform: rotate(360deg);
     }
@@ -4889,7 +5339,11 @@ body.selection-mode .stats-bar {
     height: 1.5rem;
 }
 
-.playlist-toggle [data-lucide],
+.playlist-toggle [data-lucide] {
+    width: 1.75rem;
+    height: 1.75rem;
+}
+
 .playlist-close-btn [data-lucide] {
     width: 1.25rem;
     height: 1.25rem;

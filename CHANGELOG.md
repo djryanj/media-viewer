@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.9.0] - 2026-02-07
+
+### Added
+
+- Major overhaul to the playlist view, including better video controls, better playlist positioning, fullscreen and theater mode views, better audio controls, and more. ([#173](https://github.com/djryanj/media-viewer/issues/173))
+
+- **Reusable VideoPlayer Component**: Created a shared VideoPlayer component used by both lightbox and playlist player, eliminating ~400 lines of duplicate code. Component features custom controls with volume persistence, audio detection, and touch-optimized progress bar. ([#173](https://github.com/djryanj/media-viewer/issues/173))
+
+- The above component is now in use for both the playlist and lightbox video players.
+
+### Changed
+
+- **File Rename**: Renamed `player.js` to `playlist.js` and `Player` object to `Playlist` for better clarity and consistency. ([#173](https://github.com/djryanj/media-viewer/issues/173))
+
 ## [0.8.4] - 2026-02-06
 
 ### Bug Fixes

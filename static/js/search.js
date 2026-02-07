@@ -889,7 +889,7 @@ const Search = {
                       .split('/')
                       .pop()
                       .replace(/\.[^/.]+$/, '');
-            Player.loadPlaylist(playlistName);
+            Playlist.loadPlaylist(playlistName);
             return;
         }
 

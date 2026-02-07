@@ -308,9 +308,9 @@ const SessionManager = {
             }
         }
 
-        if (typeof Player !== 'undefined' && Player.elements?.modal) {
+        if (typeof Playlist !== 'undefined' && Playlist.elements?.modal) {
             try {
-                Player.close();
+                Playlist.close();
             } catch (e) {
                 this.log('Error closing player:', e);
             }

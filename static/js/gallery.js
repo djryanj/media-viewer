@@ -514,7 +514,7 @@ const Gallery = {
             }
         } else if (item.type === 'playlist') {
             const playlistName = item.name.replace(/\.[^/.]+$/, '');
-            Player.loadPlaylist(playlistName);
+            Playlist.loadPlaylist(playlistName);
         }
     },
 

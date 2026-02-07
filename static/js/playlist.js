@@ -1,4 +1,4 @@
-const Player = {
+const Playlist = {
     elements: {},
     playlist: null,
     currentIndex: 0,
@@ -7,23 +7,28 @@ const Player = {
     touchStartY: 0,
     isSwiping: false,
     isLandscape: false,
+    isTheaterMode: false,
+    isFullscreen: false,
     controlsTimeout: null,
+    videoControlsTimeout: null,
     hintTimeout: null,
     playlistVisible: false,
     edgeSwipeStartX: null,
     edgeSwipeThreshold: 30,
     itemTags: new Map(),
     _videoErrorHandler: null,
+    videoPlayer: null,
+    isLoading: false,
 
     init() {
         this.cacheElements();
         this.createHotZones();
+        this.createLoadingIndicator();
         this.createPlaylistToggle();
         this.createEdgeSwipeZone();
         this.createPlaylistOverlay();
         this.createPlaylistCloseBtn();
         this.createEdgeHint();
-        this.createHintText();
         this.bindEvents();
         this.checkOrientation();
     },
@@ -35,13 +40,13 @@ const Player = {
             header: document.querySelector('.player-header'),
             title: document.getElementById('playlist-title'),
             video: document.getElementById('playlist-video'),
+            videoContainer: document.querySelector('.player-modal .video-container'),
             items: document.getElementById('playlist-items'),
             closeBtn: document.querySelector('.player-close'),
-            prevBtn: document.getElementById('prev-video'),
-            nextBtn: document.getElementById('next-video'),
+            maximizeBtn: document.getElementById('player-maximize'),
+            fullscreenBtn: document.getElementById('player-fullscreen'),
             videoWrapper: document.querySelector('.video-wrapper'),
             sidebar: document.querySelector('.playlist-sidebar'),
-            controls: document.querySelector('.player-controls'),
             body: document.querySelector('.player-body'),
         };
     },
@@ -72,6 +77,14 @@ const Player = {
         this.elements.hotZoneRight = rightZone;
 
         lucide.createIcons();
+    },
+
+    createLoadingIndicator() {
+        const loader = document.createElement('div');
+        loader.className = 'player-loader hidden';
+        loader.innerHTML = '<div class="player-spinner"></div>';
+        this.elements.videoWrapper.appendChild(loader);
+        this.elements.loader = loader;
     },
 
     createPlaylistToggle() {
@@ -181,25 +194,19 @@ const Player = {
         this.elements.edgeHint = hint;
     },
 
-    createHintText() {
-        if (!this.elements.videoWrapper) return;
-
-        const hintText = document.createElement('div');
-        hintText.className = 'playlist-hint-text';
-        hintText.innerHTML = '<i data-lucide="chevron-left"></i> Swipe for playlist';
-
-        this.elements.videoWrapper.appendChild(hintText);
-        this.elements.hintText = hintText;
-
-        lucide.createIcons();
-    },
-
     bindEvents() {
         this.elements.closeBtn.addEventListener('click', () => this.closeWithHistory());
-        this.elements.prevBtn.addEventListener('click', () => this.prev());
-        this.elements.nextBtn.addEventListener('click', () => this.next());
+        this.elements.maximizeBtn.addEventListener('click', () => this.toggleTheaterMode());
+        this.elements.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
 
+        // Video ended event - advance to next
         this.elements.video.addEventListener('ended', () => this.next());
+
+        // Listen for fullscreen changes (e.g., user presses Esc)
+        document.addEventListener('fullscreenchange', () => this.handleFullscreenChange());
+        document.addEventListener('webkitfullscreenchange', () => this.handleFullscreenChange());
+        document.addEventListener('mozfullscreenchange', () => this.handleFullscreenChange());
+        document.addEventListener('MSFullscreenChange', () => this.handleFullscreenChange());
 
         document.addEventListener('keydown', (e) => {
             if (this.elements.modal.classList.contains('hidden')) return;
@@ -217,6 +224,14 @@ const Player = {
                     break;
                 case 'ArrowRight':
                     this.next();
+                    break;
+                case ' ': // Spacebar
+                    e.preventDefault(); // Prevent page scroll
+                    if (this.elements.video.paused) {
+                        this.elements.video.play();
+                    } else {
+                        this.elements.video.pause();
+                    }
                     break;
                 case 'p':
                 case 'P':
@@ -237,7 +252,8 @@ const Player = {
                 if (
                     e.target.closest('.player-hot-zone') ||
                     e.target.closest('.playlist-toggle') ||
-                    e.target.closest('.playlist-swipe-zone')
+                    e.target.closest('.playlist-swipe-zone') ||
+                    e.target.closest('.video-controls')
                 )
                     return;
 
@@ -251,7 +267,8 @@ const Player = {
         this.elements.videoWrapper.addEventListener(
             'touchmove',
             (e) => {
-                if (e.target.closest('.playlist-swipe-zone')) return;
+                if (e.target.closest('.playlist-swipe-zone') || e.target.closest('.video-controls'))
+                    return;
 
                 const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
                 const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
@@ -266,7 +283,8 @@ const Player = {
         this.elements.videoWrapper.addEventListener(
             'touchend',
             (e) => {
-                if (e.target.closest('.playlist-swipe-zone')) return;
+                if (e.target.closest('.playlist-swipe-zone') || e.target.closest('.video-controls'))
+                    return;
 
                 if (this.isSwiping) {
                     this.touchEndX = e.changedTouches[0].screenX;
@@ -377,6 +395,127 @@ const Player = {
         }
     },
 
+    toggleTheaterMode() {
+        this.isTheaterMode = !this.isTheaterMode;
+
+        if (this.isTheaterMode) {
+            this.elements.modal.classList.add('theater-mode');
+            this.playlistVisible = false;
+            this.elements.sidebar?.classList.remove('visible');
+            this.elements.playlistToggle?.classList.remove('active');
+            // Update icon
+            const icon = this.elements.maximizeBtn.querySelector('i');
+            if (icon) {
+                icon.setAttribute('data-lucide', 'monitor-x');
+                lucide.createIcons();
+            }
+        } else {
+            this.elements.modal.classList.remove('theater-mode');
+            this.elements.modal.classList.remove('controls-visible');
+            // Update icon
+            const icon = this.elements.maximizeBtn.querySelector('i');
+            if (icon) {
+                icon.setAttribute('data-lucide', 'monitor');
+                lucide.createIcons();
+            }
+        }
+    },
+
+    toggleFullscreen() {
+        if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled) {
+            console.warn('Fullscreen not supported');
+            return;
+        }
+
+        if (!this.isFullscreen) {
+            this.enterFullscreen();
+        } else {
+            this.exitFullscreen();
+        }
+    },
+
+    enterFullscreen() {
+        const elem = this.elements.container;
+
+        const requestFullscreen =
+            elem.requestFullscreen ||
+            elem.webkitRequestFullscreen ||
+            elem.mozRequestFullScreen ||
+            elem.msRequestFullscreen;
+
+        if (requestFullscreen) {
+            requestFullscreen
+                .call(elem)
+                .then(() => {
+                    this.isFullscreen = true;
+                    this.elements.modal.classList.add('theater-mode');
+                    this.playlistVisible = false;
+                    this.elements.sidebar?.classList.remove('visible');
+                    this.elements.playlistToggle?.classList.remove('active');
+                    // Update icon
+                    const icon = this.elements.fullscreenBtn.querySelector('i');
+                    if (icon) {
+                        icon.setAttribute('data-lucide', 'minimize-2');
+                        lucide.createIcons();
+                    }
+                })
+                .catch((err) => {
+                    console.error('Fullscreen request failed:', err);
+                });
+        }
+    },
+
+    exitFullscreen() {
+        const exitFullscreen =
+            document.exitFullscreen ||
+            document.webkitExitFullscreen ||
+            document.mozCancelFullScreen ||
+            document.msExitFullscreen;
+
+        if (exitFullscreen) {
+            exitFullscreen
+                .call(document)
+                .then(() => {
+                    this.isFullscreen = false;
+                    if (!this.isTheaterMode) {
+                        this.elements.modal.classList.remove('theater-mode');
+                    }
+                    // Update icon
+                    const icon = this.elements.fullscreenBtn.querySelector('i');
+                    if (icon) {
+                        icon.setAttribute('data-lucide', 'maximize-2');
+                        lucide.createIcons();
+                    }
+                })
+                .catch((err) => {
+                    console.error('Exit fullscreen failed:', err);
+                });
+        }
+    },
+
+    handleFullscreenChange() {
+        const isCurrentlyFullscreen = !!(
+            document.fullscreenElement ||
+            document.webkitFullscreenElement ||
+            document.mozFullScreenElement ||
+            document.msFullscreenElement
+        );
+
+        if (!isCurrentlyFullscreen && this.isFullscreen) {
+            // User exited fullscreen (probably via Esc key)
+            this.isFullscreen = false;
+            if (!this.isTheaterMode) {
+                this.elements.modal.classList.remove('theater-mode');
+            }
+            // Update icon
+            const icon = this.elements.fullscreenBtn.querySelector('i');
+            if (icon) {
+                icon.setAttribute('data-lucide', 'maximize-2');
+                lucide.createIcons();
+            }
+        }
+    },
+
     showHint() {
         if (!this.isLandscape) return;
 
@@ -391,8 +530,27 @@ const Player = {
         }, 3000);
     },
 
+    initVideoPlayer() {
+        // Clean up previous video player instance
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
+
+        // Create new VideoPlayer instance with navigation
+        if (typeof VideoPlayer !== 'undefined') {
+            this.videoPlayer = new VideoPlayer({
+                video: this.elements.video,
+                container: this.elements.videoContainer,
+                showNavigation: true,
+                onPrevious: () => this.prev(),
+                onNext: () => this.next(),
+            });
+        }
+    },
+
     showControls() {
-        if (!this.isLandscape) return;
+        if (!this.isLandscape && !this.isTheaterMode && !this.isFullscreen) return;
 
         this.elements.modal.classList.add('controls-visible');
 
@@ -577,6 +735,15 @@ const Player = {
         this.elements.modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
 
+        // Enable theater mode by default
+        this.isTheaterMode = true;
+        this.elements.modal.classList.add('theater-mode');
+        const icon = this.elements.maximizeBtn.querySelector('i');
+        if (icon) {
+            icon.setAttribute('data-lucide', 'minimize');
+            lucide.createIcons();
+        }
+
         this.checkOrientation();
 
         if (typeof HistoryManager !== 'undefined') {
@@ -590,8 +757,20 @@ const Player = {
     },
 
     close() {
+        // Exit fullscreen if active
+        if (this.isFullscreen) {
+            this.exitFullscreen();
+        }
+
+        // Clean up video player
+        if (this.videoPlayer) {
+            this.videoPlayer.destroy();
+            this.videoPlayer = null;
+        }
+
         this.elements.modal.classList.add('hidden');
         this.elements.modal.classList.remove('landscape-mode');
+        this.elements.modal.classList.remove('theater-mode');
         this.elements.modal.classList.remove('controls-visible');
         this.elements.modal.classList.remove('show-hint');
         document.body.style.overflow = '';
@@ -605,9 +784,23 @@ const Player = {
         this.elements.video.pause();
         this.elements.video.src = '';
         this.isLandscape = false;
+        this.isTheaterMode = false;
+        this.isFullscreen = false;
         this.playlistVisible = false;
         this.elements.sidebar?.classList.remove('visible');
         this.elements.playlistToggle?.classList.remove('active');
+
+        // Reset icons
+        const maximizeIcon = this.elements.maximizeBtn.querySelector('i');
+        if (maximizeIcon) {
+            maximizeIcon.setAttribute('data-lucide', 'monitor');
+            lucide.createIcons();
+        }
+        const fullscreenIcon = this.elements.fullscreenBtn.querySelector('i');
+        if (fullscreenIcon) {
+            fullscreenIcon.setAttribute('data-lucide', 'maximize-2');
+            lucide.createIcons();
+        }
 
         if (this.controlsTimeout) {
             clearTimeout(this.controlsTimeout);
@@ -617,6 +810,18 @@ const Player = {
         }
 
         this.releaseWakeLock();
+    },
+
+    showLoading() {
+        this.isLoading = true;
+        this.elements.loader?.classList.remove('hidden');
+        this.elements.video.classList.add('loading');
+    },
+
+    hideLoading() {
+        this.isLoading = false;
+        this.elements.loader?.classList.add('hidden');
+        this.elements.video.classList.remove('loading');
     },
 
     async acquireWakeLock() {
@@ -718,6 +923,12 @@ const Player = {
             video.removeEventListener('error', this._videoErrorHandler);
         }
 
+        // Clear any pending audio check timeout
+        if (this._audioCheckTimeout) {
+            clearTimeout(this._audioCheckTimeout);
+            this._audioCheckTimeout = null;
+        }
+
         // Create error handler for this video
         this._videoErrorHandler = async (e) => {
             console.error('Player: Error loading video:', e);
@@ -726,8 +937,30 @@ const Player = {
 
         video.addEventListener('error', this._videoErrorHandler);
 
+        // Show loading indicator
+        this.showLoading();
+
+        // Hide loading when video data is loaded
+        const hideLoadingOnData = () => {
+            this.hideLoading();
+            video.removeEventListener('loadeddata', hideLoadingOnData);
+            video.removeEventListener('error', hideLoadingOnError);
+        };
+
+        const hideLoadingOnError = () => {
+            this.hideLoading();
+            video.removeEventListener('loadeddata', hideLoadingOnData);
+            video.removeEventListener('error', hideLoadingOnError);
+        };
+
+        video.addEventListener('loadeddata', hideLoadingOnData);
+        video.addEventListener('error', hideLoadingOnError);
+
         video.src = videoUrl;
         video.load();
+
+        // Initialize VideoPlayer component
+        this.initVideoPlayer();
 
         if (typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled()) {
             video.play().catch((err) => {
@@ -797,5 +1030,5 @@ const Player = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    Player.init();
+    Playlist.init();
 });
