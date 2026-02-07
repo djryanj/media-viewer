@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Prometheus Metrics for Streaming Endpoints**: Fixed false positive high-latency alarms for `/api/stream/` endpoints in Prometheus monitoring. The metrics middleware now tracks time-to-first-byte (TTFB) instead of total streaming duration for video/audio streaming endpoints. This prevents p95 latency metrics from incorrectly showing 10+ seconds when users are simply watching videos for extended periods. Non-streaming endpoints continue to use total request duration as before.
 
+- **Prometheus Metrics Cardinality**: Fixed metrics cardinality explosion for static assets and playlist endpoints. Paths like `/js/gallery.js`, `/css/style.css`, `/icons/icon-192.png`, and `/api/playlist/12345` are now normalized to `/js/{path}`, `/css/{path}`, `/icons/{path}`, and `/api/playlist/{path}` respectively, preventing individual file metrics from creating thousands of unique metric series.
+
 ## [0.8.4] - 2026-02-06
 
 ### Bug Fixes
