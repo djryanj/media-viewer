@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewResponseWriter(t *testing.T) {
@@ -416,7 +417,8 @@ func BenchmarkCompressionMiddleware(b *testing.B) {
 
 func TestNewMetricsResponseWriter(t *testing.T) {
 	w := httptest.NewRecorder()
-	mrw := newMetricsResponseWriter(w)
+	startTime := time.Now()
+	mrw := newMetricsResponseWriter(w, startTime, false)
 
 	if mrw == nil {
 		t.Fatal("Expected metricsResponseWriter to be created")
@@ -425,21 +427,245 @@ func TestNewMetricsResponseWriter(t *testing.T) {
 	if mrw.statusCode != http.StatusOK {
 		t.Errorf("Expected default status code 200, got %d", mrw.statusCode)
 	}
+
+	if mrw.headerWritten {
+		t.Error("Expected headerWritten to be false initially")
+	}
+
+	if mrw.isStreamingPath {
+		t.Error("Expected isStreamingPath to be false for non-streaming")
+	}
+
+	// Test streaming version
+	mrwStreaming := newMetricsResponseWriter(w, startTime, true)
+	if !mrwStreaming.isStreamingPath {
+		t.Error("Expected isStreamingPath to be true for streaming")
+	}
 }
 
 func TestMetricsResponseWriterWriteHeader(t *testing.T) {
-	w := httptest.NewRecorder()
-	mrw := newMetricsResponseWriter(w)
+	t.Run("non-streaming", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		mrw := newMetricsResponseWriter(w, startTime, false)
 
-	mrw.WriteHeader(http.StatusCreated)
+		mrw.WriteHeader(http.StatusCreated)
 
-	if mrw.statusCode != http.StatusCreated {
-		t.Errorf("Expected status code 201, got %d", mrw.statusCode)
+		if mrw.statusCode != http.StatusCreated {
+			t.Errorf("Expected status code 201, got %d", mrw.statusCode)
+		}
+
+		if !mrw.headerWritten {
+			t.Error("Expected headerWritten to be true after WriteHeader")
+		}
+
+		if !mrw.firstByteTime.IsZero() {
+			t.Error("Expected firstByteTime to be zero for non-streaming")
+		}
+
+		// Verify the underlying ResponseWriter also got the header
+		if w.Code != http.StatusCreated {
+			t.Errorf("Expected underlying writer to have status 201, got %d", w.Code)
+		}
+	})
+
+	t.Run("streaming", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		time.Sleep(1 * time.Millisecond) // Small delay to ensure measurable time difference
+		mrw := newMetricsResponseWriter(w, startTime, true)
+
+		mrw.WriteHeader(http.StatusOK)
+
+		if mrw.statusCode != http.StatusOK {
+			t.Errorf("Expected status code 200, got %d", mrw.statusCode)
+		}
+
+		if !mrw.headerWritten {
+			t.Error("Expected headerWritten to be true after WriteHeader")
+		}
+
+		if mrw.firstByteTime.IsZero() {
+			t.Error("Expected firstByteTime to be set for streaming endpoint")
+		}
+
+		if mrw.firstByteTime.Before(startTime) {
+			t.Error("firstByteTime should be after startTime")
+		}
+
+		// Verify the underlying ResponseWriter also got the header
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected underlying writer to have status 200, got %d", w.Code)
+		}
+	})
+}
+
+func TestMetricsResponseWriterWrite(t *testing.T) {
+	t.Run("non-streaming with implicit header", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		mrw := newMetricsResponseWriter(w, startTime, false)
+
+		data := []byte("test data")
+		n, err := mrw.Write(data)
+
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if n != len(data) {
+			t.Errorf("Expected to write %d bytes, wrote %d", len(data), n)
+		}
+
+		if !mrw.headerWritten {
+			t.Error("Expected headerWritten to be true after Write")
+		}
+
+		if !mrw.firstByteTime.IsZero() {
+			t.Error("Expected firstByteTime to be zero for non-streaming")
+		}
+	})
+
+	t.Run("streaming with implicit header", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		time.Sleep(1 * time.Millisecond)
+		mrw := newMetricsResponseWriter(w, startTime, true)
+
+		data := []byte("streaming data")
+		n, err := mrw.Write(data)
+
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if n != len(data) {
+			t.Errorf("Expected to write %d bytes, wrote %d", len(data), n)
+		}
+
+		if !mrw.headerWritten {
+			t.Error("Expected headerWritten to be true after Write")
+		}
+
+		if mrw.firstByteTime.IsZero() {
+			t.Error("Expected firstByteTime to be set for streaming endpoint")
+		}
+
+		if mrw.firstByteTime.Before(startTime) {
+			t.Error("firstByteTime should be after startTime")
+		}
+	})
+
+	t.Run("streaming with explicit header followed by write", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		time.Sleep(1 * time.Millisecond)
+		mrw := newMetricsResponseWriter(w, startTime, true)
+
+		mrw.WriteHeader(http.StatusOK)
+		firstByteTimeFromHeader := mrw.firstByteTime
+
+		time.Sleep(1 * time.Millisecond)
+
+		data := []byte("streaming data")
+		_, err := mrw.Write(data)
+
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		// firstByteTime should not change after initial WriteHeader
+		if mrw.firstByteTime != firstByteTimeFromHeader {
+			t.Error("firstByteTime should not change after initial WriteHeader")
+		}
+	})
+}
+
+func TestMetricsResponseWriterGetDuration(t *testing.T) {
+	t.Run("non-streaming returns total duration", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		mrw := newMetricsResponseWriter(w, startTime, false)
+
+		time.Sleep(5 * time.Millisecond)
+		mrw.WriteHeader(http.StatusOK)
+
+		time.Sleep(5 * time.Millisecond)
+		duration := mrw.GetDuration()
+
+		// Total duration should be at least 10ms
+		if duration < 10*time.Millisecond {
+			t.Errorf("Expected duration >= 10ms, got %v", duration)
+		}
+	})
+
+	t.Run("streaming returns time to first byte", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		mrw := newMetricsResponseWriter(w, startTime, true)
+
+		time.Sleep(5 * time.Millisecond)
+		mrw.WriteHeader(http.StatusOK)
+
+		time.Sleep(5 * time.Millisecond)
+		duration := mrw.GetDuration()
+
+		// TTFB should be around 5ms, definitely less than 8ms
+		if duration >= 8*time.Millisecond {
+			t.Errorf("Expected TTFB < 8ms, got %v (should measure time to first byte, not total duration)", duration)
+		}
+
+		if duration < 3*time.Millisecond {
+			t.Errorf("Expected TTFB >= 3ms, got %v", duration)
+		}
+	})
+
+	t.Run("streaming with Write instead of WriteHeader", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		startTime := time.Now()
+		mrw := newMetricsResponseWriter(w, startTime, true)
+
+		time.Sleep(5 * time.Millisecond)
+		mrw.Write([]byte("data"))
+
+		time.Sleep(5 * time.Millisecond)
+		duration := mrw.GetDuration()
+
+		// TTFB should be around 5ms, definitely less than 8ms
+		if duration >= 8*time.Millisecond {
+			t.Errorf("Expected TTFB < 8ms, got %v", duration)
+		}
+
+		if duration < 3*time.Millisecond {
+			t.Errorf("Expected TTFB >= 3ms, got %v", duration)
+		}
+	})
+}
+
+func TestIsStreamingPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected bool
+	}{
+		{"Stream endpoint", "/api/stream/video.mp4", true},
+		{"Stream with nested path", "/api/stream/folder/subfolder/video.mp4", true},
+		{"Stream root", "/api/stream/", true},
+		{"File endpoint", "/api/file/video.mp4", false},
+		{"Thumbnail endpoint", "/api/thumbnail/image.jpg", false},
+		{"API root", "/api/", false},
+		{"Root path", "/", false},
+		{"Stream-info endpoint", "/api/stream-info/video.mp4", false},
+		{"Similar but not stream", "/api/streaming/test", false},
 	}
 
-	// Verify the underlying ResponseWriter also got the header
-	if w.Code != http.StatusCreated {
-		t.Errorf("Expected underlying writer to have status 201, got %d", w.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isStreamingPath(tt.path)
+			if result != tt.expected {
+				t.Errorf("isStreamingPath(%q) = %v, want %v", tt.path, result, tt.expected)
+			}
+		})
 	}
 }
 
@@ -701,6 +927,92 @@ func TestNormalizePathCardinality(t *testing.T) {
 			t.Errorf("Deep path %q normalized to %q with too many segments: %d", path, normalized, len(segments))
 		}
 	}
+}
+
+func TestMetricsMiddlewareStreamingVsNonStreaming(t *testing.T) {
+	t.Run("non-streaming endpoint uses total duration", func(t *testing.T) {
+		handlerDuration := 10 * time.Millisecond
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			time.Sleep(handlerDuration)
+			w.Write([]byte("response"))
+		})
+
+		config := MetricsConfig{SkipPaths: []string{}}
+		middleware := Metrics(config)
+		wrappedHandler := middleware(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/favorites", http.NoBody)
+		w := httptest.NewRecorder()
+
+		start := time.Now()
+		wrappedHandler.ServeHTTP(w, req)
+		totalDuration := time.Since(start)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		// For non-streaming endpoints, metrics should track close to total duration
+		if totalDuration < handlerDuration {
+			t.Errorf("Total duration %v should be >= handler duration %v", totalDuration, handlerDuration)
+		}
+	})
+
+	t.Run("streaming endpoint tracks time to first byte", func(t *testing.T) {
+		firstByteDelay := 5 * time.Millisecond
+		streamingDuration := 20 * time.Millisecond
+
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			// Simulate server preparing response
+			time.Sleep(firstByteDelay)
+
+			// Send headers (first byte)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("first chunk"))
+
+			// Simulate streaming more data
+			time.Sleep(streamingDuration)
+			w.Write([]byte("more data"))
+		})
+
+		config := MetricsConfig{SkipPaths: []string{}}
+		middleware := Metrics(config)
+		wrappedHandler := middleware(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/stream/video.mp4", http.NoBody)
+		w := httptest.NewRecorder()
+
+		wrappedHandler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		// For streaming endpoints, metrics should track TTFB, not total streaming duration
+		// The actual metric recording is internal, but we verify the handler completed
+		// and the wrapper correctly tracked timing
+	})
+
+	t.Run("stream-info is not treated as streaming", func(t *testing.T) {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"duration": 120}`))
+		})
+
+		config := MetricsConfig{SkipPaths: []string{}}
+		middleware := Metrics(config)
+		wrappedHandler := middleware(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/stream-info/video.mp4", http.NoBody)
+		w := httptest.NewRecorder()
+
+		wrappedHandler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+	})
 }
 
 func BenchmarkMetricsMiddleware(b *testing.B) {

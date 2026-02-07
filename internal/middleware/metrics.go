@@ -9,19 +9,58 @@ import (
 	"media-viewer/internal/metrics"
 )
 
-// responseWriter wraps http.ResponseWriter to capture status code
+// responseWriter wraps http.ResponseWriter to capture status code and first byte timing
 type metricsResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode      int
+	headerWritten   bool
+	firstByteTime   time.Time
+	startTime       time.Time
+	isStreamingPath bool
 }
 
-func newMetricsResponseWriter(w http.ResponseWriter) *metricsResponseWriter {
-	return &metricsResponseWriter{w, http.StatusOK}
+func newMetricsResponseWriter(w http.ResponseWriter, startTime time.Time, isStreaming bool) *metricsResponseWriter {
+	return &metricsResponseWriter{
+		ResponseWriter:  w,
+		statusCode:      http.StatusOK,
+		headerWritten:   false,
+		startTime:       startTime,
+		isStreamingPath: isStreaming,
+	}
 }
 
 func (rw *metricsResponseWriter) WriteHeader(code int) {
-	rw.statusCode = code
+	if !rw.headerWritten {
+		rw.statusCode = code
+		rw.headerWritten = true
+		// Record first byte time for streaming endpoints
+		if rw.isStreamingPath {
+			rw.firstByteTime = time.Now()
+		}
+	}
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Write captures the first byte timing for streaming endpoints
+func (rw *metricsResponseWriter) Write(b []byte) (int, error) {
+	if !rw.headerWritten {
+		// WriteHeader wasn't called explicitly, so we need to track first byte here
+		rw.headerWritten = true
+		if rw.isStreamingPath {
+			rw.firstByteTime = time.Now()
+		}
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
+// GetDuration returns the appropriate duration based on whether this is a streaming endpoint
+func (rw *metricsResponseWriter) GetDuration() time.Duration {
+	if rw.isStreamingPath && !rw.firstByteTime.IsZero() {
+		// For streaming endpoints, return time to first byte
+		return rw.firstByteTime.Sub(rw.startTime)
+	}
+	// For non-streaming endpoints, return total duration
+	return time.Since(rw.startTime)
 }
 
 // MetricsConfig holds configuration for the metrics middleware
@@ -53,17 +92,20 @@ func Metrics(config MetricsConfig) func(http.Handler) http.Handler {
 			metrics.HTTPRequestsInFlight.Inc()
 			defer metrics.HTTPRequestsInFlight.Dec()
 
-			// Wrap response writer to capture status code
-			wrapped := newMetricsResponseWriter(w)
-
 			// Record start time
 			start := time.Now()
+
+			// Check if this is a streaming endpoint
+			isStreaming := isStreamingPath(r.URL.Path)
+
+			// Wrap response writer to capture status code and timing
+			wrapped := newMetricsResponseWriter(w, start, isStreaming)
 
 			// Process request
 			next.ServeHTTP(wrapped, r)
 
-			// Record metrics
-			duration := time.Since(start).Seconds()
+			// Record metrics using appropriate duration
+			duration := wrapped.GetDuration().Seconds()
 			path := normalizePath(r.URL.Path)
 			status := strconv.Itoa(wrapped.statusCode)
 
@@ -71,6 +113,22 @@ func Metrics(config MetricsConfig) func(http.Handler) http.Handler {
 			metrics.HTTPRequestDuration.WithLabelValues(r.Method, path).Observe(duration)
 		})
 	}
+}
+
+// isStreamingPath determines if a path is a streaming endpoint
+// For these endpoints, we measure time to first byte instead of total duration
+func isStreamingPath(path string) bool {
+	streamingPrefixes := []string{
+		"/api/stream/",
+	}
+
+	for _, prefix := range streamingPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // normalizePath normalizes the path for metrics to avoid high cardinality
