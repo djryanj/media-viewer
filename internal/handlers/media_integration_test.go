@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -480,6 +481,182 @@ func TestGetFileNotFoundIntegration(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", w.Code)
+	}
+}
+
+// TestGetFileWithDownloadParameterIntegration tests file download with Content-Disposition header
+func TestGetFileWithDownloadParameterIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	testContent := "test file content for download"
+	addTestMediaFile(t, h, "download-test.jpg", database.FileTypeImage, testContent)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/file/download-test.jpg?download=true", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": "download-test.jpg"})
+	w := httptest.NewRecorder()
+
+	h.GetFile(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	// Check Content-Disposition header is set for download
+	contentDisposition := w.Header().Get("Content-Disposition")
+	expectedDisposition := `attachment; filename="download-test.jpg"`
+	if contentDisposition != expectedDisposition {
+		t.Errorf("expected Content-Disposition %q, got %q", expectedDisposition, contentDisposition)
+	}
+
+	body := w.Body.String()
+	if body != testContent {
+		t.Errorf("expected content %q, got %q", testContent, body)
+	}
+}
+
+// TestGetFileWithoutDownloadParameterIntegration tests file serving without download parameter
+func TestGetFileWithoutDownloadParameterIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	testContent := "test file content for inline display"
+	addTestMediaFile(t, h, "inline-test.jpg", database.FileTypeImage, testContent)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/file/inline-test.jpg", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": "inline-test.jpg"})
+	w := httptest.NewRecorder()
+
+	h.GetFile(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	// Check Content-Disposition header is NOT set (inline display)
+	contentDisposition := w.Header().Get("Content-Disposition")
+	if contentDisposition != "" {
+		t.Errorf("expected no Content-Disposition header, got %q", contentDisposition)
+	}
+
+	body := w.Body.String()
+	if body != testContent {
+		t.Errorf("expected content %q, got %q", testContent, body)
+	}
+}
+
+// TestGetFileDownloadWithSpecialCharactersIntegration tests download with special characters in filename
+func TestGetFileDownloadWithSpecialCharactersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	tests := []struct {
+		name                string
+		filename            string
+		expectedDisposition string
+	}{
+		{
+			name:                "spaces in filename",
+			filename:            "test file.jpg",
+			expectedDisposition: `attachment; filename="test file.jpg"`,
+		},
+		{
+			name:                "special characters",
+			filename:            "test-photo_2024.jpg",
+			expectedDisposition: `attachment; filename="test-photo_2024.jpg"`,
+		},
+		{
+			name:                "unicode characters",
+			filename:            "café-photo.jpg",
+			expectedDisposition: `attachment; filename="café-photo.jpg"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testContent := "test content"
+			addTestMediaFile(t, h, tt.filename, database.FileTypeImage, testContent)
+
+			// URL encode the filename for the request path
+			encodedFilename := url.PathEscape(tt.filename)
+			req := httptest.NewRequest(http.MethodGet, "/api/file/"+encodedFilename+"?download=true", http.NoBody)
+			req = mux.SetURLVars(req, map[string]string{"path": tt.filename})
+			w := httptest.NewRecorder()
+
+			h.GetFile(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("expected status 200, got %d", w.Code)
+			}
+
+			contentDisposition := w.Header().Get("Content-Disposition")
+			if contentDisposition != tt.expectedDisposition {
+				t.Errorf("expected Content-Disposition %q, got %q", tt.expectedDisposition, contentDisposition)
+			}
+		})
+	}
+}
+
+// TestGetFileDownloadParameterFalseIntegration tests that download=false or other values don't trigger download
+func TestGetFileDownloadParameterFalseIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	testContent := "test file content"
+	addTestMediaFile(t, h, "param-test.jpg", database.FileTypeImage, testContent)
+
+	tests := []struct {
+		name           string
+		queryParam     string
+		shouldDownload bool
+	}{
+		{"download=false", "download=false", false},
+		{"download=0", "download=0", false},
+		{"download=yes", "download=yes", false},
+		{"other parameter", "view=inline", false},
+		{"download=true", "download=true", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqURL := "/api/file/param-test.jpg"
+			if tt.queryParam != "" {
+				reqURL += "?" + tt.queryParam
+			}
+
+			req := httptest.NewRequest(http.MethodGet, reqURL, http.NoBody)
+			req = mux.SetURLVars(req, map[string]string{"path": "param-test.jpg"})
+			w := httptest.NewRecorder()
+
+			h.GetFile(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("expected status 200, got %d", w.Code)
+			}
+
+			contentDisposition := w.Header().Get("Content-Disposition")
+			if tt.shouldDownload {
+				if contentDisposition == "" {
+					t.Errorf("expected Content-Disposition header for download=true, got none")
+				}
+			} else {
+				if contentDisposition != "" {
+					t.Errorf("expected no Content-Disposition header, got %q", contentDisposition)
+				}
+			}
+		})
 	}
 }
 

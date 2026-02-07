@@ -122,6 +122,20 @@ const Gallery = {
         });
         thumbArea.appendChild(pinButton);
 
+        if (item.type !== 'folder' && item.type !== 'playlist') {
+            const downloadButton = document.createElement('button');
+            downloadButton.className = 'download-button';
+            downloadButton.title = 'Download';
+            downloadButton.appendChild(this.createIcon('download'));
+            downloadButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) return;
+                this.downloadItem(item);
+            });
+            thumbArea.appendChild(downloadButton);
+        }
+
         if (item.type === 'folder' || item.type === 'image' || item.type === 'video') {
             const img = document.createElement('img');
             img.loading = 'lazy';
@@ -548,6 +562,19 @@ const Gallery = {
 
     getIcon(type) {
         return this.icons[type] || this.icons.other;
+    },
+
+    downloadItem(item) {
+        if (!item || item.type === 'folder' || item.type === 'playlist') return;
+
+        const link = document.createElement('a');
+        link.href = `/api/file/${item.path}?download=true`;
+        link.download = item.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        this.showToast(`Downloading ${item.name}`);
     },
 
     updatePinState(path, isPinned) {
