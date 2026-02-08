@@ -50,7 +50,7 @@ func setupThumbnailCoverageTest(t *testing.T) (h *Handlers, mediaDir string, cle
 	}
 
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, false)
+	trans := transcoder.New(cacheDir, "", false)
 
 	// Enable thumbnails with a real generator
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, true, db, 4, nil)

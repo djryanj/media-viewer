@@ -1,7 +1,14 @@
 package transcoder
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,7 +16,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	trans := New("/tmp/cache", true)
+	trans := New("/tmp/cache", "", true)
 
 	if trans == nil {
 		t.Fatal("New() returned nil")
@@ -26,6 +33,10 @@ func TestNew(t *testing.T) {
 	if trans.processes == nil {
 		t.Error("Expected processes map to be initialized")
 	}
+
+	if trans.cacheLocks == nil {
+		t.Error("Expected cacheLocks map to be initialized")
+	}
 }
 
 func TestIsEnabled(t *testing.T) {
@@ -39,7 +50,7 @@ func TestIsEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			trans := New("/tmp/cache", tt.enabled)
+			trans := New("/tmp/cache", "", tt.enabled)
 
 			if trans.IsEnabled() != tt.enabled {
 				t.Errorf("Expected IsEnabled()=%v, got %v", tt.enabled, trans.IsEnabled())
@@ -126,7 +137,7 @@ func TestCompatibleContainers(t *testing.T) {
 }
 
 func TestTranscoderStreamConfig(t *testing.T) {
-	trans := New("/tmp/cache", true)
+	trans := New("/tmp/cache", "", true)
 
 	// Check that stream config was set up
 	if trans.streamConfig.WriteTimeout != 30*time.Second {
@@ -143,7 +154,7 @@ func TestTranscoderStreamConfig(t *testing.T) {
 }
 
 func TestTranscoderProcessManagement(t *testing.T) {
-	trans := New("/tmp/cache", true)
+	trans := New("/tmp/cache", "", true)
 
 	// Process map should be initialized
 	if trans.processes == nil {
@@ -221,7 +232,7 @@ func TestVideoInfoNeedsTranscode(t *testing.T) {
 }
 
 func TestTranscoderDisabled(t *testing.T) {
-	trans := New("/tmp/cache", false)
+	trans := New("/tmp/cache", "", false)
 
 	if trans.IsEnabled() {
 		t.Error("Transcoder should be disabled")
@@ -234,7 +245,7 @@ func TestTranscoderDisabled(t *testing.T) {
 }
 
 func TestTranscoderProcessMap(t *testing.T) {
-	trans := New("/tmp/cache", true)
+	trans := New("/tmp/cache", "", true)
 
 	if trans.processes == nil {
 		t.Fatal("Process map should be initialized")
@@ -246,7 +257,7 @@ func TestTranscoderProcessMap(t *testing.T) {
 }
 
 func TestGetVideoInfoWithInvalidFile(t *testing.T) {
-	trans := New("/tmp/cache", true)
+	trans := New("/tmp/cache", "", true)
 
 	ctx := context.Background()
 
@@ -258,7 +269,7 @@ func TestGetVideoInfoWithInvalidFile(t *testing.T) {
 }
 
 func TestGetVideoInfoContextCancellation(t *testing.T) {
-	trans := New("/tmp/cache", true)
+	trans := New("/tmp/cache", "", true)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -271,7 +282,7 @@ func TestGetVideoInfoContextCancellation(t *testing.T) {
 
 func TestStreamConfigDefaults(t *testing.T) {
 	// Test that New() sets up reasonable stream config defaults
-	trans := New("/tmp/cache", true)
+	trans := New("/tmp/cache", "", true)
 
 	config := trans.streamConfig
 
@@ -355,7 +366,7 @@ func TestCompatibleContainersMapNotEmpty(t *testing.T) {
 
 func BenchmarkNewTranscoder(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_ = New("/tmp/cache", true)
+		_ = New("/tmp/cache", "", true)
 	}
 }
 
@@ -369,4 +380,508 @@ func BenchmarkVideoInfoCreation(b *testing.B) {
 			NeedsTranscode: false,
 		}
 	}
+}
+
+// =============================================================================
+// Cache Tests
+// =============================================================================
+
+// TestGetCachedFile_ValidCache tests that a valid cached file is returned
+func TestGetCachedFile_ValidCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create source file
+	sourcePath := filepath.Join(tmpDir, "source.mp4")
+	if err := os.WriteFile(sourcePath, []byte("source content"), 0o644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Sleep to ensure cache will be newer
+	time.Sleep(10 * time.Millisecond)
+
+	// Create cached file (newer than source)
+	cachePath := filepath.Join(tmpDir, "cached.mp4")
+	if err := os.WriteFile(cachePath, []byte("cached content"), 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+
+	// Get cached file should succeed
+	cachedFile, err := trans.getCachedFile(sourcePath, cachePath)
+	if err != nil {
+		t.Fatalf("getCachedFile() error: %v", err)
+	}
+	defer cachedFile.Close()
+
+	// Verify content
+	content, err := io.ReadAll(cachedFile)
+	if err != nil {
+		t.Fatalf("Failed to read cached file: %v", err)
+	}
+
+	if string(content) != "cached content" {
+		t.Errorf("Expected 'cached content', got %s", string(content))
+	}
+}
+
+// TestGetCachedFile_StaleCache tests that stale cache is detected and deleted
+func TestGetCachedFile_StaleCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create cached file first
+	cachePath := filepath.Join(tmpDir, "cached.mp4")
+	if err := os.WriteFile(cachePath, []byte("old cache"), 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+
+	// Sleep to ensure source will be newer
+	time.Sleep(10 * time.Millisecond)
+
+	// Create source file (newer than cache)
+	sourcePath := filepath.Join(tmpDir, "source.mp4")
+	if err := os.WriteFile(sourcePath, []byte("new source"), 0o644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Get cached file should fail because cache is stale
+	_, err := trans.getCachedFile(sourcePath, cachePath)
+	if err == nil {
+		t.Error("Expected error for stale cache")
+	}
+
+	// Cache file should be deleted
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Error("Stale cache file should have been deleted")
+	}
+}
+
+// TestGetCachedFile_MissingCache tests handling of missing cache file
+func TestGetCachedFile_MissingCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create source file
+	sourcePath := filepath.Join(tmpDir, "source.mp4")
+	if err := os.WriteFile(sourcePath, []byte("source content"), 0o644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Try to get non-existent cache
+	cachePath := filepath.Join(tmpDir, "nonexistent.mp4")
+	_, err := trans.getCachedFile(sourcePath, cachePath)
+	if err == nil {
+		t.Error("Expected error for missing cache file")
+	}
+}
+
+// TestGetCacheLock tests that cache locks are created and reused
+func TestGetCacheLock(t *testing.T) {
+	trans := New("/tmp/cache", "", true)
+
+	// Get lock for first time
+	lock1 := trans.getCacheLock("test-key")
+	if lock1 == nil {
+		t.Fatal("Expected lock to be created")
+	}
+
+	// Get same lock again
+	lock2 := trans.getCacheLock("test-key")
+	if lock1 != lock2 {
+		t.Error("Expected same lock to be returned for same key")
+	}
+
+	// Get different lock
+	lock3 := trans.getCacheLock("different-key")
+	if lock1 == lock3 {
+		t.Error("Expected different lock for different key")
+	}
+}
+
+// TestGetCacheLock_Concurrent tests concurrent access to cache locks
+func TestGetCacheLock_Concurrent(t *testing.T) {
+	trans := New("/tmp/cache", "", true)
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	locks := make([]*sync.Mutex, goroutines)
+
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(index int) {
+			defer wg.Done()
+			locks[index] = trans.getCacheLock("same-key")
+		}(i)
+	}
+
+	wg.Wait()
+
+	// All goroutines should have gotten the same lock
+	for i := 1; i < goroutines; i++ {
+		if locks[0] != locks[i] {
+			t.Errorf("Lock %d is different from lock 0", i)
+		}
+	}
+}
+
+// TestBuildFFmpegArgs_Remux tests ffmpeg args for remux operation
+func TestBuildFFmpegArgs_Remux(t *testing.T) {
+	trans := New("/tmp/cache", "", true)
+
+	info := &VideoInfo{
+		Codec:  "h264",
+		Width:  1920,
+		Height: 1080,
+	}
+
+	args := trans.buildFFmpegArgs("/test/input.mov", 0, info, false)
+
+	// Should contain -c:v copy for remux
+	found := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-c:v" && args[i+1] == "copy" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Expected -c:v copy in args for remux operation")
+	}
+}
+
+// TestBuildFFmpegArgs_Reencode tests ffmpeg args for re-encode operation
+func TestBuildFFmpegArgs_Reencode(t *testing.T) {
+	trans := New("/tmp/cache", "", true)
+
+	info := &VideoInfo{
+		Codec:  "hevc",
+		Width:  1920,
+		Height: 1080,
+	}
+
+	args := trans.buildFFmpegArgs("/test/input.mkv", 0, info, true)
+
+	// Should contain libx264 for re-encode
+	found := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-c:v" && args[i+1] == "libx264" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Expected -c:v libx264 in args for re-encode operation")
+	}
+}
+
+// TestBuildFFmpegArgs_WithScale tests ffmpeg args include scale filter
+func TestBuildFFmpegArgs_WithScale(t *testing.T) {
+	trans := New("/tmp/cache", "", true)
+
+	info := &VideoInfo{
+		Codec:  "h264",
+		Width:  1920,
+		Height: 1080,
+	}
+
+	args := trans.buildFFmpegArgs("/test/input.mp4", 1280, info, false)
+
+	// Should contain scale filter
+	found := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-vf" && args[i+1] == "scale=1280:-2" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Expected -vf scale=1280:-2 in args when targetWidth specified")
+	}
+}
+
+// TestBuildFFmpegArgs_NoScaleWhenLarger tests no scaling when target is larger
+func TestBuildFFmpegArgs_NoScaleWhenLarger(t *testing.T) {
+	trans := New("/tmp/cache", "", true)
+
+	info := &VideoInfo{
+		Codec:  "h264",
+		Width:  1920,
+		Height: 1080,
+	}
+
+	args := trans.buildFFmpegArgs("/test/input.mp4", 0, info, false)
+
+	// Should NOT contain scale filter
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-vf" {
+			t.Error("Did not expect -vf flag when targetWidth is 0")
+		}
+	}
+}
+
+// TestProgressTrackingReader tests the progress reader functionality
+func TestProgressTrackingReader(t *testing.T) {
+	data := bytes.Repeat([]byte("test data"), 1000) // ~9KB
+	reader := bytes.NewReader(data)
+
+	progressReader := &progressTrackingReader{
+		reader:   reader,
+		filePath: "/test/file.mp4",
+		lastLog:  time.Now(),
+	}
+
+	// Read all data
+	buf := &bytes.Buffer{}
+	n, err := io.Copy(buf, progressReader)
+	if err != nil {
+		t.Fatalf("Error reading from progress reader: %v", err)
+	}
+
+	// Verify all data was read
+	if n != int64(len(data)) {
+		t.Errorf("Expected to read %d bytes, got %d", len(data), n)
+	}
+
+	// Verify totalBytes was tracked
+	if progressReader.totalBytes != int64(len(data)) {
+		t.Errorf("Expected totalBytes=%d, got %d", len(data), progressReader.totalBytes)
+	}
+
+	// Verify content is intact
+	if !bytes.Equal(buf.Bytes(), data) {
+		t.Error("Data corruption detected in progress reader")
+	}
+}
+
+// TestProgressTrackingReader_EmptyRead tests progress reader with no data
+func TestProgressTrackingReader_EmptyRead(t *testing.T) {
+	reader := bytes.NewReader([]byte{})
+
+	progressReader := &progressTrackingReader{
+		reader:   reader,
+		filePath: "/test/file.mp4",
+		lastLog:  time.Now(),
+	}
+
+	buf := &bytes.Buffer{}
+	n, err := io.Copy(buf, progressReader)
+	if err != nil {
+		t.Fatalf("Error reading from progress reader: %v", err)
+	}
+
+	if n != 0 {
+		t.Errorf("Expected to read 0 bytes, got %d", n)
+	}
+
+	if progressReader.totalBytes != 0 {
+		t.Errorf("Expected totalBytes=0, got %d", progressReader.totalBytes)
+	}
+}
+
+// TestCacheKeyGeneration tests that cache keys are generated correctly
+func TestCacheKeyGeneration(t *testing.T) {
+	tests := []struct {
+		name        string
+		filePath    string
+		targetWidth int
+		expectedKey string
+	}{
+		{
+			name:        "No width",
+			filePath:    "/path/to/video.mp4",
+			targetWidth: 0,
+			expectedKey: "video.mp4_w0.mp4",
+		},
+		{
+			name:        "With width",
+			filePath:    "/path/to/video.mp4",
+			targetWidth: 1280,
+			expectedKey: "video.mp4_w1280.mp4",
+		},
+		{
+			name:        "Complex filename",
+			filePath:    "/media/folder/my video file.mov",
+			targetWidth: 720,
+			expectedKey: "my video file.mov_w720.mp4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cacheKey := fmt.Sprintf("%s_w%d.mp4", filepath.Base(tt.filePath), tt.targetWidth)
+			if cacheKey != tt.expectedKey {
+				t.Errorf("Expected cache key %q, got %q", tt.expectedKey, cacheKey)
+			}
+		})
+	}
+}
+
+// TestTranscoderInitializesCacheLocks tests that cache locks map is initialized
+func TestTranscoderInitializesCacheLocks(t *testing.T) {
+	trans := New("/tmp/cache", "", true)
+
+	if trans.cacheLocks == nil {
+		t.Error("cacheLocks map should be initialized")
+	}
+
+	if len(trans.cacheLocks) != 0 {
+		t.Errorf("Expected empty cacheLocks map, got %d entries", len(trans.cacheLocks))
+	}
+}
+
+// TestServeCachedFile_ValidCache tests serving a valid cached file
+func TestServeCachedFile_ValidCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create source file
+	sourcePath := filepath.Join(tmpDir, "source.mp4")
+	if err := os.WriteFile(sourcePath, []byte("source content"), 0o644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Sleep to ensure cache will be newer
+	time.Sleep(10 * time.Millisecond)
+
+	// Create cached file (newer than source)
+	cachePath := filepath.Join(tmpDir, "cached.mp4")
+	testContent := []byte("cached video content")
+	if err := os.WriteFile(cachePath, testContent, 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+
+	// Test with regular writer
+	buf := &bytes.Buffer{}
+	err := trans.serveCachedFile(sourcePath, cachePath, buf)
+	if err != nil {
+		t.Fatalf("serveCachedFile() error: %v", err)
+	}
+
+	if !bytes.Equal(buf.Bytes(), testContent) {
+		t.Errorf("Expected content %q, got %q", testContent, buf.Bytes())
+	}
+}
+
+// TestServeCachedFile_WithHTTPResponseWriter tests serving with proper headers
+func TestServeCachedFile_WithHTTPResponseWriter(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create source file
+	sourcePath := filepath.Join(tmpDir, "source.mp4")
+	if err := os.WriteFile(sourcePath, []byte("source"), 0o644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Create cached file
+	cachePath := filepath.Join(tmpDir, "cached.mp4")
+	testContent := []byte("cached video data")
+	if err := os.WriteFile(cachePath, testContent, 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+
+	// Create mock HTTP response writer
+	rr := &mockResponseWriter{
+		header: make(http.Header),
+		body:   &bytes.Buffer{},
+	}
+
+	err := trans.serveCachedFile(sourcePath, cachePath, rr)
+	if err != nil {
+		t.Fatalf("serveCachedFile() error: %v", err)
+	}
+
+	// Check Content-Length header was set
+	contentLength := rr.Header().Get("Content-Length")
+	if contentLength == "" {
+		t.Error("Content-Length header should be set")
+	}
+
+	expectedLength := fmt.Sprintf("%d", len(testContent))
+	if contentLength != expectedLength {
+		t.Errorf("Expected Content-Length=%s, got %s", expectedLength, contentLength)
+	}
+
+	// Check Transfer-Encoding was removed
+	if rr.Header().Get("Transfer-Encoding") != "" {
+		t.Error("Transfer-Encoding header should be removed")
+	}
+
+	// Check body content
+	if !bytes.Equal(rr.body.Bytes(), testContent) {
+		t.Errorf("Expected body %q, got %q", testContent, rr.body.Bytes())
+	}
+}
+
+// TestServeCachedFile_StaleCache tests that stale cache returns error
+func TestServeCachedFile_StaleCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create cache first (old)
+	cachePath := filepath.Join(tmpDir, "cached.mp4")
+	if err := os.WriteFile(cachePath, []byte("old cache"), 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Create source file (newer)
+	sourcePath := filepath.Join(tmpDir, "source.mp4")
+	if err := os.WriteFile(sourcePath, []byte("new source"), 0o644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	err := trans.serveCachedFile(sourcePath, cachePath, buf)
+	if err == nil {
+		t.Error("Expected error for stale cache")
+	}
+
+	// Cache should be deleted
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Error("Stale cache should have been deleted")
+	}
+}
+
+// TestServeCachedFile_MissingCache tests handling of missing cache
+func TestServeCachedFile_MissingCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	sourcePath := filepath.Join(tmpDir, "source.mp4")
+	if err := os.WriteFile(sourcePath, []byte("source"), 0o644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	cachePath := filepath.Join(tmpDir, "nonexistent.mp4")
+
+	buf := &bytes.Buffer{}
+	err := trans.serveCachedFile(sourcePath, cachePath, buf)
+	if err == nil {
+		t.Error("Expected error for missing cache file")
+	}
+}
+
+// mockResponseWriter is a mock http.ResponseWriter for testing
+type mockResponseWriter struct {
+	header http.Header
+	body   *bytes.Buffer
+}
+
+func (m *mockResponseWriter) Header() http.Header {
+	return m.header
+}
+
+func (m *mockResponseWriter) Write(data []byte) (int, error) {
+	return m.body.Write(data)
+}
+
+func (m *mockResponseWriter) WriteHeader(_ int) {
+	// Not needed for this test
 }

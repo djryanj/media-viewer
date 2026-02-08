@@ -28,6 +28,18 @@ Path where the SQLite database is stored. Defaults to `/database`.
 DATABASE_DIR=/database
 ```
 
+### TRANSCODER_LOG_DIR
+
+Path where transcoder logs are saved (optional). No default value.
+
+```bash
+TRANSCODER_LOG_DIR=/logs/transcoder
+```
+
+When configured, FFmpeg output logs for each transcode operation are saved to this directory with timestamped filenames. Useful for debugging video transcoding issues.
+
+If not set, transcoder logs are not saved to disk.
+
 ### PORT
 
 Port the application listens on. Defaults to `8080`.

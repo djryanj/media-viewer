@@ -71,9 +71,10 @@ type Config struct {
 	MetricsEnabled    bool
 
 	// Derived paths
-	DatabasePath string
-	ThumbnailDir string
-	TranscodeDir string
+	DatabasePath     string
+	ThumbnailDir     string
+	TranscodeDir     string
+	TranscoderLogDir string
 
 	// Feature flags based on directory availability
 	ThumbnailsEnabled  bool
@@ -98,6 +99,7 @@ func LoadConfig() (*Config, error) {
 	mediaDir := getEnv("MEDIA_DIR", "/media")
 	cacheDir := getEnv("CACHE_DIR", "/cache")
 	databaseDir := getEnv("DATABASE_DIR", "/database")
+	transcoderLogDir := getEnv("TRANSCODER_LOG_DIR", "")
 	port := getEnv("PORT", "8080")
 	metricsPort := getEnv("METRICS_PORT", "9090")
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
@@ -115,6 +117,11 @@ func LoadConfig() (*Config, error) {
 	logging.Info("  MEDIA_DIR:               %s", mediaDir)
 	logging.Info("  CACHE_DIR:               %s", cacheDir)
 	logging.Info("  DATABASE_DIR:            %s", databaseDir)
+	if transcoderLogDir != "" {
+		logging.Info("  TRANSCODER_LOG_DIR:      %s", transcoderLogDir)
+	} else {
+		logging.Info("  TRANSCODER_LOG_DIR:      (not configured)")
+	}
 	logging.Info("  PORT:                    %s", port)
 	logging.Info("  METRICS_PORT:            %s", metricsPort)
 	logging.Info("  METRICS_ENABLED:         %v", metricsEnabled)
@@ -235,6 +242,7 @@ func LoadConfig() (*Config, error) {
 		DatabasePath:          filepath.Join(databaseDir, "media.db"),
 		ThumbnailDir:          filepath.Join(cacheDir, "thumbnails"),
 		TranscodeDir:          filepath.Join(cacheDir, "transcoded"),
+		TranscoderLogDir:      transcoderLogDir,
 		WebAuthnEnabled:       webAuthnEnabled,
 		WebAuthnRPID:          webAuthnRPID,
 		WebAuthnRPDisplayName: webAuthnRPDisplayName,

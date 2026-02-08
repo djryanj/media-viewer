@@ -50,7 +50,7 @@ func setupMediaIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 
 	// Create dependencies
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, false)
+	trans := transcoder.New(cacheDir, "", false)
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 
 	config := &startup.Config{
@@ -98,7 +98,7 @@ func setupMediaIntegrationTestWithThumbnails(t *testing.T) (h *Handlers, cleanup
 
 	// Create dependencies with thumbnails ENABLED
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, false)
+	trans := transcoder.New(cacheDir, "", false)
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, true, db, 0, nil)
 
 	config := &startup.Config{
@@ -1643,6 +1643,59 @@ func TestStreamVideoRangeRequestIntegration(t *testing.T) {
 		}
 	} else {
 		t.Logf("Range request failed gracefully (ffprobe unavailable): %s", w.Body.String())
+	}
+}
+
+// TestStreamVideoHEADRequestIntegration tests HEAD request support for video streaming
+func TestStreamVideoHEADRequestIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Try to use pre-generated testdata file
+	testdataPath := filepath.Join("..", "..", "testdata", "test.mp4")
+	videoPath := filepath.Join(h.mediaDir, "head-test.mp4")
+
+	sourceData, err := os.ReadFile(testdataPath)
+	if err != nil {
+		t.Skipf("Test video not found at %s: %v (run ../../testdata/generate.sh to create test files)", testdataPath, err)
+	}
+
+	// Copy to mediaDir
+	if err := os.WriteFile(videoPath, sourceData, 0o644); err != nil {
+		t.Fatalf("Failed to copy test video: %v", err)
+	}
+
+	// Add to database
+	addTestMediaFile(t, h, "head-test.mp4", database.FileTypeVideo, "video/mp4")
+
+	// Test HEAD request
+	req := httptest.NewRequest(http.MethodHead, "/api/stream/head-test.mp4", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": "head-test.mp4"})
+	w := httptest.NewRecorder()
+
+	h.StreamVideo(w, req)
+
+	// Accept either 200 (success) or 500 (ffprobe unavailable)
+	if w.Code != http.StatusOK && w.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 200 or 500 for HEAD request, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if w.Code == http.StatusOK {
+		// HEAD requests should have headers but no body
+		if w.Body.Len() != 0 {
+			t.Errorf("HEAD request should have no body, got %d bytes", w.Body.Len())
+		}
+
+		// Should have Content-Type header
+		contentType := w.Header().Get("Content-Type")
+		if contentType == "" {
+			t.Error("HEAD request should have Content-Type header")
+		}
+	} else {
+		t.Logf("HEAD request failed gracefully (ffprobe unavailable): %s", w.Body.String())
 	}
 }
 

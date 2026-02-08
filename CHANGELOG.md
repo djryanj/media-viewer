@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.1] - 2026-02-08
 
+### Added
+
+- **Transcoder Log Files**: Added optional transcoder logging via `TRANSCODER_LOG_DIR` environment variable. When configured, FFmpeg output for each transcode operation is saved to timestamped log files (`YYYYMMDD-HHMMSS-videoname-wWIDTH.log`). Useful for debugging video transcoding issues. Log files include transcode timestamp, source path, target width, and complete FFmpeg stderr output. This is in preparation for[#178](https://github.com/djryanj/media-viewer/issues/178).
+
 ### Fixed
 
 - **Gallery Filter Type Selection**: Fixed filter dropdown to correctly filter files by type (images, videos, playlists). Corrected frontend filter values to use singular forms ("image", "video", "playlist") matching backend database schema. Added automatic viewport filling when filter results in few items - infinite scroll now continues loading until viewport is filled or no more items available. Fixed "All" filter to properly clear filter and reload full directory listing. Folders are always shown for navigation regardless of filter selection. ([#194](https://github.com/djryanj/media-viewer/issues/194))
@@ -24,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HEAD Request Body for Liveness Check**: Fixed `/livez` endpoint returning JSON body for HEAD requests. HEAD requests now properly return only headers with no body, as per HTTP specification, improving efficiency of connectivity polling. ([#192](https://github.com/djryanj/media-viewer/issues/192))
 
 - **Infinite Scroll Race Conditions**: Added safeguards to prevent multiple simultaneous page loads in infinite scroll, including early return checks for `isLoading` state and safety validation against total item count. Prevents loading beyond total items and duplicate page requests during rapid scroll or connectivity recovery. ([#192](https://github.com/djryanj/media-viewer/issues/192))
+
+- **Video Transcoding and Caching**: Fixed transcoder cache not being used - all transcode operations were streaming-only with no caching. Implemented hybrid caching strategy: fast remux operations (h264 videos) skip caching since they complete in under 1 second, while slow re-encode operations (incompatible codecs like HEVC, or any video requiring scaling) are cached for reuse. Added cache validation with source file modification time checking to invalidate stale cache. Fixed bug where scaling with `-c:v copy` codec would fail - now forces re-encoding when scaling is required since copy mode is incompatible with video filters. Added concurrent safety with cache locks to prevent duplicate transcode operations. ([#190](https://github.com/djryanj/media-viewer/issues/190))
 
 ## [0.10.0] - 2026-02-07
 

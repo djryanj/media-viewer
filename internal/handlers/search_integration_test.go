@@ -45,7 +45,7 @@ func setupSearchIntegrationTest(t *testing.T) (h *Handlers, mediaDir string, cle
 	idx := indexer.New(db, mediaDir, 0)
 
 	// Create transcoder
-	trans := transcoder.New(cacheDir, false)
+	trans := transcoder.New(cacheDir, "", false)
 
 	// Create thumbnail generator
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
