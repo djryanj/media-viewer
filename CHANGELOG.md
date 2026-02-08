@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Video Controls Auto-Hide on Mobile**: Fixed video controls not auto-hiding on mobile devices in video players. Added touch event handlers to detect taps on video area, preventing mousemove events from constantly resetting the hide timer. Controls now properly hide after 3 seconds when video is playing, and can be toggled by tapping on the video (excluding control buttons). Improved control visibility logic to only restart hide timer when controls transition from hidden to visible. ([#187](https://github.com/djryanj/media-viewer/issues/187))
+
 - **Pagination Consistency**: Standardized page size to 50 items across frontend and backend. Backend `/api/files` endpoint default `PageSize` reduced from 100 to 50 to match frontend infinite scroll `batchSize`, ensuring consistent pagination and preventing item count mismatches. ([#192](https://github.com/djryanj/media-viewer/issues/192))
 
 - **Infinite Scroll Retry on Recovery**: Fixed infinite scroll not retrying failed loads when server connectivity is restored. Now properly tracks load failure state and automatically retries loading more items when Gallery's connectivity check detects server is back online. ([#192](https://github.com/djryanj/media-viewer/issues/192))

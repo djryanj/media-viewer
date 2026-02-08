@@ -48,6 +48,13 @@ const VideoControls = {
             durationEl,
         } = config;
 
+        console.debug('VideoControls: setupControls called', {
+            hasVideo: !!video,
+            hasControls: !!controls,
+            hasVideoWrapper: !!videoWrapper,
+            videoWrapperClass: videoWrapper?.className,
+        });
+
         // Validate required elements
         if (!video || !controls) {
             console.error('VideoControls: Missing required elements (video, controls)');
@@ -59,6 +66,8 @@ const VideoControls = {
         if (!muteBtn) console.warn('VideoControls: Missing muteBtn');
         if (!volumeSlider) console.warn('VideoControls: Missing volumeSlider');
         if (!progressBar) console.warn('VideoControls: Missing progressBar');
+        if (!videoWrapper)
+            console.warn('VideoControls: Missing videoWrapper - touch controls will not work');
 
         const state = {
             isDraggingProgress: false,
@@ -249,6 +258,7 @@ const VideoControls = {
 
         // Auto-hide controls
         const showControls = () => {
+            console.debug('VideoControls: showing controls');
             controls.classList.add('show');
             hideControlsDelayed();
         };
@@ -258,16 +268,43 @@ const VideoControls = {
                 clearTimeout(state.controlsTimeout);
             }
 
-            if (video.paused) return;
+            if (video.paused) {
+                console.debug('VideoControls: video paused, keeping controls visible');
+                return;
+            }
 
+            console.debug('VideoControls: scheduling hide in 3s');
             state.controlsTimeout = setTimeout(() => {
+                console.debug('VideoControls: hiding controls');
                 controls.classList.remove('show');
             }, 3000);
         };
 
         if (videoWrapper) {
+            // Desktop: mousemove shows controls
             videoWrapper.addEventListener('mousemove', showControls);
             videoWrapper.addEventListener('mouseleave', hideControlsDelayed);
+
+            // Mobile: touchstart shows controls, touchend triggers delayed hide
+            videoWrapper.addEventListener('touchstart', (e) => {
+                // Don't trigger if touching controls themselves
+                if (e.target.closest('.video-controls')) {
+                    console.debug('VideoControls: touch on controls, ignoring');
+                    return;
+                }
+                console.debug('VideoControls: touch on video wrapper');
+                showControls();
+            });
+
+            videoWrapper.addEventListener('touchend', (e) => {
+                // Don't trigger if touching controls themselves
+                if (e.target.closest('.video-controls')) {
+                    console.debug('VideoControls: touchend on controls, ignoring');
+                    return;
+                }
+                console.debug('VideoControls: touchend on video wrapper');
+                hideControlsDelayed();
+            });
         }
 
         controls.addEventListener('click', (e) => {
