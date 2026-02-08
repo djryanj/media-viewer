@@ -751,17 +751,29 @@ const Lightbox = {
     },
 
     showLoading() {
-        this.isLoading = true;
+        this.loading = true;
         this.elements.loader?.classList.remove('hidden');
         this.elements.image.classList.add('loading');
         this.elements.video.classList.add('loading');
     },
 
     hideLoading() {
-        this.isLoading = false;
+        this.loading = false;
         this.elements.loader?.classList.add('hidden');
         this.elements.image.classList.remove('loading');
         this.elements.video.classList.remove('loading');
+
+        // Clear transcoding check timeout
+        if (this.transcodingCheckTimeout) {
+            clearTimeout(this.transcodingCheckTimeout);
+            this.transcodingCheckTimeout = null;
+        }
+
+        // Hide any persistent toast
+        const toast = document.getElementById('toast-notification');
+        if (toast && toast.classList.contains('show')) {
+            toast.classList.remove('show');
+        }
     },
 
     showMedia() {
@@ -1181,6 +1193,33 @@ const Lightbox = {
         }
     },
 
+    /**
+     * Check if video is being transcoded and show progress
+     * @param {string} filePath - The path of the video file
+     * @param {number} loadId - The load ID to check if still current
+     */
+    checkVideoTranscodingStatus(filePath, loadId) {
+        // After 3 seconds, if still loading, show message (likely transcoding)
+        this.transcodingCheckTimeout = setTimeout(() => {
+            if (loadId !== this.currentLoadId || !this.loading) {
+                return; // Not current or already loaded
+            }
+
+            if (typeof Gallery !== 'undefined' && typeof Gallery.showToast === 'function') {
+                Gallery.showToast(
+                    'Preparing video for playback. Large files may take a few minutes...',
+                    'info',
+                    0 // No auto-dismiss
+                );
+                console.debug('Lightbox: Gallery.showToast called successfully');
+            } else {
+                console.error(
+                    'Lightbox: Cannot show toast - Gallery or Gallery.showToast not available'
+                );
+            }
+        }, 3000);
+    },
+
     loadVideo(file, loadId) {
         this.showLoading();
 
@@ -1190,19 +1229,25 @@ const Lightbox = {
         // Apply loop setting BEFORE loading
         video.loop = Preferences.isMediaLoopEnabled();
 
-        // Add timeout for video loading
-        const loadTimeout = setTimeout(() => {
-            if (loadId === this.currentLoadId) {
-                console.error('Video load timeout:', file.path);
-                this.hideLoading();
-                video.removeEventListener('canplay', onCanPlay);
-                video.removeEventListener('error', onError);
+        // Add timeout for video loading (long timeout for transcoding)
+        const loadTimeout = setTimeout(
+            () => {
+                if (loadId === this.currentLoadId) {
+                    console.error('Video load timeout:', file.path);
+                    this.hideLoading();
+                    video.removeEventListener('canplay', onCanPlay);
+                    video.removeEventListener('error', onError);
 
-                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                    Gallery.showToast('Server not responding. Cannot load video.', 'error');
+                    if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                        Gallery.showToast(
+                            'Video load timeout. Server may be transcoding a large file or experiencing issues.',
+                            'error'
+                        );
+                    }
                 }
-            }
-        }, 10000); // 10 second timeout for video streams
+            },
+            5 * 60 * 1000
+        ); // 5 minutes for transcoding
 
         const onCanPlay = () => {
             if (loadId !== this.currentLoadId) {
@@ -1259,6 +1304,13 @@ const Lightbox = {
 
         video.addEventListener('canplay', onCanPlay);
         video.addEventListener('error', onError);
+
+        console.debug('Lightbox: About to call checkVideoTranscodingStatus for', file.path);
+
+        // Check if video might need transcoding and show appropriate message
+        this.checkVideoTranscodingStatus(file.path, loadId);
+
+        console.debug('Lightbox: checkVideoTranscodingStatus called');
 
         video.src = videoUrl;
         video.classList.remove('hidden');

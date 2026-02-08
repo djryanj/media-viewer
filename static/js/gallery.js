@@ -617,7 +617,7 @@ const Gallery = {
         });
     },
 
-    showToast(message) {
+    showToast(message, type = 'success', duration = 2000) {
         let toast = document.getElementById('toast-notification');
         if (!toast) {
             toast = document.createElement('div');
@@ -626,12 +626,26 @@ const Gallery = {
             document.body.appendChild(toast);
         }
 
+        // Clear any existing timeout
+        if (this.toastTimeout) {
+            clearTimeout(this.toastTimeout);
+            this.toastTimeout = null;
+        }
+
+        // Remove all type classes
+        toast.classList.remove('success', 'error', 'warning', 'info');
+
+        // Add new type class
+        toast.classList.add(type);
         toast.textContent = message;
         toast.classList.add('show');
 
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, 2000);
+        // Auto-hide after duration (unless duration is 0 for persistent)
+        if (duration > 0) {
+            this.toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, duration);
+        }
     },
 
     getIcon(type) {

@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"context"
 	"crypto/md5" //nolint:gosec // MD5 used for cache key generation, not security
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -309,18 +307,20 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For transcoding, use chunked streaming with timeout protection
-	logging.Info("StreamVideo: Transcoding will be required for %s", fullPath)
-	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	w.Header().Set("Cache-Control", "no-cache")
+	// For transcoding, check if already cached for fast serving
+	logging.Info("StreamVideo: Transcoding required for %s", fullPath)
 
-	if err := h.transcoder.StreamVideo(ctx, fullPath, w, targetWidth); err != nil {
-		// Only log if it's not a client disconnect
-		if !errors.Is(err, context.Canceled) {
-			logging.Error("error streaming video %s: %v", filePath, err)
-		}
+	cachePath, err := h.transcoder.GetOrStartTranscodeAndWait(ctx, fullPath, targetWidth, info)
+	if err != nil {
+		logging.Error("Failed to prepare transcode %s: %v", filePath, err)
+		http.Error(w, "Failed to prepare video", http.StatusInternalServerError)
+		return
 	}
+
+	// Serve the cache file (complete or being written to)
+	// ServeFile handles Range requests and works fine with growing files
+	logging.Info("Serving cached video: %s", cachePath)
+	http.ServeFile(w, r, cachePath)
 }
 
 // GetStreamInfo returns codec and dimension information about a video file

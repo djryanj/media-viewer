@@ -834,6 +834,18 @@ const Playlist = {
         this.isLoading = false;
         this.elements.loader?.classList.add('hidden');
         this.elements.video.classList.remove('loading');
+
+        // Clear transcoding check timeout
+        if (this.transcodingCheckTimeout) {
+            clearTimeout(this.transcodingCheckTimeout);
+            this.transcodingCheckTimeout = null;
+        }
+
+        // Hide any persistent toast
+        const toast = document.getElementById('toast-notification');
+        if (toast && toast.classList.contains('show')) {
+            toast.classList.remove('show');
+        }
     },
 
     async acquireWakeLock() {
@@ -973,17 +985,26 @@ const Playlist = {
         video.addEventListener('loadeddata', hideLoadingOnData);
         video.addEventListener('error', hideLoadingOnError);
 
-        // Add timeout for video loading
-        const loadTimeout = setTimeout(() => {
-            console.error('Player: Video load timeout:', item.path);
-            this.hideLoading();
-            video.removeEventListener('loadeddata', hideLoadingOnData);
-            video.removeEventListener('error', hideLoadingOnError);
+        // Check if this video might need transcoding and show appropriate message
+        this.checkTranscodingStatus(item.path);
 
-            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                Gallery.showToast('Server not responding. Cannot load video.', 'error');
-            }
-        }, 10000);
+        // Add timeout for video loading (long timeout for transcoding)
+        const loadTimeout = setTimeout(
+            () => {
+                console.error('Player: Video load timeout:', item.path);
+                this.hideLoading();
+                video.removeEventListener('loadeddata', hideLoadingOnData);
+                video.removeEventListener('error', hideLoadingOnError);
+
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        'Video load timeout. Server may be transcoding a large file or experiencing issues.',
+                        'error'
+                    );
+                }
+            },
+            5 * 60 * 1000
+        ); // 5 minutes for transcoding
 
         // Clear timeout on successful load
         const originalHideLoadingOnData = hideLoadingOnData;
@@ -1011,6 +1032,27 @@ const Playlist = {
         if (activeItem) {
             activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
+    },
+
+    /**
+     * Check if video is being transcoded and show progress
+     * @param {string} filePath - The path of the video file
+     */
+    checkTranscodingStatus(filePath) {
+        // After 3 seconds, if still loading, show message (likely transcoding)
+        this.transcodingCheckTimeout = setTimeout(() => {
+            if (!this.isLoading) {
+                return; // Already loaded
+            }
+
+            if (typeof Gallery !== 'undefined' && typeof Gallery.showToast === 'function') {
+                Gallery.showToast(
+                    'Preparing video for playback. Large files may take a few minutes...',
+                    'info',
+                    0 // No auto-dismiss
+                );
+            }
+        }, 3000);
     },
 
     /**
