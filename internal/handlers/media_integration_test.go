@@ -1159,6 +1159,132 @@ func TestListFilesFilterByTypeIntegration(t *testing.T) {
 	}
 }
 
+// TestListFilesFilterWithFoldersIntegration tests that filtering includes folders for navigation
+func TestListFilesFilterWithFoldersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add folders
+	folder1 := &database.MediaFile{
+		Name:       "photos",
+		Path:       "photos",
+		ParentPath: "",
+		Type:       database.FileTypeFolder,
+	}
+	folder2 := &database.MediaFile{
+		Name:       "videos",
+		Path:       "videos",
+		ParentPath: "",
+		Type:       database.FileTypeFolder,
+	}
+
+	tx, err := h.db.BeginBatch()
+	if err != nil {
+		t.Fatalf("failed to begin batch: %v", err)
+	}
+	if err := h.db.UpsertFile(tx, folder1); err != nil {
+		t.Fatalf("failed to upsert folder1: %v", err)
+	}
+	if err := h.db.UpsertFile(tx, folder2); err != nil {
+		t.Fatalf("failed to upsert folder2: %v", err)
+	}
+	if err := h.db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("failed to end batch: %v", err)
+	}
+
+	// Add files of different types
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "")
+	addTestMediaFile(t, h, "image2.png", database.FileTypeImage, "")
+	addTestMediaFile(t, h, "video1.mp4", database.FileTypeVideo, "")
+	addTestMediaFile(t, h, "video2.mkv", database.FileTypeVideo, "")
+
+	tests := []struct {
+		name            string
+		filterType      string
+		expectedFolders int
+		expectedFiles   int
+		expectedType    database.FileType
+	}{
+		{
+			name:            "filter by video includes folders",
+			filterType:      "video",
+			expectedFolders: 2, // Both folders should be included
+			expectedFiles:   2, // Two video files
+			expectedType:    database.FileTypeVideo,
+		},
+		{
+			name:            "filter by image includes folders",
+			filterType:      "image",
+			expectedFolders: 2, // Both folders should be included
+			expectedFiles:   2, // Two image files
+			expectedType:    database.FileTypeImage,
+		},
+		{
+			name:            "no filter shows all",
+			filterType:      "",
+			expectedFolders: 2,
+			expectedFiles:   4,  // All files (2 videos + 2 images)
+			expectedType:    "", // Mixed types
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiURL := "/api/files"
+			if tt.filterType != "" {
+				apiURL += "?type=" + tt.filterType
+			}
+
+			req := httptest.NewRequest(http.MethodGet, apiURL, http.NoBody)
+			req = req.WithContext(ctx)
+			w := httptest.NewRecorder()
+			h.ListFiles(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d", w.Code)
+			}
+
+			var listing database.DirectoryListing
+			if err := json.NewDecoder(w.Body).Decode(&listing); err != nil {
+				t.Fatalf("failed to decode response: %v", err)
+			}
+
+			// Count folders and files
+			folders := 0
+			files := 0
+			for _, item := range listing.Items {
+				if item.Type == database.FileTypeFolder {
+					folders++
+				} else {
+					files++
+					// If filtering, verify type matches
+					if tt.filterType != "" && item.Type != tt.expectedType {
+						t.Errorf("expected file type %s, got %s for %s", tt.expectedType, item.Type, item.Name)
+					}
+				}
+			}
+
+			if folders != tt.expectedFolders {
+				t.Errorf("expected %d folders, got %d", tt.expectedFolders, folders)
+			}
+			if files != tt.expectedFiles {
+				t.Errorf("expected %d files of type %s, got %d", tt.expectedFiles, tt.filterType, files)
+			}
+
+			// Verify total count includes both folders and filtered files
+			expectedTotal := tt.expectedFolders + tt.expectedFiles
+			if listing.TotalItems != expectedTotal {
+				t.Errorf("expected total items %d, got %d", expectedTotal, listing.TotalItems)
+			}
+		})
+	}
+}
+
 // TestGetMediaFilesSortingIntegration tests sorting of media files
 func TestGetMediaFilesSortingIntegration(t *testing.T) {
 	if testing.Short() {
