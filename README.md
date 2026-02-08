@@ -86,6 +86,7 @@ services:
             - METRICS_PORT=9090
             - METRICS_ENABLED=true
             - INDEX_INTERVAL=30m
+            # - TRANSCODER_LOG_DIR=/logs/transcoder  # Optional: Enable to save FFmpeg logs
         restart: unless-stopped
 
 volumes:

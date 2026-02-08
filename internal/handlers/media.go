@@ -266,6 +266,8 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filePath := vars["path"]
 
+	logging.Debug("StreamVideo request: path=%s, queryWidth=%s", filePath, r.URL.Query().Get("width"))
+
 	// Reject absolute paths before joining
 	if filepath.IsAbs(filePath) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
@@ -276,11 +278,13 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {
+		logging.Warn("StreamVideo: Invalid path attempted: %s", filePath)
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		logging.Warn("StreamVideo: File not found: %s", fullPath)
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
@@ -292,6 +296,7 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 
 	info, err := h.transcoder.GetVideoInfo(ctx, fullPath)
 	if err != nil {
+		logging.Error("StreamVideo: Failed to get video info for %s: %v", fullPath, err)
 		http.Error(w, "Failed to get video info", http.StatusInternalServerError)
 		return
 	}
@@ -299,11 +304,13 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	// For direct file serving (no transcoding needed), use standard ServeFile
 	// which handles range requests properly
 	if !info.NeedsTranscode && (targetWidth == 0 || targetWidth >= info.Width) {
+		logging.Debug("StreamVideo: Using ServeFile for %s (no transcode needed)", fullPath)
 		http.ServeFile(w, r, fullPath)
 		return
 	}
 
 	// For transcoding, use chunked streaming with timeout protection
+	logging.Info("StreamVideo: Transcoding will be required for %s", fullPath)
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.Header().Set("Cache-Control", "no-cache")

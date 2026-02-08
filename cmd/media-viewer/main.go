@@ -106,7 +106,7 @@ func main() {
 
 	// Initialize transcoder
 	startup.LogTranscoderInit(config.TranscodingEnabled)
-	trans := transcoder.New(config.TranscodeDir, config.TranscodingEnabled)
+	trans := transcoder.New(config.TranscodeDir, config.TranscoderLogDir, config.TranscodingEnabled)
 
 	// Initialize thumbnail generator
 	startup.LogThumbnailInit(config.ThumbnailsEnabled)
@@ -307,7 +307,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")
 	api.HandleFunc("/playlists", h.ListPlaylists).Methods("GET")
 	api.HandleFunc("/playlist/{name}", h.GetPlaylist).Methods("GET")
-	api.HandleFunc("/stream/{path:.*}", h.StreamVideo).Methods("GET")
+	api.HandleFunc("/stream/{path:.*}", h.StreamVideo).Methods("GET", "HEAD")
 	api.HandleFunc("/stream-info/{path:.*}", h.GetStreamInfo).Methods("GET")
 	api.HandleFunc("/search", h.Search).Methods("GET")
 	api.HandleFunc("/search/suggestions", h.SearchSuggestions).Methods("GET")

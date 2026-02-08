@@ -2,6 +2,40 @@
 
 Complete reference for all environment variables supported by Media Viewer.
 
+## Quick Reference
+
+| Variable                      | Default        | Description                                          |
+| ----------------------------- | -------------- | ---------------------------------------------------- |
+| **Paths**                     |                |                                                      |
+| `MEDIA_DIR`                   | `/media`       | Media directory path                                 |
+| `CACHE_DIR`                   | `/cache`       | Cache directory for thumbnails and transcoded videos |
+| `DATABASE_DIR`                | `/database`    | Database directory path                              |
+| `TRANSCODER_LOG_DIR`          | _(none)_       | Transcoder log directory (optional)                  |
+| **Network**                   |                |                                                      |
+| `PORT`                        | `8080`         | HTTP server port                                     |
+| `METRICS_PORT`                | `9090`         | Prometheus metrics port                              |
+| `METRICS_ENABLED`             | `true`         | Enable/disable metrics server                        |
+| **Indexing & Scanning**       |                |                                                      |
+| `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                         |
+| `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                 |
+| `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                   |
+| **Authentication & Sessions** |                |                                                      |
+| `SESSION_DURATION`            | `24h`          | User session lifetime                                |
+| `SESSION_CLEANUP`             | `1h`           | Expired session cleanup interval                     |
+| **WebAuthn**                  |                |                                                      |
+| `WEBAUTHN_ENABLED`            | `false`        | Enable passkey authentication                        |
+| `WEBAUTHN_RP_ID`              | _(none)_       | Relying Party ID (required if enabled)               |
+| `WEBAUTHN_RP_NAME`            | `Media Viewer` | Display name for WebAuthn prompts                    |
+| `WEBAUTHN_ORIGINS`            | _(none)_       | Allowed origins (required if enabled)                |
+| **Memory Management**         |                |                                                      |
+| `MEMORY_LIMIT`                | _(none)_       | Container memory limit in bytes                      |
+| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.0-1.0)                   |
+| `GOMEMLIMIT`                  | _(none)_       | Direct Go memory limit override                      |
+| **Logging**                   |                |                                                      |
+| `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                |
+| `LOG_STATIC_FILES`            | `false`        | Log static file requests                             |
+| `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                            |
+
 ## Paths
 
 ### MEDIA_DIR
@@ -39,6 +73,20 @@ DATABASE_DIR=/database
 - Default: `/database`
 - Must be writable
 - Should be persisted between container restarts
+
+### TRANSCODER_LOG_DIR
+
+Path to the transcoder log directory (optional).
+
+```bash
+TRANSCODER_LOG_DIR=/logs/transcoder
+```
+
+- Default: (not configured)
+- Optional: If not set, transcoder logs are not saved
+- When configured, FFmpeg logs for each transcode operation are saved to this directory
+- Log files are named: `YYYYMMDD-HHMMSS-videoname-wWIDTH.log`
+- Useful for debugging transcode issues
 
 ## Network
 
