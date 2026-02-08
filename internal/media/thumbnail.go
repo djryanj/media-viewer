@@ -293,17 +293,20 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 	case database.FileTypeFolder:
 		img, err = t.generateFolderThumbnail(ctx, filePath)
 	default:
+		logging.Error("Thumbnail generation failed for %s: unsupported file type %s", filePath, fileType)
 		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_unsupported").Inc()
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}
 	metrics.ThumbnailGenerationDurationDetailed.WithLabelValues(fileTypeStr, "decode").Observe(time.Since(decodeStart).Seconds())
 
 	if err != nil {
+		logging.Error("Thumbnail generation failed for %s (type: %s): %v", filePath, fileType, err)
 		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error").Inc()
 		return nil, fmt.Errorf("thumbnail generation failed: %w", err)
 	}
 
 	if img == nil {
+		logging.Error("Thumbnail generation failed for %s (type: %s): returned nil image", filePath, fileType)
 		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_nil").Inc()
 		return nil, fmt.Errorf("thumbnail generation returned nil image")
 	}
@@ -326,11 +329,13 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 	encodeStart := time.Now()
 	if fileType == database.FileTypeFolder {
 		if err := png.Encode(&buf, thumb); err != nil {
+			logging.Error("Thumbnail encoding failed for %s (type: %s): PNG encode error: %v", filePath, fileType, err)
 			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_encode").Inc()
 			return nil, fmt.Errorf("failed to encode thumbnail as PNG: %w", err)
 		}
 	} else {
 		if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 85}); err != nil {
+			logging.Error("Thumbnail encoding failed for %s (type: %s): JPEG encode error: %v", filePath, fileType, err)
 			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_encode").Inc()
 			return nil, fmt.Errorf("failed to encode thumbnail as JPEG: %w", err)
 		}
@@ -404,6 +409,7 @@ func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePat
 	// FFmpeg fallback
 	img, err = t.generateImageWithFFmpeg(ctx, filePath)
 	if err != nil {
+		logging.Error("Image thumbnail failed for %s: all decode methods exhausted (constrained load, imaging.Open, ffmpeg): %v", filePath, err)
 		return nil, fmt.Errorf("all image decode methods failed for %s: %w", filePath, err)
 	}
 
@@ -440,10 +446,12 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(ctx context.Context, filePa
 	err = cmd.Run()
 	metrics.ThumbnailFFmpegDuration.WithLabelValues("image").Observe(time.Since(ffmpegStart).Seconds())
 	if err != nil {
+		logging.Error("FFmpeg image decode failed for %s: %v, stderr: %s", filePath, err, stderr.String())
 		return nil, fmt.Errorf("ffmpeg failed: %w, stderr: %s", err, stderr.String())
 	}
 
 	if stdout.Len() == 0 {
+		logging.Error("FFmpeg image decode failed for %s: no output produced", filePath)
 		return nil, fmt.Errorf("ffmpeg produced no output for %s", filePath)
 	}
 
@@ -451,6 +459,7 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(ctx context.Context, filePa
 
 	img, _, err := image.Decode(&stdout)
 	if err != nil {
+		logging.Error("FFmpeg image decode failed for %s: failed to decode PNG output: %v", filePath, err)
 		return nil, fmt.Errorf("failed to decode ffmpeg output: %w", err)
 	}
 
@@ -511,11 +520,13 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 		cmd.Stderr = &stderr
 
 		if err := cmd.Run(); err != nil {
+			logging.Error("FFmpeg video thumbnail failed for %s (retry attempt): %v, stderr: %s", filePath, err, stderr.String())
 			return nil, fmt.Errorf("ffmpeg failed: %w, stderr: %s", err, stderr.String())
 		}
 	}
 
 	if stdout.Len() == 0 {
+		logging.Error("FFmpeg video thumbnail failed for %s: no output produced (after retry)", filePath)
 		return nil, fmt.Errorf("ffmpeg produced no output for %s", filePath)
 	}
 
@@ -523,6 +534,7 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 
 	img, _, err := image.Decode(&stdout)
 	if err != nil {
+		logging.Error("FFmpeg video thumbnail failed for %s: failed to decode PNG output: %v", filePath, err)
 		return nil, fmt.Errorf("failed to decode ffmpeg output: %w", err)
 	}
 
@@ -621,7 +633,7 @@ func (t *ThumbnailGenerator) findImagesForFolder(ctx context.Context, relativePa
 		}
 
 		if err != nil {
-			logging.Debug("Failed to generate thumbnail for %s: %v", f.Path, err)
+			logging.Warn("Folder thumbnail: failed to generate component thumbnail for %s (type: %s): %v", f.Path, f.Type, err)
 			continue
 		}
 

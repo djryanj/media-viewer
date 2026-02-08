@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.10.2] - Unreleased
+
+### Improved
+
+- **Thumbnail Failure Logging**: Enhanced thumbnail generation error logging to provide detailed diagnostic information when thumbnail generation fails. Error logs now include the specific file path, file type (image/video/folder), failure stage (decode/encode/FFmpeg), and detailed error messages including FFmpeg stderr output. This makes it significantly easier to diagnose thumbnail generation issues by identifying which files failed and why. Added corresponding troubleshooting documentation in admin guide with log checking commands and resolution steps. ([#139](https://github.com/djryanj/media-viewer/issues/139))
+
 ## [0.10.1] - 2026-02-08
 
 ### Added
