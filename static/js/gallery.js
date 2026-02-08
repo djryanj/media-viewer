@@ -672,6 +672,7 @@ const Gallery = {
 
         // Reset counter if more than 15 seconds since last failure (isolated failures)
         if (now - this.thumbnailFailures.lastFailureTime > 15000) {
+            console.debug('Gallery: resetting failure count due to 15s timeout');
             this.thumbnailFailures.count = 0;
             this.thumbnailFailures.warningShown = false;
             this.thumbnailFailures.failedThumbnails = [];
@@ -679,6 +680,10 @@ const Gallery = {
 
         this.thumbnailFailures.count++;
         this.thumbnailFailures.lastFailureTime = now;
+
+        console.debug(
+            `Gallery: thumbnail failure tracked (count: ${this.thumbnailFailures.count}, checking: ${this.thumbnailFailures.connectivityCheckInProgress})`
+        );
 
         // Store failed thumbnail for potential retry
         if (thumbnailInfo) {
@@ -690,6 +695,7 @@ const Gallery = {
             this.thumbnailFailures.count >= 2 &&
             !this.thumbnailFailures.connectivityCheckInProgress
         ) {
+            console.debug('Gallery: failure threshold reached, starting connectivity check');
             this.startConnectivityCheck();
         }
     },
@@ -709,6 +715,9 @@ const Gallery = {
             return;
         }
 
+        console.debug(
+            `Gallery: scheduling failure reset in 3s (current count: ${this.thumbnailFailures.count})`
+        );
         this.thumbnailFailures.resetInProgress = true;
         clearTimeout(this.thumbnailFailures.resetTimeout);
         this.thumbnailFailures.resetTimeout = setTimeout(() => {
@@ -724,6 +733,7 @@ const Gallery = {
                 this.retryFailedThumbnails();
             }
 
+            console.debug('Gallery: failure tracking reset complete');
             this.thumbnailFailures.count = 0;
             this.thumbnailFailures.warningShown = false;
             // Don't clear failedThumbnails - let retry handle clearing them
@@ -738,6 +748,7 @@ const Gallery = {
     startConnectivityCheck() {
         if (this.thumbnailFailures.connectivityCheckInProgress) return;
         this.thumbnailFailures.connectivityCheckInProgress = true;
+        console.debug('Gallery: starting connectivity check (HEAD /livez every 5s)');
 
         const checkConnectivity = async () => {
             // Stop checking if we've already recovered
@@ -747,7 +758,8 @@ const Gallery = {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-                const response = await fetch('/api/auth/check', {
+                const response = await fetch('/livez', {
+                    method: 'HEAD',
                     signal: controller.signal,
                     cache: 'no-store',
                 });
@@ -774,6 +786,12 @@ const Gallery = {
                         Lightbox.imageFailures.currentFailedImage
                     ) {
                         Lightbox.retryCurrentImage();
+                    }
+
+                    // Retry infinite scroll if it failed
+                    if (typeof InfiniteScroll !== 'undefined' && InfiniteScroll.hasLoadFailed()) {
+                        console.debug('Retrying infinite scroll after connectivity restored');
+                        InfiniteScroll.retryLoad();
                     }
 
                     this.thumbnailFailures.count = 0;

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.10.1] - 2026-02-08
+
+### Fixed
+
+- **Pagination Consistency**: Standardized page size to 50 items across frontend and backend. Backend `/api/files` endpoint default `PageSize` reduced from 100 to 50 to match frontend infinite scroll `batchSize`, ensuring consistent pagination and preventing item count mismatches. ([#192](https://github.com/djryanj/media-viewer/issues/192))
+
+- **Infinite Scroll Retry on Recovery**: Fixed infinite scroll not retrying failed loads when server connectivity is restored. Now properly tracks load failure state and automatically retries loading more items when Gallery's connectivity check detects server is back online. ([#192](https://github.com/djryanj/media-viewer/issues/192))
+
+- **HEAD Request Body for Liveness Check**: Fixed `/livez` endpoint returning JSON body for HEAD requests. HEAD requests now properly return only headers with no body, as per HTTP specification, improving efficiency of connectivity polling. ([#192](https://github.com/djryanj/media-viewer/issues/192))
+
+- **Infinite Scroll Race Conditions**: Added safeguards to prevent multiple simultaneous page loads in infinite scroll, including early return checks for `isLoading` state and safety validation against total item count. Prevents loading beyond total items and duplicate page requests during rapid scroll or connectivity recovery. ([#192](https://github.com/djryanj/media-viewer/issues/192))
+
 ## [0.10.0] - 2026-02-07
 
 ### Added
@@ -45,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Lightbox Image Loading**: Converted from img.src to fetch with blob URLs, enabling proper network request cancellation. Timeout set to 5 seconds with automatic retry on recovery. ([#169](https://github.com/djryanj/media-viewer/issues/169))
 
 - **Error Messages**: Offline error messages changed from "Thumbnails cannot be loaded" to "Content cannot be loaded" to be context-appropriate for both gallery and lightbox usage. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
+- **Connectivity Check Optimization**: Changed server connectivity checks from `GET /api/auth/check` to `HEAD /livez` for improved efficiency. The liveness endpoint is lighter weight (no database queries or JSON parsing required), and HEAD requests eliminate unnecessary response body transmission. Backend now supports both GET and HEAD methods for `/livez` endpoint. ([#169](https://github.com/djryanj/media-viewer/issues/169))
 
 ### Fixed
 

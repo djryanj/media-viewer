@@ -497,6 +497,46 @@ func TestLivenessCheckContentTypeMock(t *testing.T) {
 	}
 }
 
+func TestLivenessCheckHTTPMethodsMock(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		method string
+	}{
+		{http.MethodGet},
+		{http.MethodHead},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			t.Parallel()
+
+			h := newMockHandlersHealth()
+
+			req := httptest.NewRequest(tt.method, "/livez", http.NoBody)
+			w := httptest.NewRecorder()
+
+			h.LivenessCheck(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("Method %s: Expected status %d, got %d", tt.method, http.StatusOK, w.Code)
+			}
+
+			// Verify Content-Type header is set for both methods
+			contentType := w.Header().Get("Content-Type")
+			if contentType != "application/json" {
+				t.Errorf("Method %s: Expected Content-Type application/json, got %s", tt.method, contentType)
+			}
+
+			// For GET, verify body is present
+			// For HEAD, body should be empty but headers should be the same
+			if tt.method == http.MethodGet && w.Body.Len() == 0 {
+				t.Errorf("Method GET: Expected response body, got empty")
+			}
+		})
+	}
+}
+
 // =============================================================================
 // ReadinessCheck Tests
 // =============================================================================

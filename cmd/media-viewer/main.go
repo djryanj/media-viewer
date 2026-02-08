@@ -267,7 +267,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	// Health check and version routes (no auth required)
 	r.HandleFunc("/health", h.HealthCheck).Methods("GET")
 	r.HandleFunc("/healthz", h.HealthCheck).Methods("GET")
-	r.HandleFunc("/livez", h.LivenessCheck).Methods("GET")
+	r.HandleFunc("/livez", h.LivenessCheck).Methods("GET", "HEAD")
 	r.HandleFunc("/readyz", h.ReadinessCheck).Methods("GET")
 	r.HandleFunc("/version", h.GetVersion).Methods("GET")
 
