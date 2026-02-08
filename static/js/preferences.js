@@ -5,6 +5,8 @@ const Preferences = {
         sortOrder: 'asc',
         videoAutoplay: true,
         mediaLoop: true,
+        clockEnabled: true,
+        clockFormat: '12', // '12' or '24'
     },
 
     // Cache of current preferences
@@ -173,5 +175,39 @@ const Preferences = {
         const newValue = !this.get('mediaLoop');
         this.set('mediaLoop', newValue);
         return newValue;
+    },
+
+    /**
+     * Check if clock is enabled
+     * @returns {boolean}
+     */
+    isClockEnabled() {
+        return this.get('clockEnabled');
+    },
+
+    /**
+     * Toggle clock preference
+     * @returns {boolean} New value
+     */
+    toggleClock() {
+        const newValue = !this.get('clockEnabled');
+        this.set('clockEnabled', newValue);
+        return newValue;
+    },
+
+    /**
+     * Get clock format preference
+     * @returns {string} '12' or '24'
+     */
+    getClockFormat() {
+        return this.get('clockFormat');
+    },
+
+    /**
+     * Set clock format preference
+     * @param {string} format - '12' or '24'
+     */
+    setClockFormat(format) {
+        this.set('clockFormat', format);
     },
 };

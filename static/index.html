@@ -199,6 +199,7 @@
 
         <!-- Lightbox -->
         <div class="lightbox hidden" id="lightbox">
+            <div id="lightbox-clock" class="viewer-clock hidden"></div>
             <button class="lightbox-pin" id="lightbox-pin" title="Add to favorites (F)">
                 <i data-lucide="star"></i>
             </button>
@@ -233,6 +234,7 @@
         <!-- Player Modal -->
         <div class="player-modal hidden" id="player-modal">
             <div class="player-container">
+                <div id="playlist-clock" class="viewer-clock hidden"></div>
                 <div class="player-header">
                     <h2 id="playlist-title">Playlist</h2>
                     <div class="player-header-controls">
@@ -368,6 +370,15 @@
                     <button class="settings-tab" data-tab="cache" role="tab" aria-selected="false">
                         <i data-lucide="hard-drive"></i>
                         <span class="settings-tab-text">Cache</span>
+                    </button>
+                    <button
+                        class="settings-tab"
+                        data-tab="display"
+                        role="tab"
+                        aria-selected="false"
+                    >
+                        <i data-lucide="monitor"></i>
+                        <span class="settings-tab-text">Display</span>
                     </button>
                     <button class="settings-tab" data-tab="about" role="tab" aria-selected="false">
                         <i data-lucide="info"></i>
@@ -640,6 +651,48 @@
                         </div>
                     </div>
 
+                    <!-- Display Panel -->
+                    <div
+                        id="settings-display"
+                        class="settings-panel"
+                        role="tabpanel"
+                        aria-labelledby="tab-display"
+                    >
+                        <h3>Display Settings</h3>
+                        <p class="settings-description">
+                            Configure how content is displayed in the lightbox and playlist views.
+                        </p>
+
+                        <div class="settings-section">
+                            <h4>Clock</h4>
+                            <div class="settings-row">
+                                <div class="settings-info">
+                                    <label for="clock-enabled-toggle">Show Clock</label>
+                                    <span class="settings-hint"
+                                        >Display current time in lightbox and playlist</span
+                                    >
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="clock-enabled-toggle" />
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="settings-row" id="clock-format-row">
+                                <div class="settings-info">
+                                    <label for="clock-format-select">Time Format</label>
+                                    <span class="settings-hint"
+                                        >Choose 12-hour or 24-hour format</span
+                                    >
+                                </div>
+                                <select id="clock-format-select" class="settings-select">
+                                    <option value="12">12-hour (AM/PM)</option>
+                                    <option value="24">24-hour</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- About Panel -->
                     <div
                         id="settings-about"
@@ -750,6 +803,7 @@
         <!-- Scripts -->
         <script src="/js/history.js"></script>
         <script src="/js/preferences.js"></script>
+        <script src="/js/clock.js"></script>
         <script src="/js/infinite-scroll.js"></script>
         <script src="/js/infinite-scroll-search.js"></script>
         <script src="/js/gallery.js"></script>

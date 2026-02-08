@@ -742,6 +742,11 @@ const Playlist = {
         this.elements.modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
 
+        // Reset playlist visibility state
+        this.playlistVisible = false;
+        this.elements.sidebar?.classList.remove('visible');
+        this.elements.playlistToggle?.classList.remove('active');
+
         // Enable theater mode by default
         this.isTheaterMode = true;
         this.elements.modal.classList.add('theater-mode');
@@ -850,6 +855,11 @@ const Playlist = {
     },
 
     closeWithHistory() {
+        // Check if modal is already hidden
+        if (this.elements.modal.classList.contains('hidden')) {
+            return;
+        }
+
         if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('player')) {
             history.back();
         } else {
