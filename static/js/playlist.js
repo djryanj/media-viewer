@@ -685,7 +685,9 @@ const Playlist = {
     async loadPlaylist(name) {
         MediaApp.showLoading();
         try {
-            const response = await fetch(`/api/playlist/${encodeURIComponent(name)}`);
+            const response = await fetchWithTimeout(`/api/playlist/${encodeURIComponent(name)}`, {
+                timeout: 5000,
+            });
 
             if (response.status === 401) {
                 console.debug('Player: playlist load auth error');
@@ -722,7 +724,11 @@ const Playlist = {
             this.open();
         } catch (error) {
             console.error('Error loading playlist:', error);
-            MediaApp.showError('Failed to load playlist');
+            const isTimeout = error.name === 'AbortError';
+            const message = isTimeout
+                ? 'Server not responding. Cannot load playlist.'
+                : 'Failed to load playlist';
+            MediaApp.showError(message);
         } finally {
             MediaApp.hideLoading();
         }
@@ -957,6 +963,28 @@ const Playlist = {
         video.addEventListener('loadeddata', hideLoadingOnData);
         video.addEventListener('error', hideLoadingOnError);
 
+        // Add timeout for video loading
+        const loadTimeout = setTimeout(() => {
+            console.error('Player: Video load timeout:', item.path);
+            this.hideLoading();
+            video.removeEventListener('loadeddata', hideLoadingOnData);
+            video.removeEventListener('error', hideLoadingOnError);
+
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('Server not responding. Cannot load video.', 'error');
+            }
+        }, 10000);
+
+        // Clear timeout on successful load
+        const originalHideLoadingOnData = hideLoadingOnData;
+        const hideLoadingOnDataWithTimeout = () => {
+            clearTimeout(loadTimeout);
+            originalHideLoadingOnData();
+        };
+
+        video.removeEventListener('loadeddata', hideLoadingOnData);
+        video.addEventListener('loadeddata', hideLoadingOnDataWithTimeout);
+
         video.src = videoUrl;
         video.load();
 
@@ -981,7 +1009,7 @@ const Playlist = {
      */
     async checkVideoAuthError(videoUrl) {
         try {
-            const response = await fetch(videoUrl, { method: 'HEAD' });
+            const response = await fetchWithTimeout(videoUrl, { method: 'HEAD', timeout: 3000 });
             if (response.status === 401) {
                 console.debug('Player: video auth error detected');
                 if (typeof SessionManager !== 'undefined') {
