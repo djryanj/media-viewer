@@ -1063,8 +1063,8 @@ func BenchmarkStreamVideoIntegration(b *testing.B) {
 // Cache Integration Tests (FFmpeg)
 // =============================================================================
 
-// TestTranscodeAndStream_HybridCaching_RemuxNoCache tests that remux operations don't cache
-func TestTranscodeAndStream_HybridCaching_RemuxNoCache(t *testing.T) {
+// TestTranscodeAndStream_AlwaysCache tests that all transcode operations cache
+func TestTranscodeAndStream_AlwaysCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping ffmpeg test in short mode")
 	}
@@ -1076,9 +1076,10 @@ func TestTranscodeAndStream_HybridCaching_RemuxNoCache(t *testing.T) {
 	testVideo := createTestH264Video(t, tmpDir)
 
 	info := &VideoInfo{
-		Codec:  "h264",
-		Width:  1920,
-		Height: 1080,
+		Codec:    "h264",
+		Width:    1920,
+		Height:   1080,
+		Duration: 1.0,
 	}
 
 	ctx := context.Background()
@@ -1090,13 +1091,11 @@ func TestTranscodeAndStream_HybridCaching_RemuxNoCache(t *testing.T) {
 		t.Fatalf("transcodeAndStream() error: %v", err)
 	}
 
-	// Verify NO cache file was created
-	cacheFiles, _ := filepath.Glob(filepath.Join(tmpDir, "*.mp4"))
-	for _, file := range cacheFiles {
-		// Exclude the source test video
-		if file != testVideo {
-			t.Errorf("Cache file %s should not exist for remux operation", file)
-		}
+	// Verify cache file was created (changed behavior: now always caches)
+	cacheKey := filepath.Base(testVideo) + "_w0.mp4"
+	cachePath := filepath.Join(tmpDir, cacheKey)
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		t.Errorf("Cache file %s should exist (changed from hybrid to always-cache strategy)", cachePath)
 	}
 }
 
@@ -1113,9 +1112,10 @@ func TestTranscodeAndStream_HybridCaching_ReencodeCache(t *testing.T) {
 	testVideo := createTestH264Video(t, tmpDir) // We'll pretend it needs re-encoding
 
 	info := &VideoInfo{
-		Codec:  "hevc", // Incompatible codec
-		Width:  1920,
-		Height: 1080,
+		Codec:    "hevc", // Incompatible codec
+		Width:    1920,
+		Height:   1080,
+		Duration: 1.0,
 	}
 
 	ctx := context.Background()

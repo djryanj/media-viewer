@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -534,7 +535,7 @@ func TestBuildFFmpegArgs_Remux(t *testing.T) {
 		Height: 1080,
 	}
 
-	args := trans.buildFFmpegArgs("/test/input.mov", 0, info, false)
+	args := trans.buildFFmpegArgs("/test/input.mov", "/test/output.mp4", 0, info, false)
 
 	// Should contain -c:v copy for remux
 	found := false
@@ -560,7 +561,7 @@ func TestBuildFFmpegArgs_Reencode(t *testing.T) {
 		Height: 1080,
 	}
 
-	args := trans.buildFFmpegArgs("/test/input.mkv", 0, info, true)
+	args := trans.buildFFmpegArgs("/test/input.mkv", "/test/output.mp4", 0, info, true)
 
 	// Should contain libx264 for re-encode
 	found := false
@@ -586,7 +587,7 @@ func TestBuildFFmpegArgs_WithScale(t *testing.T) {
 		Height: 1080,
 	}
 
-	args := trans.buildFFmpegArgs("/test/input.mp4", 1280, info, false)
+	args := trans.buildFFmpegArgs("/test/input.mp4", "/test/output.mp4", 1280, info, false)
 
 	// Should contain scale filter
 	found := false
@@ -612,7 +613,7 @@ func TestBuildFFmpegArgs_NoScaleWhenLarger(t *testing.T) {
 		Height: 1080,
 	}
 
-	args := trans.buildFFmpegArgs("/test/input.mp4", 0, info, false)
+	args := trans.buildFFmpegArgs("/test/input.mp4", "/test/output.mp4", 0, info, false)
 
 	// Should NOT contain scale filter
 	for i := 0; i < len(args); i++ {
@@ -884,4 +885,205 @@ func (m *mockResponseWriter) Write(data []byte) (int, error) {
 
 func (m *mockResponseWriter) WriteHeader(_ int) {
 	// Not needed for this test
+}
+
+// =============================================================================
+// GetOrStartTranscodeAndWait Tests (Integration)
+// =============================================================================
+
+// TestGetOrStartTranscodeAndWait_CachedFile tests serving an already cached file immediately
+func TestGetOrStartTranscodeAndWait_CachedFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping ffmpeg test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create a test video
+	testVideo := createTestVideo(t, tmpDir)
+
+	info := &VideoInfo{
+		Codec:    "h264",
+		Width:    320,
+		Height:   240,
+		Duration: 1.0,
+	}
+
+	ctx := context.Background()
+
+	// First transcode to populate cache
+	cacheKey := filepath.Base(testVideo) + "_w0.mp4"
+	cachePath := filepath.Join(tmpDir, cacheKey)
+
+	// Manually create a cached version
+	if err := trans.transcodeDirectToCache(ctx, testVideo, cachePath, 0, info, false); err != nil {
+		t.Fatalf("Failed to create cache: %v", err)
+	}
+
+	// Now test GetOrStartTranscodeAndWait
+	resultPath, err := trans.GetOrStartTranscodeAndWait(ctx, testVideo, 0, info)
+	if err != nil {
+		t.Fatalf("GetOrStartTranscodeAndWait() error: %v", err)
+	}
+
+	if resultPath != cachePath {
+		t.Errorf("Expected cachePath %s, got %s", cachePath, resultPath)
+	}
+
+	// Verify cache file exists
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		t.Error("Cache file should exist")
+	}
+}
+
+// TestGetOrStartTranscodeAndWait_WaitsForCompletion tests waiting for transcode completion
+func TestGetOrStartTranscodeAndWait_WaitsForCompletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping ffmpeg test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create a test video
+	testVideo := createTestVideo(t, tmpDir)
+
+	info := &VideoInfo{
+		Codec:    "h264",
+		Width:    320,
+		Height:   240,
+		Duration: 1.0,
+	}
+
+	ctx := context.Background()
+
+	// Call GetOrStartTranscodeAndWait (should wait for completion)
+	cacheKey := filepath.Base(testVideo) + "_w0.mp4"
+	cachePath := filepath.Join(tmpDir, cacheKey)
+
+	start := time.Now()
+	resultPath, err := trans.GetOrStartTranscodeAndWait(ctx, testVideo, 0, info)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("GetOrStartTranscodeAndWait() error: %v", err)
+	}
+
+	if resultPath != cachePath {
+		t.Errorf("Expected cachePath %s, got %s", cachePath, resultPath)
+	}
+
+	t.Logf("Waited %.2f seconds for transcode completion", elapsed.Seconds())
+
+	// Verify cache file exists
+	stat, err := os.Stat(cachePath)
+	if err != nil {
+		t.Fatalf("Cache file should exist: %v", err)
+	}
+
+	if stat.Size() == 0 {
+		t.Error("Cache file should have data")
+	}
+
+	t.Logf("Cache size: %.2f KB", float64(stat.Size())/1024)
+}
+
+// TestGetOrStartTranscodeAndWait_ConcurrentRequests tests that concurrent requests wait properly
+func TestGetOrStartTranscodeAndWait_ConcurrentRequests(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping ffmpeg test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create a test video
+	testVideo := createTestVideo(t, tmpDir)
+
+	info := &VideoInfo{
+		Codec:    "h264",
+		Width:    320,
+		Height:   240,
+		Duration: 1.0,
+	}
+
+	ctx := context.Background()
+
+	// Start two concurrent requests
+	done1 := make(chan error)
+	done2 := make(chan error)
+
+	go func() {
+		_, err := trans.GetOrStartTranscodeAndWait(ctx, testVideo, 0, info)
+		done1 <- err
+	}()
+
+	go func() {
+		_, err := trans.GetOrStartTranscodeAndWait(ctx, testVideo, 0, info)
+		done2 <- err
+	}()
+
+	// Both should complete successfully
+	err1 := <-done1
+	err2 := <-done2
+
+	if err1 != nil {
+		t.Errorf("First request error: %v", err1)
+	}
+	if err2 != nil {
+		t.Errorf("Second request error: %v", err2)
+	}
+}
+
+// TestGetOrStartTranscodeAndWait_Disabled tests error when transcoding disabled
+func TestGetOrStartTranscodeAndWait_Disabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", false) // disabled
+
+	info := &VideoInfo{
+		Codec:    "hevc",
+		Width:    1920,
+		Height:   1080,
+		Duration: 60.0,
+	}
+
+	ctx := context.Background()
+
+	_, err := trans.GetOrStartTranscodeAndWait(ctx, "/fake/video.mp4", 0, info)
+	if err == nil {
+		t.Error("Expected error when transcoding disabled")
+	}
+
+	if err.Error() != "transcoding required but disabled (cache directory not writable)" {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+// createTestVideo creates a simple test video file using ffmpeg
+func createTestVideo(t *testing.T, dir string) string {
+	t.Helper()
+
+	videoPath := filepath.Join(dir, "test_source.mp4")
+
+	cmd := exec.CommandContext(context.Background(), "ffmpeg",
+		"-f", "lavfi",
+		"-i", "testsrc=duration=1:size=320x240:rate=1",
+		"-c:v", "libx264",
+		"-pix_fmt", "yuv420p",
+		"-f", "mp4",
+		"-y",
+		videoPath,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to create test video: %v\nOutput: %s", err, output)
+	}
+
+	return videoPath
 }
