@@ -23,6 +23,8 @@ const SessionManager = {
         sessionExpiresAt: null,
         isRedirecting: false,
         initialized: false,
+        consecutiveKeepaliveFailures: 0,
+        serverOfflineWarningShown: false,
     },
 
     /**
@@ -189,6 +191,9 @@ const SessionManager = {
         this.log('Sending keepalive request...');
 
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
             const response = await fetch('/api/auth/keepalive', {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -196,8 +201,10 @@ const SessionManager = {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                signal: controller.signal,
             });
 
+            clearTimeout(timeoutId);
             this.state.lastKeepalive = Date.now();
 
             if (!response.ok) {
@@ -220,12 +227,48 @@ const SessionManager = {
             if (data.expiresIn) {
                 this.state.sessionExpiresAt = Date.now() + data.expiresIn * 1000;
                 this.state.warningShown = false; // Reset warning since session was extended
+                this.state.consecutiveKeepaliveFailures = 0; // Reset failure count on success
+                this.state.serverOfflineWarningShown = false; // Reset warning flag
                 this.log(`Keepalive successful - session expires in ${data.expiresIn}s`);
             } else {
                 this.log('Keepalive successful - no expiresIn in response');
             }
         } catch (error) {
-            this.log('Keepalive error:', error);
+            this.state.consecutiveKeepaliveFailures++;
+
+            if (error.name === 'AbortError') {
+                this.log(
+                    `Keepalive timeout - server not responding (${this.state.consecutiveKeepaliveFailures} consecutive failures)`
+                );
+            } else if (error instanceof TypeError) {
+                this.log(
+                    `Keepalive network error - server may be offline (${this.state.consecutiveKeepaliveFailures} consecutive failures):`,
+                    error
+                );
+            } else {
+                this.log(
+                    `Keepalive error (${this.state.consecutiveKeepaliveFailures} consecutive failures):`,
+                    error
+                );
+            }
+
+            // Show warning after 2 consecutive failures (indicates server is likely down)
+            if (
+                this.state.consecutiveKeepaliveFailures >= 2 &&
+                !this.state.serverOfflineWarningShown
+            ) {
+                this.state.serverOfflineWarningShown = true;
+                const message =
+                    error.name === 'AbortError'
+                        ? 'Server not responding. Media will likely not load properly unless it is restored.'
+                        : 'Server appears to be offline. Media will likely not load properly unless it is restored.';
+
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(message, 'error');
+                } else {
+                    console.warn('[SessionManager]', message);
+                }
+            }
             // Don't redirect on network errors - could be temporary
         }
     },

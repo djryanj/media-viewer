@@ -351,7 +351,14 @@ const InfiniteScroll = {
                 params.set('type', MediaApp.state.currentFilter);
             }
 
-            const response = await fetch(`/api/files?${params}`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const response = await fetch(`/api/files?${params}`, {
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
 
             if (response.status === 401) {
                 window.location.href = '/login.html';
@@ -373,8 +380,22 @@ const InfiniteScroll = {
             // Update media files for lightbox navigation
             await this.updateMediaFiles();
         } catch (error) {
-            console.error('Error loading more items:', error);
-            Gallery.showToast('Failed to load more items');
+            if (error.name === 'AbortError') {
+                console.error('Loading more items timeout - server not responding');
+                Gallery.showToast(
+                    'Server not responding while loading more items. Try again.',
+                    'error'
+                );
+            } else if (error instanceof TypeError) {
+                console.error('Loading more items network error - server may be offline:', error);
+                Gallery.showToast(
+                    'Server is offline. Check your connection and try again.',
+                    'error'
+                );
+            } else {
+                console.error('Error loading more items:', error);
+                Gallery.showToast('Failed to load more items', 'error');
+            }
         } finally {
             this.state.isLoading = false;
             this.hideSkeletons();
@@ -453,12 +474,27 @@ const InfiniteScroll = {
                 order: MediaApp.state.currentSort.order,
             });
 
-            const response = await fetch(`/api/media?${params}`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const response = await fetch(`/api/media?${params}`, {
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
             if (response.ok) {
                 MediaApp.state.mediaFiles = await response.json();
             }
         } catch (error) {
-            console.error('Error updating media files:', error);
+            if (error.name === 'AbortError') {
+                console.error('Updating media files timeout - server not responding');
+            } else if (error instanceof TypeError) {
+                console.error('Updating media files network error:', error);
+            } else {
+                console.error('Error updating media files:', error);
+            }
+            // Don't show toast for background media file updates - not user-facing
         }
     },
 
