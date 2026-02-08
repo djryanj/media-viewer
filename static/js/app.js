@@ -1,3 +1,31 @@
+/**
+ * Global fetch wrapper with default timeout
+ * @param {string|Request} resource - The resource to fetch
+ * @param {RequestInit} options - Fetch options
+ * @returns {Promise<Response>}
+ */
+window.fetchWithTimeout = async function (resource, options = {}) {
+    const { timeout = 5000, signal, ...fetchOptions } = options;
+
+    // If caller provided their own signal, use it; otherwise create one for timeout
+    const controller = signal ? null : new AbortController();
+    const effectiveSignal = signal || controller.signal;
+
+    const timeoutId = controller ? setTimeout(() => controller.abort(), timeout) : null;
+
+    try {
+        const response = await fetch(resource, {
+            ...fetchOptions,
+            signal: effectiveSignal,
+        });
+        if (timeoutId) clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
+        throw error;
+    }
+};
+
 const MediaApp = {
     state: {
         currentPath: '',
@@ -216,7 +244,15 @@ const MediaApp = {
 
     async checkAuth() {
         try {
-            const response = await fetch('/api/auth/check');
+            // Create abort controller with timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+            const response = await fetch('/api/auth/check', {
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+
             const data = await response.json();
 
             if (!data.authenticated) {
@@ -273,7 +309,13 @@ const MediaApp = {
             }
         } catch (error) {
             console.error('Auth check failed:', error);
-            window.location.replace('/login.html');
+
+            // Check if it's a network/timeout error
+            if (error.name === 'AbortError' || error instanceof TypeError) {
+                this.showServerOfflineError();
+            } else {
+                window.location.replace('/login.html');
+            }
         }
     },
 
@@ -327,7 +369,14 @@ const MediaApp = {
                 params.set('type', this.state.currentFilter);
             }
 
-            const response = await fetch(`/api/files?${params}`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const response = await fetch(`/api/files?${params}`, {
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
 
             if (response.status === 401) {
                 window.location.href = '/login.html';
@@ -358,8 +407,34 @@ const MediaApp = {
 
             Favorites.updateFromListing(this.state.listing);
         } catch (error) {
-            console.error('Error loading directory:', error);
-            this.showError('Failed to load directory');
+            if (error.name === 'AbortError') {
+                console.error('Directory loading timeout - server not responding');
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        'Server not responding. Check your connection and try again.',
+                        'error'
+                    );
+                } else {
+                    this.showError('Server not responding');
+                }
+            } else if (error instanceof TypeError) {
+                console.error('Directory loading network error - server may be offline:', error);
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        'Server is offline. Check your connection and try again.',
+                        'error'
+                    );
+                } else {
+                    this.showError('Server is offline');
+                }
+            } else {
+                console.error('Error loading directory:', error);
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast('Failed to load directory', 'error');
+                } else {
+                    this.showError('Failed to load directory');
+                }
+            }
         } finally {
             this.hideLoading();
         }
@@ -377,7 +452,15 @@ const MediaApp = {
                 order: order,
             });
 
-            const response = await fetch(`/api/media?${params}`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const response = await fetch(`/api/media?${params}`, {
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
             if (response.status === 401) {
                 window.location.href = '/login.html';
                 return;
@@ -733,6 +816,36 @@ const MediaApp = {
         // Show a notification that an update is available
         if (typeof Gallery !== 'undefined' && Gallery.showToast) {
             Gallery.showToast('A new version is available. Refresh to update.', 'info');
+        }
+    },
+
+    showServerOfflineError() {
+        // Hide loading spinner
+        const loading = document.getElementById('loading');
+        if (loading) {
+            loading.classList.add('hidden');
+        }
+
+        // Show error message in the gallery area
+        const gallery = document.getElementById('gallery');
+        if (gallery) {
+            gallery.innerHTML = `
+                <div style="text-align: center; padding: 4rem 2rem; color: var(--text-secondary);">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">⚠️</div>
+                    <h2 style="margin-bottom: 1rem; color: var(--text-primary);">Server Unavailable</h2>
+                    <p style="margin-bottom: 2rem;">Unable to connect to the server. Please check your connection.</p>
+                    <button onclick="window.location.reload()"
+                            style="padding: 0.75rem 2rem;
+                                   background: var(--primary-color);
+                                   color: white;
+                                   border: none;
+                                   border-radius: 4px;
+                                   cursor: pointer;
+                                   font-size: 1rem;">
+                        Retry Connection
+                    </button>
+                </div>
+            `;
         }
     },
 };

@@ -188,10 +188,11 @@ const TagClipboard = {
         }
 
         try {
-            const response = await fetch('/api/tags/batch', {
+            const response = await fetchWithTimeout('/api/tags/batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths: items.map((i) => i.path) }),
+                timeout: 5000,
             });
 
             if (!response.ok) {

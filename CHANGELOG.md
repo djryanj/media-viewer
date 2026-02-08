@@ -13,13 +13,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Download Button**: Added download button to both lightbox and gallery views. In the lightbox, the button appears in the bottom right corner. In the gallery, it appears on hover in the bottom right of each thumbnail. Keyboard shortcut 'D' added for lightbox download. Extended `/api/file/{path}` endpoint to support `?download=true` query parameter for forcing file downloads with proper Content-Disposition headers. ([#166](https://github.com/djryanj/media-viewer/issues/166))
 
+- **Global Fetch Timeout Wrapper**: Implemented `fetchWithTimeout` global utility function that wraps all fetch requests with a default 5-second timeout and proper AbortController handling. This ensures consistent timeout behavior across all API calls throughout the application. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
+- **Comprehensive Offline Handling**: Added robust server offline detection and recovery across the application:
+    - All network requests use AbortController with proper timeout handling (3-10s depending on operation)
+    - Gallery thumbnails and lightbox images use fetch with blob URLs instead of direct img.src to enable request cancellation
+    - Active connectivity polling when server is detected offline (checks `/api/auth/check` every 5 seconds)
+    - Automatic retry of failed content when server connectivity is restored
+    - Smart retry strategy: only visible thumbnails retry immediately, off-screen failures retry on scroll into view
+    - Scroll-based lazy retry mechanism for failed thumbnails
+    - Consecutive failure tracking (2 failures triggers connectivity check)
+    - Clear user feedback with toast notifications (offline warnings, recovery messages)
+    - Video loading timeout detection (10 seconds)
+    - Session keepalive failure tracking with warnings after 2 consecutive failures
+    - Lightbox image preloading converted to use fetch with proper cancellation
+    - Batch tag loading with timeout protection
+    - Prevents infinite loading states and hanging network requests
+
 ### Changed
 
 - **Setup Check Optimization**: Refactored authentication to use a database `setup_complete` flag and consolidated the setup check into `/api/auth/check`. This eliminates the redundant `/api/auth/setup-required` endpoint and reduces login page load from 2 API calls to 1, improving both performance and API design. The `/api/auth/check` endpoint now returns both authentication status and setup requirements in a single response. Includes automatic migration for existing databases. ([#83](https://github.com/djryanj/media-viewer/issues/83))
 
+- **Thumbnail Loading**: Changed gallery thumbnail loading from direct img.src assignment to fetch-based blob loading with AbortController, enabling proper request cancellation on timeout. Timeout increased from 7s to 10s for initial load to accommodate lazy loading delays. Retry timeout set to 5s since server is known to be online. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
+- **Lightbox Image Loading**: Converted from img.src to fetch with blob URLs, enabling proper network request cancellation. Timeout set to 5 seconds with automatic retry on recovery. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
+- **Error Messages**: Offline error messages changed from "Thumbnails cannot be loaded" to "Content cannot be loaded" to be context-appropriate for both gallery and lightbox usage. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
 ### Fixed
 
 - **Lightbox Tag Button State**: Fixed tag button in lightbox not updating immediately when tags are applied or removed via the tag manager. The button now correctly shows the highlighted state when tags are present. ([#175](https://github.com/djryanj/media-viewer/issues/175))
+
+- **Hanging Network Requests**: Fixed infinite hanging network requests when server goes offline by implementing proper AbortController cancellation across all image/thumbnail loading. Previously, img.src assignments would hang forever even with timeout handlers. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
+- **Race Conditions in Retry Logic**: Fixed multiple race conditions in thumbnail retry mechanism:
+    - Added `retryInProgress` flag to prevent overlapping retry operations
+    - Removed batching delays to enable immediate parallel retry of visible content
+    - Fixed issue where `failedThumbnails` array was cleared during reset, losing retry targets
+    - Proper completion tracking for all retry operations
+    - Prevention of excessive API calls with connectivity check guards
+
+- **Lightbox Preload Blocking**: Fixed lightbox image preloading using img.src without timeout, causing app to hang when preloading fails. Now uses fetch with proper cancellation. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
+- **Video Loading Timeout**: Added 10-second timeout detection for video streams that fail to start, preventing infinite loading states when video endpoint is unreachable. ([#169](https://github.com/djryanj/media-viewer/issues/169))
+
+- **Batch Tag Loading**: Fixed `/api/tags/batch` calls across lightbox, tags, playlist, and tag-clipboard not having timeout protection, causing potential hangs. Now uses `fetchWithTimeout` with 5-second limit. ([#169](https://github.com/djryanj/media-viewer/issues/169))
 
 ## [0.9.0] - 2026-02-07
 

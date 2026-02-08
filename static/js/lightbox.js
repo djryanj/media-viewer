@@ -22,6 +22,13 @@ const Lightbox = {
     // Video player component instance
     videoPlayer: null,
 
+    // Image failure tracking
+    imageFailures: {
+        currentFailedImage: null, // Track current failed image for retry
+        consecutiveFailures: 0,
+        lastFailureTime: 0,
+    },
+
     init() {
         this.cacheElements();
         this.createHotZones();
@@ -913,41 +920,147 @@ const Lightbox = {
 
         this.showLoading();
 
-        const img = new Image();
+        const controller = new AbortController();
+        let loadComplete = false;
 
-        img.onload = () => {
-            if (loadId !== this.currentLoadId) {
-                return;
-            }
+        const handleError = (isTimeout = false) => {
+            if (loadComplete) return;
+            loadComplete = true;
+            controller.abort();
 
-            this.elements.image.src = img.src;
-            this.elements.image.classList.remove('hidden');
-            this.hideLoading();
-
-            this.preloadCache.set(imageUrl, img);
-
-            if (this.isAnimatedImageType(file.name)) {
-                setTimeout(() => this.startAnimationLoopDetection(), 100);
-            }
-        };
-
-        img.onerror = (e) => {
             if (loadId !== this.currentLoadId) {
                 return;
             }
 
             this.hideLoading();
-            console.error('Failed to load image:', file.path);
 
-            // Check if this might be an auth error (image returns 401)
-            // The global fetch interceptor handles API calls, but images load differently
-            this.checkImageAuthError(imageUrl);
+            // Track consecutive failures
+            const now = Date.now();
+            if (now - this.imageFailures.lastFailureTime > 15000) {
+                this.imageFailures.consecutiveFailures = 0;
+            }
+            this.imageFailures.consecutiveFailures++;
+            this.imageFailures.lastFailureTime = now;
+
+            // Store current failed image for retry
+            this.imageFailures.currentFailedImage = {
+                file,
+                loadId,
+                imageUrl,
+            };
+
+            if (isTimeout) {
+                console.error('Image load timeout:', file.path);
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast('Server not responding. Cannot load image.', 'error');
+                }
+            } else {
+                console.error('Failed to load image:', file.path);
+                // Check if this might be an auth error (image returns 401)
+                this.checkImageAuthError(imageUrl);
+            }
+
+            // After 2 consecutive failures, trigger connectivity check via Gallery
+            if (this.imageFailures.consecutiveFailures >= 2) {
+                if (typeof Gallery !== 'undefined' && Gallery.thumbnailFailures) {
+                    // Increment Gallery's failure count so it knows to show warning
+                    Gallery.thumbnailFailures.count = Math.max(Gallery.thumbnailFailures.count, 2);
+                    Gallery.thumbnailFailures.lastFailureTime = Date.now();
+
+                    // Piggyback on Gallery's connectivity check
+                    if (!Gallery.thumbnailFailures.connectivityCheckInProgress) {
+                        console.debug('Lightbox: triggering connectivity check');
+                        Gallery.startConnectivityCheck();
+                    }
+                }
+            }
 
             this.elements.image.classList.remove('hidden');
             this.elements.image.src = '';
         };
 
-        img.src = imageUrl;
+        // Use fetch with timeout to load the image
+        const timeoutId = setTimeout(() => handleError(true), 5000);
+
+        fetch(imageUrl, { signal: controller.signal })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.blob();
+            })
+            .then((blob) => {
+                if (loadComplete || loadId !== this.currentLoadId) {
+                    return;
+                }
+
+                loadComplete = true;
+                clearTimeout(timeoutId);
+
+                // Reset failure tracking on success
+                this.imageFailures.consecutiveFailures = 0;
+                this.imageFailures.currentFailedImage = null;
+
+                const blobUrl = URL.createObjectURL(blob);
+                const img = new Image();
+
+                img.onload = () => {
+                    if (loadId !== this.currentLoadId) {
+                        URL.revokeObjectURL(blobUrl);
+                        return;
+                    }
+
+                    this.elements.image.src = blobUrl;
+                    this.elements.image.classList.remove('hidden');
+                    this.hideLoading();
+
+                    this.preloadCache.set(imageUrl, img);
+
+                    if (this.isAnimatedImageType(file.name)) {
+                        setTimeout(() => this.startAnimationLoopDetection(), 100);
+                    }
+                };
+
+                img.src = blobUrl;
+            })
+            .catch((error) => {
+                if (loadComplete) return;
+
+                const isTimeout = error.name === 'AbortError';
+                handleError(isTimeout);
+            });
+    },
+
+    /**
+     * Retry loading the current failed image (called when connectivity is restored)
+     */
+    retryCurrentImage() {
+        if (!this.imageFailures.currentFailedImage) return;
+
+        const { file, loadId } = this.imageFailures.currentFailedImage;
+
+        // Only retry if we're still on the same image
+        if (loadId === this.currentLoadId) {
+            console.debug('Lightbox: retrying failed image', file.path);
+
+            // Show retry message
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('Connection restored. Retrying image...');
+            }
+
+            // Clear the preload cache for this image to force reload
+            const imageUrl = `/api/file/${file.path}`;
+            this.preloadCache.delete(imageUrl);
+
+            // Clear the failed image tracking (will be set again if retry fails)
+            this.imageFailures.currentFailedImage = null;
+
+            // Retry by calling showMedia() which properly handles the load
+            this.showMedia();
+        } else {
+            // User has navigated away, clear the failed image
+            this.imageFailures.currentFailedImage = null;
+        }
     },
 
     /**
@@ -979,10 +1092,25 @@ const Lightbox = {
         // Apply loop setting BEFORE loading
         video.loop = Preferences.isMediaLoopEnabled();
 
+        // Add timeout for video loading
+        const loadTimeout = setTimeout(() => {
+            if (loadId === this.currentLoadId) {
+                console.error('Video load timeout:', file.path);
+                this.hideLoading();
+                video.removeEventListener('canplay', onCanPlay);
+                video.removeEventListener('error', onError);
+
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast('Server not responding. Cannot load video.', 'error');
+                }
+            }
+        }, 10000); // 10 second timeout for video streams
+
         const onCanPlay = () => {
             if (loadId !== this.currentLoadId) {
                 return;
             }
+            clearTimeout(loadTimeout);
             video.classList.remove('hidden');
             this.hideLoading();
 
@@ -1005,12 +1133,16 @@ const Lightbox = {
             if (loadId !== this.currentLoadId) {
                 return;
             }
+            clearTimeout(loadTimeout);
             console.error('Error loading video:', e);
             this.hideLoading();
 
             // Check if this is an auth error
             try {
-                const response = await fetch(videoUrl, { method: 'HEAD' });
+                const response = await fetchWithTimeout(videoUrl, {
+                    method: 'HEAD',
+                    timeout: 3000,
+                });
                 if (response.status === 401) {
                     console.debug('Lightbox: video auth error detected');
                     if (typeof SessionManager !== 'undefined') {
@@ -1120,10 +1252,11 @@ const Lightbox = {
      */
     async preloadTags(paths) {
         try {
-            const response = await fetch('/api/tags/batch', {
+            const response = await fetchWithTimeout('/api/tags/batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths: paths }),
+                timeout: 5000,
             });
 
             if (response.ok) {
@@ -1150,17 +1283,47 @@ const Lightbox = {
             return;
         }
 
-        const img = new Image();
-
-        this.preloadCache.set(imageUrl, img);
-
-        img.onerror = () => {
+        // Use fetch with AbortController for proper timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
             this.preloadCache.delete(imageUrl);
-        };
+        }, 5000);
 
-        img.fetchPriority = priority;
-        img.loading = 'eager';
-        img.src = imageUrl;
+        // Add placeholder to cache to prevent duplicate preloads
+        this.preloadCache.set(imageUrl, null);
+
+        fetch(imageUrl, { signal: controller.signal })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.blob();
+            })
+            .then((blob) => {
+                clearTimeout(timeoutId);
+
+                const blobUrl = URL.createObjectURL(blob);
+                const img = new Image();
+
+                img.onload = () => {
+                    // Store the loaded image in cache
+                    this.preloadCache.set(imageUrl, img);
+                    // Clean up blob URL
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                };
+
+                img.onerror = () => {
+                    this.preloadCache.delete(imageUrl);
+                    URL.revokeObjectURL(blobUrl);
+                };
+
+                img.src = blobUrl;
+            })
+            .catch((error) => {
+                clearTimeout(timeoutId);
+                this.preloadCache.delete(imageUrl);
+            });
     },
 
     cleanPreloadCache() {

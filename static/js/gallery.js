@@ -16,6 +16,19 @@ const Gallery = {
         check: 'check',
     },
 
+    // Thumbnail failure tracking
+    thumbnailFailures: {
+        count: 0,
+        lastFailureTime: 0,
+        warningShown: false,
+        resetTimeout: null,
+        failedThumbnails: [], // Track failed thumbnail elements for retry
+        connectivityCheckInProgress: false,
+        resetInProgress: false,
+        retryInProgress: false,
+        scrollCheckTimeout: null,
+    },
+
     createIcon(name, className = '') {
         const icon = document.createElement('i');
         icon.setAttribute('data-lucide', name);
@@ -49,6 +62,9 @@ const Gallery = {
 
         // Initialize Lucide icons for new elements
         lucide.createIcons();
+
+        // Set up scroll listener for retrying failed thumbnails
+        this.setupScrollRetryListener();
 
         if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
             ItemSelection.addCheckboxesToGallery();
@@ -142,20 +158,78 @@ const Gallery = {
             img.alt = item.name;
             img.draggable = false;
 
-            img.onerror = () => {
+            const controller = new AbortController();
+            let imageLoaded = false;
+
+            const handleFailure = () => {
+                if (imageLoaded) return;
+                imageLoaded = true;
+                controller.abort();
+
                 img.style.display = 'none';
                 const iconWrapper = document.createElement('span');
                 iconWrapper.className = 'gallery-item-icon';
                 iconWrapper.appendChild(this.createIcon(this.icons[item.type] || this.icons.other));
                 thumbArea.appendChild(iconWrapper);
                 lucide.createIcons();
+
+                // Always track failures - whether from timeout or onerror
+                this.trackThumbnailFailure({
+                    img,
+                    thumbArea,
+                    iconWrapper,
+                    item,
+                });
             };
 
-            img.onload = () => {
+            const handleSuccess = () => {
+                if (imageLoaded) return;
+                imageLoaded = true;
+
                 img.classList.add('loaded');
+                // Only reset failure tracking if there were actually failures or active checking
+                if (
+                    this.thumbnailFailures.count > 0 ||
+                    this.thumbnailFailures.connectivityCheckInProgress
+                ) {
+                    this.resetThumbnailFailureTracking();
+                }
             };
 
-            img.src = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
+            // Load thumbnail with fetch for proper timeout control
+            const thumbnailUrl = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                handleFailure();
+            }, 10000);
+
+            fetch(thumbnailUrl, { signal: controller.signal })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return response.blob();
+                })
+                .then((blob) => {
+                    if (imageLoaded) return;
+                    clearTimeout(timeoutId);
+
+                    const blobUrl = URL.createObjectURL(blob);
+                    img.onload = () => {
+                        handleSuccess();
+                        // Clean up blob URL after a delay to ensure it's displayed
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                    };
+                    img.onerror = handleFailure;
+                    img.src = blobUrl;
+                })
+                .catch((error) => {
+                    clearTimeout(timeoutId);
+                    if (!imageLoaded) {
+                        handleFailure();
+                    }
+                });
+
             thumbArea.appendChild(img);
 
             if (item.type === 'video') {
@@ -588,6 +662,375 @@ const Gallery = {
                     pinButton.title = isPinned ? 'Remove from favorites' : 'Add to favorites';
                 }
             });
+    },
+
+    /**
+     * Track thumbnail loading failures to detect server offline
+     */
+    trackThumbnailFailure(thumbnailInfo) {
+        const now = Date.now();
+
+        // Reset counter if more than 15 seconds since last failure (isolated failures)
+        if (now - this.thumbnailFailures.lastFailureTime > 15000) {
+            this.thumbnailFailures.count = 0;
+            this.thumbnailFailures.warningShown = false;
+            this.thumbnailFailures.failedThumbnails = [];
+        }
+
+        this.thumbnailFailures.count++;
+        this.thumbnailFailures.lastFailureTime = now;
+
+        // Store failed thumbnail for potential retry
+        if (thumbnailInfo) {
+            this.thumbnailFailures.failedThumbnails.push(thumbnailInfo);
+        }
+
+        // Start connectivity check after 2 failures to verify server status
+        if (
+            this.thumbnailFailures.count >= 2 &&
+            !this.thumbnailFailures.connectivityCheckInProgress
+        ) {
+            this.startConnectivityCheck();
+        }
+    },
+
+    /**
+     * Reset thumbnail failure tracking when thumbnails load successfully
+     */
+    resetThumbnailFailureTracking() {
+        // Don't start multiple overlapping resets
+        if (this.thumbnailFailures.resetInProgress) return;
+
+        // Only reset if there's actually something to reset
+        if (
+            this.thumbnailFailures.count === 0 &&
+            !this.thumbnailFailures.connectivityCheckInProgress
+        ) {
+            return;
+        }
+
+        this.thumbnailFailures.resetInProgress = true;
+        clearTimeout(this.thumbnailFailures.resetTimeout);
+        this.thumbnailFailures.resetTimeout = setTimeout(() => {
+            // If we were checking connectivity and have failed thumbnails, retry them
+            if (
+                this.thumbnailFailures.connectivityCheckInProgress &&
+                this.thumbnailFailures.failedThumbnails.length > 0
+            ) {
+                // Only show message if we had shown the offline warning
+                if (this.thumbnailFailures.warningShown) {
+                    this.showToast('Connection restored. Retrying failed thumbnails...');
+                }
+                this.retryFailedThumbnails();
+            }
+
+            this.thumbnailFailures.count = 0;
+            this.thumbnailFailures.warningShown = false;
+            // Don't clear failedThumbnails - let retry handle clearing them
+            this.thumbnailFailures.connectivityCheckInProgress = false;
+            this.thumbnailFailures.resetInProgress = false;
+        }, 3000);
+    },
+
+    /**
+     * Start periodic connectivity checks when server appears offline
+     */
+    startConnectivityCheck() {
+        if (this.thumbnailFailures.connectivityCheckInProgress) return;
+        this.thumbnailFailures.connectivityCheckInProgress = true;
+
+        const checkConnectivity = async () => {
+            // Stop checking if we've already recovered
+            if (!this.thumbnailFailures.connectivityCheckInProgress) return;
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+                const response = await fetch('/api/auth/check', {
+                    signal: controller.signal,
+                    cache: 'no-store',
+                });
+
+                clearTimeout(timeoutId);
+
+                // Server is back online
+                if (response.ok) {
+                    console.debug('Server connectivity restored');
+                    this.thumbnailFailures.connectivityCheckInProgress = false;
+
+                    // Retry failed thumbnails if any exist
+                    if (this.thumbnailFailures.failedThumbnails.length > 0) {
+                        // Only show message if we had shown the offline warning
+                        if (this.thumbnailFailures.warningShown) {
+                            this.showToast('Connection restored. Retrying failed content...');
+                        }
+                        this.retryFailedThumbnails();
+                    }
+
+                    // Retry lightbox image if it failed
+                    if (
+                        typeof Lightbox !== 'undefined' &&
+                        Lightbox.imageFailures.currentFailedImage
+                    ) {
+                        Lightbox.retryCurrentImage();
+                    }
+
+                    this.thumbnailFailures.count = 0;
+                    this.thumbnailFailures.warningShown = false;
+                    return;
+                }
+            } catch (error) {
+                // Server is offline - show warning if not already shown
+                if (!this.thumbnailFailures.warningShown && this.thumbnailFailures.count >= 2) {
+                    this.thumbnailFailures.warningShown = true;
+                    this.showToast(
+                        'Server appears to be offline. Content cannot be loaded.',
+                        'error'
+                    );
+                }
+                console.debug('Server still offline:', error.message);
+            }
+
+            // Check again in 5 seconds
+            setTimeout(checkConnectivity, 5000);
+        };
+
+        // Start checking immediately
+        checkConnectivity();
+    },
+
+    /**
+     * Set up listener to retry failed thumbnails when they scroll into view
+     */
+    setupScrollRetryListener() {
+        // Remove existing listener if any
+        if (this.thumbnailFailures.scrollCheckTimeout) {
+            clearTimeout(this.thumbnailFailures.scrollCheckTimeout);
+        }
+
+        const checkVisibleFailures = () => {
+            // Only check if we have failures and connectivity is OK
+            if (
+                this.thumbnailFailures.failedThumbnails.length === 0 ||
+                this.thumbnailFailures.connectivityCheckInProgress
+            ) {
+                return;
+            }
+
+            // Find visible failed thumbnails
+            const visibleFailed = this.thumbnailFailures.failedThumbnails.filter(
+                (thumbnailInfo) => {
+                    const { thumbArea, img } = thumbnailInfo;
+                    if (!thumbArea.parentNode) return false;
+
+                    // Check if thumbnail is still showing fallback icon (failed state)
+                    if (img.style.display === 'none' || !img.classList.contains('loaded')) {
+                        const rect = thumbArea.getBoundingClientRect();
+                        return (
+                            rect.top < window.innerHeight &&
+                            rect.bottom > 0 &&
+                            rect.left < window.innerWidth &&
+                            rect.right > 0
+                        );
+                    }
+                    return false;
+                }
+            );
+
+            if (visibleFailed.length > 0) {
+                console.debug(
+                    `Found ${visibleFailed.length} visible failed thumbnails, retrying...`
+                );
+                // Move visible failures to retry immediately
+                this.thumbnailFailures.failedThumbnails =
+                    this.thumbnailFailures.failedThumbnails.filter(
+                        (t) => !visibleFailed.includes(t)
+                    );
+                this.retryThumbnailBatch(visibleFailed);
+            }
+        };
+
+        // Debounced scroll handler
+        const onScroll = () => {
+            clearTimeout(this.thumbnailFailures.scrollCheckTimeout);
+            this.thumbnailFailures.scrollCheckTimeout = setTimeout(checkVisibleFailures, 300);
+        };
+
+        // Remove old listener and add new one
+        window.removeEventListener('scroll', this._scrollRetryHandler);
+        this._scrollRetryHandler = onScroll;
+        window.addEventListener('scroll', onScroll, { passive: true });
+
+        // Check immediately
+        checkVisibleFailures();
+    },
+
+    /**
+     * Retry loading failed thumbnails when server is back online
+     * Only retries thumbnails that are currently visible in viewport
+     */
+    retryFailedThumbnails() {
+        const failedCount = this.thumbnailFailures.failedThumbnails.length;
+        if (failedCount === 0) return;
+
+        // Prevent multiple simultaneous retry operations
+        if (this.thumbnailFailures.retryInProgress) {
+            console.debug('Retry already in progress, skipping');
+            return;
+        }
+
+        this.thumbnailFailures.retryInProgress = true;
+
+        // Filter to only visible thumbnails
+        const visibleToRetry = this.thumbnailFailures.failedThumbnails.filter((thumbnailInfo) => {
+            const { thumbArea } = thumbnailInfo;
+            // Skip if no longer in DOM
+            if (!thumbArea.parentNode) return false;
+
+            // Check if in viewport
+            const rect = thumbArea.getBoundingClientRect();
+            const isVisible =
+                rect.top < window.innerHeight &&
+                rect.bottom > 0 &&
+                rect.left < window.innerWidth &&
+                rect.right > 0;
+
+            return isVisible;
+        });
+
+        console.debug(
+            `Retrying ${visibleToRetry.length} visible thumbnails (${failedCount} total failed)...`
+        );
+
+        // Keep non-visible failures for later (will be retried on scroll)
+        this.thumbnailFailures.failedThumbnails = this.thumbnailFailures.failedThumbnails.filter(
+            (thumbnailInfo) => !visibleToRetry.includes(thumbnailInfo)
+        );
+
+        if (visibleToRetry.length === 0) {
+            this.thumbnailFailures.retryInProgress = false;
+            return;
+        }
+
+        // Retry the visible batch immediately without delays
+        this.retryThumbnailBatch(visibleToRetry);
+    },
+
+    /**
+     * Retry a batch of thumbnails immediately
+     */
+    retryThumbnailBatch(thumbnailBatch) {
+        if (this.thumbnailFailures.retryInProgress) {
+            // Add back to failed list to retry later
+            this.thumbnailFailures.failedThumbnails.push(...thumbnailBatch);
+            return;
+        }
+
+        this.thumbnailFailures.retryInProgress = true;
+        let completedRetries = 0;
+
+        thumbnailBatch.forEach((thumbnailInfo) => {
+            const { img, thumbArea, iconWrapper, item } = thumbnailInfo;
+
+            // Skip if elements are no longer in the DOM
+            if (!thumbArea.parentNode) return;
+
+            // Remove the fallback icon
+            if (iconWrapper && iconWrapper.parentNode === thumbArea) {
+                thumbArea.removeChild(iconWrapper);
+            }
+
+            // Reset the image
+            img.style.display = '';
+            img.classList.remove('loaded');
+
+            const controller = new AbortController();
+            let retryLoaded = false;
+
+            const handleRetryFailure = () => {
+                if (retryLoaded) return;
+                retryLoaded = true;
+                controller.abort();
+
+                // Restore fallback icon if retry fails
+                img.style.display = 'none';
+                const newIconWrapper = document.createElement('span');
+                newIconWrapper.className = 'gallery-item-icon';
+                newIconWrapper.appendChild(
+                    this.createIcon(this.icons[item.type] || this.icons.other)
+                );
+                thumbArea.appendChild(newIconWrapper);
+                lucide.createIcons();
+
+                // Re-track this failure so it can be retried again later
+                this.trackThumbnailFailure({
+                    img,
+                    thumbArea,
+                    iconWrapper: newIconWrapper,
+                    item,
+                });
+            };
+
+            const handleRetrySuccess = () => {
+                if (retryLoaded) return;
+                retryLoaded = true;
+                img.classList.add('loaded');
+
+                // Notify that a retry succeeded (triggers reset logic)
+                if (
+                    this.thumbnailFailures.count > 0 ||
+                    this.thumbnailFailures.connectivityCheckInProgress
+                ) {
+                    this.resetThumbnailFailureTracking();
+                }
+            };
+
+            // Load thumbnail with fetch for proper timeout control
+            const originalSrc = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
+            const cacheBuster = `t=${Date.now()}`;
+            const retryUrl = originalSrc + (originalSrc.includes('?') ? '&' : '?') + cacheBuster;
+
+            // Shorter timeout since we know server is back online
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                handleRetryFailure();
+            }, 5000);
+
+            fetch(retryUrl, { signal: controller.signal })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return response.blob();
+                })
+                .then((blob) => {
+                    if (retryLoaded) return;
+                    clearTimeout(timeoutId);
+
+                    const blobUrl = URL.createObjectURL(blob);
+                    img.onload = () => {
+                        handleRetrySuccess();
+                        // Clean up blob URL after a delay
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                    };
+                    img.onerror = handleRetryFailure;
+                    img.src = blobUrl;
+                })
+                .catch((error) => {
+                    clearTimeout(timeoutId);
+                    if (!retryLoaded) {
+                        handleRetryFailure();
+                    }
+                })
+                .finally(() => {
+                    completedRetries++;
+                    if (completedRetries === thumbnailBatch.length) {
+                        // All retries complete
+                        this.thumbnailFailures.retryInProgress = false;
+                    }
+                });
+        });
     },
 };
 

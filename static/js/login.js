@@ -147,8 +147,15 @@
      */
     async function checkInitialState() {
         try {
+            // Create abort controller with timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
             // Single API call to check both auth and setup status
-            const response = await fetch('/api/auth/check');
+            const response = await fetch('/api/auth/check', {
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 console.error('Auth check failed:', response.status);
@@ -176,8 +183,36 @@
         } catch (err) {
             console.error('Failed to check initial state:', err);
             hideLoading();
-            await showLoginForm();
+
+            // Check if it's a network/timeout error
+            if (err.name === 'AbortError' || err instanceof TypeError) {
+                showServerOfflineError();
+            } else {
+                await showLoginForm();
+            }
         }
+    }
+
+    /**
+     * Show server offline error
+     */
+    function showServerOfflineError() {
+        if (loginForm) loginForm.classList.add('hidden');
+        if (setupForm) setupForm.classList.add('hidden');
+        hidePasskeySection();
+
+        // Show error in login error area
+        if (loginError) {
+            loginError.classList.remove('hidden');
+            const span = loginError.querySelector('span');
+            if (span) {
+                span.innerHTML =
+                    'Unable to connect to server. Please check your connection and <a href="javascript:window.location.reload()">refresh the page</a>.';
+            }
+        }
+
+        // Show login form anyway so user can see it
+        if (loginForm) loginForm.classList.remove('hidden');
     }
 
     /**
@@ -393,11 +428,17 @@
         setButtonLoading(loginSubmitBtn, true, 'Logging in...');
 
         try {
+            // Create abort controller with timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password }),
+                signal: controller.signal,
             });
+            clearTimeout(timeoutId);
 
             if (response.ok) {
                 redirectToApp();
@@ -410,7 +451,18 @@
             }
         } catch (err) {
             console.error('Login error:', err);
-            showError(loginError, 'Connection error. Please try again.');
+
+            // Check if it's a timeout or network error
+            if (err.name === 'AbortError') {
+                showError(
+                    loginError,
+                    'Connection timeout. Server is not responding. Please check your connection.'
+                );
+            } else if (err instanceof TypeError) {
+                showError(loginError, 'Unable to connect to server. Please check your connection.');
+            } else {
+                showError(loginError, 'Connection error. Please try again.');
+            }
         } finally {
             setButtonLoading(loginSubmitBtn, false, 'Login');
         }
@@ -516,11 +568,17 @@
         setButtonLoading(setupSubmitBtn, true, 'Creating...');
 
         try {
+            // Create abort controller with timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
             const setupResponse = await fetch('/api/auth/setup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password }),
+                signal: controller.signal,
             });
+            clearTimeout(timeoutId);
 
             if (!setupResponse.ok) {
                 const errorText = await setupResponse.text();
@@ -528,11 +586,14 @@
                 return;
             }
 
+            const loginTimeoutId = setTimeout(() => controller.abort(), 5000);
             const loginResponse = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password }),
+                signal: controller.signal,
             });
+            clearTimeout(loginTimeoutId);
 
             if (loginResponse.ok) {
                 redirectToApp();
@@ -542,7 +603,18 @@
             }
         } catch (err) {
             console.error('Setup error:', err);
-            showError(setupError, 'Connection error. Please try again.');
+
+            // Check if it's a timeout or network error
+            if (err.name === 'AbortError') {
+                showError(
+                    setupError,
+                    'Connection timeout. Server is not responding. Please check your connection.'
+                );
+            } else if (err instanceof TypeError) {
+                showError(setupError, 'Unable to connect to server. Please check your connection.');
+            } else {
+                showError(setupError, 'Connection error. Please try again.');
+            }
         } finally {
             setButtonLoading(setupSubmitBtn, false, 'Create Password');
         }
