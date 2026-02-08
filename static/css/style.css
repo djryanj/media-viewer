@@ -1683,7 +1683,7 @@ select:focus {
         font-size: 1.25rem;
         padding: 0.25rem 0.5rem;
         right: 3rem;
-        top: 0.25rem;
+        /* top: 0.5rem inherited from base for desktop/tablet alignment */
     }
 }
 
@@ -1808,6 +1808,7 @@ select:focus {
         background var(--transition),
         color var(--transition),
         box-shadow var(--transition);
+    z-index: 20;
 }
 
 .lightbox-download {
@@ -1993,6 +1994,7 @@ select:focus {
         background var(--transition),
         color var(--transition),
         box-shadow var(--transition);
+    z-index: 20;
 }
 
 .lightbox-autoplay:hover,
@@ -2030,6 +2032,7 @@ select:focus {
         background var(--transition),
         color var(--transition),
         box-shadow var(--transition);
+    z-index: 20;
 }
 
 .lightbox-loop-toggle:hover,
