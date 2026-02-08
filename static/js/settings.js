@@ -100,6 +100,17 @@ class SettingsManager {
         if (clockFormatSelect) {
             clockFormatSelect.addEventListener('change', () => this.handleClockFormatChange());
         }
+
+        // Default sort settings
+        const sortFieldSelect = document.getElementById('default-sort-field');
+        if (sortFieldSelect) {
+            sortFieldSelect.addEventListener('change', () => this.handleSortFieldChange());
+        }
+
+        const sortOrderSelect = document.getElementById('default-sort-order');
+        if (sortOrderSelect) {
+            sortOrderSelect.addEventListener('change', () => this.handleSortOrderChange());
+        }
     }
 
     /**
@@ -890,6 +901,18 @@ class SettingsManager {
         if (clockFormatSelect) {
             clockFormatSelect.value = Preferences.getClockFormat();
         }
+
+        // Load sort field
+        const sortFieldSelect = document.getElementById('default-sort-field');
+        if (sortFieldSelect) {
+            sortFieldSelect.value = Preferences.get('sortField');
+        }
+
+        // Load sort order
+        const sortOrderSelect = document.getElementById('default-sort-order');
+        if (sortOrderSelect) {
+            sortOrderSelect.value = Preferences.get('sortOrder');
+        }
     }
 
     /**
@@ -924,6 +947,67 @@ class SettingsManager {
         }
 
         console.debug('Clock format changed:', clockFormatSelect.value);
+    }
+
+    /**
+     * Handle sort field change
+     */
+    handleSortFieldChange() {
+        const sortFieldSelect = document.getElementById('default-sort-field');
+        if (!sortFieldSelect) return;
+
+        Preferences.set('sortField', sortFieldSelect.value);
+
+        // Update gallery sort dropdown
+        const gallerySortSelect = document.getElementById('sort-select');
+        if (gallerySortSelect) {
+            gallerySortSelect.value = sortFieldSelect.value;
+        }
+
+        // Update MediaApp state and reload if gallery is visible
+        if (typeof MediaApp !== 'undefined' && MediaApp.state) {
+            MediaApp.state.currentSort.field = sortFieldSelect.value;
+            if (!document.getElementById('gallery').classList.contains('hidden')) {
+                MediaApp.loadDirectory(MediaApp.state.currentPath);
+            }
+        }
+
+        console.debug('Sort field changed:', sortFieldSelect.value);
+    }
+
+    /**
+     * Handle sort order change
+     */
+    handleSortOrderChange() {
+        const sortOrderSelect = document.getElementById('default-sort-order');
+        if (!sortOrderSelect) return;
+
+        Preferences.set('sortOrder', sortOrderSelect.value);
+
+        // Update gallery sort direction button icon
+        const sortDirButton = document.getElementById('sort-direction');
+        if (sortDirButton) {
+            const icon = sortDirButton.querySelector('i');
+            if (icon) {
+                icon.setAttribute(
+                    'data-lucide',
+                    sortOrderSelect.value === 'asc' ? 'arrow-up' : 'arrow-down'
+                );
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            }
+        }
+
+        // Update MediaApp state and reload if gallery is visible
+        if (typeof MediaApp !== 'undefined' && MediaApp.state) {
+            MediaApp.state.currentSort.order = sortOrderSelect.value;
+            if (!document.getElementById('gallery').classList.contains('hidden')) {
+                MediaApp.loadDirectory(MediaApp.state.currentPath);
+            }
+        }
+
+        console.debug('Sort order changed:', sortOrderSelect.value);
     }
 
     // =========================================

@@ -91,6 +91,14 @@
                                 <i data-lucide="arrow-up"></i>
                             </span>
                         </button>
+                        <button
+                            class="btn-icon hidden"
+                            id="reset-folder-sort"
+                            title="Reset folder sort to defaults"
+                            aria-label="Reset folder sort to defaults"
+                        >
+                            <i data-lucide="rotate-ccw"></i>
+                        </button>
                     </div>
 
                     <div class="filter-controls">
@@ -688,6 +696,36 @@
                                 <select id="clock-format-select" class="settings-select">
                                     <option value="12">12-hour (AM/PM)</option>
                                     <option value="24">24-hour</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <h4>Default Sort Order</h4>
+                            <div class="settings-row">
+                                <div class="settings-info">
+                                    <label for="default-sort-field">Sort By</label>
+                                    <span class="settings-hint"
+                                        >Default field to sort gallery items</span
+                                    >
+                                </div>
+                                <select id="default-sort-field" class="settings-select">
+                                    <option value="name">Name</option>
+                                    <option value="date">Date Modified</option>
+                                    <option value="size">Size</option>
+                                </select>
+                            </div>
+
+                            <div class="settings-row">
+                                <div class="settings-info">
+                                    <label for="default-sort-order">Sort Direction</label>
+                                    <span class="settings-hint"
+                                        >Order items in ascending or descending order</span
+                                    >
+                                </div>
+                                <select id="default-sort-order" class="settings-select">
+                                    <option value="asc">Ascending</option>
+                                    <option value="desc">Descending</option>
                                 </select>
                             </div>
                         </div>

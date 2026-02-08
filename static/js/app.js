@@ -84,6 +84,7 @@ const MediaApp = {
             breadcrumb: document.getElementById('breadcrumb'),
             sortField: document.getElementById('sort-select'),
             sortOrder: document.getElementById('sort-direction'),
+            resetFolderSort: document.getElementById('reset-folder-sort'),
             filterType: document.getElementById('filter-select'),
             loading: document.getElementById('loading'),
             pagination: document.getElementById('pagination'),
@@ -114,6 +115,7 @@ const MediaApp = {
         // Sort and filter controls
         this.elements.sortField?.addEventListener('change', () => this.handleSortChange());
         this.elements.sortOrder?.addEventListener('click', () => this.toggleSortOrder());
+        this.elements.resetFolderSort?.addEventListener('click', () => this.resetFolderSort());
         this.elements.filterType?.addEventListener('change', () => this.handleFilterChange());
 
         // Pagination
@@ -353,6 +355,27 @@ const MediaApp = {
             InfiniteScroll.saveToCache(this.state.currentPath);
         }
 
+        // Check for folder-specific sort preferences, otherwise use global defaults
+        if (typeof Preferences !== 'undefined') {
+            const folderSort = Preferences.getFolderSort(path);
+            if (folderSort) {
+                // Use folder-specific sort
+                this.state.currentSort.field = folderSort.field;
+                this.state.currentSort.order = folderSort.order;
+            } else {
+                // Use global defaults
+                this.state.currentSort.field = Preferences.get('sortField');
+                this.state.currentSort.order = Preferences.get('sortOrder');
+            }
+
+            // Update UI to reflect current sort
+            const sortSelect = document.getElementById('sort-select');
+            if (sortSelect) {
+                sortSelect.value = this.state.currentSort.field;
+            }
+            this.updateSortIcon(this.state.currentSort.order);
+        }
+
         this.showLoading();
         try {
             // Capture current sort state to ensure consistency
@@ -363,11 +386,6 @@ const MediaApp = {
                 path: path,
                 sort: sortField,
                 order: sortOrder,
-                page: '1',
-                pageSize:
-                    typeof InfiniteScroll !== 'undefined'
-                        ? String(InfiniteScroll.config.batchSize)
-                        : String(this.state.pageSize),
             });
 
             if (this.state.currentFilter) {
@@ -392,6 +410,9 @@ const MediaApp = {
 
             this.state.listing = await response.json();
             this.state.currentPath = path;
+
+            // Update reset folder sort button visibility
+            this.updateResetFolderSortButton();
 
             // Load media files with the same sort parameters
             await this.loadMediaFiles(path, sortField, sortOrder);
@@ -601,7 +622,13 @@ const MediaApp = {
 
     handleSortChange() {
         this.state.currentSort.field = this.elements.sortField.value;
-        Preferences.set('sortField', this.state.currentSort.field);
+
+        // Save folder-specific preference (don't update global defaults here)
+        Preferences.setFolderSort(
+            this.state.currentPath,
+            this.state.currentSort.field,
+            this.state.currentSort.order
+        );
 
         // Clear infinite scroll cache when sort changes
         if (typeof InfiniteScroll !== 'undefined') {
@@ -629,8 +656,8 @@ const MediaApp = {
         // Update the icon
         this.updateSortIcon(newOrder);
 
-        // Save preference
-        Preferences.set('sortOrder', newOrder);
+        // Save folder-specific preference (don't update global defaults here)
+        Preferences.setFolderSort(this.state.currentPath, this.state.currentSort.field, newOrder);
 
         // Reset to first page
         this.state.currentPage = 1;
@@ -657,6 +684,58 @@ const MediaApp = {
         if (typeof lucide !== 'undefined') {
             lucide.createIcons({ nodes: [iconWrapper] });
         }
+    },
+
+    /**
+     * Update visibility of reset folder sort button
+     */
+    updateResetFolderSortButton() {
+        if (!this.elements.resetFolderSort) return;
+
+        const folderSort = Preferences.getFolderSort(this.state.currentPath);
+        const globalField = Preferences.get('sortField');
+        const globalOrder = Preferences.get('sortOrder');
+
+        // Show button only if folder sort differs from global defaults
+        const isDifferent =
+            folderSort && (folderSort.field !== globalField || folderSort.order !== globalOrder);
+
+        if (isDifferent) {
+            this.elements.resetFolderSort.classList.remove('hidden');
+        } else {
+            this.elements.resetFolderSort.classList.add('hidden');
+        }
+    },
+
+    /**
+     * Reset folder-specific sort to global defaults
+     */
+    resetFolderSort() {
+        if (!Preferences.hasFolderSort(this.state.currentPath)) return;
+
+        // Clear folder sort preference
+        Preferences.clearFolderSort(this.state.currentPath);
+
+        // Revert to global defaults
+        this.state.currentSort.field = Preferences.get('sortField');
+        this.state.currentSort.order = Preferences.get('sortOrder');
+
+        // Update UI
+        if (this.elements.sortField) {
+            this.elements.sortField.value = this.state.currentSort.field;
+        }
+        this.updateSortIcon(this.state.currentSort.order);
+
+        // Hide reset button
+        this.updateResetFolderSortButton();
+
+        // Clear infinite scroll cache
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.clearCache();
+        }
+
+        // Reload directory with default sort
+        this.loadDirectory(this.state.currentPath, false);
     },
 
     handleFilterChange() {
