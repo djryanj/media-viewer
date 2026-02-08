@@ -171,6 +171,71 @@ const Lightbox = {
     },
 
     /**
+     * Parse GIF binary data to extract loop count
+     * @param {Blob} blob - The GIF file blob
+     * @returns {Promise<number|null>} Loop count (0=infinite, N=loop N times, null=no loop info)
+     */
+    async parseGifLoopCount(blob) {
+        try {
+            const buffer = await blob.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+
+            // Verify GIF signature (GIF87a or GIF89a)
+            const signature = String.fromCharCode(...bytes.slice(0, 6));
+            if (!signature.startsWith('GIF')) {
+                return null;
+            }
+
+            // Skip header (6 bytes) and logical screen descriptor (7 bytes)
+            let pos = 13;
+
+            // Skip global color table if present
+            const packed = bytes[10];
+            if (packed & 0x80) {
+                const colorTableSize = 3 * Math.pow(2, (packed & 0x07) + 1);
+                pos += colorTableSize;
+            }
+
+            // Search for Netscape Application Extension (21 FF 0B)
+            while (pos < bytes.length - 3) {
+                // Look for extension introducer (0x21)
+                if (bytes[pos] !== 0x21) {
+                    pos++;
+                    continue;
+                }
+
+                // Check for Application Extension (0xFF)
+                if (bytes[pos + 1] === 0xff) {
+                    // Block size should be 11 (0x0B)
+                    if (bytes[pos + 2] === 0x0b) {
+                        // Check for "NETSCAPE2.0" identifier
+                        const identifier = String.fromCharCode(...bytes.slice(pos + 3, pos + 14));
+                        if (identifier === 'NETSCAPE2.0') {
+                            // Sub-block should start at pos + 14
+                            // Format: [sub-block size (3)] [block ID (1)] [loop count low] [loop count high]
+                            if (bytes[pos + 14] === 0x03 && bytes[pos + 15] === 0x01) {
+                                // Extract loop count (little-endian 16-bit)
+                                const loopCount = bytes[pos + 16] | (bytes[pos + 17] << 8);
+                                console.debug(`GIF loop count detected: ${loopCount}`);
+                                return loopCount;
+                            }
+                        }
+                    }
+                }
+
+                pos++;
+            }
+
+            // No loop extension found - GIF will play once by default
+            console.debug('GIF has no loop extension (will play once)');
+            return null;
+        } catch (error) {
+            console.debug('Error parsing GIF loop count:', error);
+            return null;
+        }
+    },
+
+    /**
      * Check if media should show the loop button
      */
     shouldShowLoopButton(file) {
@@ -199,6 +264,23 @@ const Lightbox = {
         const currentFile = this.items[this.currentIndex];
         if (!currentFile || !this.isAnimatedImageType(currentFile.name)) return;
 
+        // For GIFs, only monitor if loop count is not infinite (0)
+        // null = no loop extension (plays once), N > 0 = loops N times
+        // 0 = loops forever (don't need to monitor)
+        if (currentFile.name && currentFile.name.toLowerCase().endsWith('.gif')) {
+            console.debug(
+                `Lightbox: Loop detection check for ${currentFile.name}, loop count: ${currentFile.gifLoopCount}`
+            );
+            if (currentFile.gifLoopCount === 0) {
+                console.debug('Lightbox: GIF loops infinitely, skipping loop detection');
+                return;
+            }
+            console.debug(
+                'Lightbox: GIF needs loop monitoring (non-infinite or no loop extension)'
+            );
+        }
+
+        console.debug('Lightbox: Starting animation loop detection');
         this.setupAnimationLoopMonitor(img);
     },
 
@@ -225,7 +307,7 @@ const Lightbox = {
         canvas.height = sampleSize;
 
         let unchangedFrames = 0;
-        const unchangedThreshold = 10;
+        const unchangedThreshold = 50; // Increased from 10 to 50 (10 seconds at 200ms intervals)
         const checkInterval = 200;
 
         this.animationCheckInterval = setInterval(() => {
@@ -250,8 +332,17 @@ const Lightbox = {
                 if (this.lastImageData === currentData) {
                     unchangedFrames++;
 
+                    // Log progress every 10 frames (2 seconds)
+                    if (unchangedFrames % 10 === 0) {
+                        console.debug(
+                            `Lightbox: Animation static for ${unchangedFrames * 0.2}s (threshold: ${unchangedThreshold * 0.2}s)`
+                        );
+                    }
+
+                    // Only restart if frames have been static for a long time (10 seconds)
+                    // This prevents restarting GIFs that have slow animations or brief pauses
                     if (unchangedFrames >= unchangedThreshold) {
-                        console.debug('Animation loop: Restarting animation');
+                        console.debug('Lightbox: Animation appears stopped after 10s, restarting');
                         this.restartAnimation(img);
                         unchangedFrames = 0;
                     }
@@ -989,7 +1080,7 @@ const Lightbox = {
                 }
                 return response.blob();
             })
-            .then((blob) => {
+            .then(async (blob) => {
                 if (loadComplete || loadId !== this.currentLoadId) {
                     return;
                 }
@@ -1000,6 +1091,13 @@ const Lightbox = {
                 // Reset failure tracking on success
                 this.imageFailures.consecutiveFailures = 0;
                 this.imageFailures.currentFailedImage = null;
+
+                // Parse GIF loop count if this is a GIF file
+                if (file.name && file.name.toLowerCase().endsWith('.gif')) {
+                    console.debug(`Lightbox: Parsing GIF loop metadata for ${file.name}`);
+                    file.gifLoopCount = await this.parseGifLoopCount(blob);
+                    console.debug(`Lightbox: GIF loop count for ${file.name}:`, file.gifLoopCount);
+                }
 
                 const blobUrl = URL.createObjectURL(blob);
                 const img = new Image();
