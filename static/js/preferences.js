@@ -7,6 +7,7 @@ const Preferences = {
         mediaLoop: true,
         clockEnabled: true,
         clockFormat: '12', // '12' or '24'
+        folderSortPreferences: {}, // Per-folder sort overrides
     },
 
     // Cache of current preferences
@@ -209,5 +210,49 @@ const Preferences = {
      */
     setClockFormat(format) {
         this.set('clockFormat', format);
+    },
+
+    /**
+     * Get sort preferences for a specific folder
+     * @param {string} path - Folder path
+     * @returns {object|null} Sort preferences or null if none set
+     */
+    getFolderSort(path) {
+        const folderPrefs = this.get('folderSortPreferences') || {};
+        return folderPrefs[path] || null;
+    },
+
+    /**
+     * Set sort preferences for a specific folder
+     * @param {string} path - Folder path
+     * @param {string} field - Sort field
+     * @param {string} order - Sort order
+     */
+    setFolderSort(path, field, order) {
+        const folderPrefs = this.get('folderSortPreferences') || {};
+        folderPrefs[path] = { field, order };
+        this.set('folderSortPreferences', folderPrefs);
+    },
+
+    /**
+     * Clear sort preferences for a specific folder (revert to default)
+     * @param {string} path - Folder path
+     */
+    clearFolderSort(path) {
+        const folderPrefs = this.get('folderSortPreferences') || {};
+        if (folderPrefs[path]) {
+            delete folderPrefs[path];
+            this.set('folderSortPreferences', folderPrefs);
+        }
+    },
+
+    /**
+     * Check if a folder has custom sort preferences
+     * @param {string} path - Folder path
+     * @returns {boolean}
+     */
+    hasFolderSort(path) {
+        const folderPrefs = this.get('folderSortPreferences') || {};
+        return !!folderPrefs[path];
     },
 };
