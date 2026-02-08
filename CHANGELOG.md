@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Batch Tag Loading**: Fixed `/api/tags/batch` calls across lightbox, tags, playlist, and tag-clipboard not having timeout protection, causing potential hangs. Now uses `fetchWithTimeout` with 5-second limit. ([#169](https://github.com/djryanj/media-viewer/issues/169))
 
+- **GIF Loop Detection**: Fixed animation loop detection incorrectly restarting all GIFs, including those with infinite loop metadata. Implemented proper GIF binary parser to extract Netscape Application Extension loop count. System now only monitors and restarts GIFs that play once or a finite number of times (loop count > 0 or null), while skipping infinitely-looping GIFs (loop count = 0) which the browser handles natively. Increased unchanged frame threshold from 2 seconds to 10 seconds to prevent false positives on GIFs with slow animations or pauses. Added comprehensive debug logging for GIF loop metadata parsing and monitoring decisions. ([#121](https://github.com/djryanj/media-viewer/issues/121))
+
 ## [0.9.0] - 2026-02-07
 
 ### Added
