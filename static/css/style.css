@@ -1677,6 +1677,55 @@ select:focus {
     color: white;
 }
 
+/* Lightbox clock responsive sizing for mobile */
+@media (max-width: 768px) {
+    #lightbox-clock {
+        font-size: 1.25rem;
+        padding: 0.25rem 0.5rem;
+        right: 3rem;
+        top: 0.25rem;
+    }
+}
+
+@media (max-width: 480px) {
+    #lightbox-clock {
+        /* Match close button dimensions: 48px icon + 12px padding = 72px height total */
+        /* Close button is 4px from top with 12px padding to align with other buttons */
+        font-size: 1.125rem;
+        padding: 0.75rem 0.625rem; /* 12px top/bottom, 10px left/right */
+        line-height: 3rem; /* 48px to match icon height */
+        right: 4.75rem; /* Position left of close button */
+        top: 0.25rem; /* 4px to align with other buttons */
+        height: 3rem; /* 48px content height */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .lightbox-close {
+        top: 0.25rem; /* 4px to align with other buttons */
+    }
+}
+
+/* Landscape mode alignment for mobile devices */
+@media (orientation: landscape) and (max-height: 600px) {
+    #lightbox-clock {
+        font-size: 1.125rem;
+        padding: 0.75rem 0.625rem;
+        line-height: 3rem;
+        right: 4.75rem;
+        top: 0.25rem; /* 4px to align with other buttons */
+        height: 3rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .lightbox-close {
+        top: 0.25rem; /* 4px to align with other buttons */
+    }
+}
+
 .lightbox-content {
     position: relative;
     max-width: 100vw;
