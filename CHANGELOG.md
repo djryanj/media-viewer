@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Lightbox Clock Mobile Alignment**: Fixed lightbox clock positioning on mobile devices in both portrait and landscape orientations. Clock now properly aligns with other control buttons at 4px from top, matching button height (48px) with appropriate padding. Reduced font size and optimized spacing to fit alongside autoplay and loop controls without overlapping. ([#188](https://github.com/djryanj/media-viewer/issues/188))
+
 - **Video Controls Auto-Hide on Mobile**: Fixed video controls not auto-hiding on mobile devices in video players. Added touch event handlers to detect taps on video area, preventing mousemove events from constantly resetting the hide timer. Controls now properly hide after 3 seconds when video is playing, and can be toggled by tapping on the video (excluding control buttons). Improved control visibility logic to only restart hide timer when controls transition from hidden to visible. ([#187](https://github.com/djryanj/media-viewer/issues/187))
 
 - **Pagination Consistency**: Standardized page size to 50 items across frontend and backend. Backend `/api/files` endpoint default `PageSize` reduced from 100 to 50 to match frontend infinite scroll `batchSize`, ensuring consistent pagination and preventing item count mismatches. ([#192](https://github.com/djryanj/media-viewer/issues/192))
