@@ -129,8 +129,8 @@ const HistoryManager = {
                     }
                     break;
                 case 'player':
-                    if (typeof Player !== 'undefined') {
-                        Player.close();
+                    if (typeof Playlist !== 'undefined') {
+                        Playlist.close();
                     }
                     break;
                 case 'search':

@@ -1,3 +1,4 @@
+/* global Clock */
 /**
  * Settings Manager
  * Handles the settings modal, tabs, and all settings functionality
@@ -88,6 +89,17 @@ class SettingsManager {
                 this.deletePasskey(id);
             }
         });
+
+        // Clock settings
+        const clockToggle = document.getElementById('clock-enabled-toggle');
+        if (clockToggle) {
+            clockToggle.addEventListener('change', () => this.handleClockToggle());
+        }
+
+        const clockFormatSelect = document.getElementById('clock-format-select');
+        if (clockFormatSelect) {
+            clockFormatSelect.addEventListener('change', () => this.handleClockFormatChange());
+        }
     }
 
     /**
@@ -273,6 +285,9 @@ class SettingsManager {
         switch (tabName) {
             case 'passkeys':
                 this.loadPasskeys();
+                break;
+            case 'display':
+                this.loadDisplaySettings();
                 break;
             case 'about':
                 this.loadAboutInfo();
@@ -854,6 +869,61 @@ class SettingsManager {
     updateElement(id, value) {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
+    }
+
+    // =========================================
+    // DISPLAY SETTINGS
+    // =========================================
+
+    /**
+     * Load display settings when the Display tab is opened
+     */
+    loadDisplaySettings() {
+        // Load clock enabled state
+        const clockToggle = document.getElementById('clock-enabled-toggle');
+        if (clockToggle) {
+            clockToggle.checked = Preferences.isClockEnabled();
+        }
+
+        // Load clock format
+        const clockFormatSelect = document.getElementById('clock-format-select');
+        if (clockFormatSelect) {
+            clockFormatSelect.value = Preferences.getClockFormat();
+        }
+    }
+
+    /**
+     * Handle clock enable/disable toggle
+     */
+    handleClockToggle() {
+        const clockToggle = document.getElementById('clock-enabled-toggle');
+        if (!clockToggle) return;
+
+        Preferences.toggleClock();
+
+        // Notify Clock component to update visibility
+        if (typeof Clock !== 'undefined' && Clock) {
+            Clock.updateVisibility();
+        }
+
+        console.debug('Clock toggled:', clockToggle.checked);
+    }
+
+    /**
+     * Handle clock format change
+     */
+    handleClockFormatChange() {
+        const clockFormatSelect = document.getElementById('clock-format-select');
+        if (!clockFormatSelect) return;
+
+        Preferences.setClockFormat(clockFormatSelect.value);
+
+        // Notify Clock component to update display
+        if (typeof Clock !== 'undefined' && Clock) {
+            Clock.updateTime();
+        }
+
+        console.debug('Clock format changed:', clockFormatSelect.value);
     }
 
     // =========================================

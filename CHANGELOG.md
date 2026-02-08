@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [0.9.1] - 2026-02-07
+## [0.10.0] - 2026-02-07
 
 ### Added
+
+- **Clock Display**: Added configurable clock display for lightbox and playlist views showing current browser time (hours and minutes only). Clock appears in top-right corner, positioned to avoid overlapping controls. Dimmed by default (30% opacity) and brightens to full opacity on hover. Clock updates every minute and supports both 12-hour (with AM/PM) and 24-hour time formats. Enabled by default with preferences stored in localStorage. Automatically adjusts positioning in theater mode and landscape mode to prevent overlapping with player controls. Clock visibility persists across sessions and respects user preferences.
+
+- **Display Settings Tab**: Added new "Display" tab to settings modal (positioned between Cache and About tabs) for visual display preferences. Includes toggle switch for enabling/disabling clock and dropdown selector for 12/24 hour time format. Features responsive layout with properly styled toggle switches, labels, and hint text. Settings changes take effect immediately without requiring page reload.
 
 - **Download Button**: Added download button to both lightbox and gallery views. In the lightbox, the button appears in the bottom right corner. In the gallery, it appears on hover in the bottom right of each thumbnail. Keyboard shortcut 'D' added for lightbox download. Extended `/api/file/{path}` endpoint to support `?download=true` query parameter for forcing file downloads with proper Content-Disposition headers. ([#166](https://github.com/djryanj/media-viewer/issues/166))
 
@@ -41,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Error Messages**: Offline error messages changed from "Thumbnails cannot be loaded" to "Content cannot be loaded" to be context-appropriate for both gallery and lightbox usage. ([#169](https://github.com/djryanj/media-viewer/issues/169))
 
 ### Fixed
+
+- **Lightbox Close Button**: Fixed lightbox close button not being clickable when overlapping video elements in landscape mode on mobile. Added proper z-index stacking to ensure navigation buttons (close, prev, next) are always above video content. ([#174](https://github.com/djryanj/media-viewer/issues/174))
 
 - **Lightbox Tag Button State**: Fixed tag button in lightbox not updating immediately when tags are applied or removed via the tag manager. The button now correctly shows the highlighted state when tags are present. ([#175](https://github.com/djryanj/media-viewer/issues/175))
 

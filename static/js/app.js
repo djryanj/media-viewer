@@ -71,6 +71,11 @@ const MediaApp = {
         if (typeof SessionManager !== 'undefined') {
             console.debug('MediaApp: SessionManager available');
         }
+
+        // Initialize Clock component
+        if (typeof Clock !== 'undefined') {
+            Clock.init();
+        }
     },
 
     cacheElements() {
