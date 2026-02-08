@@ -88,12 +88,16 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, _ *http.Request) {
 }
 
 // LivenessCheck is a simple liveness probe (always returns 200 if server is running)
-func (h *Handlers) LivenessCheck(w http.ResponseWriter, _ *http.Request) {
+func (h *Handlers) LivenessCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	writeJSON(w, map[string]string{
-		"status": "alive",
-	})
+
+	// For HEAD requests, only send headers (no body)
+	if r.Method != http.MethodHead {
+		writeJSON(w, map[string]string{
+			"status": "alive",
+		})
+	}
 }
 
 // ReadinessCheck returns 200 only when the service is ready to accept traffic

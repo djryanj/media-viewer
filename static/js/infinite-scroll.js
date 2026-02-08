@@ -19,6 +19,7 @@ const InfiniteScroll = {
         loadedItems: [],
         observer: null,
         sentinelEl: null,
+        loadFailed: false, // Track if last load failed
     },
 
     // Cache for scroll position restoration (keyed by path)
@@ -332,7 +333,23 @@ const InfiniteScroll = {
      * Load more items
      */
     async loadMore() {
-        if (this.state.isLoading || !this.state.hasMore) return;
+        if (this.state.isLoading) {
+            console.debug('InfiniteScroll: load already in progress, skipping');
+            return;
+        }
+
+        if (!this.state.hasMore) {
+            console.debug('InfiniteScroll: no more items to load');
+            return;
+        }
+
+        // Safety check: don't exceed total
+        if (this.state.loadedItems.length >= this.state.totalItems) {
+            console.debug('InfiniteScroll: already at or exceeded total, stopping');
+            this.state.hasMore = false;
+            this.updateLoadMoreVisibility();
+            return;
+        }
 
         this.state.isLoading = true;
         this.showSkeletons();
@@ -369,10 +386,23 @@ const InfiniteScroll = {
 
             const data = await response.json();
 
+            console.debug(
+                `InfiniteScroll: loaded page ${nextPage}, got ${data.items.length} items`
+            );
+
             // Append new items
             this.state.currentPage = nextPage;
             this.state.loadedItems.push(...data.items);
-            this.state.hasMore = this.state.loadedItems.length < this.state.totalItems;
+
+            // Update hasMore with safety check
+            const loaded = this.state.loadedItems.length;
+            const total = this.state.totalItems;
+            this.state.hasMore = loaded < total;
+            this.state.loadFailed = false;
+
+            console.debug(
+                `InfiniteScroll: state - page: ${this.state.currentPage}, loaded: ${loaded}, total: ${total}, hasMore: ${this.state.hasMore}`
+            );
 
             // Render new items
             this.renderItems(data.items, true);
@@ -386,21 +416,50 @@ const InfiniteScroll = {
                     'Server not responding while loading more items. Try again.',
                     'error'
                 );
+                // Trigger connectivity check in Gallery
+                if (typeof Gallery.startConnectivityCheck === 'function') {
+                    Gallery.startConnectivityCheck();
+                }
             } else if (error instanceof TypeError) {
                 console.error('Loading more items network error - server may be offline:', error);
                 Gallery.showToast(
                     'Server is offline. Check your connection and try again.',
                     'error'
                 );
+                // Trigger connectivity check in Gallery
+                if (typeof Gallery.startConnectivityCheck === 'function') {
+                    Gallery.startConnectivityCheck();
+                }
             } else {
                 console.error('Error loading more items:', error);
                 Gallery.showToast('Failed to load more items', 'error');
             }
+            this.state.loadFailed = true; // Mark load as failed
         } finally {
             this.state.isLoading = false;
             this.hideSkeletons();
             this.updateLoadMoreVisibility();
             this.updateStats();
+        }
+    },
+
+    /**
+     * Check if the last load attempt failed
+     */
+    hasLoadFailed() {
+        return this.state.loadFailed && this.state.hasMore;
+    },
+
+    /**
+     * Retry the last failed load
+     */
+    retryLoad() {
+        if (this.hasLoadFailed() && !this.state.isLoading) {
+            console.debug(
+                `InfiniteScroll: retrying failed load (current page: ${this.state.currentPage}, loaded: ${this.state.loadedItems.length})`
+            );
+            this.state.loadFailed = false;
+            this.loadMore();
         }
     },
 
