@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gallery Filter Type Selection**: Fixed filter dropdown to correctly filter files by type (images, videos, playlists). Corrected frontend filter values to use singular forms ("image", "video", "playlist") matching backend database schema. Added automatic viewport filling when filter results in few items - infinite scroll now continues loading until viewport is filled or no more items available. Fixed "All" filter to properly clear filter and reload full directory listing. Folders are always shown for navigation regardless of filter selection. ([#194](https://github.com/djryanj/media-viewer/issues/194))
+
 - **Lightbox Clock Mobile Alignment**: Fixed lightbox clock positioning on mobile devices in both portrait and landscape orientations. Clock now properly aligns with other control buttons at 4px from top, matching button height (48px) with appropriate padding. Reduced font size and optimized spacing to fit alongside autoplay and loop controls without overlapping. ([#188](https://github.com/djryanj/media-viewer/issues/188))
 
 - **Video Controls Auto-Hide on Mobile**: Fixed video controls not auto-hiding on mobile devices in video players. Added touch event handlers to detect taps on video area, preventing mousemove events from constantly resetting the hide timer. Controls now properly hide after 3 seconds when video is playing, and can be toggled by tapping on the video (excluding control buttons). Improved control visibility logic to only restart hide timer when controls transition from hidden to visible. ([#187](https://github.com/djryanj/media-viewer/issues/187))

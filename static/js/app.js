@@ -739,7 +739,9 @@ const MediaApp = {
     },
 
     handleFilterChange() {
-        this.state.currentFilter = this.elements.filterType.value;
+        const filterValue = this.elements.filterType.value;
+        // Treat "all" as no filter (empty string)
+        this.state.currentFilter = filterValue === 'all' ? '' : filterValue;
 
         // Clear infinite scroll cache when filter changes
         if (typeof InfiniteScroll !== 'undefined') {

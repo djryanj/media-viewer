@@ -151,6 +151,12 @@ const InfiniteScroll = {
 
         // Update stats
         this.updateStats();
+
+        // Auto-load more items if viewport is not filled and more items are available
+        // Use setTimeout to ensure DOM has updated and measurements are accurate
+        setTimeout(() => {
+            this.checkAndFillViewport();
+        }, 100);
     },
 
     /**
@@ -460,6 +466,35 @@ const InfiniteScroll = {
             );
             this.state.loadFailed = false;
             this.loadMore();
+        }
+    },
+
+    /**
+     * Check if viewport is filled and auto-load more items if needed
+     * This ensures that when filtering results in few items, we keep loading until viewport is full
+     */
+    async checkAndFillViewport() {
+        // Don't proceed if already loading, no more items, or loading failed
+        if (this.state.isLoading || !this.state.hasMore || this.state.loadFailed) {
+            return;
+        }
+
+        // Check if sentinel is visible (meaning viewport is not filled)
+        const sentinel = this.elements.sentinel;
+        if (!sentinel) return;
+
+        const rect = sentinel.getBoundingClientRect();
+        const isVisible = rect.top < window.innerHeight && rect.bottom >= 0;
+
+        // If sentinel is visible, load more items
+        if (isVisible && this.state.hasMore) {
+            await this.loadMore();
+
+            // Recursively check again after loading
+            // Use setTimeout to allow DOM to update
+            setTimeout(() => {
+                this.checkAndFillViewport();
+            }, 100);
         }
     },
 
