@@ -196,26 +196,69 @@ class VideoPlayer {
             // Hide controls when video starts loading
             this.controls.classList.remove('show');
         });
-        this.video.addEventListener('play', () => this.updatePlayPauseIcon());
+        this.video.addEventListener('play', () => {
+            this.updatePlayPauseIcon();
+            // Start auto-hide timer when video starts playing
+            if (this.controls.classList.contains('show')) {
+                this.hideControlsDelayed();
+            }
+        });
         this.video.addEventListener('pause', () => {
             this.updatePlayPauseIcon();
-            this.showControls();
+            this.showControls('pause event');
         });
         this.video.addEventListener('timeupdate', () => this.updateProgress());
         this.video.addEventListener('loadedmetadata', () => {
             this.updateTimeDisplay();
             this.checkAudioTracks();
             // Show controls once video metadata is loaded
-            this.showControls();
+            this.showControls('loadedmetadata event');
         });
         this.video.addEventListener('click', (e) => {
             e.stopPropagation();
             togglePlayPause();
         });
 
-        // Control visibility
-        this.container.addEventListener('mousemove', () => this.showControls());
-        this.container.addEventListener('mouseleave', () => this.hideControlsDelayed());
+        // Control visibility - desktop
+        this.container.addEventListener('mousemove', () => {
+            this.showControls('mousemove');
+        });
+        this.container.addEventListener('mouseleave', () => {
+            this.hideControlsDelayed();
+        });
+
+        // Control visibility - mobile touch support
+        let touchStartTime = 0;
+        let touchStartTarget = null;
+
+        this.container.addEventListener('touchstart', (e) => {
+            touchStartTime = Date.now();
+            touchStartTarget = e.target;
+        });
+
+        this.container.addEventListener('touchend', (e) => {
+            const touchDuration = Date.now() - touchStartTime;
+
+            // Ignore if touching actual controls (buttons, sliders, progress bar)
+            if (
+                e.target.closest('button') ||
+                e.target.closest('input') ||
+                e.target.closest('[data-progress-container]')
+            ) {
+                return;
+            }
+
+            // Only respond to quick taps (not drags/swipes)
+            if (touchDuration < 300 && touchStartTarget === e.target) {
+                // If controls are showing, start hide timer; if hidden, show them
+                if (this.controls.classList.contains('show') && !this.video.paused) {
+                    this.hideControlsDelayed();
+                } else {
+                    this.showControls('touch tap');
+                }
+            }
+        });
+
         this.controls.addEventListener('click', (e) => {
             if (e.target === this.controls) {
                 togglePlayPause();
@@ -350,20 +393,28 @@ class VideoPlayer {
         this.progressHandle.style.left = `${percent * 100}%`;
     }
 
-    showControls() {
+    showControls(caller = 'unknown') {
+        const wasVisible = this.controls.classList.contains('show');
         this.controls.classList.add('show');
-        this.hideControlsDelayed();
+
+        // Only restart the hide timer if controls weren't already visible
+        // This prevents constant mousemove events from resetting the timer
+        if (!wasVisible) {
+            this.hideControlsDelayed();
+        }
     }
 
     hideControlsDelayed() {
         if (this.controlsTimeout) {
             clearTimeout(this.controlsTimeout);
+            this.controlsTimeout = null;
         }
 
         if (this.video.paused) return;
 
         this.controlsTimeout = setTimeout(() => {
             this.controls.classList.remove('show');
+            this.controlsTimeout = null;
         }, 3000);
     }
 
