@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Video Scaling**: Fixed video sizing in both playlist player and lightbox to properly scale small videos to fill the viewport vertically while maintaining aspect ratio. Small videos (e.g., 450x360) now scale up to fill the available vertical space instead of displaying at their native resolution. Container elements now use explicit dimensions with flex layout to prevent shrinking to video natural size, allowing `object-fit: contain` to properly scale video content up or down as needed. ([#213](https://github.com/djryanj/media-viewer/issues/213))
 
+- **Playlist Sidebar**: Videos in the playlist player now automatically resize when the playlist sidebar is opened in theater or landscape modes, maintaining proper aspect ratio and ensuring the video remains fully visible without being obscured by the sidebar. The playlist toggle button stays anchored to the edge between the video and playlist for easy access. ([#212](https://github.com/djryanj/media-viewer/issues/212))
+
 ## [0.11.1] - 2026-02-09
 
 ### Changed
