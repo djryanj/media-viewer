@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.1] - 2026-02-09
 
-### Improved
+### Changed
+
+- **Mobile Drag Selection**: Enhanced selection mode drag behavior on mobile devices. Gallery now freezes (prevents scrolling) during drag selection, making multi-row selection practical and intuitive. Drag selection now uses range-based logic that follows reading order - all items between the start and end points are selected, not just items directly touched. For example, starting on the last item of a row and dragging down three rows will select that item plus all items in the rows between. Works naturally whether dragging forward or backward through the gallery. Optimized for performance in large libraries by caching the gallery items array during drag operations, eliminating expensive DOM queries on every touch move event. ([#152](https://github.com/djryanj/media-viewer/issues/152))
 
 - **Gallery Tag Icon**: Reduced visual prominence of tag icon in gallery view. Changed icon color from bright accent to muted neutral tone, reduced background opacity from 70% to 40%, and replaced bright accent border with subtle semi-transparent outline. Icon remains fully functional but is less visually obtrusive. ([#207](https://github.com/djryanj/media-viewer/issues/207))
 
