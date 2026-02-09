@@ -544,6 +544,74 @@ func TestFolderColors(t *testing.T) {
 	}
 }
 
+func TestFormatSeekTime(t *testing.T) {
+	tests := []struct {
+		name     string
+		seconds  float64
+		expected string
+	}{
+		{
+			name:     "Zero seconds",
+			seconds:  0.0,
+			expected: "00:00:00.000",
+		},
+		{
+			name:     "Less than 1 second",
+			seconds:  0.1,
+			expected: "00:00:00.100",
+		},
+		{
+			name:     "Exactly 1 second",
+			seconds:  1.0,
+			expected: "00:00:01.000",
+		},
+		{
+			name:     "Short video seek (0.55s * 0.1)",
+			seconds:  0.055,
+			expected: "00:00:00.055",
+		},
+		{
+			name:     "10% of 10 seconds",
+			seconds:  1.0,
+			expected: "00:00:01.000",
+		},
+		{
+			name:     "10% of 60 seconds",
+			seconds:  6.0,
+			expected: "00:00:06.000",
+		},
+		{
+			name:     "10% of 300 seconds",
+			seconds:  30.0,
+			expected: "00:00:30.000",
+		},
+		{
+			name:     "Over 1 minute",
+			seconds:  65.5,
+			expected: "00:01:05.500",
+		},
+		{
+			name:     "Over 1 hour",
+			seconds:  3661.25,
+			expected: "01:01:01.250",
+		},
+		{
+			name:     "Multiple hours",
+			seconds:  7384.999,
+			expected: "02:03:04.999",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatSeekTime(tt.seconds)
+			if result != tt.expected {
+				t.Errorf("formatSeekTime(%.3f) = %s, want %s", tt.seconds, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestConstants(t *testing.T) {
 	// Verify constants have reasonable values
 	if folderThumbSize <= 0 {

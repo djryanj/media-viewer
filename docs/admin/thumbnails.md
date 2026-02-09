@@ -109,6 +109,43 @@ Thumbnails are transferred to browsers on demand. For remote access over slow co
 - Scrolling loads additional thumbnails
 - PWA installation caches thumbnails locally
 
+## Troubleshooting
+
+### Thumbnail Generation Failures
+
+When thumbnails fail to generate, detailed error logs are written to help diagnose issues:
+
+**Log Format:**
+
+```
+ERROR Thumbnail generation failed for /path/to/file.jpg (type: image): <error details>
+```
+
+**Common Failure Scenarios:**
+
+- **Image decode failures**: Logs show which decode method failed (constrained load, imaging.Open, or FFmpeg fallback) with specific error details
+- **FFmpeg errors**: Logs include FFmpeg stderr output for video/image processing failures
+- **Encoding errors**: Logs specify whether PNG or JPEG encoding failed
+- **Folder thumbnail components**: Individual file failures within folder thumbnails are logged as warnings
+
+**Checking Logs:**
+
+```bash
+# View recent thumbnail errors
+docker logs media-viewer 2>&1 | grep "Thumbnail.*failed"
+
+# Follow thumbnail generation in real-time
+docker logs -f media-viewer 2>&1 | grep -i thumbnail
+```
+
+**Resolution Steps:**
+
+1. Check log output for specific file paths and error messages
+2. Verify file permissions and integrity
+3. For FFmpeg failures, check that FFmpeg is available and supports the file format
+4. For large images, consider memory constraints and `MAX_IMAGE_DIMENSION` settings
+5. Invalid or corrupted files may need repair or exclusion from the library
+
 ## Monitoring
 
 Use [Prometheus metrics](metrics.md) to monitor thumbnail generation performance:
@@ -120,6 +157,7 @@ Use [Prometheus metrics](metrics.md) to monitor thumbnail generation performance
 - **Memory Usage**: `thumbnail_memory_usage_bytes` - Memory allocated per thumbnail
 - **Phase Timing**: `thumbnail_generation_duration_detailed_seconds` - Breakdown by decode/resize/encode/cache
 - **Cache Size**: `thumbnail_cache_size_bytes` and `thumbnail_cache_count`
+- **Error Rate**: `thumbnail_generations_total{status="error*"}` - Track different error types
 
 ### Performance Tuning
 
