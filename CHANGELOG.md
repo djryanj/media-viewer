@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.2] - Unreleased
 
+### Fixed
+
+- **Short Video Thumbnails**: Fixed thumbnail generation failure for videos shorter than 1 second using a three-stage fallback strategy. First attempt uses standard 1-second seek (fast, works for 99% of videos). If that produces no output, video duration is probed with ffprobe and an intelligent seek time is calculated at 10% into the video (minimum 0.1 seconds, no maximum cap). Final fallback attempts extraction without seek time if intelligent retry fails. This ensures optimal performance for normal videos while gracefully handling short videos and edge cases without impacting the common case. ([#139](https://github.com/djryanj/media-viewer/issues/139))
+
 ### Improved
 
 - **Thumbnail Failure Logging**: Enhanced thumbnail generation error logging to provide detailed diagnostic information when thumbnail generation fails. Error logs now include the specific file path, file type (image/video/folder), failure stage (decode/encode/FFmpeg), and detailed error messages including FFmpeg stderr output. This makes it significantly easier to diagnose thumbnail generation issues by identifying which files failed and why. Added corresponding troubleshooting documentation in admin guide with log checking commands and resolution steps. ([#139](https://github.com/djryanj/media-viewer/issues/139))

@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -242,6 +243,122 @@ func TestGenerateVideoThumbnailNonexistent(t *testing.T) {
 
 	ctx := context.Background()
 	_, err := gen.generateVideoThumbnail(ctx, "/nonexistent/video.mp4")
+	if err == nil {
+		t.Error("Expected error for nonexistent video file")
+	}
+}
+
+func TestGenerateVideoThumbnailShortVideo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not available, skipping video thumbnail test")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not available, skipping short video test")
+	}
+
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create a very short test video (0.5 seconds)
+	videoFile := filepath.Join(mediaDir, "short.mp4")
+	if err := createShortTestVideoFile(videoFile, 0.5); err != nil {
+		t.Skipf("Could not create short test video: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	img, err := gen.generateVideoThumbnail(ctx, videoFile)
+	if err != nil {
+		t.Fatalf("generateVideoThumbnail failed for short video: %v", err)
+	}
+
+	if img == nil {
+		t.Fatal("Generated thumbnail is nil")
+	}
+
+	bounds := img.Bounds()
+	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+		t.Error("Generated thumbnail has invalid dimensions")
+	}
+}
+
+func TestGetVideoDuration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not available, skipping test")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not available, skipping test")
+	}
+
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	tests := []struct {
+		name        string
+		duration    float64
+		expectedMin float64
+		expectedMax float64
+	}{
+		{
+			name:        "Short video",
+			duration:    0.5,
+			expectedMin: 0.4,
+			expectedMax: 0.6,
+		},
+		{
+			name:        "Normal video",
+			duration:    3.0,
+			expectedMin: 2.9,
+			expectedMax: 3.1,
+		},
+		{
+			name:        "Long video",
+			duration:    10.0,
+			expectedMin: 9.9,
+			expectedMax: 10.1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			videoFile := filepath.Join(mediaDir, tt.name+".mp4")
+			if err := createShortTestVideoFile(videoFile, tt.duration); err != nil {
+				t.Skipf("Could not create test video: %v", err)
+			}
+
+			ctx := context.Background()
+			duration, err := gen.getVideoDuration(ctx, videoFile)
+			if err != nil {
+				t.Fatalf("getVideoDuration failed: %v", err)
+			}
+
+			if duration < tt.expectedMin || duration > tt.expectedMax {
+				t.Errorf("Duration = %.2f, want between %.2f and %.2f", duration, tt.expectedMin, tt.expectedMax)
+			}
+		})
+	}
+}
+
+func TestGetVideoDurationNonexistent(t *testing.T) {
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not available, skipping test")
+	}
+
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	ctx := context.Background()
+	_, err := gen.getVideoDuration(ctx, "/nonexistent/video.mp4")
 	if err == nil {
 		t.Error("Expected error for nonexistent video file")
 	}
@@ -599,6 +716,26 @@ func createTestVideoFile(path string) error {
 		"-i", "color=c=red:s=320x240:d=3",
 		"-c:v", "libx264",
 		"-t", "3",
+		"-pix_fmt", "yuv420p",
+		"-y", // Overwrite output file
+		path,
+	)
+
+	return cmd.Run()
+}
+
+func createShortTestVideoFile(path string, duration float64) error {
+	// Create a short test video with a blue background
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	durationStr := fmt.Sprintf("%.2f", duration)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-f", "lavfi",
+		"-i", fmt.Sprintf("color=c=blue:s=320x240:d=%s", durationStr),
+		"-c:v", "libx264",
+		"-t", durationStr,
 		"-pix_fmt", "yuv420p",
 		"-y", // Overwrite output file
 		path,

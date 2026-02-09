@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -483,6 +484,7 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	// First attempt: Use 1 second seek (fast, works for most videos)
 	ffmpegStart := time.Now()
 	cmd := exec.CommandContext(timeoutCtx, "ffmpeg",
 		"-i", filePath,
@@ -500,15 +502,41 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 
 	err = cmd.Run()
 	metrics.ThumbnailFFmpegDuration.WithLabelValues("video").Observe(time.Since(ffmpegStart).Seconds())
-	if err != nil {
-		logging.Debug("FFmpeg first attempt failed for %s: %v, stderr: %s", filePath, err, stderr.String())
 
-		// Create a new timeout context for retry, derived from original parent
+	// Check if first attempt produced output
+	if err == nil && stdout.Len() > 0 {
+		// Success on first attempt
+		img, _, err := image.Decode(&stdout)
+		if err != nil {
+			logging.Error("FFmpeg video thumbnail failed for %s: failed to decode PNG output: %v", filePath, err)
+			return nil, fmt.Errorf("failed to decode ffmpeg output: %w", err)
+		}
+		return img, nil
+	}
+
+	// First attempt failed or produced no output - likely a short video
+	logging.Debug("FFmpeg first attempt failed or produced no output for %s: %v, stderr: %s", filePath, err, stderr.String())
+
+	// Second attempt: Probe duration and use intelligent seek time
+	duration, probeErr := t.getVideoDuration(ctx, filePath)
+	if probeErr == nil && duration > 0 {
+		// Calculate seek time: 10% into video, minimum 0.1s, no maximum
+		seekTime := duration * 0.1
+		if seekTime < 0.1 {
+			seekTime = 0.1 // Minimum 0.1s to skip potential black frames
+		}
+
+		seekTimeStr := formatSeekTime(seekTime)
+		logging.Debug("Video duration: %.2fs, retrying with intelligent seek time: %s for %s", duration, seekTimeStr, filePath)
+
+		// Create a new timeout context for intelligent retry
 		retryCtx, retryCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer retryCancel()
 
+		// #nosec G204 -- filePath is from validated media library, not user input
 		cmd = exec.CommandContext(retryCtx, "ffmpeg",
 			"-i", filePath,
+			"-ss", seekTimeStr,
 			"-vframes", "1",
 			"-f", "image2pipe",
 			"-vcodec", "png",
@@ -519,14 +547,45 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 
-		if err := cmd.Run(); err != nil {
-			logging.Error("FFmpeg video thumbnail failed for %s (retry attempt): %v, stderr: %s", filePath, err, stderr.String())
-			return nil, fmt.Errorf("ffmpeg failed: %w, stderr: %s", err, stderr.String())
+		if err := cmd.Run(); err == nil && stdout.Len() > 0 {
+			// Success on intelligent retry
+			img, _, err := image.Decode(&stdout)
+			if err != nil {
+				logging.Error("FFmpeg video thumbnail failed for %s: failed to decode PNG output: %v", filePath, err)
+				return nil, fmt.Errorf("failed to decode ffmpeg output: %w", err)
+			}
+			return img, nil
 		}
+		logging.Debug("FFmpeg intelligent retry failed for %s: %v, stderr: %s", filePath, err, stderr.String())
+	} else {
+		logging.Debug("Could not probe video duration for %s: %v, skipping intelligent retry", filePath, probeErr)
+	}
+
+	// Final fallback: Try without seek time (most compatible, slowest)
+	logging.Debug("Attempting final fallback without seek time for %s", filePath)
+
+	fallbackCtx, fallbackCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer fallbackCancel()
+
+	cmd = exec.CommandContext(fallbackCtx, "ffmpeg",
+		"-i", filePath,
+		"-vframes", "1",
+		"-f", "image2pipe",
+		"-vcodec", "png",
+		"-",
+	)
+	stdout.Reset()
+	stderr.Reset()
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		logging.Error("FFmpeg video thumbnail failed for %s (all attempts exhausted): %v, stderr: %s", filePath, err, stderr.String())
+		return nil, fmt.Errorf("ffmpeg failed: %w, stderr: %s", err, stderr.String())
 	}
 
 	if stdout.Len() == 0 {
-		logging.Error("FFmpeg video thumbnail failed for %s: no output produced (after retry)", filePath)
+		logging.Error("FFmpeg video thumbnail failed for %s: no output produced (all attempts exhausted)", filePath)
 		return nil, fmt.Errorf("ffmpeg produced no output for %s", filePath)
 	}
 
@@ -539,6 +598,54 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	}
 
 	return img, nil
+}
+
+// getVideoDuration probes a video file to get its duration in seconds
+func (t *ThumbnailGenerator) getVideoDuration(ctx context.Context, filePath string) (float64, error) {
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe not found: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// #nosec G204 -- filePath is from validated media library, not user input
+	cmd := exec.CommandContext(ctx, ffprobePath,
+		"-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		filePath,
+	)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return 0, fmt.Errorf("ffprobe failed: %w, stderr: %s", err, stderr.String())
+	}
+
+	durationStr := strings.TrimSpace(stdout.String())
+	if durationStr == "" || durationStr == "N/A" {
+		return 0, fmt.Errorf("no duration found in video")
+	}
+
+	duration, err := strconv.ParseFloat(durationStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse duration '%s': %w", durationStr, err)
+	}
+
+	return duration, nil
+}
+
+// formatSeekTime formats a float64 seconds value into FFmpeg seek time format (HH:MM:SS.ms)
+func formatSeekTime(seconds float64) string {
+	hours := int(seconds / 3600)
+	minutes := int((seconds - float64(hours*3600)) / 60)
+	secs := seconds - float64(hours*3600) - float64(minutes*60)
+	return fmt.Sprintf("%02d:%02d:%06.3f", hours, minutes, secs)
 }
 
 // =============================================================================
