@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.11.0] - Unreleased
+
+### Added
+
+- **Tag Manager**: Added comprehensive tag management interface in Settings modal under new "Tags" tab. View all tags with usage counts, search/filter tags, sort by name or usage count, rename tags across entire library with automatic merge support for duplicate names, delete tags from all files with styled confirmation dialogs showing impact, and find unused tags (tags with zero file associations) for cleanup. All tag operations are transactional with detailed feedback showing affected file counts. Backend API provides four new endpoints: `GET /api/tags/stats` (list all tags with counts), `GET /api/tags/unused` (find unused tags), `POST /api/tags/{tag}/rename` (rename everywhere with merge), `DELETE /api/tags/{tag}/delete` (cascade delete). Database operations use LEFT JOIN for efficient counting and proper CASCADE delete relationships. Supports case-only tag renames (e.g., "animal" → "Animal"). Includes comprehensive integration tests for all database and handler operations. ([#148](https://github.com/djryanj/media-viewer/issues/148))
+
 ## [0.10.2] - 2026-02-08
 
-### Fixed
+### Added
 
 - **Short Video Thumbnails**: Fixed thumbnail generation failure for videos shorter than 1 second using a three-stage fallback strategy. First attempt uses standard 1-second seek (fast, works for 99% of videos). If that produces no output, video duration is probed with ffprobe and an intelligent seek time is calculated at 10% into the video (minimum 0.1 seconds, no maximum cap). Final fallback attempts extraction without seek time if intelligent retry fails. This ensures optimal performance for normal videos while gracefully handling short videos and edge cases without impacting the common case. ([#139](https://github.com/djryanj/media-viewer/issues/139))
 

@@ -376,3 +376,100 @@ func (h *Handlers) RenameTag(w http.ResponseWriter, r *http.Request) {
 
 	writeJSONStatus(w, "ok")
 }
+
+// GetAllTagsWithCounts returns all tags with their usage counts
+func (h *Handlers) GetAllTagsWithCounts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tags, err := h.db.GetAllTagsWithCounts(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get tags with counts", http.StatusInternalServerError)
+		return
+	}
+
+	if tags == nil {
+		tags = []database.TagWithCount{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tags) //nolint:errcheck
+}
+
+// GetUnusedTags returns tags that have no file associations
+func (h *Handlers) GetUnusedTags(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tags, err := h.db.GetUnusedTags(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get unused tags", http.StatusInternalServerError)
+		return
+	}
+
+	if tags == nil {
+		tags = []string{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tags) //nolint:errcheck
+}
+
+// RenameTagEverywhere renames a tag and updates all file associations
+func (h *Handlers) RenameTagEverywhere(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	tagName := vars["tag"]
+
+	var req TagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if tagName == "" || req.NewName == "" {
+		http.Error(w, "Tag name and new name are required", http.StatusBadRequest)
+		return
+	}
+
+	count, err := h.db.RenameTagEverywhere(ctx, tagName, req.NewName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to rename tag: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"status":        "ok",
+		"affectedFiles": count,
+		"oldName":       tagName,
+		"newName":       req.NewName,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response) //nolint:errcheck
+}
+
+// DeleteTagEverywhere deletes a tag from all file associations
+func (h *Handlers) DeleteTagEverywhere(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	tagName := vars["tag"]
+
+	if tagName == "" {
+		http.Error(w, "Tag name is required", http.StatusBadRequest)
+		return
+	}
+
+	count, err := h.db.DeleteTagEverywhere(ctx, tagName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to delete tag: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"status":        "ok",
+		"affectedFiles": count,
+		"tagName":       tagName,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response) //nolint:errcheck
+}

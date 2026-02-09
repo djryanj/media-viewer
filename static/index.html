@@ -388,6 +388,10 @@
                         <i data-lucide="monitor"></i>
                         <span class="settings-tab-text">Display</span>
                     </button>
+                    <button class="settings-tab" data-tab="tags" role="tab" aria-selected="false">
+                        <i data-lucide="tag"></i>
+                        <span class="settings-tab-text">Tags</span>
+                    </button>
                     <button class="settings-tab" data-tab="about" role="tab" aria-selected="false">
                         <i data-lucide="info"></i>
                         <span class="settings-tab-text">About</span>
@@ -731,6 +735,60 @@
                         </div>
                     </div>
 
+                    <!-- Tags Panel -->
+                    <div
+                        id="settings-tags"
+                        class="settings-panel"
+                        role="tabpanel"
+                        aria-labelledby="tab-tags"
+                    >
+                        <h3>Tag Manager</h3>
+                        <p class="settings-description">
+                            Manage all tags in your library. Rename, delete, or find unused tags.
+                        </p>
+
+                        <div class="tag-manager-toolbar">
+                            <div class="tag-search">
+                                <i data-lucide="search"></i>
+                                <input
+                                    type="text"
+                                    id="tag-search-input"
+                                    placeholder="Search tags..."
+                                    aria-label="Search tags"
+                                />
+                            </div>
+                            <button id="show-unused-tags-btn" class="btn btn-secondary">
+                                <i data-lucide="filter"></i>
+                                Show Only Unused
+                            </button>
+                        </div>
+
+                        <div id="tag-manager-status" class="tag-manager-status hidden"></div>
+
+                        <div class="tag-list-container">
+                            <table class="tag-list-table">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable" data-sort="name">
+                                            Tag Name
+                                            <i data-lucide="chevron-down"></i>
+                                        </th>
+                                        <th class="sortable" data-sort="count">
+                                            Usage Count
+                                            <i data-lucide="chevron-down"></i>
+                                        </th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tag-list-body">
+                                    <tr class="tag-list-loading">
+                                        <td colspan="3">Loading tags...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <!-- About Panel -->
                     <div
                         id="settings-about"
@@ -823,6 +881,99 @@
                     </button>
                     <button type="button" class="btn btn-primary" id="passkey-name-confirm">
                         Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rename Tag Modal -->
+        <div
+            id="rename-tag-modal"
+            class="modal hidden"
+            role="dialog"
+            aria-labelledby="rename-tag-title"
+            aria-modal="true"
+        >
+            <div class="modal-backdrop"></div>
+            <div class="modal-content modal-small">
+                <div class="modal-header">
+                    <h3 id="rename-tag-title">
+                        <i data-lucide="edit"></i>
+                        Rename Tag
+                    </h3>
+                    <button class="modal-close" id="rename-tag-cancel-x" aria-label="Cancel">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p class="modal-description">
+                        Enter a new name for "<strong id="rename-tag-old-name"></strong>". This will
+                        update all files using this tag.
+                    </p>
+                    <div class="form-group">
+                        <label for="rename-tag-input">New Tag Name</label>
+                        <input
+                            type="text"
+                            id="rename-tag-input"
+                            placeholder="Enter new tag name"
+                            maxlength="100"
+                            autocomplete="off"
+                        />
+                        <span class="hint"
+                            >If the new name already exists, tags will be merged</span
+                        >
+                    </div>
+                    <div id="rename-tag-error" class="error-message hidden">
+                        <i data-lucide="alert-circle"></i>
+                        <span></span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="rename-tag-cancel">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-primary" id="rename-tag-confirm">
+                        Rename Tag
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Tag Modal -->
+        <div
+            id="delete-tag-modal"
+            class="modal hidden"
+            role="dialog"
+            aria-labelledby="delete-tag-title"
+            aria-modal="true"
+        >
+            <div class="modal-backdrop"></div>
+            <div class="modal-content modal-small">
+                <div class="modal-header">
+                    <h3 id="delete-tag-title">
+                        <i data-lucide="alert-triangle"></i>
+                        Delete Tag
+                    </h3>
+                    <button class="modal-close" id="delete-tag-cancel-x" aria-label="Cancel">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p class="modal-description">
+                        Are you sure you want to delete "<strong id="delete-tag-name"></strong>"?
+                    </p>
+                    <p id="delete-tag-warning" class="modal-description warning hidden">
+                        <i data-lucide="alert-circle"></i>
+                        This will remove the tag from
+                        <strong id="delete-tag-count"></strong> file(s).
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="delete-tag-cancel">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-danger" id="delete-tag-confirm">
+                        Delete Tag
                     </button>
                 </div>
             </div>

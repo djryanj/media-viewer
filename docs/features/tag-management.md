@@ -49,6 +49,89 @@ Tags can be removed from:
 - Tag overflow tooltip (click X on tag)
 - Lightbox tag display (click X on tag)
 
+## Tag Manager (Settings)
+
+The Tag Manager in Settings provides centralized management for your entire tag library.
+
+### Accessing Tag Manager
+
+1. Click the **Settings** button (gear icon)
+2. Navigate to the **Tags** tab
+3. The Tag Manager shows all tags with statistics
+
+### Features
+
+#### View All Tags
+
+- **Sortable table** with tag name and usage count
+- **Color indicators** show tag colors (if assigned)
+- **Real-time sorting** by name (alphabetical) or count (usage)
+- Click column headers to toggle sort direction
+
+#### Search Tags
+
+- Type in the search bar to filter tags by name
+- Instant filtering as you type
+- Case-insensitive matching
+
+#### Filter Tags
+
+- **Show Only Unused**: Display only tags with zero file associations
+- **Show All Tags**: Reset to view entire tag library
+- Useful for finding orphaned tags to clean up
+
+#### Rename Tags
+
+Rename tags to fix typos, standardize naming, or merge similar tags:
+
+1. Click **Rename** button next to any tag
+2. Enter the new tag name in the modal
+3. View the affected file count
+4. Confirm to apply changes
+
+**Rename Behavior:**
+
+- Updates all files using the old tag name
+- If new name exists, tags are automatically merged
+- Case-only changes supported (e.g., "animal" → "Animal")
+- Transactional operation (all-or-nothing)
+
+**Example Use Cases:**
+
+- Fix typos: "vacaton" → "vacation"
+- Standardize: "Beach" → "beach"
+- Merge duplicates: "holidays" → "vacation"
+
+#### Delete Tags
+
+Remove unwanted tags from your library:
+
+1. Click **Delete** button next to any tag
+2. Modal shows tag name and affected file count
+3. Confirm deletion
+4. Tag removed from all files and database
+
+**Delete Behavior:**
+
+- Removes tag from all associated files
+- Cascade deletion ensures data consistency
+- Shows count of affected files
+- Cannot be undone (permanent deletion)
+
+**When to Delete:**
+
+- Experimental tags no longer needed
+- One-off tags created by mistake
+- Unused tags cluttering the library
+
+### Best Practices
+
+- **Regular cleanup**: Use "Show Only Unused" to find orphaned tags monthly
+- **Naming standards**: Establish conventions (lowercase, hyphens vs spaces)
+- **Merge duplicates**: Consolidate similar tags using rename
+- **Bulk operations**: Use Tag Manager for library-wide changes
+- **Backup before major changes**: Especially when merging or deleting many tags
+
 ### Searching by Tag
 
 Click any tag anywhere in the interface to search for all items with that tag.

@@ -154,3 +154,116 @@ DELETE /api/tags/bulk
     "failed": 0
 }
 ```
+
+## Tag Management Endpoints
+
+### Get All Tags with Counts
+
+Get all tags with usage statistics.
+
+```
+GET /api/tags/stats
+```
+
+### Response
+
+```json
+[
+    {
+        "name": "vacation",
+        "color": "#3b82f6",
+        "count": 42
+    },
+    {
+        "name": "family",
+        "color": "",
+        "count": 28
+    },
+    {
+        "name": "unused",
+        "color": "#10b981",
+        "count": 0
+    }
+]
+```
+
+Tags are sorted by count (descending), then name (alphabetically).
+
+### Get Unused Tags
+
+Get all tags that have no file associations.
+
+```
+GET /api/tags/unused
+```
+
+### Response
+
+```json
+["unused", "orphan", "temp"]
+```
+
+### Rename Tag Everywhere
+
+Rename a tag and update all file associations.
+
+```
+POST /api/tags/{tag}/rename
+```
+
+### Parameters
+
+| Parameter | Type   | Location | Description                    |
+| --------- | ------ | -------- | ------------------------------ |
+| tag       | string | path     | Current tag name (URL-encoded) |
+
+### Request
+
+```json
+{
+    "newName": "vacation"
+}
+```
+
+### Response
+
+```json
+{
+    "status": "ok",
+    "affectedFiles": 42,
+    "oldName": "vacaton",
+    "newName": "vacation"
+}
+```
+
+**Special Cases:**
+
+- If the new name already exists, tags are merged automatically
+- Case-only changes are supported (e.g., "animal" → "Animal")
+- Same name returns 0 affected files (no-op)
+
+### Delete Tag Everywhere
+
+Delete a tag from all file associations.
+
+```
+DELETE /api/tags/{tag}/delete
+```
+
+### Parameters
+
+| Parameter | Type   | Location | Description            |
+| --------- | ------ | -------- | ---------------------- |
+| tag       | string | path     | Tag name (URL-encoded) |
+
+### Response
+
+```json
+{
+    "status": "ok",
+    "affectedFiles": 42,
+    "tagName": "vacation"
+}
+```
+
+The tag and all its file associations are removed in a single transaction.

@@ -1292,3 +1292,395 @@ func TestBulkRemoveTagPartialFailureIntegration(t *testing.T) {
 		t.Errorf("expected 0 failures, got %d", int(failedCount))
 	}
 }
+
+// TestGetAllTagsWithCountsIntegration tests getting all tags with usage counts
+func TestGetAllTagsWithCountsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	// Add test files
+	addTagTestFile(t, h.db, mediaDir, "photo1.jpg", database.FileTypeImage)
+	addTagTestFile(t, h.db, mediaDir, "photo2.jpg", database.FileTypeImage)
+	addTagTestFile(t, h.db, mediaDir, "photo3.jpg", database.FileTypeImage)
+
+	// Add tags
+	ctx := context.Background()
+	_ = h.db.AddTagToFile(ctx, "photo1.jpg", "vacation")
+	_ = h.db.AddTagToFile(ctx, "photo2.jpg", "vacation")
+	_ = h.db.AddTagToFile(ctx, "photo3.jpg", "summer")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tags/stats", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.GetAllTagsWithCounts(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var tags []database.TagWithCount
+	if err := json.NewDecoder(w.Body).Decode(&tags); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(tags))
+	}
+
+	// Verify sorting (by count desc)
+	if tags[0].Name != "vacation" || tags[0].Count != 2 {
+		t.Errorf("expected first tag to be 'vacation' with count 2, got '%s' with count %d", tags[0].Name, tags[0].Count)
+	}
+
+	if tags[1].Name != "summer" || tags[1].Count != 1 {
+		t.Errorf("expected second tag to be 'summer' with count 1, got '%s' with count %d", tags[1].Name, tags[1].Count)
+	}
+
+	// Verify content type
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %q", contentType)
+	}
+}
+
+// TestGetAllTagsWithCountsEmptyIntegration tests getting tags with counts when none exist
+func TestGetAllTagsWithCountsEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, _, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tags/stats", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.GetAllTagsWithCounts(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var tags []database.TagWithCount
+	if err := json.NewDecoder(w.Body).Decode(&tags); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Should return empty array, not null
+	if tags == nil {
+		t.Error("expected empty array, got nil")
+	}
+
+	if len(tags) != 0 {
+		t.Errorf("expected 0 tags, got %d", len(tags))
+	}
+}
+
+// TestGetUnusedTagsIntegration tests getting unused tags
+func TestGetUnusedTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	// Add test file
+	addTagTestFile(t, h.db, mediaDir, "photo.jpg", database.FileTypeImage)
+
+	// Create used and unused tags
+	ctx := context.Background()
+	_ = h.db.AddTagToFile(ctx, "photo.jpg", "used")
+	_, _ = h.db.GetOrCreateTag(ctx, "unused1")
+	_, _ = h.db.GetOrCreateTag(ctx, "unused2")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tags/unused", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.GetUnusedTags(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var tags []string
+	if err := json.NewDecoder(w.Body).Decode(&tags); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 unused tags, got %d", len(tags))
+	}
+
+	// Verify unused tags are in the list
+	hasUnused1 := false
+	hasUnused2 := false
+	hasUsed := false
+
+	for _, tagName := range tags {
+		if tagName == "unused1" {
+			hasUnused1 = true
+		}
+		if tagName == "unused2" {
+			hasUnused2 = true
+		}
+		if tagName == "used" {
+			hasUsed = true
+		}
+	}
+
+	if !hasUnused1 || !hasUnused2 {
+		t.Error("Expected both unused1 and unused2 in unused tags list")
+	}
+
+	if hasUsed {
+		t.Error("Used tag should not be in unused tags list")
+	}
+}
+
+// TestRenameTagEverywhereIntegration tests renaming tags
+func TestRenameTagEverywhereIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	// Test case 1: Simple rename
+	t.Run("Simple rename", func(t *testing.T) {
+		addTagTestFile(t, h.db, mediaDir, "rename1.jpg", database.FileTypeImage)
+		addTagTestFile(t, h.db, mediaDir, "rename2.jpg", database.FileTypeImage)
+
+		ctx := context.Background()
+		_ = h.db.AddTagToFile(ctx, "rename1.jpg", "oldname")
+		_ = h.db.AddTagToFile(ctx, "rename2.jpg", "oldname")
+
+		body, _ := json.Marshal(map[string]string{"newName": "newname"})
+		req := httptest.NewRequest(http.MethodPost, "/api/tags/oldname/rename", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = mux.SetURLVars(req, map[string]string{"tag": "oldname"})
+		w := httptest.NewRecorder()
+
+		h.RenameTagEverywhere(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var response map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if response["status"] != "ok" {
+			t.Errorf("expected status ok, got %v", response["status"])
+		}
+
+		affectedFiles, ok := response["affectedFiles"].(float64)
+		if !ok || int(affectedFiles) != 2 {
+			t.Errorf("expected 2 affected files, got %v", response["affectedFiles"])
+		}
+
+		// Verify files have new tag
+		tags, _ := h.db.GetFileTags(ctx, "rename1.jpg")
+		if len(tags) != 1 || tags[0] != "newname" {
+			t.Errorf("expected file to have tag 'newname', got %v", tags)
+		}
+	})
+
+	// Test case 2: Missing tag name
+	t.Run("Missing tag name", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]string{"newName": "test"})
+		req := httptest.NewRequest(http.MethodPost, "/api/tags//rename", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = mux.SetURLVars(req, map[string]string{"tag": ""})
+		w := httptest.NewRecorder()
+
+		h.RenameTagEverywhere(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	// Test case 3: Missing new name
+	t.Run("Missing new name", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]string{})
+		req := httptest.NewRequest(http.MethodPost, "/api/tags/oldname/rename", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = mux.SetURLVars(req, map[string]string{"tag": "oldname"})
+		w := httptest.NewRecorder()
+
+		h.RenameTagEverywhere(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	// Test case 4: Invalid JSON
+	t.Run("Invalid JSON", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/tags/test/rename", strings.NewReader("invalid json"))
+		req.Header.Set("Content-Type", "application/json")
+		req = mux.SetURLVars(req, map[string]string{"tag": "test"})
+		w := httptest.NewRecorder()
+
+		h.RenameTagEverywhere(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	// Test case 5: Case-only change
+	t.Run("Case-only change", func(t *testing.T) {
+		addTagTestFile(t, h.db, mediaDir, "case.jpg", database.FileTypeImage)
+
+		ctx := context.Background()
+		_ = h.db.AddTagToFile(ctx, "case.jpg", "lowercase")
+
+		body, _ := json.Marshal(map[string]string{"newName": "LowerCase"})
+		req := httptest.NewRequest(http.MethodPost, "/api/tags/lowercase/rename", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = mux.SetURLVars(req, map[string]string{"tag": "lowercase"})
+		w := httptest.NewRecorder()
+
+		h.RenameTagEverywhere(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		// Verify case has changed
+		tags, _ := h.db.GetFileTags(ctx, "case.jpg")
+		if len(tags) != 1 || tags[0] != "LowerCase" {
+			t.Errorf("expected file to have tag 'LowerCase', got %v", tags)
+		}
+	})
+}
+
+// TestDeleteTagEverywhereIntegration tests deleting tags
+func TestDeleteTagEverywhereIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	// Test case 1: Delete tag with file associations
+	t.Run("Delete tag with files", func(t *testing.T) {
+		addTagTestFile(t, h.db, mediaDir, "del1.jpg", database.FileTypeImage)
+		addTagTestFile(t, h.db, mediaDir, "del2.jpg", database.FileTypeImage)
+
+		ctx := context.Background()
+		_ = h.db.AddTagToFile(ctx, "del1.jpg", "deleteme")
+		_ = h.db.AddTagToFile(ctx, "del2.jpg", "deleteme")
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/deleteme/delete", http.NoBody)
+		req = mux.SetURLVars(req, map[string]string{"tag": "deleteme"})
+		w := httptest.NewRecorder()
+
+		h.DeleteTagEverywhere(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var response map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if response["status"] != "ok" {
+			t.Errorf("expected status ok, got %v", response["status"])
+		}
+
+		affectedFiles, ok := response["affectedFiles"].(float64)
+		if !ok || int(affectedFiles) != 2 {
+			t.Errorf("expected 2 affected files, got %v", response["affectedFiles"])
+		}
+
+		// Verify tag is deleted from files
+		tags, _ := h.db.GetFileTags(ctx, "del1.jpg")
+		if len(tags) != 0 {
+			t.Errorf("expected file to have no tags, got %v", tags)
+		}
+	})
+
+	// Test case 2: Delete unused tag
+	t.Run("Delete unused tag", func(t *testing.T) {
+		ctx := context.Background()
+		_, _ = h.db.GetOrCreateTag(ctx, "unuseddelete")
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/unuseddelete/delete", http.NoBody)
+		req = mux.SetURLVars(req, map[string]string{"tag": "unuseddelete"})
+		w := httptest.NewRecorder()
+
+		h.DeleteTagEverywhere(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var response map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		affectedFiles, ok := response["affectedFiles"].(float64)
+		if !ok || int(affectedFiles) != 0 {
+			t.Errorf("expected 0 affected files for unused tag, got %v", response["affectedFiles"])
+		}
+	})
+
+	// Test case 3: Delete non-existent tag
+	t.Run("Delete non-existent tag", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/nonexistent/delete", http.NoBody)
+		req = mux.SetURLVars(req, map[string]string{"tag": "nonexistent"})
+		w := httptest.NewRecorder()
+
+		h.DeleteTagEverywhere(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("expected status 500, got %d", w.Code)
+		}
+	})
+
+	// Test case 4: Missing tag name
+	t.Run("Missing tag name", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags//delete", http.NoBody)
+		req = mux.SetURLVars(req, map[string]string{"tag": ""})
+		w := httptest.NewRecorder()
+
+		h.DeleteTagEverywhere(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	// Test case 5: Case-insensitive deletion
+	t.Run("Case-insensitive deletion", func(t *testing.T) {
+		addTagTestFile(t, h.db, mediaDir, "delcase.jpg", database.FileTypeImage)
+
+		ctx := context.Background()
+		_ = h.db.AddTagToFile(ctx, "delcase.jpg", "MixedCase")
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/mixedcase/delete", http.NoBody)
+		req = mux.SetURLVars(req, map[string]string{"tag": "mixedcase"})
+		w := httptest.NewRecorder()
+
+		h.DeleteTagEverywhere(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		// Verify tag is deleted
+		tags, _ := h.db.GetFileTags(ctx, "delcase.jpg")
+		if len(tags) != 0 {
+			t.Errorf("expected file to have no tags after deletion, got %v", tags)
+		}
+	})
+}

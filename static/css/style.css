@@ -4335,6 +4335,248 @@ select:focus {
     margin-bottom: 1rem;
 }
 
+/* ===========================================
+   TAG MANAGER
+   =========================================== */
+
+.tag-manager-toolbar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.tag-manager-toolbar .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 11rem;
+    height: 2.375rem;
+    padding: 0 1rem;
+}
+
+.tag-manager-toolbar .btn svg,
+.tag-manager-toolbar .btn [data-lucide] {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+}
+
+.tag-search {
+    flex: 1;
+    min-width: 200px;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.tag-search [data-lucide] {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+
+.tag-search input {
+    width: 100%;
+    height: 2.375rem;
+    padding: 0 0.75rem 0 2.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: inherit;
+    transition: border-color var(--transition);
+}
+
+.tag-search input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.tag-manager-status {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.tag-manager-status.hidden {
+    display: none;
+}
+
+.tag-manager-status.success {
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.tag-manager-status.error {
+    background: var(--error-bg);
+    color: var(--error);
+    border: 1px solid var(--error);
+}
+
+.tag-list-container {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.tag-list-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.tag-list-table thead {
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tag-list-table th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.tag-list-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: color var(--transition);
+}
+
+.tag-list-table th.sortable:hover {
+    color: var(--text-primary);
+}
+
+.tag-list-table th.sortable [data-lucide] {
+    display: inline-block;
+    opacity: 0.3;
+    transition:
+        opacity var(--transition),
+        transform var(--transition);
+    width: 1rem;
+    height: 1rem;
+    margin-left: 0.25rem;
+    vertical-align: -0.125em;
+}
+
+.tag-list-table th.sortable.sorted-asc [data-lucide] {
+    opacity: 1;
+    transform: rotate(180deg);
+}
+
+.tag-list-table th.sortable.sorted-desc [data-lucide] {
+    opacity: 1;
+    transform: rotate(0deg);
+}
+
+.tag-list-table tbody tr {
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color var(--transition);
+}
+
+.tag-list-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.tag-list-table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+.tag-list-table td {
+    padding: 0.875rem 1rem;
+    font-size: 0.875rem;
+}
+
+.tag-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tag-color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.tag-name-text {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.tag-count {
+    color: var(--text-secondary);
+}
+
+.tag-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tag-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.tag-action-btn:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.tag-action-btn.delete:hover {
+    background: var(--error-bg);
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.tag-action-btn:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+}
+
+.tag-list-loading,
+.tag-list-empty {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--text-secondary);
+}
+
+.tag-list-empty i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
+}
+
 /* About Panel */
 .about-info {
     display: flex;
@@ -6380,6 +6622,89 @@ select:focus:not(:focus-visible) {
     font-size: 1.125rem;
     flex: 1;
     min-width: 0;
+}
+
+/* Rename Tag Modal */
+#rename-tag-modal .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: nowrap;
+}
+
+#rename-tag-modal .modal-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 1.125rem;
+    flex: 1;
+    min-width: 0;
+}
+
+#rename-tag-modal .modal-header h3 svg,
+#rename-tag-modal .modal-header h3 [data-lucide] {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: inline-block;
+}
+
+#rename-tag-modal .modal-footer {
+    padding: 1rem 1.25rem 1.25rem;
+    margin-top: 0;
+}
+
+/* Delete Tag Modal */
+#delete-tag-modal .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: nowrap;
+}
+
+#delete-tag-modal .modal-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 1.125rem;
+    flex: 1;
+    min-width: 0;
+}
+
+#delete-tag-modal .modal-header h3 svg,
+#delete-tag-modal .modal-header h3 [data-lucide] {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: inline-block;
+}
+
+#delete-tag-modal .modal-footer {
+    padding: 1rem 1.25rem 1.25rem;
+    margin-top: 0;
+}
+
+#delete-tag-modal .modal-description.warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left: 3px solid #ffc107;
+    border-radius: 4px;
+    color: var(--text-primary);
+    margin-top: 1rem;
+}
+
+#delete-tag-modal .modal-description.warning [data-lucide] {
+    flex-shrink: 0;
+    width: 1.125rem;
+    height: 1.125rem;
+    display: inline-block;
+    margin-top: 0.125rem;
+    color: #ffc107;
 }
 
 /* ===========================================
