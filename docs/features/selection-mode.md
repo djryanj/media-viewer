@@ -36,11 +36,21 @@ If all items are already selected, this action deselects all items.
 
 ### Drag Selection (Mobile)
 
-After entering selection mode via long-press:
+After entering selection mode via long-press, you can drag to select multiple items at once:
 
-1. Keep your finger on the screen
+1. Keep your finger on the screen after the long-press
 2. Drag across other items
-3. Items you drag over are automatically selected
+3. All items between your starting point and current position are selected (in reading order)
+
+**How it works:**
+
+- Gallery scrolling is frozen during drag to prevent accidental movement
+- Items are selected in the natural flow/reading order (left-to-right, top-to-bottom)
+- Dragging from the last item in a row down several rows selects all items in between
+- Works naturally whether dragging forward or backward
+- Release your finger to finish the drag selection
+
+For example, starting on the last item of Row 1 and dragging to the last item of Row 3 will select that first item plus all items in Rows 2 and 3 up to your ending point.
 
 ## Available Actions
 
@@ -133,5 +143,5 @@ On mobile, selection mode is optimized for touch:
 
 1. Long-press to enter selection mode
 2. Tap items to select/deselect
-3. Drag to select multiple items quickly
+3. Drag to select multiple items in a range (gallery freezes during drag to prevent scrolling)
 4. Use toolbar buttons for actions
