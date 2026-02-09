@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.11.1] - 2026-02-09
+
+### Improved
+
+- **Gallery Tag Icon**: Reduced visual prominence of tag icon in gallery view. Changed icon color from bright accent to muted neutral tone, reduced background opacity from 70% to 40%, and replaced bright accent border with subtle semi-transparent outline. Icon remains fully functional but is less visually obtrusive. ([#207](https://github.com/djryanj/media-viewer/issues/207))
+
 ## [0.11.0] - 2026-02-09
 
 ### Added
