@@ -9,6 +9,10 @@ const ItemSelection = {
 
     isDragging: false,
     lastTouchedElement: null,
+    dragStartElement: null,
+    // Performance optimization: cache items array during drag
+    dragCachedItems: null,
+    dragStartIndex: -1,
     elements: {},
 
     longPressTimer: null,
@@ -239,23 +243,23 @@ const ItemSelection = {
             (e) => {
                 if (!this.isActive || !this.isDragging) return;
 
+                // Prevent scrolling during drag selection
+                e.preventDefault();
+
                 const touch = e.touches[0];
                 const element = document.elementFromPoint(touch.clientX, touch.clientY);
                 const galleryItem = element?.closest('.gallery-item');
 
                 if (galleryItem && galleryItem !== this.lastTouchedElement) {
                     this.lastTouchedElement = galleryItem;
-                    const path = galleryItem.dataset.path;
-                    const type = galleryItem.dataset.type;
 
-                    if (this.isSelectableType(type)) {
-                        if (!this.selectedPaths.has(path)) {
-                            this.selectItem(galleryItem);
-                        }
+                    // Select all items in the rectangular region between start and current
+                    if (this.dragStartElement) {
+                        this.selectRectangularRegion(this.dragStartElement, galleryItem);
                     }
                 }
             },
-            { passive: true }
+            { passive: false } // Non-passive to allow preventDefault
         );
 
         document.addEventListener(
@@ -264,6 +268,9 @@ const ItemSelection = {
                 if (this.isDragging) {
                     this.isDragging = false;
                     this.lastTouchedElement = null;
+                    this.dragStartElement = null;
+                    this.dragCachedItems = null;
+                    this.dragStartIndex = -1;
                 }
             },
             { passive: true }
@@ -275,6 +282,9 @@ const ItemSelection = {
                 if (this.isDragging) {
                     this.isDragging = false;
                     this.lastTouchedElement = null;
+                    this.dragStartElement = null;
+                    this.dragCachedItems = null;
+                    this.dragStartIndex = -1;
                 }
             },
             { passive: true }
@@ -772,6 +782,48 @@ const ItemSelection = {
     startDragSelection(element) {
         this.isDragging = true;
         this.lastTouchedElement = element;
+        this.dragStartElement = element;
+
+        // Cache items array and start index for performance in large libraries
+        this.dragCachedItems = Array.from(document.querySelectorAll('.gallery-item'));
+        this.dragStartIndex = this.dragCachedItems.indexOf(element);
+    },
+
+    /**
+     * Select all items in the range between two gallery items (in reading order)
+     * Uses cached items array for performance in large libraries
+     */
+    selectRectangularRegion(startElement, endElement) {
+        if (!startElement || !endElement) return;
+
+        // Use cached items array if available (performance optimization)
+        const allItems =
+            this.dragCachedItems || Array.from(document.querySelectorAll('.gallery-item'));
+        if (allItems.length === 0) return;
+
+        // Use cached start index if available (performance optimization)
+        const startIndex =
+            this.dragStartIndex !== -1 ? this.dragStartIndex : allItems.indexOf(startElement);
+        const endIndex = allItems.indexOf(endElement);
+
+        if (startIndex === -1 || endIndex === -1) return;
+
+        // Determine the range (handle dragging backwards)
+        const minIndex = Math.min(startIndex, endIndex);
+        const maxIndex = Math.max(startIndex, endIndex);
+
+        // Select all items in the range (inclusive)
+        for (let i = minIndex; i <= maxIndex; i++) {
+            const item = allItems[i];
+            const type = item.dataset.type;
+
+            if (!this.isSelectableType(type)) continue;
+
+            const path = item.dataset.path;
+            if (!this.selectedPaths.has(path)) {
+                this.selectItem(item);
+            }
+        }
     },
 
     openBulkTagModal() {
