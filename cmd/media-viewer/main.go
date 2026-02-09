@@ -324,6 +324,8 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 
 	// Tags
 	api.HandleFunc("/tags", h.GetAllTags).Methods("GET")
+	api.HandleFunc("/tags/stats", h.GetAllTagsWithCounts).Methods("GET")
+	api.HandleFunc("/tags/unused", h.GetUnusedTags).Methods("GET")
 	api.HandleFunc("/tags/file", h.GetFileTags).Methods("GET")
 	api.HandleFunc("/tags/file", h.AddTagToFile).Methods("POST")
 	api.HandleFunc("/tags/file", h.RemoveTagFromFile).Methods("DELETE")
@@ -334,6 +336,8 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/tags/{tag}", h.GetFilesByTag).Methods("GET")
 	api.HandleFunc("/tags/{tag}", h.DeleteTag).Methods("DELETE")
 	api.HandleFunc("/tags/{tag}", h.RenameTag).Methods("PUT")
+	api.HandleFunc("/tags/{tag}/rename", h.RenameTagEverywhere).Methods("POST")
+	api.HandleFunc("/tags/{tag}/delete", h.DeleteTagEverywhere).Methods("DELETE")
 
 	// Thumbnails
 	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")

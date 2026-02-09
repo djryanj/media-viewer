@@ -502,3 +502,336 @@ func TestTagsConcurrencyIntegration(t *testing.T) {
 		}
 	}
 }
+
+func TestGetAllTagsWithCountsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Add tags to files
+	_ = db.AddTagToFile(ctx, "/test/file1.mp4", "action")
+	_ = db.AddTagToFile(ctx, "/test/file2.mp4", "action")
+	_ = db.AddTagToFile(ctx, "/test/file3.mp4", "comedy")
+	_ = db.AddTagToFile(ctx, "/test/file1.mp4", "thriller")
+
+	// Get all tags with counts
+	tags, err := db.GetAllTagsWithCounts(ctx)
+	if err != nil {
+		t.Fatalf("GetAllTagsWithCounts failed: %v", err)
+	}
+
+	if len(tags) != 3 {
+		t.Fatalf("Expected 3 tags, got %d", len(tags))
+	}
+
+	// Verify sorting (by count desc, then name)
+	// action: 2, comedy: 1, thriller: 1
+	if tags[0].Name != "action" || tags[0].Count != 2 {
+		t.Errorf("Expected first tag to be 'action' with count 2, got '%s' with count %d", tags[0].Name, tags[0].Count)
+	}
+
+	// Check that all tags have correct structure
+	for _, tag := range tags {
+		if tag.Name == "" {
+			t.Error("Tag name should not be empty")
+		}
+		if tag.Count < 0 {
+			t.Errorf("Tag count should not be negative, got %d", tag.Count)
+		}
+	}
+}
+
+func TestGetUnusedTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create tags with and without file associations
+	_ = db.AddTagToFile(ctx, "/test/file1.mp4", "used")
+	tag, _ := db.GetOrCreateTag(ctx, "unused1")
+	if tag == nil {
+		t.Fatal("Failed to create unused1 tag")
+	}
+	tag2, _ := db.GetOrCreateTag(ctx, "unused2")
+	if tag2 == nil {
+		t.Fatal("Failed to create unused2 tag")
+	}
+
+	// Get unused tags
+	unusedTags, err := db.GetUnusedTags(ctx)
+	if err != nil {
+		t.Fatalf("GetUnusedTags failed: %v", err)
+	}
+
+	// Should have 2 unused tags
+	if len(unusedTags) != 2 {
+		t.Fatalf("Expected 2 unused tags, got %d", len(unusedTags))
+	}
+
+	// Verify unused tags are in the list
+	hasUnused1 := false
+	hasUnused2 := false
+	hasUsed := false
+
+	for _, tagName := range unusedTags {
+		if tagName == "unused1" {
+			hasUnused1 = true
+		}
+		if tagName == "unused2" {
+			hasUnused2 = true
+		}
+		if tagName == "used" {
+			hasUsed = true
+		}
+	}
+
+	if !hasUnused1 || !hasUnused2 {
+		t.Error("Expected both unused1 and unused2 in unused tags list")
+	}
+
+	if hasUsed {
+		t.Error("Used tag should not be in unused tags list")
+	}
+}
+
+func TestRenameTagEverywhereIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Test case 1: Simple rename
+	t.Run("Simple rename", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/rename1.mp4", "oldtag")
+		_ = db.AddTagToFile(ctx, "/test/rename2.mp4", "oldtag")
+
+		count, err := db.RenameTagEverywhere(ctx, "oldtag", "newtag")
+		if err != nil {
+			t.Fatalf("RenameTagEverywhere failed: %v", err)
+		}
+
+		if count != 2 {
+			t.Errorf("Expected 2 affected files, got %d", count)
+		}
+
+		// Verify old tag is gone
+		tags, _ := db.GetFileTags(ctx, "/test/rename1.mp4")
+		if len(tags) != 1 || tags[0] != "newtag" {
+			t.Errorf("Expected file to have tag 'newtag', got %v", tags)
+		}
+
+		// Verify all files have new tag
+		allTags, _ := db.GetAllTagsWithCounts(ctx)
+		foundNew := false
+		foundOld := false
+		for _, tag := range allTags {
+			if tag.Name == "newtag" {
+				foundNew = true
+			}
+			if tag.Name == "oldtag" {
+				foundOld = true
+			}
+		}
+
+		if !foundNew {
+			t.Error("New tag name should exist")
+		}
+		if foundOld {
+			t.Error("Old tag name should not exist")
+		}
+	})
+
+	// Test case 2: Case-only change
+	t.Run("Case-only change", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/case1.mp4", "animal")
+
+		count, err := db.RenameTagEverywhere(ctx, "animal", "Animal")
+		if err != nil {
+			t.Fatalf("RenameTagEverywhere case change failed: %v", err)
+		}
+
+		if count != 1 {
+			t.Errorf("Expected 1 affected file, got %d", count)
+		}
+
+		// Verify case has changed
+		tags, _ := db.GetFileTags(ctx, "/test/case1.mp4")
+		if len(tags) != 1 || tags[0] != "Animal" {
+			t.Errorf("Expected file to have tag 'Animal', got %v", tags)
+		}
+	})
+
+	// Test case 3: Merge tags
+	t.Run("Merge tags", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/merge1.mp4", "tag1")
+		_ = db.AddTagToFile(ctx, "/test/merge2.mp4", "tag2")
+
+		// Rename tag1 to tag2 (should merge)
+		count, err := db.RenameTagEverywhere(ctx, "tag1", "tag2")
+		if err != nil {
+			t.Fatalf("RenameTagEverywhere merge failed: %v", err)
+		}
+
+		if count != 2 {
+			t.Errorf("Expected 2 affected files after merge, got %d", count)
+		}
+
+		// Verify both files have tag2
+		tags1, _ := db.GetFileTags(ctx, "/test/merge1.mp4")
+		tags2, _ := db.GetFileTags(ctx, "/test/merge2.mp4")
+
+		if len(tags1) != 1 || tags1[0] != "tag2" {
+			t.Errorf("Expected merge1 to have tag 'tag2', got %v", tags1)
+		}
+		if len(tags2) != 1 || tags2[0] != "tag2" {
+			t.Errorf("Expected merge2 to have tag 'tag2', got %v", tags2)
+		}
+
+		// Verify tag1 no longer exists
+		allTags, _ := db.GetAllTagsWithCounts(ctx)
+		for _, tag := range allTags {
+			if tag.Name == "tag1" {
+				t.Error("tag1 should have been deleted after merge")
+			}
+		}
+	})
+
+	// Test case 4: Same name (no-op)
+	t.Run("Same name no-op", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/same.mp4", "sametag")
+
+		count, err := db.RenameTagEverywhere(ctx, "sametag", "sametag")
+		if err != nil {
+			t.Fatalf("RenameTagEverywhere same name failed: %v", err)
+		}
+
+		if count != 0 {
+			t.Errorf("Expected 0 affected files for same name, got %d", count)
+		}
+	})
+
+	// Test case 5: Empty names
+	t.Run("Empty names validation", func(t *testing.T) {
+		_, err := db.RenameTagEverywhere(ctx, "", "newname")
+		if err == nil {
+			t.Error("Expected error for empty old name")
+		}
+
+		_, err = db.RenameTagEverywhere(ctx, "oldname", "")
+		if err == nil {
+			t.Error("Expected error for empty new name")
+		}
+	})
+}
+
+func TestDeleteTagEverywhereIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Test case 1: Delete tag with file associations
+	t.Run("Delete tag with files", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/del1.mp4", "deleteme")
+		_ = db.AddTagToFile(ctx, "/test/del2.mp4", "deleteme")
+		_ = db.AddTagToFile(ctx, "/test/del3.mp4", "deleteme")
+
+		count, err := db.DeleteTagEverywhere(ctx, "deleteme")
+		if err != nil {
+			t.Fatalf("DeleteTagEverywhere failed: %v", err)
+		}
+
+		if count != 3 {
+			t.Errorf("Expected 3 affected files, got %d", count)
+		}
+
+		// Verify tag is deleted
+		tags, _ := db.GetFileTags(ctx, "/test/del1.mp4")
+		if len(tags) != 0 {
+			t.Errorf("Expected file to have no tags, got %v", tags)
+		}
+
+		// Verify tag doesn't exist in database
+		allTags, _ := db.GetAllTagsWithCounts(ctx)
+		for _, tag := range allTags {
+			if tag.Name == "deleteme" {
+				t.Error("Deleted tag should not exist in database")
+			}
+		}
+	})
+
+	// Test case 2: Delete unused tag
+	t.Run("Delete unused tag", func(t *testing.T) {
+		tag, _ := db.GetOrCreateTag(ctx, "unuseddelete")
+		if tag == nil {
+			t.Fatal("Failed to create tag")
+		}
+
+		count, err := db.DeleteTagEverywhere(ctx, "unuseddelete")
+		if err != nil {
+			t.Fatalf("DeleteTagEverywhere unused failed: %v", err)
+		}
+
+		if count != 0 {
+			t.Errorf("Expected 0 affected files for unused tag, got %d", count)
+		}
+
+		// Verify tag is deleted
+		allTags, _ := db.GetAllTagsWithCounts(ctx)
+		for _, tag := range allTags {
+			if tag.Name == "unuseddelete" {
+				t.Error("Unused tag should be deleted")
+			}
+		}
+	})
+
+	// Test case 3: Delete non-existent tag
+	t.Run("Delete non-existent tag", func(t *testing.T) {
+		_, err := db.DeleteTagEverywhere(ctx, "nonexistent")
+		if err == nil {
+			t.Error("Expected error when deleting non-existent tag")
+		}
+	})
+
+	// Test case 4: Empty tag name
+	t.Run("Empty tag name validation", func(t *testing.T) {
+		_, err := db.DeleteTagEverywhere(ctx, "")
+		if err == nil {
+			t.Error("Expected error for empty tag name")
+		}
+	})
+
+	// Test case 5: Case-insensitive deletion
+	t.Run("Case-insensitive deletion", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/delcase.mp4", "MixedCase")
+
+		count, err := db.DeleteTagEverywhere(ctx, "mixedcase")
+		if err != nil {
+			t.Fatalf("DeleteTagEverywhere case-insensitive failed: %v", err)
+		}
+
+		if count != 1 {
+			t.Errorf("Expected 1 affected file, got %d", count)
+		}
+
+		// Verify tag is deleted
+		tags, _ := db.GetFileTags(ctx, "/test/delcase.mp4")
+		if len(tags) != 0 {
+			t.Errorf("Expected file to have no tags after deletion, got %v", tags)
+		}
+	})
+}

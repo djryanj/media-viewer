@@ -159,3 +159,50 @@ See [Search](search.md) for more search options.
 - Create a hierarchy with prefixes (e.g., "location-beach", "location-mountain")
 - Use year tags for chronological organization (e.g., "2024", "2023")
 - Combine tags for precise filtering (search for multiple tags)
+
+## Tag Manager
+
+Access the centralized Tag Manager from **Settings** → **Tags** tab to organize and maintain your entire tag library.
+
+### Viewing Tags
+
+The Tag Manager displays all tags in your library with:
+
+- **Tag name** with color indicator (if set)
+- **Usage count** showing how many files have each tag
+- **Sortable columns** by name (alphabetical) or count (most/least used)
+
+### Search and Filter
+
+- **Search bar**: Type to filter tags by name in real-time
+- **Show Only Unused**: Filter to see tags that aren't assigned to any files
+- **Show All Tags**: Reset filter to view all tags
+
+### Renaming Tags
+
+Rename a tag to fix typos or update naming conventions:
+
+1. Click the **Rename** button next to any tag
+2. Enter the new tag name
+3. If the new name already exists, tags will be merged
+4. The rename affects all files using that tag
+5. Case-only changes are supported (e.g., "animal" → "Animal")
+
+**Note:** The affected file count is shown in the confirmation message.
+
+### Deleting Tags
+
+Remove unused or unwanted tags:
+
+1. Click the **Delete** button next to any tag
+2. Confirm the deletion in the modal
+3. The tag is removed from all files automatically
+4. The deletion count shows how many files were affected
+
+### Use Cases
+
+- **Clean up typos**: Rename "vacaton" to "vacation"
+- **Standardize naming**: Rename "Beach" to "beach" for consistency
+- **Merge duplicates**: Rename "holidays" to "vacation" to combine similar tags
+- **Remove clutter**: Delete experimental or one-off tags
+- **Find orphans**: Use "Show Only Unused" to identify and remove tags no longer in use

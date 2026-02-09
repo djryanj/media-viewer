@@ -7,8 +7,12 @@ class SettingsManager {
     constructor() {
         this.modal = document.getElementById('settings-modal');
         this.passkeyNameModal = document.getElementById('passkey-name-modal');
+        this.renameTagModal = document.getElementById('rename-tag-modal');
+        this.deleteTagModal = document.getElementById('delete-tag-modal');
         this.currentTab = 'security';
         this.passkeyNameResolve = null; // For promise resolution
+        this.renameTagResolve = null; // For promise resolution
+        this.deleteTagResolve = null; // For promise resolution
 
         if (!this.modal) {
             console.error('Settings modal not found');
@@ -21,6 +25,8 @@ class SettingsManager {
     init() {
         this.bindEvents();
         this.bindPasskeyNameModal();
+        this.bindRenameTagModal();
+        this.bindDeleteTagModal();
         this.initPasswordToggles();
     }
 
@@ -46,7 +52,17 @@ class SettingsManager {
         // Escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                if (this.passkeyNameModal && !this.passkeyNameModal.classList.contains('hidden')) {
+                if (this.deleteTagModal && !this.deleteTagModal.classList.contains('hidden')) {
+                    this.closeDeleteTagModal(false);
+                } else if (
+                    this.renameTagModal &&
+                    !this.renameTagModal.classList.contains('hidden')
+                ) {
+                    this.closeRenameTagModal(null);
+                } else if (
+                    this.passkeyNameModal &&
+                    !this.passkeyNameModal.classList.contains('hidden')
+                ) {
                     this.closePasskeyNameModal(null);
                 } else if (!this.modal.classList.contains('hidden')) {
                     this.close();
@@ -111,6 +127,42 @@ class SettingsManager {
         if (sortOrderSelect) {
             sortOrderSelect.addEventListener('change', () => this.handleSortOrderChange());
         }
+
+        // Tag manager
+        const tagSearchInput = document.getElementById('tag-search-input');
+        if (tagSearchInput) {
+            tagSearchInput.addEventListener('input', () => this.filterTags());
+        }
+
+        const showUnusedBtn = document.getElementById('show-unused-tags-btn');
+        if (showUnusedBtn) {
+            showUnusedBtn.addEventListener('click', () => this.toggleUnusedTags());
+        }
+
+        // Tag actions (event delegation)
+        const tagListBody = document.getElementById('tag-list-body');
+        if (tagListBody) {
+            tagListBody.addEventListener('click', (e) => {
+                const renameBtn = e.target.closest('.tag-action-btn.rename');
+                const deleteBtn = e.target.closest('.tag-action-btn.delete');
+
+                if (renameBtn) {
+                    const tagName = renameBtn.dataset.tag;
+                    this.renameTag(tagName);
+                } else if (deleteBtn) {
+                    const tagName = deleteBtn.dataset.tag;
+                    this.deleteTag(tagName);
+                }
+            });
+        }
+
+        // Tag list sorting
+        document.querySelectorAll('.tag-list-table th.sortable').forEach((th) => {
+            th.addEventListener('click', () => {
+                const sortBy = th.dataset.sort;
+                this.sortTags(sortBy);
+            });
+        });
     }
 
     /**
@@ -155,6 +207,74 @@ class SettingsManager {
         input?.addEventListener('input', () => {
             this.hidePasskeyNameError();
         });
+    }
+
+    /**
+     * Bind rename tag modal events
+     */
+    bindRenameTagModal() {
+        if (!this.renameTagModal) return;
+
+        const input = document.getElementById('rename-tag-input');
+        const confirmBtn = document.getElementById('rename-tag-confirm');
+        const cancelBtn = document.getElementById('rename-tag-cancel');
+        const cancelXBtn = document.getElementById('rename-tag-cancel-x');
+        const backdrop = this.renameTagModal.querySelector('.modal-backdrop');
+
+        // Confirm button
+        confirmBtn?.addEventListener('click', () => {
+            const name = input?.value.trim();
+            if (!name) {
+                this.showRenameTagError('Please enter a name for the tag');
+                input?.focus();
+                return;
+            }
+            this.closeRenameTagModal(name);
+        });
+
+        // Cancel buttons
+        cancelBtn?.addEventListener('click', () => this.closeRenameTagModal(null));
+        cancelXBtn?.addEventListener('click', () => this.closeRenameTagModal(null));
+
+        // Backdrop click
+        backdrop?.addEventListener('click', () => this.closeRenameTagModal(null));
+
+        // Enter key to confirm
+        input?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                confirmBtn?.click();
+            }
+        });
+
+        // Clear error on input
+        input?.addEventListener('input', () => {
+            this.hideRenameTagError();
+        });
+    }
+
+    /**
+     * Bind delete tag modal events
+     */
+    bindDeleteTagModal() {
+        if (!this.deleteTagModal) return;
+
+        const confirmBtn = document.getElementById('delete-tag-confirm');
+        const cancelBtn = document.getElementById('delete-tag-cancel');
+        const cancelXBtn = document.getElementById('delete-tag-cancel-x');
+        const backdrop = this.deleteTagModal.querySelector('.modal-backdrop');
+
+        // Confirm button
+        confirmBtn?.addEventListener('click', () => {
+            this.closeDeleteTagModal(true);
+        });
+
+        // Cancel buttons
+        cancelBtn?.addEventListener('click', () => this.closeDeleteTagModal(false));
+        cancelXBtn?.addEventListener('click', () => this.closeDeleteTagModal(false));
+
+        // Backdrop click
+        backdrop?.addEventListener('click', () => this.closeDeleteTagModal(false));
     }
 
     /**
@@ -230,6 +350,147 @@ class SettingsManager {
         }
     }
 
+    /**
+     * Show the rename tag modal and return a promise with the new name
+     */
+    showRenameTagModal(oldName) {
+        return new Promise((resolve) => {
+            this.renameTagResolve = resolve;
+
+            const input = document.getElementById('rename-tag-input');
+            const oldNameEl = document.getElementById('rename-tag-old-name');
+            const errorEl = document.getElementById('rename-tag-error');
+
+            // Set old name in description
+            if (oldNameEl) {
+                oldNameEl.textContent = oldName;
+            }
+
+            // Reset state
+            if (input) {
+                input.value = oldName;
+            }
+            if (errorEl) {
+                errorEl.classList.add('hidden');
+            }
+
+            // Show modal
+            this.renameTagModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Re-initialize Lucide icons for the modal
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+
+            // Focus and select input after a short delay (for animation)
+            setTimeout(() => {
+                input?.focus();
+                input?.select();
+            }, 100);
+        });
+    }
+
+    /**
+     * Close the rename tag modal
+     */
+    closeRenameTagModal(name) {
+        this.renameTagModal?.classList.add('hidden');
+
+        // Only restore body scroll if settings modal is also closed
+        if (this.modal.classList.contains('hidden')) {
+            document.body.style.overflow = '';
+        }
+
+        if (this.renameTagResolve) {
+            this.renameTagResolve(name);
+            this.renameTagResolve = null;
+        }
+    }
+
+    /**
+     * Show error in rename tag modal
+     */
+    showRenameTagError(message) {
+        const errorEl = document.getElementById('rename-tag-error');
+        if (errorEl) {
+            const span = errorEl.querySelector('span');
+            if (span) {
+                span.textContent = message;
+            }
+            errorEl.classList.remove('hidden');
+
+            // Re-initialize Lucide icons
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+    }
+
+    /**
+     * Hide error in rename tag modal
+     */
+    hideRenameTagError() {
+        const errorEl = document.getElementById('rename-tag-error');
+        if (errorEl) {
+            errorEl.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Show the delete tag modal and return a promise with confirmation
+     */
+    showDeleteTagModal(tagName, count) {
+        return new Promise((resolve) => {
+            this.deleteTagResolve = resolve;
+
+            const tagNameEl = document.getElementById('delete-tag-name');
+            const warningEl = document.getElementById('delete-tag-warning');
+            const countEl = document.getElementById('delete-tag-count');
+
+            // Set tag name
+            if (tagNameEl) {
+                tagNameEl.textContent = tagName;
+            }
+
+            // Show/hide warning based on count
+            if (count > 0) {
+                if (countEl) {
+                    countEl.textContent = count.toString();
+                }
+                warningEl?.classList.remove('hidden');
+            } else {
+                warningEl?.classList.add('hidden');
+            }
+
+            // Show modal
+            this.deleteTagModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Re-initialize Lucide icons for the modal
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        });
+    }
+
+    /**
+     * Close the delete tag modal
+     */
+    closeDeleteTagModal(confirmed) {
+        this.deleteTagModal?.classList.add('hidden');
+
+        // Only restore body scroll if settings modal is also closed
+        if (this.modal.classList.contains('hidden')) {
+            document.body.style.overflow = '';
+        }
+
+        if (this.deleteTagResolve) {
+            this.deleteTagResolve(confirmed);
+            this.deleteTagResolve = null;
+        }
+    }
+
     initPasswordToggles() {
         this.modal.querySelectorAll('.password-toggle').forEach((toggle) => {
             toggle.addEventListener('click', () => {
@@ -299,6 +560,9 @@ class SettingsManager {
                 break;
             case 'display':
                 this.loadDisplaySettings();
+                break;
+            case 'tags':
+                this.loadTags();
                 break;
             case 'about':
                 this.loadAboutInfo();
@@ -1008,6 +1272,342 @@ class SettingsManager {
         }
 
         console.debug('Sort order changed:', sortOrderSelect.value);
+    }
+
+    // =========================================
+    // TAG MANAGER
+    // =========================================
+
+    /**
+     * Load all tags with usage counts
+     */
+    async loadTags() {
+        const tbody = document.getElementById('tag-list-body');
+        if (!tbody) return;
+
+        // Show loading state
+        tbody.innerHTML = '<tr class="tag-list-loading"><td colspan="3">Loading tags...</td></tr>';
+
+        try {
+            const response = await fetch('/api/tags/stats', {
+                headers: {
+                    Authorization: `Bearer ${sessionStorage.getItem('token')}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to load tags');
+            }
+
+            const tags = await response.json();
+            this.allTags = tags;
+            this.filteredTags = tags;
+            this.showingUnused = false;
+            this.currentSort = { field: 'count', order: 'desc' };
+
+            this.renderTags();
+            this.updateSortIndicators();
+        } catch (error) {
+            console.error('Error loading tags:', error);
+            tbody.innerHTML = `
+                <tr class="tag-list-empty">
+                    <td colspan="3">
+                        <i data-lucide="alert-circle"></i>
+                        <div>Failed to load tags</div>
+                    </td>
+                </tr>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    }
+
+    /**
+     * Render tags in the table
+     */
+    renderTags() {
+        const tbody = document.getElementById('tag-list-body');
+        if (!tbody) return;
+
+        if (!this.filteredTags || this.filteredTags.length === 0) {
+            tbody.innerHTML = `
+                <tr class="tag-list-empty">
+                    <td colspan="3">
+                        <i data-lucide="tag"></i>
+                        <div>No tags found</div>
+                    </td>
+                </tr>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+            return;
+        }
+
+        tbody.innerHTML = this.filteredTags
+            .map((tag) => {
+                const colorStyle = tag.color
+                    ? `background-color: ${this.escapeHtml(tag.color)}`
+                    : '';
+                const colorIndicator = colorStyle
+                    ? `<span class="tag-color-indicator" style="${colorStyle}"></span>`
+                    : '';
+
+                return `
+                <tr>
+                    <td>
+                        <div class="tag-name-cell">
+                            ${colorIndicator}
+                            <span class="tag-name-text">${this.escapeHtml(tag.name)}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="tag-count">${tag.count}</span>
+                    </td>
+                    <td>
+                        <div class="tag-actions">
+                            <button
+                                class="tag-action-btn rename"
+                                data-tag="${this.escapeHtml(tag.name)}"
+                                title="Rename tag"
+                                aria-label="Rename ${this.escapeHtml(tag.name)}"
+                            >
+                                <i data-lucide="edit"></i>
+                            </button>
+                            <button
+                                class="tag-action-btn delete"
+                                data-tag="${this.escapeHtml(tag.name)}"
+                                title="Delete tag"
+                                aria-label="Delete ${this.escapeHtml(tag.name)}"
+                            >
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            })
+            .join('');
+
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    /**
+     * Filter tags based on search input
+     */
+    filterTags() {
+        const searchInput = document.getElementById('tag-search-input');
+        if (!searchInput || !this.allTags) return;
+
+        const searchTerm = searchInput.value.toLowerCase().trim();
+
+        if (!searchTerm) {
+            this.filteredTags = this.allTags;
+        } else {
+            this.filteredTags = this.allTags.filter((tag) =>
+                tag.name.toLowerCase().includes(searchTerm)
+            );
+        }
+
+        this.renderTags();
+    }
+
+    /**
+     * Sort tags by field
+     */
+    sortTags(field) {
+        if (!this.filteredTags) return;
+
+        // Toggle order if clicking same field
+        if (this.currentSort.field === field) {
+            this.currentSort.order = this.currentSort.order === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.currentSort.field = field;
+            this.currentSort.order = field === 'count' ? 'desc' : 'asc';
+        }
+
+        // Sort the array
+        this.filteredTags.sort((a, b) => {
+            let aVal = a[field];
+            let bVal = b[field];
+
+            // Handle string comparison for name
+            if (field === 'name') {
+                aVal = aVal.toLowerCase();
+                bVal = bVal.toLowerCase();
+            }
+
+            if (this.currentSort.order === 'asc') {
+                return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+            } else {
+                return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+            }
+        });
+
+        this.renderTags();
+        this.updateSortIndicators();
+    }
+
+    /**
+     * Update sort indicators in table headers
+     */
+    updateSortIndicators() {
+        document.querySelectorAll('.tag-list-table th.sortable').forEach((th) => {
+            const field = th.dataset.sort;
+            th.classList.remove('sorted-asc', 'sorted-desc');
+
+            if (field === this.currentSort.field) {
+                th.classList.add(this.currentSort.order === 'asc' ? 'sorted-asc' : 'sorted-desc');
+            }
+        });
+
+        // Re-render icons to ensure visual updates
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * Toggle showing only unused tags
+     */
+    async toggleUnusedTags() {
+        const btn = document.getElementById('show-unused-tags-btn');
+        if (!btn) return;
+
+        this.showingUnused = !this.showingUnused;
+
+        if (this.showingUnused) {
+            // Load unused tags
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader"></i> Loading...';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+
+            try {
+                const response = await fetch('/api/tags/unused', {
+                    headers: {
+                        Authorization: `Bearer ${sessionStorage.getItem('token')}`,
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load unused tags');
+                }
+
+                const unusedNames = await response.json();
+
+                // Filter to only show unused tags
+                this.filteredTags = this.allTags.filter((tag) => unusedNames.includes(tag.name));
+
+                btn.innerHTML = '<i data-lucide="filter-x"></i> Show All Tags';
+                this.renderTags();
+            } catch (error) {
+                console.error('Error loading unused tags:', error);
+                this.showTagStatus('Failed to load unused tags', 'error');
+                this.showingUnused = false;
+            } finally {
+                btn.disabled = false;
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+        } else {
+            // Show all tags
+            this.filteredTags = this.allTags;
+            btn.innerHTML = '<i data-lucide="filter"></i> Show Only Unused';
+            this.renderTags();
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    }
+
+    /**
+     * Rename a tag
+     */
+    async renameTag(tagName) {
+        const newName = await this.showRenameTagModal(tagName);
+        if (!newName || newName === tagName) return;
+
+        if (!newName.trim()) {
+            this.showTagStatus('Tag name cannot be empty', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/tags/${encodeURIComponent(tagName)}/rename`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${sessionStorage.getItem('token')}`,
+                },
+                body: JSON.stringify({ newName: newName.trim() }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to rename tag');
+            }
+
+            const result = await response.json();
+            this.showTagStatus(
+                `Renamed "${tagName}" to "${newName}" (${result.affectedFiles} files updated)`,
+                'success'
+            );
+
+            // Reload tags
+            await this.loadTags();
+        } catch (error) {
+            console.error('Error renaming tag:', error);
+            this.showTagStatus(error.message || 'Failed to rename tag', 'error');
+        }
+    }
+
+    /**
+     * Delete a tag
+     */
+    async deleteTag(tagName) {
+        // Find the tag to show count in confirmation
+        const tag = this.allTags.find((t) => t.name === tagName);
+        const count = tag ? tag.count : 0;
+
+        // Show confirmation modal
+        const confirmed = await this.showDeleteTagModal(tagName, count);
+        if (!confirmed) return;
+
+        try {
+            const response = await fetch(`/api/tags/${encodeURIComponent(tagName)}/delete`, {
+                method: 'DELETE',
+                headers: {
+                    Authorization: `Bearer ${sessionStorage.getItem('token')}`,
+                },
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to delete tag');
+            }
+
+            const result = await response.json();
+            this.showTagStatus(
+                `Deleted "${tagName}" (${result.affectedFiles} files updated)`,
+                'success'
+            );
+
+            // Reload tags
+            await this.loadTags();
+        } catch (error) {
+            console.error('Error deleting tag:', error);
+            this.showTagStatus(error.message || 'Failed to delete tag', 'error');
+        }
+    }
+
+    /**
+     * Show status message in tag manager
+     */
+    showTagStatus(message, type = 'success') {
+        const statusEl = document.getElementById('tag-manager-status');
+        if (!statusEl) return;
+
+        statusEl.textContent = message;
+        statusEl.className = `tag-manager-status ${type}`;
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            statusEl.classList.add('hidden');
+        }, 5000);
     }
 
     // =========================================
