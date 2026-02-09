@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.11.2] - Unreleased
+
+### Changed
+
+- **Video Player Controls Layout**: Improved video player control button positioning to center all navigation controls together. Previous, Play/Pause, and Next buttons now appear grouped in the center third of the video instead of being spread across the edges. This creates a more cohesive control layout that's easier to use. Also enabled navigation buttons in the lightbox video player, allowing users to navigate between media items directly from the video overlay without closing the lightbox. ([#211](https://github.com/djryanj/media-viewer/issues/211))
+
 ## [0.11.1] - 2026-02-09
 
 ### Changed
