@@ -1327,12 +1327,14 @@ const Lightbox = {
             this.videoPlayer = null;
         }
 
-        // Create new VideoPlayer instance
+        // Create new VideoPlayer instance with navigation
         if (typeof VideoPlayer !== 'undefined') {
             this.videoPlayer = new VideoPlayer({
                 video: this.elements.video,
                 container: this.elements.videoWrapper,
-                showNavigation: false,
+                showNavigation: true,
+                onPrevious: () => this.prev(),
+                onNext: () => this.next(),
             });
         }
     },

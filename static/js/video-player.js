@@ -67,11 +67,6 @@ class VideoPlayer {
         // Create controls overlay structure
         const controlsHTML = `
             <div class="video-controls" data-video-controls>
-                <!-- Center play/pause button -->
-                <button class="video-control-btn video-play-pause" data-play-pause-center title="Play/Pause">
-                    <i data-lucide="play"></i>
-                </button>
-
                 <!-- Previous/Next navigation buttons -->
                 ${
                     this.showNavigation
@@ -79,6 +74,18 @@ class VideoPlayer {
                 <button class="video-control-btn video-prev" data-video-prev title="Previous video">
                     <i data-lucide="skip-back"></i>
                 </button>
+                `
+                        : ''
+                }
+
+                <!-- Center play/pause button -->
+                <button class="video-control-btn video-play-pause" data-play-pause-center title="Play/Pause">
+                    <i data-lucide="play"></i>
+                </button>
+
+                ${
+                    this.showNavigation
+                        ? `
                 <button class="video-control-btn video-next" data-video-next title="Next video">
                     <i data-lucide="skip-forward"></i>
                 </button>

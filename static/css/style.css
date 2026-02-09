@@ -2671,33 +2671,8 @@ select:focus {
     height: 20px !important;
 }
 
-.video-prev,
-.video-next {
-    position: absolute;
-}
-
-.video-prev {
-    left: 2rem;
-}
-
-.video-next {
-    right: 2rem;
-}
-
-.player-modal.theater-mode .video-next {
-    right: 5rem;
-}
-
 /* Mobile portrait - reduce button size and adjust spacing */
 @media (max-width: 767px) and (orientation: portrait) {
-    .video-prev {
-        left: 0.5rem;
-    }
-
-    .video-next {
-        right: 0.5rem;
-    }
-
     .video-control-btn {
         width: 50px;
         height: 50px;
@@ -2713,10 +2688,6 @@ select:focus {
         top: auto;
         bottom: 7rem;
         transform: none;
-    }
-
-    .player-modal.theater-mode .video-next {
-        right: 0.5rem;
     }
 
     /* When playlist is visible, move toggle with it */
@@ -3272,14 +3243,6 @@ select:focus {
 .player-modal.landscape-mode .video-control-btn {
     width: 50px;
     height: 50px;
-}
-
-.player-modal.landscape-mode .video-prev {
-    left: 1rem;
-}
-
-.player-modal.landscape-mode .video-next {
-    right: 4rem;
 }
 
 .player-modal.landscape-mode .video-controls-bottom {
