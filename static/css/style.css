@@ -2702,7 +2702,7 @@ select:focus {
     /* When playlist is visible, move toggle with it */
     .player-modal.theater-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
     .player-modal.theater-mode .playlist-toggle.active {
-        right: calc(40vw - 20px);
+        right: 1rem;
     }
 }
 
@@ -3025,6 +3025,11 @@ select:focus {
 .player-modal.theater-mode .player-body {
     height: 100%;
     flex-direction: row;
+    transition: padding-right 0.3s ease;
+}
+
+.player-modal.theater-mode .player-body:has(.playlist-sidebar.visible) {
+    padding-right: 280px;
 }
 
 .player-modal.theater-mode .video-wrapper {
@@ -3091,13 +3096,17 @@ select:focus {
 
 .player-modal.theater-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
 .player-modal.theater-mode .playlist-toggle.active {
-    right: 260px;
+    right: -22px;
 }
 
 @media (max-width: 1200px) {
+    .player-modal.theater-mode .player-body:has(.playlist-sidebar.visible) {
+        padding-right: 40vw;
+    }
+
     .player-modal.theater-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
     .player-modal.theater-mode .playlist-toggle.active {
-        right: calc(40vw - 20px);
+        right: -22px;
     }
 }
 
@@ -3142,6 +3151,11 @@ select:focus {
 
 .player-modal.landscape-mode .player-body {
     height: 100%;
+    transition: padding-right 0.3s ease;
+}
+
+.player-modal.landscape-mode .player-body:has(.playlist-sidebar.visible) {
+    padding-right: 280px;
 }
 
 .player-modal.landscape-mode .video-wrapper {
@@ -3245,7 +3259,7 @@ select:focus {
 
 .player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle,
 .player-modal.landscape-mode .playlist-toggle.active {
-    right: 260px;
+    right: -22px;
 }
 
 /* Landscape mode video controls adjustments */
@@ -3384,8 +3398,8 @@ select:focus {
     opacity: 1;
 }
 
-.player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper {
-    margin-right: 280px;
+.player-modal.landscape-mode .player-body:has(.playlist-sidebar.visible) {
+    padding-right: 280px;
 }
 
 @media (max-width: 600px) {
@@ -3393,12 +3407,12 @@ select:focus {
         width: 250px;
     }
 
-    .player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper {
-        margin-right: 0;
+    .player-modal.landscape-mode .player-body:has(.playlist-sidebar.visible) {
+        padding-right: 250px;
     }
 
     .player-modal.landscape-mode .playlist-sidebar.visible ~ .video-wrapper .playlist-toggle {
-        right: 260px;
+        right: -22px;
     }
 }
 
