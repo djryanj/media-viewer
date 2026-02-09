@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Video Player Controls Layout**: Improved video player control button positioning to center all navigation controls together. Previous, Play/Pause, and Next buttons now appear grouped in the center third of the video instead of being spread across the edges. This creates a more cohesive control layout that's easier to use. Also enabled navigation buttons in the lightbox video player, allowing users to navigate between media items directly from the video overlay without closing the lightbox. ([#211](https://github.com/djryanj/media-viewer/issues/211))
 
+- **Video Scaling**: Fixed video sizing in both playlist player and lightbox to properly scale small videos to fill the viewport vertically while maintaining aspect ratio. Small videos (e.g., 450x360) now scale up to fill the available vertical space instead of displaying at their native resolution. Container elements now use explicit dimensions with flex layout to prevent shrinking to video natural size, allowing `object-fit: contain` to properly scale video content up or down as needed. ([#213](https://github.com/djryanj/media-viewer/issues/213))
+
 ## [0.11.1] - 2026-02-09
 
 ### Changed
