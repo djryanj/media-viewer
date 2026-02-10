@@ -117,6 +117,13 @@ class SettingsManager {
             clockFormatSelect.addEventListener('change', () => this.handleClockFormatChange());
         }
 
+        const clockAlwaysVisibleToggle = document.getElementById('clock-always-visible-toggle');
+        if (clockAlwaysVisibleToggle) {
+            clockAlwaysVisibleToggle.addEventListener('change', () =>
+                this.handleClockAlwaysVisibleToggle()
+            );
+        }
+
         // Default sort settings
         const sortFieldSelect = document.getElementById('default-sort-field');
         if (sortFieldSelect) {
@@ -1166,6 +1173,20 @@ class SettingsManager {
             clockFormatSelect.value = Preferences.getClockFormat();
         }
 
+        // Load clock always visible state
+        const clockAlwaysVisibleToggle = document.getElementById('clock-always-visible-toggle');
+        if (clockAlwaysVisibleToggle) {
+            const clockEnabled = Preferences.isClockEnabled();
+            clockAlwaysVisibleToggle.checked = Preferences.isClockAlwaysVisible();
+            clockAlwaysVisibleToggle.disabled = !clockEnabled;
+
+            // Update parent row styling to show disabled state
+            const row = clockAlwaysVisibleToggle.closest('.settings-row');
+            if (row) {
+                row.classList.toggle('disabled', !clockEnabled);
+            }
+        }
+
         // Load sort field
         const sortFieldSelect = document.getElementById('default-sort-field');
         if (sortFieldSelect) {
@@ -1186,7 +1207,25 @@ class SettingsManager {
         const clockToggle = document.getElementById('clock-enabled-toggle');
         if (!clockToggle) return;
 
-        Preferences.toggleClock();
+        const isEnabled = Preferences.toggleClock();
+
+        // Update always visible toggle state
+        const clockAlwaysVisibleToggle = document.getElementById('clock-always-visible-toggle');
+        if (clockAlwaysVisibleToggle) {
+            clockAlwaysVisibleToggle.disabled = !isEnabled;
+
+            // Update parent row styling
+            const row = clockAlwaysVisibleToggle.closest('.settings-row');
+            if (row) {
+                row.classList.toggle('disabled', !isEnabled);
+            }
+
+            // Set to false if clock is disabled
+            if (!isEnabled && clockAlwaysVisibleToggle.checked) {
+                clockAlwaysVisibleToggle.checked = false;
+                Preferences.setClockAlwaysVisible(false);
+            }
+        }
 
         // Notify Clock component to update visibility
         if (typeof Clock !== 'undefined' && Clock) {
@@ -1211,6 +1250,18 @@ class SettingsManager {
         }
 
         console.debug('Clock format changed:', clockFormatSelect.value);
+    }
+
+    /**
+     * Handle clock always visible toggle
+     */
+    handleClockAlwaysVisibleToggle() {
+        const clockAlwaysVisibleToggle = document.getElementById('clock-always-visible-toggle');
+        if (!clockAlwaysVisibleToggle) return;
+
+        Preferences.setClockAlwaysVisible(clockAlwaysVisibleToggle.checked);
+
+        console.debug('Clock always visible toggled:', clockAlwaysVisibleToggle.checked);
     }
 
     /**

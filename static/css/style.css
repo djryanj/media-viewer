@@ -1726,6 +1726,45 @@ select:focus {
     }
 }
 
+/* UI Overlay Transitions - Smooth fade in/out */
+.lightbox .viewer-clock,
+.lightbox .lightbox-close,
+.lightbox .lightbox-pin,
+.lightbox .lightbox-tag,
+.lightbox .lightbox-download,
+.lightbox .lightbox-autoplay,
+.lightbox .lightbox-loop-toggle,
+.lightbox .lightbox-info,
+.lightbox .lightbox-tags-overlay {
+    transition:
+        opacity 0.3s ease,
+        transform 0.3s ease;
+}
+
+/* Hide UI overlays when class is applied */
+.lightbox.ui-overlays-hidden .viewer-clock,
+.lightbox.ui-overlays-hidden .lightbox-close,
+.lightbox.ui-overlays-hidden .lightbox-pin,
+.lightbox.ui-overlays-hidden .lightbox-tag,
+.lightbox.ui-overlays-hidden .lightbox-download,
+.lightbox.ui-overlays-hidden .lightbox-autoplay,
+.lightbox.ui-overlays-hidden .lightbox-loop-toggle,
+.lightbox.ui-overlays-hidden .lightbox-info,
+.lightbox.ui-overlays-hidden .lightbox-tags-overlay {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Keep clock visible when preference is enabled */
+.lightbox.clock-always-visible.ui-overlays-hidden .viewer-clock {
+    opacity: 0.3;
+    pointer-events: auto;
+}
+
+.lightbox.clock-always-visible.ui-overlays-hidden .viewer-clock:hover {
+    opacity: 1;
+}
+
 .lightbox-content {
     position: relative;
     max-width: 100vw;
@@ -4148,6 +4187,11 @@ select:focus {
     margin-bottom: 1rem;
 }
 
+.settings-row.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 .settings-info {
     flex: 1;
     display: flex;
@@ -4212,7 +4256,7 @@ select:focus {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: var(--bg-tertiary);
+    background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
     transition: 0.3s;
     border-radius: 28px;
@@ -4243,6 +4287,16 @@ select:focus {
 .toggle-switch input:focus-visible + .toggle-slider {
     outline: 2px solid var(--border-focus);
     outline-offset: 2px;
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+    cursor: not-allowed;
+}
+
+.toggle-switch input:disabled + .toggle-slider:before {
+    background-color: var(--text-tertiary);
 }
 
 .cache-action-card {

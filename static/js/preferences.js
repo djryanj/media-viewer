@@ -7,6 +7,7 @@ const Preferences = {
         mediaLoop: true,
         clockEnabled: true,
         clockFormat: '12', // '12' or '24'
+        clockAlwaysVisible: true, // Keep clock visible when UI overlays hide
         folderSortPreferences: {}, // Per-folder sort overrides
     },
 
@@ -210,6 +211,28 @@ const Preferences = {
      */
     setClockFormat(format) {
         this.set('clockFormat', format);
+    },
+
+    /**
+     * Check if clock should always be visible (not fade with UI overlays)
+     * @returns {boolean}
+     */
+    isClockAlwaysVisible() {
+        return this.get('clockAlwaysVisible');
+    },
+
+    /**
+     * Set clock always visible preference
+     * @param {boolean} value
+     */
+    setClockAlwaysVisible(value) {
+        this.set('clockAlwaysVisible', !!value);
+
+        // Update lightbox visibility class
+        const lightbox = document.getElementById('lightbox');
+        if (lightbox) {
+            lightbox.classList.toggle('clock-always-visible', !!value);
+        }
     },
 
     /**
