@@ -89,6 +89,12 @@ Click any image or video thumbnail to open it in the lightbox.
 | Tag icon          | Open tag manager               |
 | Play icon         | Toggle autoplay (images)       |
 | Loop icon         | Toggle video loop              |
+| Download icon     | Download current file          |
+
+!!! tip "Auto-Hide Interface"
+    After 3 seconds of viewing, control buttons and interface elements automatically fade away for an unobstructed view. Tap or click anywhere on the image or video to show or hide them. On desktop, moving your mouse shows controls automatically. Navigation arrows remain visible based on your settings.
+
+    You can configure the clock to always stay visible (even when other controls fade) in Settings → Display → "Always Keep Clock Visible".
 
 ### Navigation in Lightbox
 

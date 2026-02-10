@@ -29,6 +29,12 @@ const Lightbox = {
         lastFailureTime: 0,
     },
 
+    // UI overlay visibility control
+    uiOverlaysVisible: true,
+    uiOverlaysTimeout: null,
+    userHidOverlays: false,
+    lastTouchTime: 0,
+
     init() {
         this.cacheElements();
         this.createHotZones();
@@ -456,6 +462,42 @@ const Lightbox = {
         this.elements.lightbox.appendChild(overlay);
         this.elements.tagsOverlay = overlay;
         this.elements.tagsContainer = overlay.querySelector('.lightbox-tags-container');
+
+        // Toggle expanded state when clicking on tags container
+        this.elements.tagsContainer.addEventListener('click', (e) => {
+            // Don't toggle if clicking on tag remove buttons or tag text
+            if (
+                e.target.closest('.lightbox-tag-remove') ||
+                e.target.closest('.lightbox-tag-text')
+            ) {
+                return;
+            }
+
+            this.elements.tagsOverlay.classList.toggle('expanded');
+
+            // Show UI overlays and prevent auto-hide (user is interacting with tags)
+            this.userHidOverlays = true;
+            this.showUIOverlays();
+
+            e.stopPropagation();
+        });
+
+        // Handle touch on tags overlay to show/keep UI overlays visible
+        this.elements.tagsOverlay.addEventListener(
+            'touchend',
+            () => {
+                // Update last touch time to prevent mousemove from interfering
+                this.lastTouchTime = Date.now();
+
+                // Cancel any pending auto-hide timer
+                clearTimeout(this.uiOverlaysTimeout);
+
+                // Show UI overlays and prevent auto-hide (user is interacting with tags)
+                this.userHidOverlays = true;
+                this.showUIOverlays();
+            },
+            { passive: true }
+        );
     },
 
     bindEvents() {
@@ -599,6 +641,77 @@ const Lightbox = {
                 this.updateHotZonePositions();
             });
         });
+
+        // UI overlay hide/show functionality
+        // Track touch start time for tap detection
+        let uiTouchStartTime = 0;
+
+        this.elements.lightbox.addEventListener('touchstart', (e) => {
+            // Only track if not touching controls
+            if (!e.target.closest('.video-controls')) {
+                uiTouchStartTime = Date.now();
+                this.lastTouchTime = Date.now();
+            }
+        });
+
+        this.elements.lightbox.addEventListener('touchend', (e) => {
+            const touchDuration = Date.now() - uiTouchStartTime;
+
+            // Only respond to quick taps (not drags/swipes)
+            // Also skip if this was a swipe navigation gesture
+            if (touchDuration >= 300 || this.isSwiping) {
+                return;
+            }
+
+            // Ignore if tapping on controls, buttons, tags area, or hotzones
+            if (
+                e.target.closest('button') ||
+                e.target.closest('input') ||
+                e.target.closest('.video-controls') ||
+                e.target.closest('.lightbox-tags-overlay') ||
+                e.target.closest('.lightbox-info') ||
+                e.target.closest('.lightbox-hot-zone') ||
+                e.target === this.elements.lightbox // Background click should close
+            ) {
+                return;
+            }
+
+            // Tap on image/video content toggles UI overlays
+            if (
+                e.target === this.elements.image ||
+                e.target === this.elements.video ||
+                e.target === this.elements.content ||
+                e.target.closest('.lightbox-content')
+            ) {
+                e.stopPropagation();
+
+                if (this.uiOverlaysVisible) {
+                    // User manually hid overlays
+                    this.userHidOverlays = true;
+                    this.hideUIOverlays();
+                } else {
+                    // User is showing overlays again
+                    this.userHidOverlays = false;
+                    this.showUIOverlays();
+                }
+            }
+        });
+
+        // Desktop: show UI overlays on mouse movement
+        this.elements.lightbox.addEventListener('mousemove', () => {
+            if (!this.elements.lightbox.classList.contains('hidden')) {
+                // Ignore mousemove if touch happened recently (within 500ms)
+                // This prevents mousemove events fired after touch from overriding touch actions
+                const timeSinceTouch = Date.now() - this.lastTouchTime;
+                if (timeSinceTouch < 500) {
+                    return;
+                }
+
+                // Reset user-hid flag on mouse movement
+                this.userHidOverlays = false;
+                this.showUIOverlays();
+            }
+        });
     },
 
     handleSwipe() {
@@ -636,6 +749,20 @@ const Lightbox = {
         this.clearPreloadCache();
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
+
+        // Reset UI overlay state
+        this.uiOverlaysVisible = true;
+        this.userHidOverlays = false;
+        this.elements.lightbox.classList.remove('ui-overlays-hidden');
+
+        // Apply clock always visible preference
+        if (typeof Preferences !== 'undefined') {
+            this.elements.lightbox.classList.toggle(
+                'clock-always-visible',
+                Preferences.isClockAlwaysVisible()
+            );
+        }
+
         this.showMedia();
         this.updateNavigation();
 
@@ -649,6 +776,20 @@ const Lightbox = {
 
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
+
+        // Reset UI overlay state
+        this.uiOverlaysVisible = true;
+        this.userHidOverlays = false;
+        this.elements.lightbox.classList.remove('ui-overlays-hidden');
+
+        // Apply clock always visible preference
+        if (typeof Preferences !== 'undefined') {
+            this.elements.lightbox.classList.toggle(
+                'clock-always-visible',
+                Preferences.isClockAlwaysVisible()
+            );
+        }
+
         this.showMedia();
         this.updateNavigation();
 
@@ -667,6 +808,12 @@ const Lightbox = {
         this.clearPreloadCache();
         this.stopAnimationLoopDetection();
         this.releaseWakeLock();
+
+        // Clean up UI overlay timeout
+        if (this.uiOverlaysTimeout) {
+            clearTimeout(this.uiOverlaysTimeout);
+            this.uiOverlaysTimeout = null;
+        }
 
         // Clean up video player
         if (this.videoPlayer) {
@@ -699,6 +846,52 @@ const Lightbox = {
         } else {
             this.close();
         }
+    },
+
+    /**
+     * Show UI overlays (controls, buttons, clock, tags)
+     */
+    showUIOverlays() {
+        if (!this.uiOverlaysVisible) {
+            this.uiOverlaysVisible = true;
+            this.elements.lightbox.classList.remove('ui-overlays-hidden');
+        }
+
+        // If user manually hid overlays, don't start auto-hide timer
+        if (!this.userHidOverlays) {
+            this.hideUIOverlaysDelayed();
+        }
+    },
+
+    /**
+     * Hide UI overlays immediately
+     */
+    hideUIOverlays() {
+        this.uiOverlaysVisible = false;
+        this.elements.lightbox.classList.add('ui-overlays-hidden');
+
+        // Clear any pending auto-hide timer
+        if (this.uiOverlaysTimeout) {
+            clearTimeout(this.uiOverlaysTimeout);
+            this.uiOverlaysTimeout = null;
+        }
+    },
+
+    /**
+     * Hide UI overlays after a delay (3 seconds)
+     */
+    hideUIOverlaysDelayed() {
+        // Clear any existing timeout
+        if (this.uiOverlaysTimeout) {
+            clearTimeout(this.uiOverlaysTimeout);
+            this.uiOverlaysTimeout = null;
+        }
+
+        // Set new timeout
+        this.uiOverlaysTimeout = setTimeout(() => {
+            this.hideUIOverlays();
+            this.uiOverlaysTimeout = null;
+        }, 3000);
     },
 
     prev() {
@@ -839,6 +1032,11 @@ const Lightbox = {
         }
 
         this.preloadAdjacent();
+
+        // Start auto-hide timer for UI overlays (unless user manually hid them)
+        if (!this.userHidOverlays) {
+            this.hideUIOverlaysDelayed();
+        }
     },
 
     /**
@@ -917,6 +1115,8 @@ const Lightbox = {
         }
 
         this.elements.tagsOverlay.classList.remove('hidden');
+        this.elements.tagsOverlay.classList.remove('expanded'); // Reset to collapsed when switching files
+
         this.elements.tagsContainer.innerHTML = tags
             .map(
                 (tag) => `
@@ -930,6 +1130,13 @@ const Lightbox = {
         `
             )
             .join('');
+
+        // Check if content overflows and add class
+        requestAnimationFrame(() => {
+            const container = this.elements.tagsContainer;
+            const hasOverflow = container.scrollHeight > container.clientHeight;
+            this.elements.tagsOverlay.classList.toggle('has-overflow', hasOverflow);
+        });
 
         this.elements.tagsContainer.querySelectorAll('.lightbox-tag-chip').forEach((chip) => {
             const removeBtn = chip.querySelector('.lightbox-tag-remove');
