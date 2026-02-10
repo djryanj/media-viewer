@@ -125,7 +125,12 @@ const HistoryManager = {
                     break;
                 case 'lightbox':
                     if (typeof Lightbox !== 'undefined') {
-                        Lightbox.close();
+                        Lightbox.handleBackButton();
+                    }
+                    break;
+                case 'lightbox-zoom':
+                    if (typeof Lightbox !== 'undefined') {
+                        Lightbox.resetZoom();
                     }
                     break;
                 case 'player':

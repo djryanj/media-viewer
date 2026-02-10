@@ -1784,6 +1784,13 @@ select:focus {
     object-fit: contain;
 }
 
+/* Pinch-to-zoom support for lightbox images */
+.lightbox-image {
+    transform-origin: center center;
+    touch-action: none;
+    transition: transform 0.3s ease;
+}
+
 /* Style video controls for more consistent sizing */
 .lightbox-video::-webkit-media-controls-panel {
     background-color: rgba(0, 0, 0, 0.8);
