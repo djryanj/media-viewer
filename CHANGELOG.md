@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Video Player Controls**: Fixed video player scrub bar and navigation hotzones in lightbox on mobile devices. After the recent hotzone fix, the video progress bar became unusable as swipe gestures would take over when attempting to scrub through video. Adjusted z-index hierarchy to ensure video controls (z-index: 20) are above hotzones (z-index: 15), which are above the video wrapper (z-index: 10). Added explicit `pointer-events: auto` to progress bar, progress container, and controls row elements to ensure touch events are captured by interactive controls. This maintains both working hotzones for navigation swipes and a fully functional video scrub bar on mobile. ([#225](https://github.com/djryanj/media-viewer/issues/225))
+- **Video Player Controls**: Fixed video scrub bar becoming unusable on mobile devices in lightbox. After the recent hotzone fix, attempting to drag the playhead to scrub through video would trigger swipe gestures instead, making it impossible to seek to a specific time. Both navigation swipes and video scrubbing now work properly on mobile devices. ([#225](https://github.com/djryanj/media-viewer/issues/225))
+
+- **Toast Notifications**: Fixed notification messages extending off the screen edge on small screens in portrait mode. Long messages like "Preparing video for playback. Large files may take a few minutes..." would overflow past the viewport width and become partially unreadable. Notification messages now wrap to multiple lines and stay fully visible on all screen sizes. ([#224](https://github.com/djryanj/media-viewer/issues/224))
 
 ## [0.11.3] - 2026-02-09
 
