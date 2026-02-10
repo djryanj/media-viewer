@@ -11,6 +11,9 @@ const Favorites = {
         this.elements = {
             section: document.getElementById('favorites-section'),
             gallery: document.getElementById('favorites-gallery'),
+            count: document.getElementById('favorites-count'),
+            fadeLeft: document.getElementById('favorites-fade-left'),
+            fadeRight: document.getElementById('favorites-fade-right'),
         };
     },
 
@@ -147,6 +150,9 @@ const Favorites = {
         lucide.createIcons();
 
         this.elements.section.classList.remove('hidden');
+        this.updateCounter(favorites.length);
+        this.setupScrollDetection();
+        this.updateScrollFades();
     },
 
     updateFromListing(listing) {
@@ -165,6 +171,49 @@ const Favorites = {
                     this.pinnedPaths.add(item.path);
                 }
             });
+        }
+    },
+
+    updateCounter(count) {
+        if (this.elements.count) {
+            this.elements.count.textContent = `${count} ${count === 1 ? 'favorite' : 'favorites'}`;
+        }
+    },
+
+    setupScrollDetection() {
+        // Remove existing listener if any
+        if (this.scrollHandler) {
+            this.elements.gallery.removeEventListener('scroll', this.scrollHandler);
+        }
+
+        // Create and store the handler
+        this.scrollHandler = () => this.updateScrollFades();
+        this.elements.gallery.addEventListener('scroll', this.scrollHandler, { passive: true });
+    },
+
+    updateScrollFades() {
+        if (!this.elements.gallery || !this.elements.fadeLeft || !this.elements.fadeRight) {
+            return;
+        }
+
+        const gallery = this.elements.gallery;
+        const scrollLeft = gallery.scrollLeft;
+        const scrollWidth = gallery.scrollWidth;
+        const clientWidth = gallery.clientWidth;
+        const maxScroll = scrollWidth - clientWidth;
+
+        // Show left fade if scrolled right
+        if (scrollLeft > 10) {
+            this.elements.fadeLeft.classList.remove('hidden');
+        } else {
+            this.elements.fadeLeft.classList.add('hidden');
+        }
+
+        // Show right fade if more content to the right
+        if (scrollLeft < maxScroll - 10) {
+            this.elements.fadeRight.classList.remove('hidden');
+        } else {
+            this.elements.fadeRight.classList.add('hidden');
         }
     },
 };

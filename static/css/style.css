@@ -1193,6 +1193,16 @@ select:focus {
     color: var(--text-secondary);
 }
 
+.favorites-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+.favorites-gallery-container {
+    position: relative;
+}
+
 .favorites-gallery {
     display: flex;
     gap: 0.5rem;
@@ -1200,6 +1210,30 @@ select:focus {
     padding-bottom: 0.25rem;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+}
+
+.favorites-fade {
+    position: absolute;
+    top: 0;
+    bottom: 0.25rem;
+    width: 40px;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 1;
+}
+
+.favorites-fade.hidden {
+    opacity: 0;
+}
+
+.favorites-fade-left {
+    left: 0;
+    background: linear-gradient(to right, var(--bg-secondary), transparent);
+}
+
+.favorites-fade-right {
+    right: 0;
+    background: linear-gradient(to left, var(--bg-secondary), transparent);
 }
 
 .favorites-gallery::-webkit-scrollbar {
