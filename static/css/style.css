@@ -5108,10 +5108,12 @@ select:focus {
         opacity 0.3s ease;
     pointer-events: none;
     font-size: 0.875rem;
-    white-space: nowrap;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    max-width: 90vw;
+    text-align: center;
+    word-wrap: break-word;
 }
 
 .toast.show {
@@ -5160,6 +5162,16 @@ select:focus {
 @media (min-width: 900px) {
     .toast {
         bottom: 3rem;
+        max-width: 600px;
+    }
+}
+
+@media (max-width: 480px) {
+    .toast {
+        padding: 0.625rem 1rem;
+        font-size: 0.8125rem;
+        max-width: 95vw;
+        bottom: 3.5rem;
     }
 }
 
