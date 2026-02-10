@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.11.4] - Unreleased
+
+### Fixed
+
+- **Video Player Controls**: Fixed video player scrub bar and navigation hotzones in lightbox on mobile devices. After the recent hotzone fix, the video progress bar became unusable as swipe gestures would take over when attempting to scrub through video. Adjusted z-index hierarchy to ensure video controls (z-index: 20) are above hotzones (z-index: 15), which are above the video wrapper (z-index: 10). Added explicit `pointer-events: auto` to progress bar, progress container, and controls row elements to ensure touch events are captured by interactive controls. This maintains both working hotzones for navigation swipes and a fully functional video scrub bar on mobile. ([#225](https://github.com/djryanj/media-viewer/issues/225))
+
 ## [0.11.3] - 2026-02-09
 
 ### Fixed
