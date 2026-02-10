@@ -2311,3 +2311,278 @@ func TestListFilePathsPerformanceIntegration(t *testing.T) {
 		t.Errorf("expected %d items, got %d", numFiles, len(response.Items))
 	}
 }
+
+// =============================================================================
+// StreamVideo Error Handling Tests
+// =============================================================================
+
+// TestStreamVideo_TranscodingErrorIntegration tests that transcoding errors return HTTP 500
+func TestStreamVideo_TranscodingErrorIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	// Create temporary directories
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	mediaDir := filepath.Join(tempDir, "media")
+	cacheDir := filepath.Join(tempDir, "cache")
+	thumbDir := filepath.Join(tempDir, "thumbnails")
+
+	if err := os.MkdirAll(mediaDir, 0o755); err != nil {
+		t.Fatalf("failed to create media dir: %v", err)
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("failed to create cache dir: %v", err)
+	}
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		t.Fatalf("failed to create thumb dir: %v", err)
+	}
+
+	// Create test video file that will need transcoding
+	testVideoPath := filepath.Join(mediaDir, "bad_video.flv")
+	if err := os.WriteFile(testVideoPath, []byte("fake corrupted video"), 0o644); err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	// Mock ffprobe to return incompatible codec
+	mockFFProbe := filepath.Join(tempDir, "ffprobe")
+	ffprobeScript := `#!/bin/bash
+cat << 'EOF'
+{
+  "streams": [
+    {
+      "codec_name": "vp6f",
+      "width": 648,
+      "height": 459
+    }
+  ],
+  "format": {
+    "duration": "100.0"
+  }
+}
+EOF
+`
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffprobe: %v", err)
+	}
+
+	// Mock ffmpeg to fail with realistic error
+	mockFFmpeg := filepath.Join(tempDir, "ffmpeg")
+	ffmpegScript := `#!/bin/bash
+cat << 'EOF' >&2
+ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers
+[libx264 @ 0x7f180d406040] height not divisible by 2 (648x459)
+[vost#0:0/libx264 @ 0x7f180a7e1c80] Error while opening encoder
+Conversion failed!
+EOF
+exit 187
+`
+	if err := os.WriteFile(mockFFmpeg, []byte(ffmpegScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffmpeg: %v", err)
+	}
+
+	// Temporarily modify PATH to use our mocks
+	oldPath := os.Getenv("PATH")
+	defer func() {
+		_ = os.Setenv("PATH", oldPath)
+	}()
+	_ = os.Setenv("PATH", tempDir+":"+oldPath)
+
+	// Create real database
+	db, err := database.New(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("failed to close database: %v", err)
+		}
+	}()
+
+	// Create dependencies with transcoding ENABLED
+	idx := indexer.New(db, mediaDir, 0)
+	trans := transcoder.New(cacheDir, "", true)
+	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
+
+	config := &startup.Config{
+		MediaDir: mediaDir,
+		CacheDir: cacheDir,
+	}
+
+	handlers := New(db, idx, trans, thumbGen, config)
+
+	// Create test request
+	req := httptest.NewRequest("GET", "/api/videos/bad_video.flv", http.NoBody)
+	w := httptest.NewRecorder()
+
+	// Add path variable
+	req = mux.SetURLVars(req, map[string]string{
+		"path": "bad_video.flv",
+	})
+
+	// Call StreamVideo handler
+	handlers.StreamVideo(w, req)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	// Verify HTTP 500 is returned
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Expected status 500, got %d", resp.StatusCode)
+	}
+
+	// Verify error message in response
+	body := w.Body.String()
+	if !strings.Contains(body, "Failed to prepare video") {
+		t.Errorf("Expected error message about failed preparation, got: %s", body)
+	}
+
+	// Verify cache file was not created
+	cacheFiles, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatalf("Failed to read cache dir: %v", err)
+	}
+
+	// Should only have error files, not actual cache files
+	for _, file := range cacheFiles {
+		if !strings.HasSuffix(file.Name(), ".err") && !strings.HasSuffix(file.Name(), ".tmp") {
+			t.Errorf("Unexpected cache file created: %s", file.Name())
+		}
+	}
+}
+
+// TestStreamVideo_CorruptedVideoErrorIntegration tests the exact error from issue logs
+func TestStreamVideo_CorruptedVideoErrorIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	// This test simulates the exact error from the issue:
+	// [libx264 @ 0x7f180d406040] height not divisible by 2 (648x459)
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	mediaDir := filepath.Join(tempDir, "media")
+	cacheDir := filepath.Join(tempDir, "cache")
+
+	if err := os.MkdirAll(mediaDir, 0o755); err != nil {
+		t.Fatalf("failed to create media dir: %v", err)
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("failed to create cache dir: %v", err)
+	}
+
+	// Create video file with odd dimensions that would trigger the error
+	testVideoPath := filepath.Join(mediaDir, "New Folder", "video.flv")
+	if err := os.MkdirAll(filepath.Dir(testVideoPath), 0o755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+	if err := os.WriteFile(testVideoPath, []byte("fake flv video"), 0o644); err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	// Mock ffprobe to return the exact dimensions from the issue
+	mockFFProbe := filepath.Join(tempDir, "ffprobe")
+	ffprobeScript := `#!/bin/bash
+cat << 'EOF'
+{
+  "streams": [
+    {
+      "codec_name": "vp6f",
+      "width": 648,
+      "height": 459
+    }
+  ],
+  "format": {
+    "duration": "1385.82"
+  }
+}
+EOF
+`
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffprobe: %v", err)
+	}
+
+	// Mock ffmpeg to fail with the exact error from the issue
+	mockFFmpeg := filepath.Join(tempDir, "ffmpeg")
+	ffmpegScript := `#!/bin/bash
+cat << 'EOF' >&2
+ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers
+built with gcc 15.2.0 (Alpine 15.2.0)
+Input #0, flv, from '/media/New Folder/video.flv':
+  Duration: 00:23:05.82, start: 0.000000, bitrate: 459 kb/s
+Stream #0:0: Audio: mp3 (mp3float), 22050 Hz, mono, fltp, 32 kb/s
+Stream #0:1: Video: vp6f, yuv420p, 648x459, 419 kb/s, 29.90 fps, 29.97 tbr, 1k tbn
+Stream mapping:
+  Stream #0:1 -> #0:0 (vp6f (native) -> h264 (libx264))
+  Stream #0:0 -> #0:1 (mp3 (mp3float) -> aac (native))
+Press [q] to stop, [?] for help
+[libx264 @ 0x7f180d406040] height not divisible by 2 (648x459)
+[vost#0:0/libx264 @ 0x7f180a7e1c80] Error while opening encoder - maybe incorrect parameters
+Error sending frames to consumers: Generic error in an external library
+Conversion failed!
+EOF
+exit 187
+`
+	if err := os.WriteFile(mockFFmpeg, []byte(ffmpegScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffmpeg: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	defer func() {
+		_ = os.Setenv("PATH", oldPath)
+	}()
+	_ = os.Setenv("PATH", tempDir+":"+oldPath)
+
+	// Create dependencies
+	db, err := database.New(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("failed to close database: %v", err)
+		}
+	}()
+
+	idx := indexer.New(db, mediaDir, 0)
+	trans := transcoder.New(cacheDir, "", true)
+	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
+
+	config := &startup.Config{
+		MediaDir: mediaDir,
+		CacheDir: cacheDir,
+	}
+
+	handlers := New(db, idx, trans, thumbGen, config)
+
+	// Create request for the video
+	req := httptest.NewRequest("GET", "/api/videos/New%20Folder/video.flv", http.NoBody)
+	w := httptest.NewRecorder()
+
+	req = mux.SetURLVars(req, map[string]string{
+		"path": "New Folder/video.flv",
+	})
+
+	// Call handler
+	handlers.StreamVideo(w, req)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	// Verify HTTP 500 is returned (not hanging indefinitely)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Expected status 500 for incompatible video, got %d", resp.StatusCode)
+	}
+
+	// Verify response is timely (not waiting for 5 minute timeout)
+	// The test itself completing quickly proves this
+
+	body := w.Body.String()
+	t.Logf("Response body: %s", body)
+
+	if !strings.Contains(body, "Failed to prepare video") {
+		t.Errorf("Expected proper error message, got: %s", body)
+	}
+}

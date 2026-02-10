@@ -157,6 +157,17 @@ func (t *Transcoder) GetVideoInfo(ctx context.Context, filePath string) (*VideoI
 		info.Height, _ = strconv.Atoi(heightStr)
 	}
 
+	// Tier 1: Ensure dimensions are even (required by H.264 encoder)
+	// Adjust odd dimensions to prevent encoding failures
+	if info.Width%2 != 0 {
+		logging.Debug("Adjusting odd width %d to %d for H.264 compatibility", info.Width, info.Width+1)
+		info.Width++
+	}
+	if info.Height%2 != 0 {
+		logging.Debug("Adjusting odd height %d to %d for H.264 compatibility", info.Height, info.Height+1)
+		info.Height++
+	}
+
 	// Check if transcoding is needed
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(filePath), "."))
 	info.NeedsTranscode = !compatibleCodecs[info.Codec] || !compatibleContainers[ext]
@@ -198,6 +209,10 @@ func (t *Transcoder) GetOrStartTranscode(_ context.Context, filePath string, tar
 		return cachePath, true, nil
 	}
 
+	// Clean up any stale error file from previous failed attempts
+	errorPath := cachePath + ".err"
+	_ = os.Remove(errorPath)
+
 	// Start background transcoding
 	logging.Info("Starting background transcode: %s -> %s", filePath, cachePath)
 
@@ -213,11 +228,18 @@ func (t *Transcoder) GetOrStartTranscode(_ context.Context, filePath string, tar
 
 		if err := t.transcodeDirectToCache(bgCtx, filePath, cachePath, targetWidth, info, needsReencode); err != nil {
 			logging.Error("Background transcode failed for %s: %v", filePath, err)
+			// Write error to .err file so other code can detect it
+			errorPath := cachePath + ".err"
+			if writeErr := os.WriteFile(errorPath, []byte(err.Error()), 0o600); writeErr != nil {
+				logging.Warn("Failed to write error file: %v", writeErr)
+			}
 			// Clean up partial cache on error
 			_ = os.Remove(cachePath)
 			_ = os.Remove(cachePath + ".tmp")
 		} else {
 			logging.Info("Background transcode completed: %s", cachePath)
+			// Remove any error file from previous failed attempts
+			_ = os.Remove(cachePath + ".err")
 		}
 	}()
 
@@ -257,6 +279,10 @@ func (t *Transcoder) GetOrStartTranscodeAndWait(ctx context.Context, filePath st
 			return cachePath, nil
 		}
 
+		// Clean up any stale error file from previous failed attempts
+		errorPath := cachePath + ".err"
+		_ = os.Remove(errorPath)
+
 		// Start background transcoding
 		logging.Info("Starting background transcode: %s -> %s", filePath, cachePath)
 
@@ -272,11 +298,18 @@ func (t *Transcoder) GetOrStartTranscodeAndWait(ctx context.Context, filePath st
 
 			if err := t.transcodeDirectToCache(bgCtx, filePath, cachePath, targetWidth, info, needsReencode); err != nil {
 				logging.Error("Background transcode failed for %s: %v", filePath, err)
+				// Write error to .err file so waiting code can detect it
+				errorPath := cachePath + ".err"
+				if writeErr := os.WriteFile(errorPath, []byte(err.Error()), 0o600); writeErr != nil {
+					logging.Warn("Failed to write error file: %v", writeErr)
+				}
 				// Clean up partial cache on error
 				_ = os.Remove(cachePath)
 				_ = os.Remove(cachePath + ".tmp")
 			} else {
 				logging.Info("Background transcode completed: %s", cachePath)
+				// Remove any error file from previous failed attempts
+				_ = os.Remove(cachePath + ".err")
 			}
 		}()
 	} else {
@@ -294,6 +327,14 @@ func (t *Transcoder) GetOrStartTranscodeAndWait(ctx context.Context, filePath st
 
 	for {
 		tmpPath := cachePath + ".tmp"
+		errorPath := cachePath + ".err"
+
+		// Check if transcoding failed (error file exists)
+		if errorData, err := os.ReadFile(errorPath); err == nil {
+			// Clean up error file
+			_ = os.Remove(errorPath)
+			return "", fmt.Errorf("transcode failed: %s", string(errorData))
+		}
 
 		// Check if transcode is complete (.tmp file gone)
 		if _, err := os.Stat(tmpPath); os.IsNotExist(err) {
@@ -301,6 +342,8 @@ func (t *Transcoder) GetOrStartTranscodeAndWait(ctx context.Context, filePath st
 			if stat, err := os.Stat(cachePath); err == nil {
 				logging.Info("Transcode complete: %.2f MB for %s (took %.1fs)",
 					float64(stat.Size())/(1024*1024), filePath, time.Since(startWait).Seconds())
+				// Clean up any stale error files
+				_ = os.Remove(errorPath)
 				return cachePath, nil
 			}
 		} else {
@@ -835,10 +878,17 @@ func (t *Transcoder) buildFFmpegArgs(inputPath, outputPath string, targetWidth i
 		// Re-encode with h264
 		args = append(args, "-c:v", "libx264", "-preset", "fast", "-crf", "23")
 
-		// Add scale filter if needed
+		// Tier 2: Always add scale filter when re-encoding to ensure output dimensions
+		// match the (possibly adjusted) dimensions from GetVideoInfo
 		if needsScaling {
+			// Scale to requested width, maintaining aspect ratio with even height
 			logging.Debug("Adding scale filter: %dx-2", targetWidth)
 			args = append(args, "-vf", fmt.Sprintf("scale=%d:-2", targetWidth))
+		} else {
+			// No size reduction, but force exact dimensions to handle odd dimensions
+			// This ensures output matches Tier 1 adjusted dimensions (always even)
+			logging.Debug("Adding scale filter for exact dimensions: %dx%d", info.Width, info.Height)
+			args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", info.Width, info.Height))
 		}
 	}
 

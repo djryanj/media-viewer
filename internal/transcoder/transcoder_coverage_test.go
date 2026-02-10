@@ -203,6 +203,114 @@ sleep 10
 	}
 }
 
+func TestGetVideoInfo_AdjustsOddWidth(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockFFProbe := filepath.Join(tmpDir, "ffprobe")
+
+	// Return video with odd width (1919)
+	ffprobeScript := `#!/bin/bash
+echo '{"streams":[{"codec_name":"h264","width":1919,"height":1080}],"format":{"duration":"100.0"}}'
+`
+
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffprobe: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	defer func() {
+		_ = os.Setenv("PATH", oldPath)
+	}()
+	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
+
+	trans := New("/tmp/cache", "", true)
+	ctx := context.Background()
+
+	info, err := trans.GetVideoInfo(ctx, "/fake/video.mp4")
+	if err != nil {
+		t.Fatalf("GetVideoInfo() error: %v", err)
+	}
+
+	// Width should be adjusted from 1919 to 1920
+	if info.Width != 1920 {
+		t.Errorf("Expected width=1920 (adjusted from 1919), got %d", info.Width)
+	}
+	if info.Height != 1080 {
+		t.Errorf("Expected height=1080 (unchanged), got %d", info.Height)
+	}
+}
+
+func TestGetVideoInfo_AdjustsOddHeight(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockFFProbe := filepath.Join(tmpDir, "ffprobe")
+
+	// Return video with odd height (459) - the actual failure case from the log
+	ffprobeScript := `#!/bin/bash
+echo '{"streams":[{"codec_name":"vp6f","width":648,"height":459}],"format":{"duration":"100.0"}}'
+`
+
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffprobe: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	defer func() {
+		_ = os.Setenv("PATH", oldPath)
+	}()
+	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
+
+	trans := New("/tmp/cache", "", true)
+	ctx := context.Background()
+
+	info, err := trans.GetVideoInfo(ctx, "/fake/video.flv")
+	if err != nil {
+		t.Fatalf("GetVideoInfo() error: %v", err)
+	}
+
+	// Height should be adjusted from 459 to 460
+	if info.Width != 648 {
+		t.Errorf("Expected width=648 (unchanged), got %d", info.Width)
+	}
+	if info.Height != 460 {
+		t.Errorf("Expected height=460 (adjusted from 459), got %d", info.Height)
+	}
+}
+
+func TestGetVideoInfo_AdjustsBothOddDimensions(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockFFProbe := filepath.Join(tmpDir, "ffprobe")
+
+	// Return video with both odd dimensions
+	ffprobeScript := `#!/bin/bash
+echo '{"streams":[{"codec_name":"h264","width":1279,"height":719}],"format":{"duration":"100.0"}}'
+`
+
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffprobe: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	defer func() {
+		_ = os.Setenv("PATH", oldPath)
+	}()
+	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
+
+	trans := New("/tmp/cache", "", true)
+	ctx := context.Background()
+
+	info, err := trans.GetVideoInfo(ctx, "/fake/video.mp4")
+	if err != nil {
+		t.Fatalf("GetVideoInfo() error: %v", err)
+	}
+
+	// Both dimensions should be adjusted
+	if info.Width != 1280 {
+		t.Errorf("Expected width=1280 (adjusted from 1279), got %d", info.Width)
+	}
+	if info.Height != 720 {
+		t.Errorf("Expected height=720 (adjusted from 719), got %d", info.Height)
+	}
+}
+
 // =============================================================================
 // StreamVideo Tests
 // =============================================================================
@@ -980,6 +1088,123 @@ func TestTranscodeAndStreamIntegration_FullProcess(t *testing.T) {
 	t.Logf("Transcoded %d bytes at %d width", buf.Len(), targetWidth)
 }
 
+func TestTranscodeIntegration_OddDimensions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+
+	// Create a test video with odd dimensions (648x459) - the actual failure case
+	// Use mpeg4 codec which allows odd dimensions during creation
+	testFile := filepath.Join(tmpDir, "odd_dimensions.mp4")
+	cmd := exec.CommandContext(context.Background(), "ffmpeg",
+		"-f", "lavfi",
+		"-i", "testsrc=duration=1:size=648x459:rate=1",
+		"-c:v", "mpeg4", // mpeg4 allows odd dimensions
+		"-t", "1",
+		testFile,
+	)
+
+	if err := cmd.Run(); err != nil {
+		t.Skipf("Skipping test: ffmpeg not available or failed: %v", err)
+	}
+
+	trans := New(cacheDir, "", true)
+	ctx := context.Background()
+
+	// Get video info - should adjust odd dimensions
+	info, err := trans.GetVideoInfo(ctx, testFile)
+	if err != nil {
+		t.Fatalf("GetVideoInfo failed: %v", err)
+	}
+
+	// Verify dimensions were adjusted
+	if info.Height%2 != 0 {
+		t.Errorf("Height should be adjusted to even number, got %d", info.Height)
+	}
+	if info.Width%2 != 0 {
+		t.Errorf("Width should be adjusted to even number, got %d", info.Width)
+	}
+
+	// Now transcode it - this should succeed without "height not divisible by 2" error
+	var buf bytes.Buffer
+	err = trans.StreamVideo(ctx, testFile, &buf, 0) // targetWidth=0 means no scaling
+	if err != nil {
+		t.Fatalf("StreamVideo failed with odd dimensions: %v", err)
+	}
+
+	if buf.Len() == 0 {
+		t.Error("Expected transcoded video data")
+	}
+
+	t.Logf("Successfully transcoded video with originally odd dimensions, output: %d bytes", buf.Len())
+}
+
+func TestTranscodeIntegration_OddDimensionsIncompatibleCodec(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+
+	// Create a test video with odd dimensions using an incompatible codec (HEVC)
+	// This tests the case where needsReencode=true but needsScaling=false
+	testFile := filepath.Join(tmpDir, "odd_hevc.mp4")
+	cmd := exec.CommandContext(context.Background(), "ffmpeg",
+		"-f", "lavfi",
+		"-i", "testsrc=duration=1:size=320x239:rate=1", // 239 is odd
+		"-c:v", "libx265", // HEVC/H.265 codec (incompatible for web)
+		"-t", "1",
+		testFile,
+	)
+
+	if err := cmd.Run(); err != nil {
+		t.Skipf("Skipping test: ffmpeg/libx265 not available or failed: %v", err)
+	}
+
+	trans := New(cacheDir, "", true)
+	ctx := context.Background()
+
+	// Get video info
+	info, err := trans.GetVideoInfo(ctx, testFile)
+	if err != nil {
+		t.Fatalf("GetVideoInfo failed: %v", err)
+	}
+
+	// Verify height was adjusted to even
+	if info.Height%2 != 0 {
+		t.Errorf("Height should be adjusted to even number, got %d", info.Height)
+	}
+
+	// HEVC should need transcode (incompatible codec forces re-encode)
+	if !info.NeedsTranscode {
+		t.Error("HEVC codec should need transcode for H.264 compatibility")
+	}
+
+	// Transcode without scaling (targetWidth=0)
+	// This triggers Tier 2: re-encode with scale filter to ensure even dimensions
+	var buf bytes.Buffer
+	err = trans.StreamVideo(ctx, testFile, &buf, 0)
+	if err != nil {
+		t.Fatalf("StreamVideo failed for incompatible codec with odd dimensions: %v", err)
+	}
+
+	if buf.Len() == 0 {
+		t.Error("Expected transcoded video data")
+	}
+
+	t.Logf("Successfully re-encoded HEVC video with odd dimensions to H.264, output: %d bytes", buf.Len())
+}
+
 func TestCleanupIntegration_WithActiveTranscode(t *testing.T) {
 	checkFFmpegAvailable(t)
 	testVideo := getTestVideoPath(t)
@@ -1156,4 +1381,261 @@ func createTestH264Video(t *testing.T, dir string) string {
 	}
 
 	return videoPath
+}
+
+// =============================================================================
+// Error Handling Tests
+// =============================================================================
+
+func TestGetOrStartTranscodeAndWait_ErrorFileDetection(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+
+	// Create test video file
+	testFile := filepath.Join(tmpDir, "test.mkv")
+	if err := os.WriteFile(testFile, []byte("fake video"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Mock ffprobe to return incompatible codec
+	mockFFProbe := filepath.Join(tmpDir, "ffprobe")
+	ffprobeScript := `#!/bin/bash
+cat << 'EOF'
+{
+  "streams": [
+    {
+      "codec_name": "hevc",
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "format": {
+    "duration": "100.0"
+  }
+}
+EOF
+`
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffprobe: %v", err)
+	}
+
+	// Mock ffmpeg to fail
+	mockFFmpeg := filepath.Join(tmpDir, "ffmpeg")
+	ffmpegScript := `#!/bin/bash
+echo "ffmpeg version 8.0 mock error" >&2
+echo "[libx264 @ 0x123] height not divisible by 2 (1920x1079)" >&2
+echo "Conversion failed!" >&2
+exit 1
+`
+	if err := os.WriteFile(mockFFmpeg, []byte(ffmpegScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffmpeg: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	defer func() {
+		_ = os.Setenv("PATH", oldPath)
+	}()
+	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
+
+	trans := New(cacheDir, "", true)
+	ctx := context.Background()
+
+	// Get video info
+	info, err := trans.GetVideoInfo(ctx, testFile)
+	if err != nil {
+		t.Fatalf("GetVideoInfo failed: %v", err)
+	}
+
+	// This should start transcoding and wait, but ffmpeg will fail
+	// The error should be detected via the .err file
+	cachePath, err := trans.GetOrStartTranscodeAndWait(ctx, testFile, 0, info)
+
+	// Verify error is returned
+	if err == nil {
+		t.Error("Expected error from failed transcode, got nil")
+	}
+
+	if cachePath != "" {
+		t.Errorf("Expected empty cachePath on error, got: %s", cachePath)
+	}
+
+	// Verify error message contains transcoding failure info
+	if !strings.Contains(err.Error(), "transcode failed") {
+		t.Errorf("Expected 'transcode failed' in error, got: %v", err)
+	}
+
+	// Verify cache file doesn't exist
+	cacheKey := filepath.Base(testFile) + "_w0.mp4"
+	finalCachePath := filepath.Join(cacheDir, cacheKey)
+	if _, err := os.Stat(finalCachePath); !os.IsNotExist(err) {
+		t.Error("Cache file should not exist after failed transcode")
+	}
+
+	// Verify error file is cleaned up
+	errorPath := finalCachePath + ".err"
+	if _, err := os.Stat(errorPath); !os.IsNotExist(err) {
+		t.Error("Error file should be cleaned up after detection")
+	}
+}
+
+func TestGetOrStartTranscode_ErrorFileCreation(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+
+	// Create test video file
+	testFile := filepath.Join(tmpDir, "test.mkv")
+	if err := os.WriteFile(testFile, []byte("fake video"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Mock ffprobe to return incompatible codec
+	mockFFProbe := filepath.Join(tmpDir, "ffprobe")
+	ffprobeScript := `#!/bin/bash
+cat << 'EOF'
+{
+  "streams": [
+    {
+      "codec_name": "hevc",
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "format": {
+    "duration": "100.0"
+  }
+}
+EOF
+`
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffprobe: %v", err)
+	}
+
+	// Mock ffmpeg to fail
+	mockFFmpeg := filepath.Join(tmpDir, "ffmpeg")
+	ffmpegScript := `#!/bin/bash
+echo "Fatal error in transcoding" >&2
+exit 187
+`
+	if err := os.WriteFile(mockFFmpeg, []byte(ffmpegScript), 0o755); err != nil {
+		t.Fatalf("Failed to create mock ffmpeg: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	defer func() {
+		_ = os.Setenv("PATH", oldPath)
+	}()
+	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
+
+	trans := New(cacheDir, "", true)
+	ctx := context.Background()
+
+	// Get video info
+	info, err := trans.GetVideoInfo(ctx, testFile)
+	if err != nil {
+		t.Fatalf("GetVideoInfo failed: %v", err)
+	}
+
+	// Start transcoding (won't wait)
+	cachePath, isCached, err := trans.GetOrStartTranscode(ctx, testFile, 0, info)
+	if err != nil {
+		t.Fatalf("GetOrStartTranscode failed: %v", err)
+	}
+
+	if isCached {
+		t.Error("Expected isCached=false for new transcode")
+	}
+
+	// Wait for the background goroutine to finish and create error file
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify error file was created
+	errorPath := cachePath + ".err"
+	errorData, err := os.ReadFile(errorPath)
+	if err != nil {
+		t.Errorf("Error file should exist at %s: %v", errorPath, err)
+	} else {
+		errorStr := string(errorData)
+		if !strings.Contains(errorStr, "ffmpeg error") {
+			t.Errorf("Error file should contain ffmpeg error, got: %s", errorStr)
+		}
+		if !strings.Contains(errorStr, "187") {
+			t.Errorf("Error file should contain exit code 187, got: %s", errorStr)
+		}
+	}
+
+	// Verify cache files were cleaned up
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Error("Cache file should be removed on error")
+	}
+
+	tmpPath := cachePath + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Error("Temp cache file should be removed on error")
+	}
+}
+
+func TestGetOrStartTranscodeAndWait_SuccessfulTranscodeCleansErrorFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+
+	// Create a small test video using ffmpeg (if available)
+	testFile := filepath.Join(tmpDir, "test.mp4")
+	cmd := exec.CommandContext(context.Background(), "ffmpeg",
+		"-f", "lavfi",
+		"-i", "testsrc=duration=1:size=320x240:rate=1",
+		"-c:v", "libx264",
+		"-t", "1",
+		"-pix_fmt", "yuv420p",
+		testFile,
+	)
+
+	if err := cmd.Run(); err != nil {
+		t.Skipf("Skipping test: ffmpeg not available or failed: %v", err)
+	}
+
+	trans := New(cacheDir, "", true)
+	ctx := context.Background()
+
+	// Get video info
+	info, err := trans.GetVideoInfo(ctx, testFile)
+	if err != nil {
+		t.Fatalf("GetVideoInfo failed: %v", err)
+	}
+
+	// Create a fake error file from a previous failed attempt
+	cacheKey := filepath.Base(testFile) + "_w0.mp4"
+	cachePath := filepath.Join(cacheDir, cacheKey)
+	errorPath := cachePath + ".err"
+	if err := os.WriteFile(errorPath, []byte("previous error"), 0o644); err != nil {
+		t.Fatalf("Failed to create fake error file: %v", err)
+	}
+
+	// Verify error file exists
+	if _, err := os.Stat(errorPath); err != nil {
+		t.Fatal("Error file should exist before test")
+	}
+
+	// This should succeed and clean up the error file
+	_, err = trans.GetOrStartTranscodeAndWait(ctx, testFile, 0, info)
+	if err != nil {
+		t.Fatalf("GetOrStartTranscodeAndWait failed: %v", err)
+	}
+
+	// Verify error file was removed
+	if _, err := os.Stat(errorPath); !os.IsNotExist(err) {
+		t.Error("Error file should be removed after successful transcode")
+	}
 }

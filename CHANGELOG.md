@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.12.2] - Unreleased
+
+### Fixed
+
+- **Video Dimension Compatibility**: Fixed transcoding failures for videos with unusual dimensions. Some older videos (particularly FLV files and certain codecs) have dimensions that aren't compatible with modern web video formats, causing "height not divisible by 2" errors and preventing playback. The transcoder now automatically adjusts video dimensions during conversion to ensure compatibility, allowing these videos to play successfully in your browser. ([#244](https://github.com/djryanj/media-viewer/issues/244))
+
+- **Transcoding Error Display**: Fixed transcoding errors not being displayed to users. When video transcoding failed (due to corrupted files, unsupported formats, or other issues), the error was only logged on the server with no feedback shown in the browser. Users would see indefinite loading spinners without knowing what went wrong. The system now properly communicates transcoding failures to your browser, displaying user-friendly error messages like "Video transcoding failed" so you know when a video can't be played. ([#244](https://github.com/djryanj/media-viewer/issues/244))
+
 ## [0.12.1] - 2026-02-10
 
 ### Fixed
