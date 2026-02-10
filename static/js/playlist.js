@@ -969,20 +969,20 @@ const Playlist = {
         // Show loading indicator
         this.showLoading();
 
-        // Hide loading when video data is loaded
-        const hideLoadingOnData = () => {
+        // Hide loading when video can play (use canplay instead of loadeddata for better transcoding UX)
+        const hideLoadingOnCanPlay = () => {
             this.hideLoading();
-            video.removeEventListener('loadeddata', hideLoadingOnData);
+            video.removeEventListener('canplay', hideLoadingOnCanPlay);
             video.removeEventListener('error', hideLoadingOnError);
         };
 
         const hideLoadingOnError = () => {
             this.hideLoading();
-            video.removeEventListener('loadeddata', hideLoadingOnData);
+            video.removeEventListener('canplay', hideLoadingOnCanPlay);
             video.removeEventListener('error', hideLoadingOnError);
         };
 
-        video.addEventListener('loadeddata', hideLoadingOnData);
+        video.addEventListener('canplay', hideLoadingOnCanPlay);
         video.addEventListener('error', hideLoadingOnError);
 
         // Check if this video might need transcoding and show appropriate message
@@ -993,7 +993,7 @@ const Playlist = {
             () => {
                 console.error('Player: Video load timeout:', item.path);
                 this.hideLoading();
-                video.removeEventListener('loadeddata', hideLoadingOnData);
+                video.removeEventListener('canplay', hideLoadingOnCanPlay);
                 video.removeEventListener('error', hideLoadingOnError);
 
                 if (typeof Gallery !== 'undefined' && Gallery.showToast) {
@@ -1007,14 +1007,14 @@ const Playlist = {
         ); // 5 minutes for transcoding
 
         // Clear timeout on successful load
-        const originalHideLoadingOnData = hideLoadingOnData;
-        const hideLoadingOnDataWithTimeout = () => {
+        const originalHideLoadingOnCanPlay = hideLoadingOnCanPlay;
+        const hideLoadingOnCanPlayWithTimeout = () => {
             clearTimeout(loadTimeout);
-            originalHideLoadingOnData();
+            originalHideLoadingOnCanPlay();
         };
 
-        video.removeEventListener('loadeddata', hideLoadingOnData);
-        video.addEventListener('loadeddata', hideLoadingOnDataWithTimeout);
+        video.removeEventListener('canplay', hideLoadingOnCanPlay);
+        video.addEventListener('canplay', hideLoadingOnCanPlayWithTimeout);
 
         video.src = videoUrl;
         video.load();
