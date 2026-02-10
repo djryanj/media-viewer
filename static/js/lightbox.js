@@ -35,6 +35,24 @@ const Lightbox = {
     userHidOverlays: false,
     lastTouchTime: 0,
 
+    // Pinch-to-zoom state
+    zoom: {
+        scale: 1,
+        translateX: 0,
+        translateY: 0,
+        initialDistance: 0,
+        initialScale: 1,
+        isPinching: false,
+        isPanning: false,
+        lastTouchX: 0,
+        lastTouchY: 0,
+        minScale: 1,
+        maxScale: 5,
+        lastTapTime: 0,
+        pinchCenterX: 0,
+        pinchCenterY: 0,
+    },
+
     init() {
         this.cacheElements();
         this.createHotZones();
@@ -43,6 +61,7 @@ const Lightbox = {
         this.createLoopToggle();
         this.createTagsOverlay();
         this.bindEvents();
+        this.bindZoomEvents();
     },
 
     cacheElements() {
@@ -577,6 +596,9 @@ const Lightbox = {
                 // Ignore touches on video controls
                 if (e.target.closest('.video-controls')) return;
 
+                // Ignore if zoomed or multi-touch
+                if (this.zoom.scale > 1 || e.touches.length > 1) return;
+
                 this.touchStartX = e.changedTouches[0].screenX;
                 this.touchStartY = e.changedTouches[0].screenY;
                 this.isSwiping = false;
@@ -589,6 +611,9 @@ const Lightbox = {
             (e) => {
                 // Ignore touches on video controls
                 if (e.target.closest('.video-controls')) return;
+
+                // Ignore if zoomed or pinching
+                if (this.zoom.scale > 1 || this.zoom.isPinching || this.zoom.isPanning) return;
 
                 const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
                 const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
@@ -603,6 +628,9 @@ const Lightbox = {
         this.elements.lightbox.addEventListener(
             'touchend',
             (e) => {
+                // Don't swipe if zoomed
+                if (this.zoom.scale > 1) return;
+
                 if (this.isSwiping) {
                     this.touchEndX = e.changedTouches[0].screenX;
                     this.handleSwipe();
@@ -658,8 +686,8 @@ const Lightbox = {
             const touchDuration = Date.now() - uiTouchStartTime;
 
             // Only respond to quick taps (not drags/swipes)
-            // Also skip if this was a swipe navigation gesture
-            if (touchDuration >= 300 || this.isSwiping) {
+            // Also skip if this was a swipe navigation gesture or if zoomed
+            if (touchDuration >= 300 || this.isSwiping || this.zoom.scale > 1) {
                 return;
             }
 
@@ -712,6 +740,206 @@ const Lightbox = {
                 this.showUIOverlays();
             }
         });
+    },
+
+    bindZoomEvents() {
+        // Pinch-to-zoom and pan handlers
+        this.elements.image.addEventListener(
+            'touchstart',
+            (e) => {
+                // Detect double-tap to reset zoom
+                const now = Date.now();
+                const timeSinceLastTap = now - this.zoom.lastTapTime;
+
+                if (timeSinceLastTap < 300 && timeSinceLastTap > 0 && e.touches.length === 1) {
+                    // Double tap detected
+                    if (this.zoom.scale > 1) {
+                        // Only prevent default and reset if we're actually zoomed in
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.resetZoom();
+                        this.zoom.lastTapTime = 0;
+                        return;
+                    }
+                }
+
+                if (e.touches.length === 1) {
+                    this.zoom.lastTapTime = now;
+                }
+
+                if (e.touches.length === 2) {
+                    // Pinch gesture starting
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.zoom.isPinching = true;
+                    this.zoom.initialDistance = this.getTouchDistance(e.touches);
+                    this.zoom.initialScale = this.zoom.scale;
+
+                    // Calculate pinch center point in viewport coordinates
+                    this.zoom.pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                    this.zoom.pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                } else if (e.touches.length === 1 && this.zoom.scale > 1) {
+                    // Single touch while zoomed - prepare for panning
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.zoom.isPanning = true;
+                    this.zoom.lastTouchX = e.touches[0].clientX;
+                    this.zoom.lastTouchY = e.touches[0].clientY;
+                }
+            },
+            { passive: false }
+        );
+
+        this.elements.image.addEventListener(
+            'touchmove',
+            (e) => {
+                if (this.zoom.isPinching && e.touches.length === 2) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const currentDistance = this.getTouchDistance(e.touches);
+                    const scale =
+                        (currentDistance / this.zoom.initialDistance) * this.zoom.initialScale;
+
+                    // Clamp scale between min and max
+                    this.zoom.scale = Math.min(
+                        Math.max(scale, this.zoom.minScale),
+                        this.zoom.maxScale
+                    );
+                    this.applyZoomTransform();
+                } else if (this.zoom.isPanning && e.touches.length === 1 && this.zoom.scale > 1) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const deltaX = e.touches[0].clientX - this.zoom.lastTouchX;
+                    const deltaY = e.touches[0].clientY - this.zoom.lastTouchY;
+
+                    this.zoom.translateX += deltaX;
+                    this.zoom.translateY += deltaY;
+
+                    // Constrain panning to image bounds
+                    this.constrainPan();
+
+                    this.zoom.lastTouchX = e.touches[0].clientX;
+                    this.zoom.lastTouchY = e.touches[0].clientY;
+
+                    this.applyZoomTransform();
+                }
+            },
+            { passive: false }
+        );
+
+        this.elements.image.addEventListener(
+            'touchend',
+            (e) => {
+                if (this.zoom.isPinching) {
+                    this.zoom.isPinching = false;
+
+                    // If scale is close to minimum, reset zoom
+                    if (this.zoom.scale < 1.1) {
+                        this.resetZoom();
+                        // Remove zoom history state if exists
+                        if (
+                            typeof HistoryManager !== 'undefined' &&
+                            HistoryManager.hasState('lightbox-zoom')
+                        ) {
+                            HistoryManager.removeState('lightbox-zoom');
+                        }
+                    } else if (this.zoom.scale > 1 && this.zoom.initialScale <= 1) {
+                        // Just zoomed in from 1x, push history state for zoom
+                        if (
+                            typeof HistoryManager !== 'undefined' &&
+                            !HistoryManager.hasState('lightbox-zoom')
+                        ) {
+                            HistoryManager.pushState('lightbox-zoom');
+                        }
+                    }
+                }
+
+                if (this.zoom.isPanning && e.touches.length === 0) {
+                    this.zoom.isPanning = false;
+                }
+            },
+            { passive: true }
+        );
+
+        this.elements.image.addEventListener(
+            'touchcancel',
+            () => {
+                this.zoom.isPinching = false;
+                this.zoom.isPanning = false;
+            },
+            { passive: true }
+        );
+    },
+
+    getTouchDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    },
+
+    applyZoomTransform() {
+        const transform = `translate(${this.zoom.translateX}px, ${this.zoom.translateY}px) scale(${this.zoom.scale})`;
+        this.elements.image.style.transform = transform;
+        this.elements.image.style.transition =
+            this.zoom.isPinching || this.zoom.isPanning ? 'none' : 'transform 0.3s ease';
+    },
+
+    constrainPan() {
+        if (this.zoom.scale <= 1) {
+            this.zoom.translateX = 0;
+            this.zoom.translateY = 0;
+            return;
+        }
+
+        const img = this.elements.image;
+        const parent = img.parentElement.getBoundingClientRect();
+
+        // Get the natural (untransformed) dimensions
+        const naturalWidth = img.naturalWidth;
+        const naturalHeight = img.naturalHeight;
+
+        if (!naturalWidth || !naturalHeight) return;
+
+        // Calculate how the image is displayed (object-fit: contain)
+        const containerAspect = parent.width / parent.height;
+        const imageAspect = naturalWidth / naturalHeight;
+
+        let displayWidth, displayHeight;
+        if (imageAspect > containerAspect) {
+            // Image is wider - constrained by width
+            displayWidth = parent.width;
+            displayHeight = parent.width / imageAspect;
+        } else {
+            // Image is taller - constrained by height
+            displayHeight = parent.height;
+            displayWidth = parent.height * imageAspect;
+        }
+
+        // Calculate the scaled dimensions
+        const scaledWidth = displayWidth * this.zoom.scale;
+        const scaledHeight = displayHeight * this.zoom.scale;
+
+        // Calculate maximum pan distances (how far we can move before showing white space)
+        const maxX = Math.max(0, (scaledWidth - parent.width) / 2);
+        const maxY = Math.max(0, (scaledHeight - parent.height) / 2);
+
+        // Constrain translation
+        this.zoom.translateX = Math.min(Math.max(this.zoom.translateX, -maxX), maxX);
+        this.zoom.translateY = Math.min(Math.max(this.zoom.translateY, -maxY), maxY);
+    },
+
+    resetZoom() {
+        this.zoom.scale = 1;
+        this.zoom.translateX = 0;
+        this.zoom.translateY = 0;
+        this.zoom.isPinching = false;
+        this.zoom.isPanning = false;
+        this.applyZoomTransform();
+
+        // Remove zoom history state if exists
+        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox-zoom')) {
+            HistoryManager.removeState('lightbox-zoom');
+        }
     },
 
     handleSwipe() {
@@ -809,6 +1037,9 @@ const Lightbox = {
         this.stopAnimationLoopDetection();
         this.releaseWakeLock();
 
+        // Clean up zoom state and history
+        this.resetZoom();
+
         // Clean up UI overlay timeout
         if (this.uiOverlaysTimeout) {
             clearTimeout(this.uiOverlaysTimeout);
@@ -844,6 +1075,23 @@ const Lightbox = {
         if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox')) {
             history.back();
         } else {
+            this.close();
+        }
+    },
+
+    /**
+     * Handle back button press - unzoom if zoomed, otherwise close
+     */
+    handleBackButton() {
+        if (this.zoom.scale > 1) {
+            // Unzoom instead of closing
+            this.resetZoom();
+            // Remove the zoom history state that was pushed
+            if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox-zoom')) {
+                HistoryManager.removeState('lightbox-zoom');
+            }
+        } else {
+            // Not zoomed, close normally
             this.close();
         }
     },
@@ -974,6 +1222,10 @@ const Lightbox = {
 
         const file = this.items[this.currentIndex];
         if (!file) return;
+
+        // Reset zoom when changing images
+        // This also removes the zoom history state
+        this.resetZoom();
 
         this.stopAnimationLoopDetection();
         this.abortCurrentLoad();
