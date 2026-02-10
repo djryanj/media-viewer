@@ -462,6 +462,42 @@ const Lightbox = {
         this.elements.lightbox.appendChild(overlay);
         this.elements.tagsOverlay = overlay;
         this.elements.tagsContainer = overlay.querySelector('.lightbox-tags-container');
+
+        // Toggle expanded state when clicking on tags container
+        this.elements.tagsContainer.addEventListener('click', (e) => {
+            // Don't toggle if clicking on tag remove buttons or tag text
+            if (
+                e.target.closest('.lightbox-tag-remove') ||
+                e.target.closest('.lightbox-tag-text')
+            ) {
+                return;
+            }
+
+            this.elements.tagsOverlay.classList.toggle('expanded');
+
+            // Show UI overlays and prevent auto-hide (user is interacting with tags)
+            this.userHidOverlays = true;
+            this.showUIOverlays();
+
+            e.stopPropagation();
+        });
+
+        // Handle touch on tags overlay to show/keep UI overlays visible
+        this.elements.tagsOverlay.addEventListener(
+            'touchend',
+            () => {
+                // Update last touch time to prevent mousemove from interfering
+                this.lastTouchTime = Date.now();
+
+                // Cancel any pending auto-hide timer
+                clearTimeout(this.uiOverlaysTimeout);
+
+                // Show UI overlays and prevent auto-hide (user is interacting with tags)
+                this.userHidOverlays = true;
+                this.showUIOverlays();
+            },
+            { passive: true }
+        );
     },
 
     bindEvents() {
@@ -1079,6 +1115,8 @@ const Lightbox = {
         }
 
         this.elements.tagsOverlay.classList.remove('hidden');
+        this.elements.tagsOverlay.classList.remove('expanded'); // Reset to collapsed when switching files
+
         this.elements.tagsContainer.innerHTML = tags
             .map(
                 (tag) => `
@@ -1092,6 +1130,13 @@ const Lightbox = {
         `
             )
             .join('');
+
+        // Check if content overflows and add class
+        requestAnimationFrame(() => {
+            const container = this.elements.tagsContainer;
+            const hasOverflow = container.scrollHeight > container.clientHeight;
+            this.elements.tagsOverlay.classList.toggle('has-overflow', hasOverflow);
+        });
 
         this.elements.tagsContainer.querySelectorAll('.lightbox-tag-chip').forEach((chip) => {
             const removeBtn = chip.querySelector('.lightbox-tag-remove');

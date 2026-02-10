@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tags Overlay in Lightbox**: The tags overlay in the lightbox was too intrusive when there were lots of tags, so it has been changed to be smaller by default. If there are more tags than are visible, tapping on the overlay will bring it up. ([#226](https://github.com/djryanj/media-viewer/issues/226))
+
 - **Lightbox UI Fade Controls**: Added automatic fading controls for lightbox interface elements. After viewing an image or video for 3 seconds, control buttons, the clock, and other interface elements smoothly fade away for an unobstructed viewing experience. Tap or click anywhere on the image or video to instantly show or hide controls. On desktop, moving your mouse automatically brings controls back. Navigation arrows (chevrons) and hotzone areas remain unaffected and work independently. Added "Always Keep Clock Visible" preference in Display settings to keep the clock visible even when other controls fade - enabled by default. This preference is automatically disabled when the "Show Clock" option is turned off. Controls remain easily accessible whenever you need them while staying out of the way during viewing. ([#226](https://github.com/djryanj/media-viewer/issues/226))
 
 ### Fixed

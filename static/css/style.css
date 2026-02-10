@@ -2119,6 +2119,35 @@ select:focus {
     background: rgba(0, 0, 0, 0.6);
     border-radius: var(--radius);
     max-width: calc(100% - 1rem);
+    max-height: 3rem; /* One row height */
+    overflow: hidden;
+    position: relative;
+    transition: max-height 0.3s ease;
+    cursor: pointer;
+}
+
+/* Fade effect at bottom when collapsed and has overflow */
+.lightbox-tags-container::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1rem;
+    background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.6));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.lightbox-tags-overlay.has-overflow:not(.expanded) .lightbox-tags-container::after {
+    opacity: 1;
+}
+
+/* Expanded state */
+.lightbox-tags-overlay.expanded .lightbox-tags-container {
+    max-height: 20rem; /* Allow more tags when expanded */
+    cursor: default;
 }
 
 .lightbox-tag-chip {
