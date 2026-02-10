@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Favorites Bar Alignment**: Fixed star icon and "Favorites" text not aligning properly in the favorites section header. The icon now displays inline with the text instead of appearing on separate lines. ([#229](https://github.com/djryanj/media-viewer/issues/229))
+
 - **Video Player Controls**: Fixed video scrub bar becoming unusable on mobile devices in lightbox. After the recent hotzone fix, attempting to drag the playhead to scrub through video would trigger swipe gestures instead, making it impossible to seek to a specific time. Both navigation swipes and video scrubbing now work properly on mobile devices. ([#225](https://github.com/djryanj/media-viewer/issues/225))
 
 - **Toast Notifications**: Fixed notification messages extending off the screen edge on small screens in portrait mode. Long messages like "Preparing video for playback. Large files may take a few minutes..." would overflow past the viewport width and become partially unreadable. Notification messages now wrap to multiple lines and stay fully visible on all screen sizes. ([#224](https://github.com/djryanj/media-viewer/issues/224))
