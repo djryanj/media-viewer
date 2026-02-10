@@ -18,7 +18,7 @@
     "editable": true,
     "fiscalYearStartMonth": 0,
     "graphTooltip": 1,
-    "id": 196,
+    "id": 198,
     "links": [],
     "panels": [
         {
@@ -59,7 +59,7 @@
             },
             "gridPos": {
                 "h": 3,
-                "w": 6,
+                "w": 3,
                 "x": 0,
                 "y": 1
             },
@@ -127,7 +127,7 @@
             "gridPos": {
                 "h": 3,
                 "w": 3,
-                "x": 6,
+                "x": 3,
                 "y": 1
             },
             "id": 1,
@@ -190,7 +190,7 @@
             "gridPos": {
                 "h": 3,
                 "w": 3,
-                "x": 9,
+                "x": 6,
                 "y": 1
             },
             "id": 108,
@@ -226,6 +226,68 @@
                 }
             ],
             "title": "New Files (24h)",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "short"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 3,
+                "w": 3,
+                "x": 9,
+                "y": 1
+            },
+            "id": 204,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "auto",
+                "wideLayout": true
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "media_viewer_active_sessions{job=~\"$instance\"}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Active Sessions",
             "type": "stat"
         },
         {
@@ -797,7 +859,7 @@
                             }
                         ]
                     },
-                    "unit": "short"
+                    "unit": "s"
                 },
                 "overrides": []
             },
@@ -807,7 +869,7 @@
                 "x": 12,
                 "y": 4
             },
-            "id": 204,
+            "id": 14,
             "options": {
                 "colorMode": "value",
                 "graphMode": "none",
@@ -832,11 +894,11 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "media_viewer_active_sessions{job=~\"$instance\"}",
+                    "expr": "media_viewer_indexer_last_run_duration_seconds{job=~\"$instance\"}",
                     "refId": "A"
                 }
             ],
-            "title": "Active Sessions",
+            "title": "Last Index Duration",
             "type": "stat"
         },
         {
@@ -869,7 +931,7 @@
                 "x": 15,
                 "y": 4
             },
-            "id": 205,
+            "id": 206,
             "options": {
                 "colorMode": "value",
                 "graphMode": "area",
@@ -894,11 +956,11 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "media_viewer_transcoder_jobs_in_progress{job=~\"$instance\"}",
+                    "expr": "media_viewer_indexer_files_per_second{job=~\"$instance\"}",
                     "refId": "A"
                 }
             ],
-            "title": "Transcoding Jobs",
+            "title": "Index Files/sec",
             "type": "stat"
         },
         {
@@ -913,23 +975,15 @@
                     },
                     "mappings": [],
                     "thresholds": {
-                        "mode": "percentage",
+                        "mode": "absolute",
                         "steps": [
                             {
-                                "color": "red",
-                                "value": 0
-                            },
-                            {
-                                "color": "yellow",
-                                "value": 50
-                            },
-                            {
                                 "color": "green",
-                                "value": 80
+                                "value": 0
                             }
                         ]
                     },
-                    "unit": "percentunit"
+                    "unit": "short"
                 },
                 "overrides": []
             },
@@ -939,10 +993,10 @@
                 "x": 18,
                 "y": 4
             },
-            "id": 13,
+            "id": 207,
             "options": {
                 "colorMode": "value",
-                "graphMode": "area",
+                "graphMode": "none",
                 "justifyMode": "auto",
                 "orientation": "auto",
                 "percentChangeColorMode": "standard",
@@ -964,11 +1018,11 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "media_viewer_thumbnail_cache_hits_total{job=~\"$instance\"} / (media_viewer_thumbnail_cache_hits_total{job=~\"$instance\"} + media_viewer_thumbnail_cache_misses_total{job=~\"$instance\"})",
+                    "expr": "media_viewer_indexer_parallel_workers{job=~\"$instance\"}",
                     "refId": "A"
                 }
             ],
-            "title": "Thumb Cache Hit Rate",
+            "title": "Index Workers",
             "type": "stat"
         },
         {
@@ -988,10 +1042,18 @@
                             {
                                 "color": "green",
                                 "value": 0
+                            },
+                            {
+                                "color": "red",
+                                "value": 5
+                            },
+                            {
+                                "color": "#EAB839",
+                                "value": 10
                             }
                         ]
                     },
-                    "unit": "decbytes"
+                    "unit": "short"
                 },
                 "overrides": []
             },
@@ -1001,7 +1063,7 @@
                 "x": 21,
                 "y": 4
             },
-            "id": 11,
+            "id": 210,
             "options": {
                 "colorMode": "value",
                 "graphMode": "area",
@@ -1026,73 +1088,11 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "media_viewer_thumbnail_cache_size_bytes{job=~\"$instance\"}",
+                    "expr": "media_viewer_indexer_errors_total{job=~\"$instance\"}",
                     "refId": "A"
                 }
             ],
-            "title": "Thumb Cache Size",
-            "type": "stat"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": 0
-                            }
-                        ]
-                    },
-                    "unit": "decbytes"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 3,
-                "w": 3,
-                "x": 0,
-                "y": 7
-            },
-            "id": 230,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "percentChangeColorMode": "standard",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "showPercentChange": false,
-                "textMode": "auto",
-                "wideLayout": true
-            },
-            "pluginVersion": "12.3.1",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${datasource}"
-                    },
-                    "expr": "media_viewer_transcoder_cache_size_bytes{job=~\"$instance\"}",
-                    "refId": "A"
-                }
-            ],
-            "title": "Transcoder Cache Size",
+            "title": "Indexer Errors",
             "type": "stat"
         },
         {
@@ -1155,8 +1155,8 @@
             },
             "gridPos": {
                 "h": 6,
-                "w": 5,
-                "x": 3,
+                "w": 6,
+                "x": 0,
                 "y": 7
             },
             "id": 9,
@@ -1212,8 +1212,8 @@
             },
             "gridPos": {
                 "h": 6,
-                "w": 4,
-                "x": 8,
+                "w": 6,
+                "x": 6,
                 "y": 7
             },
             "id": 10,
@@ -1289,316 +1289,6 @@
                 "x": 12,
                 "y": 7
             },
-            "id": 14,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "percentChangeColorMode": "standard",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "showPercentChange": false,
-                "textMode": "auto",
-                "wideLayout": true
-            },
-            "pluginVersion": "12.3.1",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${datasource}"
-                    },
-                    "expr": "media_viewer_indexer_last_run_duration_seconds{job=~\"$instance\"}",
-                    "refId": "A"
-                }
-            ],
-            "title": "Last Index Duration",
-            "type": "stat"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": 0
-                            }
-                        ]
-                    },
-                    "unit": "short"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 3,
-                "w": 3,
-                "x": 15,
-                "y": 7
-            },
-            "id": 15,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "percentChangeColorMode": "standard",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "showPercentChange": false,
-                "textMode": "auto",
-                "wideLayout": true
-            },
-            "pluginVersion": "12.3.1",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${datasource}"
-                    },
-                    "expr": "media_viewer_indexer_runs_total{job=~\"$instance\"}",
-                    "refId": "A"
-                }
-            ],
-            "title": "Total Index Runs",
-            "type": "stat"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": 0
-                            }
-                        ]
-                    },
-                    "unit": "short"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 3,
-                "w": 3,
-                "x": 18,
-                "y": 7
-            },
-            "id": 206,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "percentChangeColorMode": "standard",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "showPercentChange": false,
-                "textMode": "auto",
-                "wideLayout": true
-            },
-            "pluginVersion": "12.3.1",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${datasource}"
-                    },
-                    "expr": "media_viewer_indexer_files_per_second{job=~\"$instance\"}",
-                    "refId": "A"
-                }
-            ],
-            "title": "Index Files/sec",
-            "type": "stat"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": 0
-                            }
-                        ]
-                    },
-                    "unit": "short"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 3,
-                "w": 3,
-                "x": 21,
-                "y": 7
-            },
-            "id": 207,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "percentChangeColorMode": "standard",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "showPercentChange": false,
-                "textMode": "auto",
-                "wideLayout": true
-            },
-            "pluginVersion": "12.3.1",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${datasource}"
-                    },
-                    "expr": "media_viewer_indexer_parallel_workers{job=~\"$instance\"}",
-                    "refId": "A"
-                }
-            ],
-            "title": "Index Workers",
-            "type": "stat"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": 0
-                            }
-                        ]
-                    },
-                    "unit": "short"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 3,
-                "w": 3,
-                "x": 12,
-                "y": 10
-            },
-            "id": 12,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "percentChangeColorMode": "standard",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "showPercentChange": false,
-                "textMode": "auto",
-                "wideLayout": true
-            },
-            "pluginVersion": "12.3.1",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${datasource}"
-                    },
-                    "expr": "media_viewer_thumbnail_cache_count{job=~\"$instance\"}",
-                    "refId": "A"
-                }
-            ],
-            "title": "Cached Thumbnails",
-            "type": "stat"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": 0
-                            }
-                        ]
-                    },
-                    "unit": "s"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 3,
-                "w": 3,
-                "x": 15,
-                "y": 10
-            },
             "id": 208,
             "options": {
                 "colorMode": "value",
@@ -1658,8 +1348,8 @@
             "gridPos": {
                 "h": 3,
                 "w": 3,
-                "x": 18,
-                "y": 10
+                "x": 15,
+                "y": 7
             },
             "id": 209,
             "options": {
@@ -1708,7 +1398,7 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "red",
+                                "color": "green",
                                 "value": 0
                             }
                         ]
@@ -1720,10 +1410,10 @@
             "gridPos": {
                 "h": 3,
                 "w": 3,
-                "x": 21,
-                "y": 10
+                "x": 18,
+                "y": 7
             },
-            "id": 210,
+            "id": 12,
             "options": {
                 "colorMode": "value",
                 "graphMode": "area",
@@ -1748,11 +1438,267 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "media_viewer_indexer_errors_total{job=~\"$instance\"}",
+                    "expr": "media_viewer_thumbnail_cache_count{job=~\"$instance\"}",
                     "refId": "A"
                 }
             ],
-            "title": "Indexer Errors",
+            "title": "Cached Thumbnails",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "decbytes"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 3,
+                "w": 3,
+                "x": 21,
+                "y": 7
+            },
+            "id": 11,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "auto",
+                "wideLayout": true
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "media_viewer_thumbnail_cache_size_bytes{job=~\"$instance\"}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Thumb Cache Size",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "short"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 3,
+                "w": 3,
+                "x": 12,
+                "y": 10
+            },
+            "id": 205,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "auto",
+                "wideLayout": true
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "media_viewer_transcoder_jobs_in_progress{job=~\"$instance\"}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Transcoding Jobs",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "decbytes"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 3,
+                "w": 3,
+                "x": 15,
+                "y": 10
+            },
+            "id": 230,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "auto",
+                "wideLayout": true
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "media_viewer_transcoder_cache_size_bytes{job=~\"$instance\"}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Transcoder Cache Size",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "percentage",
+                        "steps": [
+                            {
+                                "color": "red",
+                                "value": 0
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 50
+                            },
+                            {
+                                "color": "green",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "percentunit"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 3,
+                "w": 3,
+                "x": 21,
+                "y": 10
+            },
+            "id": 13,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "auto",
+                "wideLayout": true
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "media_viewer_thumbnail_cache_hits_total{job=~\"$instance\"} / (media_viewer_thumbnail_cache_hits_total{job=~\"$instance\"} + media_viewer_thumbnail_cache_misses_total{job=~\"$instance\"})",
+                    "refId": "A"
+                }
+            ],
+            "title": "Thumb Cache Hit Rate",
             "type": "stat"
         },
         {
@@ -5216,7 +5162,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -5320,7 +5267,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -5424,7 +5372,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -5528,7 +5477,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -5632,7 +5582,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -5767,7 +5718,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -5861,7 +5813,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -5983,7 +5936,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -6090,7 +6044,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -6185,7 +6140,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -6289,7 +6245,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -6384,7 +6341,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -6493,7 +6451,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
@@ -6616,7 +6575,8 @@
                         "mode": "absolute",
                         "steps": [
                             {
-                                "color": "green"
+                                "color": "green",
+                                "value": 0
                             }
                         ]
                     },
