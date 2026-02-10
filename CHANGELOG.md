@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.12.1] - Unreleased
+
+### Fixed
+
+- **Playlist Transcoding Notifications**: Fixed toast notification not appearing when videos need transcoding in the playlist player. The player was using the `loadeddata` event which fires too early for transcoding videos (when the first frame loads), preventing the "Preparing video for playback" message from displaying. Now uses the `canplay` event which fires after sufficient buffering, matching the lightbox behavior and properly showing transcoding status notifications. ([#214](https://github.com/djryanj/media-viewer/issues/214))
+
 ## [0.12.0] - 2026-02-10
 
 ### Added
@@ -24,8 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Lightbox Button Styling**: Reduced visual intensity of active overlay buttons in the lightbox for a more subtle appearance when active or enabled, making them less obtrusive while still maintaining a clear visual distinction between enabled and disabled states. ([#231](https://github.com/djryanj/media-viewer/issues/231))
-
-### Fixed
 
 - **Favorites Bar Alignment**: Fixed star icon and "Favorites" text not aligning properly in the favorites section header. The icon now displays inline with the text instead of appearing on separate lines. ([#229](https://github.com/djryanj/media-viewer/issues/229))
 
