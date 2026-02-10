@@ -1739,7 +1739,7 @@ const Lightbox = {
             console.error('Error loading video:', e);
             this.hideLoading();
 
-            // Check if this is an auth error
+            // Check if this is an auth error or other server error
             try {
                 const response = await fetchWithTimeout(videoUrl, {
                     method: 'HEAD',
@@ -1751,6 +1751,24 @@ const Lightbox = {
                         SessionManager.handleSessionExpired();
                     } else {
                         window.location.replace('/login.html');
+                    }
+                } else if (response.status === 500) {
+                    console.error('Lightbox: server error loading video');
+                    if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                        Gallery.showToast(
+                            'Failed to load video. The file may be corrupted or incompatible with transcoding.',
+                            'error',
+                            10000
+                        );
+                    }
+                } else if (response.status >= 400) {
+                    console.error('Lightbox: HTTP error', response.status);
+                    if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                        Gallery.showToast(
+                            `Failed to load video (Error ${response.status})`,
+                            'error',
+                            8000
+                        );
                     }
                 }
             } catch (err) {

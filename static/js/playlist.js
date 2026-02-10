@@ -1056,7 +1056,7 @@ const Playlist = {
     },
 
     /**
-     * Check if a video load failure was due to authentication
+     * Check if a video load failure was due to authentication or other server errors
      * @param {string} videoUrl - The URL that failed to load
      */
     async checkVideoAuthError(videoUrl) {
@@ -1069,6 +1069,24 @@ const Playlist = {
                 } else {
                     this.close();
                     window.location.replace('/login.html');
+                }
+            } else if (response.status === 500) {
+                console.error('Player: server error loading video');
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        'Failed to load video. The file may be corrupted or incompatible with transcoding.',
+                        'error',
+                        10000
+                    );
+                }
+            } else if (response.status >= 400) {
+                console.error('Player: HTTP error', response.status);
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        `Failed to load video (Error ${response.status})`,
+                        'error',
+                        8000
+                    );
                 }
             }
         } catch (e) {
