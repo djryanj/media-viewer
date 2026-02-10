@@ -161,11 +161,19 @@ Track library size and content.
 
 Monitor video transcoding operations.
 
-| Metric                                         | Type      | Labels   | Description                            |
-| ---------------------------------------------- | --------- | -------- | -------------------------------------- |
-| `media_viewer_transcoder_jobs_total`           | Counter   | `status` | Total transcoding jobs by status       |
-| `media_viewer_transcoder_job_duration_seconds` | Histogram | -        | Transcoding job duration distribution  |
-| `media_viewer_transcoder_jobs_in_progress`     | Gauge     | -        | Transcoding jobs currently in progress |
+| Metric                                         | Type      | Labels   | Description                              |
+| ---------------------------------------------- | --------- | -------- | ---------------------------------------- |
+| `media_viewer_transcoder_jobs_total`           | Counter   | `status` | Total transcoding jobs by status         |
+| `media_viewer_transcoder_job_duration_seconds` | Histogram | -        | Transcoding job duration distribution    |
+| `media_viewer_transcoder_jobs_in_progress`     | Gauge     | -        | Transcoding jobs currently in progress   |
+| `media_viewer_transcoder_cache_size_bytes`     | Gauge     | -        | Total size of transcoder cache directory |
+
+**Use cases:**
+
+- Monitor cache growth over time
+- Track transcoding job success and failure rates
+- Identify long-running transcoding operations
+- Determine when cache cleanup is needed
 
 ### Authentication Metrics
 
@@ -292,6 +300,23 @@ histogram_quantile(0.95,
 sum(rate(media_viewer_http_requests_total{status=~"4..|5.."}[5m]))
 ```
 
+### Transcoder Performance
+
+```promql
+# Transcoder cache size
+media_viewer_transcoder_cache_size_bytes
+
+# Transcoding job rate by status
+rate(media_viewer_transcoder_jobs_total[5m])
+
+# P95 transcoding duration
+histogram_quantile(0.95,
+  rate(media_viewer_transcoder_job_duration_seconds_bucket[5m]))
+
+# Active transcoding jobs
+media_viewer_transcoder_jobs_in_progress
+```
+
 ## Grafana Dashboard
 
 A pre-built Grafana dashboard is available at:
@@ -308,6 +333,7 @@ Import this dashboard to visualize:
 - Database performance
 - Memory usage and GC activity
 - HTTP request rates and latencies
+- Transcoder job performance and cache growth
 
 ## Alerting Examples
 
@@ -357,6 +383,17 @@ Import this dashboard to visualize:
       summary: 'P95 filesystem operation latency over 1 second'
 ```
 
+### Transcoder Alerts
+
+```yaml
+# Large transcoder cache
+- alert: LargeTranscoderCache
+  expr: media_viewer_transcoder_cache_size_bytes > 10737418240 # 10GB
+  for: 30m
+  annotations:
+      summary: 'Transcoder cache size exceeds 10GB'
+```
+
 ### Memory Alerts
 
 ```yaml
@@ -377,6 +414,7 @@ Use metrics to guide performance optimization:
 3. **Thumbnail Generation**: Analyze phase timing to optimize FFmpeg vs resize vs encoding
 4. **Memory Usage**: Track `thumbnail_memory_usage_bytes` to tune concurrent generation limits
 5. **Cache Efficiency**: Monitor cache hit rates to adjust cache size and eviction policies
+6. **Transcoder Cache**: Track `transcoder_cache_size_bytes` to determine when cache cleanup is needed
 
 ## See Also
 
