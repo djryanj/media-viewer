@@ -1901,15 +1901,15 @@ select:focus {
 }
 
 .lightbox-pin.pinned {
-    color: var(--favorite-color);
-    box-shadow: 0 0 0 2px var(--favorite-color);
-    background: rgba(241, 196, 15, 0.2);
+    color: rgba(241, 196, 15, 0.8);
+    box-shadow: 0 0 0 1px rgba(241, 196, 15, 0.5);
+    background: rgba(241, 196, 15, 0.08);
 }
 
 .lightbox-tag.has-tags {
-    color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent);
-    background: rgba(233, 69, 96, 0.2);
+    color: rgba(233, 69, 96, 0.8);
+    box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.5);
+    background: rgba(233, 69, 96, 0.08);
 }
 
 .lightbox-info {
@@ -2051,9 +2051,9 @@ select:focus {
 }
 
 .lightbox-autoplay.enabled {
-    color: var(--enabled-color);
-    box-shadow: 0 0 0 2px var(--enabled-color);
-    background: rgba(52, 152, 219, 0.2);
+    color: rgba(52, 152, 219, 0.8);
+    box-shadow: 0 0 0 1px rgba(52, 152, 219, 0.5);
+    background: rgba(52, 152, 219, 0.08);
 }
 
 .lightbox-autoplay.hidden {
@@ -2089,9 +2089,9 @@ select:focus {
 }
 
 .lightbox-loop-toggle.enabled {
-    color: var(--enabled-color);
-    box-shadow: 0 0 0 2px var(--enabled-color);
-    background: rgba(52, 152, 219, 0.2);
+    color: rgba(52, 152, 219, 0.8);
+    box-shadow: 0 0 0 1px rgba(52, 152, 219, 0.5);
+    background: rgba(52, 152, 219, 0.08);
 }
 
 .lightbox-loop-toggle.hidden {
