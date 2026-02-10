@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.11.3] - Unreleased
+
+### Fixed
+
+- **Lightbox Image Alignment**: Fixed image centering and viewport filling in lightbox viewer. Recent video scaling improvements inadvertently broke image display, causing images to be left-aligned instead of centered and filling the viewport. Images now properly center and scale within the lightbox by hiding the video wrapper container when displaying images and showing it only in video mode. ([#220](https://github.com/djryanj/media-viewer/issues/220))
+
+- **Lightbox Video Hotzones**: Fixed navigation hotzones in lightbox video player on mobile devices. Video control overlay was blocking all touch input across the entire video area, preventing left/right navigation taps from working. Changed video controls to use pointer-events only on the actual control buttons, allowing hotzones to receive touch events for navigation between media items. ([#221](https://github.com/djryanj/media-viewer/issues/221))
+
 ## [0.11.2] - 2026-02-09
 
 ### Changed
