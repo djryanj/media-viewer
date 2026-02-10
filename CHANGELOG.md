@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Lightbox UI Fade Controls**: Added automatic fading controls for lightbox interface elements. After viewing an image or video for 3 seconds, control buttons, the clock, and other interface elements smoothly fade away for an unobstructed viewing experience. Tap or click anywhere on the image or video to instantly show or hide controls. On desktop, moving your mouse automatically brings controls back. Navigation arrows (chevrons) and hotzone areas remain unaffected and work independently. Added "Always Keep Clock Visible" preference in Display settings to keep the clock visible even when other controls fade - enabled by default. This preference is automatically disabled when the "Show Clock" option is turned off. Controls remain easily accessible whenever you need them while staying out of the way during viewing. ([#226](https://github.com/djryanj/media-viewer/issues/226))
 
+### Changed
+
+- **Lightbox Button Styling**: Reduced visual intensity of active overlay buttons in the lightbox for a more subtle appearance when active or enabled, making them less obtrusive while still maintaining a clear visual distinction between enabled and disabled states. ([#231](https://github.com/djryanj/media-viewer/issues/231))
+
 ### Fixed
 
 - **Video Player Controls**: Fixed video scrub bar becoming unusable on mobile devices in lightbox. After the recent hotzone fix, attempting to drag the playhead to scrub through video would trigger swipe gestures instead, making it impossible to seek to a specific time. Both navigation swipes and video scrubbing now work properly on mobile devices. ([#225](https://github.com/djryanj/media-viewer/issues/225))
