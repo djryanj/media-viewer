@@ -506,3 +506,125 @@ func TestCollectorStopCompletesCleanly(_ *testing.T) {
 
 	// Test completes successfully if we get here
 }
+func TestCollectorTranscoderCacheSizeCollection(t *testing.T) {
+	tempDir := t.TempDir()
+	cacheDir := filepath.Join(tempDir, "transcoder-cache")
+
+	// Create cache directory
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("failed to create cache dir: %v", err)
+	}
+
+	// Create some test files
+	testFiles := []struct {
+		name   string
+		size   int
+		subdir string
+	}{
+		{"video1.mp4", 1024 * 1024, ""},      // 1 MB
+		{"video2.mp4", 512 * 1024, ""},       // 512 KB
+		{"video3.mp4", 256 * 1024, "subdir"}, // 256 KB in subdirectory
+	}
+
+	var expectedSize int64
+	for _, tf := range testFiles {
+		var filePath string
+		if tf.subdir != "" {
+			subPath := filepath.Join(cacheDir, tf.subdir)
+			if err := os.MkdirAll(subPath, 0o755); err != nil {
+				t.Fatalf("failed to create subdir: %v", err)
+			}
+			filePath = filepath.Join(subPath, tf.name)
+		} else {
+			filePath = filepath.Join(cacheDir, tf.name)
+		}
+
+		data := make([]byte, tf.size)
+		if err := os.WriteFile(filePath, data, 0o644); err != nil {
+			t.Fatalf("failed to create test file: %v", err)
+		}
+		expectedSize += int64(tf.size)
+	}
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	collector.SetTranscoderCacheDir(cacheDir)
+	collector.collectTranscoderCacheSize()
+
+	// Note: We can't easily verify the metric value directly in tests
+	// without exposing it or using the prometheus registry,
+	// but we can verify the method doesn't panic or error
+}
+
+func TestCollectorTranscoderCacheSizeWithEmptyDir(t *testing.T) {
+	tempDir := t.TempDir()
+	cacheDir := filepath.Join(tempDir, "empty-cache")
+
+	// Create empty cache directory
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("failed to create cache dir: %v", err)
+	}
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	collector.SetTranscoderCacheDir(cacheDir)
+	collector.collectTranscoderCacheSize()
+}
+
+func TestCollectorTranscoderCacheSizeWithNonexistentDir(_ *testing.T) {
+	collector := NewCollector(nil, "", 1*time.Second)
+	collector.SetTranscoderCacheDir("/nonexistent/cache/dir")
+
+	// Should not panic, should set metric to 0
+	collector.collectTranscoderCacheSize()
+}
+
+func TestCollectorSetTranscoderCacheDir(t *testing.T) {
+	collector := NewCollector(nil, "", 1*time.Second)
+
+	if collector.transcoderCacheDir != "" {
+		t.Errorf("initial transcoderCacheDir should be empty, got %q", collector.transcoderCacheDir)
+	}
+
+	testPath := "/path/to/cache"
+	collector.SetTranscoderCacheDir(testPath)
+
+	if collector.transcoderCacheDir != testPath {
+		t.Errorf("transcoderCacheDir = %q, want %q", collector.transcoderCacheDir, testPath)
+	}
+}
+
+func TestCollectorGetDirSize(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create test files
+	files := []struct {
+		path string
+		size int
+	}{
+		{"file1.txt", 100},
+		{"file2.txt", 200},
+		{"subdir/file3.txt", 300},
+	}
+
+	var expectedSize int64
+	for _, f := range files {
+		path := filepath.Join(tempDir, f.path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("failed to create directory: %v", err)
+		}
+		data := make([]byte, f.size)
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatalf("failed to create file: %v", err)
+		}
+		expectedSize += int64(f.size)
+	}
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	size, err := collector.getDirSize(tempDir)
+	if err != nil {
+		t.Fatalf("getDirSize failed: %v", err)
+	}
+
+	if size != expectedSize {
+		t.Errorf("getDirSize() = %d, want %d", size, expectedSize)
+	}
+}

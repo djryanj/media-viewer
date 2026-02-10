@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Transcoder Cache Monitoring**: Added monitoring support for the transcoder cache directory. The system now tracks the total size of transcoded video files, displaying this information in both the monitoring metrics and the admin dashboard. This helps administrators monitor cache growth and determine when cleanup may be needed. ([#228](https://github.com/djryanj/media-viewer/issues/228))
+
 - **Pinch-to-Zoom in Lightbox**: Added pinch-to-zoom functionality for images in the lightbox viewer. Pinch with two fingers to zoom in up to 5x magnification, and the zoom level persists until explicitly reset - no need to hold your fingers on the screen to maintain zoom. When zoomed in, drag with one finger to pan around the image with intelligent boundary constraints to prevent white space. Double-tap to instantly reset zoom back to 1x. Back button navigation is zoom-aware: pressing back when zoomed unzooms the image first before closing the lightbox. All existing touch gestures continue to work seamlessly - swipe navigation operates normally when not zoomed, video controls remain functional, and UI overlay toggles are preserved. ([#227](https://github.com/djryanj/media-viewer/issues/227))
 
 - **Tags Overlay in Lightbox**: The tags overlay in the lightbox was too intrusive when there were lots of tags, so it has been changed to be smaller by default. If there are more tags than are visible, tapping on the overlay will bring it up. ([#226](https://github.com/djryanj/media-viewer/issues/226))

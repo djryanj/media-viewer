@@ -65,6 +65,7 @@
 //   - TranscoderJobsTotal: Counter by status
 //   - TranscoderJobDuration: Histogram of job duration
 //   - TranscoderJobsInProgress: Gauge of active jobs
+//   - TranscoderCacheSizeBytes: Gauge of cache directory size in bytes
 //
 // ## Authentication Metrics
 //

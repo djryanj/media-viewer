@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"time"
@@ -27,20 +28,22 @@ type Stats struct {
 
 // Collector periodically collects and updates metrics
 type Collector struct {
-	statsProvider StatsProvider
-	dbPath        string
-	interval      time.Duration
-	stopChan      chan struct{}
-	lastGCCount   uint32
+	statsProvider      StatsProvider
+	dbPath             string
+	transcoderCacheDir string
+	interval           time.Duration
+	stopChan           chan struct{}
+	lastGCCount        uint32
 }
 
 // NewCollector creates a new metrics collector
 func NewCollector(provider StatsProvider, dbPath string, interval time.Duration) *Collector {
 	return &Collector{
-		statsProvider: provider,
-		dbPath:        dbPath,
-		interval:      interval,
-		stopChan:      make(chan struct{}),
+		statsProvider:      provider,
+		dbPath:             dbPath,
+		transcoderCacheDir: "",
+		interval:           interval,
+		stopChan:           make(chan struct{}),
 	}
 }
 
@@ -52,6 +55,11 @@ func (c *Collector) Start() {
 // Stop stops the metrics collection
 func (c *Collector) Stop() {
 	close(c.stopChan)
+}
+
+// SetTranscoderCacheDir sets the transcoder cache directory path
+func (c *Collector) SetTranscoderCacheDir(dir string) {
+	c.transcoderCacheDir = dir
 }
 
 func (c *Collector) collectLoop() {
@@ -77,6 +85,9 @@ func (c *Collector) collect() {
 
 	// Collect database file size
 	c.collectDBSize()
+
+	// Collect transcoder cache size
+	c.collectTranscoderCacheSize()
 
 	// Collect stats from provider
 	if c.statsProvider == nil {
@@ -139,4 +150,35 @@ func (c *Collector) collectDBSize() {
 	} else {
 		DBSizeBytes.WithLabelValues("shm").Set(0)
 	}
+}
+
+func (c *Collector) collectTranscoderCacheSize() {
+	if c.transcoderCacheDir == "" {
+		return
+	}
+
+	cacheSize, err := c.getDirSize(c.transcoderCacheDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logging.Debug("Failed to get transcoder cache size: %v", err)
+		}
+		TranscoderCacheSizeBytes.Set(0)
+		return
+	}
+
+	TranscoderCacheSizeBytes.Set(float64(cacheSize))
+}
+
+func (c *Collector) getDirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
 }

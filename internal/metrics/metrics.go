@@ -253,6 +253,13 @@ var (
 			Help: "Number of transcoding jobs currently in progress",
 		},
 	)
+
+	TranscoderCacheSizeBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_transcoder_cache_size_bytes",
+			Help: "Total size of the transcoder cache directory in bytes",
+		},
+	)
 )
 
 // Authentication metrics

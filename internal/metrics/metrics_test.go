@@ -424,6 +424,7 @@ func TestTranscoderMetrics(t *testing.T) {
 		{"TranscoderJobsTotal", TranscoderJobsTotal},
 		{"TranscoderJobDuration", TranscoderJobDuration},
 		{"TranscoderJobsInProgress", TranscoderJobsInProgress},
+		{"TranscoderCacheSizeBytes", TranscoderCacheSizeBytes},
 	}
 
 	for _, tt := range tests {
@@ -451,6 +452,11 @@ func TestTranscoderMetricOperations(t *testing.T) {
 		TranscoderJobsInProgress.Set(3)
 		TranscoderJobsInProgress.Inc()
 		TranscoderJobsInProgress.Dec()
+	})
+
+	t.Run("TranscoderCacheSizeBytes", func(_ *testing.T) {
+		TranscoderCacheSizeBytes.Set(1024 * 1024 * 500) // 500 MB
+		TranscoderCacheSizeBytes.Set(0)
 	})
 }
 
