@@ -2593,11 +2593,21 @@ select:focus {
 /* Lightbox video wrapper for proper control positioning */
 .lightbox-video-wrapper {
     position: relative;
-    display: flex;
     width: 100%;
     height: 100%;
     max-width: 100%;
     max-height: 100%;
+    display: none;
+}
+
+/* Show video wrapper only in video mode */
+.lightbox.video-mode .lightbox-video-wrapper {
+    display: block;
+}
+
+/* Hide image in video mode */
+.lightbox.video-mode .lightbox-image {
+    display: none;
 }
 
 /* Adjust lightbox video to use native controls */
@@ -2606,7 +2616,6 @@ select:focus {
     width: 100%;
     height: 100%;
     max-height: 100%;
-    display: block;
 }
 
 /* Video Controls Overlay */
@@ -2621,10 +2630,6 @@ select:focus {
     transition: opacity 0.3s ease;
     z-index: 15;
     pointer-events: none;
-}
-
-.video-controls.show {
-    pointer-events: auto;
 }
 
 .video-controls.show {
@@ -2658,6 +2663,7 @@ select:focus {
     justify-content: center;
     transition: all 0.2s ease;
     z-index: 1;
+    pointer-events: auto;
 }
 
 .video-control-btn:hover {
