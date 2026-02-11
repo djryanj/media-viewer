@@ -794,7 +794,7 @@ const MediaApp = {
                 this.elements.confirmModalTitle.textContent = options.title || 'Confirm';
             }
             if (this.elements.confirmModalMessage) {
-                this.elements.confirmModalMessage.textContent = options.message || 'Are you sure?';
+                this.elements.confirmModalMessage.innerHTML = options.message || 'Are you sure?';
             }
             if (this.elements.confirmModalConfirm) {
                 this.elements.confirmModalConfirm.textContent = options.confirmText || 'Confirm';

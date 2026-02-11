@@ -1758,6 +1758,28 @@ func (t *ThumbnailGenerator) RebuildAll() {
 	go t.runGeneration(false)
 }
 
+// GetCacheSize returns the total size of the thumbnail cache in bytes and the number of files (excluding .meta files).
+func (t *ThumbnailGenerator) GetCacheSize() (size int64, count int, err error) {
+	if t.cacheDir == "" || !t.enabled {
+		return 0, 0, nil
+	}
+
+	err = filepath.Walk(t.cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+			// Exclude .meta files from count
+			if !strings.HasSuffix(path, ".meta") {
+				count++
+			}
+		}
+		return nil
+	})
+	return size, count, err
+}
+
 // =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================

@@ -999,6 +999,15 @@ func (t *Transcoder) ClearCache() (int64, error) {
 	return freedBytes, nil
 }
 
+// GetCacheSize returns the total size of the transcoder cache in bytes and the number of files (excluding .err files).
+func (t *Transcoder) GetCacheSize() (size int64, count int, err error) {
+	if t.cacheDir == "" || !t.enabled {
+		return 0, 0, nil
+	}
+
+	return t.getDirSizeAndCount(t.cacheDir)
+}
+
 // progressTrackingReader wraps an io.Reader to log streaming progress
 type progressTrackingReader struct {
 	reader     io.Reader
@@ -1057,15 +1066,23 @@ func (t *Transcoder) createTranscoderLog(filePath string, targetWidth int) *os.F
 
 // getDirSize calculates the total size of a directory
 func (t *Transcoder) getDirSize(path string) (int64, error) {
-	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+	size, _, err := t.getDirSizeAndCount(path)
+	return size, err
+}
+
+func (t *Transcoder) getDirSizeAndCount(path string) (size int64, count int, err error) {
+	err = filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() {
 			size += info.Size()
+			// Exclude .err files from count
+			if !strings.HasSuffix(filePath, ".err") {
+				count++
+			}
 		}
 		return nil
 	})
-	return size, err
+	return size, count, err
 }

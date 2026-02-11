@@ -13,6 +13,10 @@ class SettingsManager {
         this.passkeyNameResolve = null; // For promise resolution
         this.renameTagResolve = null; // For promise resolution
         this.deleteTagResolve = null; // For promise resolution
+        this.thumbnailCacheBytes = 0; // Cache stats
+        this.thumbnailCacheFiles = 0; // Cache stats
+        this.transcodeCacheBytes = 0; // Cache stats
+        this.transcodeCacheFiles = 0; // Cache stats
 
         if (!this.modal) {
             console.error('Settings modal not found');
@@ -571,6 +575,9 @@ class SettingsManager {
             case 'tags':
                 this.loadTags();
                 break;
+            case 'cache':
+                this.loadCacheStats();
+                break;
             case 'about':
                 this.loadAboutInfo();
                 break;
@@ -976,17 +983,21 @@ class SettingsManager {
     async rebuildThumbnails() {
         const btn = document.getElementById('rebuild-thumbnails-btn');
 
+        const cacheSize = this.formatBytes(this.thumbnailCacheBytes);
+        const fileCount = this.thumbnailCacheFiles;
+        const fileText = fileCount === 1 ? 'file' : 'files';
         let confirmed = false;
         if (typeof MediaApp !== 'undefined' && MediaApp.showConfirmModal) {
             confirmed = await MediaApp.showConfirmModal({
                 icon: 'refresh-cw',
                 title: 'Rebuild Thumbnails?',
-                message:
-                    'This will regenerate all thumbnails. This process may take a long time depending on your library size.',
+                message: `This will regenerate all thumbnails. This process may take a long time depending on your library size.<br><br>Current cache size: <strong>${cacheSize} (${fileCount} ${fileText})</strong>`,
                 confirmText: 'Rebuild',
             });
         } else {
-            confirmed = confirm('This will regenerate all thumbnails. Continue?');
+            confirmed = confirm(
+                `This will regenerate all thumbnails (current cache: ${cacheSize}). Continue?`
+            );
         }
 
         if (!confirmed) return;
@@ -1004,6 +1015,7 @@ class SettingsManager {
                     'cache-success',
                     'Thumbnail rebuild started. This will continue in the background.'
                 );
+                // Note: Cache size won't update immediately as rebuild happens in background
             } else {
                 const error = await response.text();
                 this.showError('cache-error', error || 'Failed to start thumbnail rebuild');
@@ -1049,17 +1061,19 @@ class SettingsManager {
     async clearTranscodeCache() {
         const btn = document.getElementById('clear-transcode-btn');
 
+        const cacheSize = this.formatBytes(this.transcodeCacheBytes);
+        const fileCount = this.transcodeCacheFiles;
+        const fileText = fileCount === 1 ? 'file' : 'files';
         let confirmed = false;
         if (typeof MediaApp !== 'undefined' && MediaApp.showConfirmModal) {
             confirmed = await MediaApp.showConfirmModal({
                 icon: 'trash-2',
                 title: 'Clear Transcode Cache?',
-                message:
-                    'This will delete all cached video transcodes. Videos will be re-transcoded when played.',
+                message: `This will delete all cached video transcodes. Videos will be re-transcoded when played.<br><br>Size to be deleted: <strong>${cacheSize} (${fileCount} ${fileText})</strong>`,
                 confirmText: 'Clear',
             });
         } else {
-            confirmed = confirm('Clear all transcoded videos?');
+            confirmed = confirm(`Clear all transcoded videos (${cacheSize})?`);
         }
 
         if (!confirmed) return;
@@ -1077,6 +1091,8 @@ class SettingsManager {
                     'cache-success',
                     `Transcode cache cleared. Freed ${this.formatBytes(data.freedBytes || 0)}.`
                 );
+                // Reload cache stats to show updated size
+                this.loadCacheStats();
             } else {
                 const error = await response.text();
                 this.showError('cache-error', error || 'Failed to clear transcode cache');
@@ -1151,6 +1167,43 @@ class SettingsManager {
     updateElement(id, value) {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
+    }
+
+    // =========================================
+    // CACHE STATS
+    // =========================================
+
+    async loadCacheStats() {
+        try {
+            const statsResponse = await fetch('/api/stats');
+            if (statsResponse.ok) {
+                const stats = await statsResponse.json();
+
+                // Store cache sizes and file counts for use in confirmation modals
+                this.thumbnailCacheBytes = stats.thumbnailCacheBytes || 0;
+                this.thumbnailCacheFiles = stats.thumbnailCacheFiles || 0;
+                this.transcodeCacheBytes = stats.transcodeCacheBytes || 0;
+                this.transcodeCacheFiles = stats.transcodeCacheFiles || 0;
+
+                // Update thumbnail cache size
+                const thumbnailSizeEl = document.getElementById('thumbnail-cache-size');
+                if (thumbnailSizeEl && stats.thumbnailCacheBytes !== undefined) {
+                    const sizeText = this.formatBytes(stats.thumbnailCacheBytes);
+                    const countText = stats.thumbnailCacheFiles || 0;
+                    thumbnailSizeEl.textContent = `${sizeText} (${countText} files)`;
+                }
+
+                // Update transcode cache size
+                const transcodeSizeEl = document.getElementById('transcode-cache-size');
+                if (transcodeSizeEl && stats.transcodeCacheBytes !== undefined) {
+                    const sizeText = this.formatBytes(stats.transcodeCacheBytes);
+                    const countText = stats.transcodeCacheFiles || 0;
+                    transcodeSizeEl.textContent = `${sizeText} (${countText} files)`;
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load cache stats:', err);
+        }
     }
 
     // =========================================

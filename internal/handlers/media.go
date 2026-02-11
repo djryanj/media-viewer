@@ -355,6 +355,16 @@ func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats.TotalFavorites = h.db.GetFavoriteCount(ctx)
 	stats.TotalTags = h.db.GetTagCount(ctx)
 
+	// Include cache sizes and file counts
+	if thumbnailSize, thumbnailCount, err := h.thumbGen.GetCacheSize(); err == nil {
+		stats.ThumbnailCacheBytes = thumbnailSize
+		stats.ThumbnailCacheFiles = thumbnailCount
+	}
+	if transcodeSize, transcodeCount, err := h.transcoder.GetCacheSize(); err == nil {
+		stats.TranscodeCacheBytes = transcodeSize
+		stats.TranscodeCacheFiles = transcodeCount
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, stats)
 }

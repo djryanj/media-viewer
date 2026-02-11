@@ -1005,6 +1005,126 @@ func TestDrawImageWithBorder(t *testing.T) {
 	}
 }
 
+func TestGetCacheSize_DisabledReturnsZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, false, nil, time.Hour, nil)
+
+	size, count, err := gen.GetCacheSize()
+	if err != nil {
+		t.Errorf("GetCacheSize() error: %v", err)
+	}
+	if size != 0 {
+		t.Errorf("Expected size=0 when disabled, got %d", size)
+	}
+	if count != 0 {
+		t.Errorf("Expected count=0 when disabled, got %d", count)
+	}
+}
+
+func TestGetCacheSize_EmptyCacheReturnsZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	size, count, err := gen.GetCacheSize()
+	if err != nil {
+		t.Errorf("GetCacheSize() error: %v", err)
+	}
+	if size != 0 {
+		t.Errorf("Expected size=0 for empty cache, got %d", size)
+	}
+	if count != 0 {
+		t.Errorf("Expected count=0 for empty cache, got %d", count)
+	}
+}
+
+func TestGetCacheSize_CalculatesSizeAndCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create some test files
+	content1 := []byte("thumbnail data 1")
+	content2 := []byte("thumbnail data 2 with more content")
+	content3 := []byte("meta file content")
+
+	file1 := filepath.Join(tmpDir, "thumb1.jpg")
+	file2 := filepath.Join(tmpDir, "thumb2.jpg")
+	metaFile := filepath.Join(tmpDir, "thumb1.jpg.meta")
+
+	if err := os.WriteFile(file1, content1, 0o644); err != nil {
+		t.Fatalf("Failed to create file1: %v", err)
+	}
+	if err := os.WriteFile(file2, content2, 0o644); err != nil {
+		t.Fatalf("Failed to create file2: %v", err)
+	}
+	if err := os.WriteFile(metaFile, content3, 0o644); err != nil {
+		t.Fatalf("Failed to create meta file: %v", err)
+	}
+
+	size, count, err := gen.GetCacheSize()
+	if err != nil {
+		t.Fatalf("GetCacheSize() error: %v", err)
+	}
+
+	// Size should include all files
+	expectedSize := int64(len(content1) + len(content2) + len(content3))
+	if size != expectedSize {
+		t.Errorf("Expected size=%d, got %d", expectedSize, size)
+	}
+
+	// Count should exclude .meta files (only 2 thumbnail files)
+	if count != 2 {
+		t.Errorf("Expected count=2 (excluding .meta files), got %d", count)
+	}
+}
+
+func TestGetCacheSize_HandlesSubdirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create subdirectory
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("Failed to create subdir: %v", err)
+	}
+
+	content1 := []byte("thumbnail 1")
+	content2 := []byte("thumbnail 2")
+	content3 := []byte("meta content")
+
+	file1 := filepath.Join(tmpDir, "thumb1.jpg")
+	file2 := filepath.Join(subDir, "thumb2.jpg")
+	metaFile := filepath.Join(subDir, "thumb2.jpg.meta")
+
+	if err := os.WriteFile(file1, content1, 0o644); err != nil {
+		t.Fatalf("Failed to create file1: %v", err)
+	}
+	if err := os.WriteFile(file2, content2, 0o644); err != nil {
+		t.Fatalf("Failed to create file2: %v", err)
+	}
+	if err := os.WriteFile(metaFile, content3, 0o644); err != nil {
+		t.Fatalf("Failed to create meta file: %v", err)
+	}
+
+	size, count, err := gen.GetCacheSize()
+	if err != nil {
+		t.Fatalf("GetCacheSize() error: %v", err)
+	}
+
+	expectedSize := int64(len(content1) + len(content2) + len(content3))
+	if size != expectedSize {
+		t.Errorf("Expected size=%d, got %d", expectedSize, size)
+	}
+
+	// Should count files in subdirectories, excluding .meta
+	if count != 2 {
+		t.Errorf("Expected count=2, got %d", count)
+	}
+}
+
 func BenchmarkCreateFolderThumbnail(b *testing.B) {
 	tmpDir := b.TempDir()
 	mediaDir := b.TempDir()
