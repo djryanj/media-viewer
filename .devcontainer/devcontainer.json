@@ -66,5 +66,8 @@
         "CACHE_DIR": "/cache",
         "DATABASE_DIR": "/database",
         "PORT": "8080"
-    }
+    },
+
+    // Enable NVIDIA GPU access for hardware transcoding
+    "runArgs": ["--gpus=all"]
 }

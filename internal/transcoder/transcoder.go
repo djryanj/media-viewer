@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -106,7 +107,9 @@ func New(cacheDir, logDir string, enabled bool, gpuAccel string) *Transcoder {
 
 	// Detect GPU capabilities if auto or specific GPU requested
 	if t.gpuAccel != GPUAccelNone {
+		logging.Info("------------------------------------------------------------")
 		t.detectGPU()
+		logging.Info("------------------------------------------------------------")
 	}
 
 	return t
@@ -461,6 +464,27 @@ func (t *Transcoder) TranscodeToCache(ctx context.Context, filePath string, targ
 
 // transcodeDirectToCache transcodes a video directly to a cache file without streaming
 func (t *Transcoder) transcodeDirectToCache(ctx context.Context, filePath, cachePath string, targetWidth int, info *VideoInfo, needsReencode bool) error {
+	// Try with GPU first, then retry with CPU if GPU fails
+	err := t.transcodeDirectToCacheWithOptions(ctx, filePath, cachePath, targetWidth, info, needsReencode, false)
+	if err != nil && t.gpuAvailable && t.isGPUError(err.Error()) {
+		logging.Warn("GPU encoding failed for background transcode of %s, retrying with CPU...", filePath)
+
+		// Disable GPU
+		t.gpuMu.Lock()
+		t.gpuAvailable = false
+		t.gpuMu.Unlock()
+
+		// Clean up failed attempt
+		_ = os.Remove(cachePath + ".tmp")
+
+		// Retry with CPU
+		return t.transcodeDirectToCacheWithOptions(ctx, filePath, cachePath, targetWidth, info, needsReencode, true)
+	}
+	return err
+}
+
+// transcodeDirectToCacheWithOptions performs the actual transcoding to cache with optional CPU-only mode
+func (t *Transcoder) transcodeDirectToCacheWithOptions(ctx context.Context, filePath, cachePath string, targetWidth int, info *VideoInfo, needsReencode, forceCPU bool) error {
 	// Create temporary file path for atomic write
 	tmpPath := cachePath + ".tmp"
 
@@ -474,7 +498,7 @@ func (t *Transcoder) transcodeDirectToCache(ctx context.Context, filePath, cache
 
 	// Run FFmpeg to transcode directly to file (not stdout)
 	// This allows +faststart to work since it needs a seekable output
-	args := t.buildFFmpegArgs(filePath, tmpPath, targetWidth, info, needsReencode)
+	args := t.buildFFmpegArgsWithOptions(filePath, tmpPath, targetWidth, info, needsReencode, forceCPU)
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	// Setup stderr capture and optional logging
@@ -799,8 +823,32 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 
 	// Handle errors
 	if streamErr != nil || cmdErr != nil {
+		stderrStr := stderr.String()
+
+		// Check if this is a GPU-related error and retry with CPU if we haven't already
+		if t.gpuAvailable && t.isGPUError(stderrStr) {
+			logging.Warn("GPU encoding failed for %s, retrying with CPU encoder...", filePath)
+			logging.Debug("GPU error: %s", stderrStr)
+
+			// Disable GPU to prevent further attempts
+			t.gpuMu.Lock()
+			t.gpuAvailable = false
+			t.gpuMu.Unlock()
+
+			// Close and remove the failed temp file
+			if err := cacheFile.Close(); err != nil {
+				logging.Debug("Error closing temp file: %v", err)
+			}
+			if err := os.Remove(tempPath); err != nil {
+				logging.Debug("Error removing temp file: %v", err)
+			}
+
+			// Retry with CPU encoding by calling buildFFmpegArgsWithOptions with forceCPU=true
+			return t.retryTranscodeWithCPU(ctx, filePath, w, cachePath, targetWidth, info, needsReencode)
+		}
+
 		logging.Warn("Transcode failed, not saving to cache (stream=%v, cmd=%v)", streamErr, cmdErr)
-		return t.handleTranscodeError(ctx, filePath, streamErr, cmdErr, stderr.String())
+		return t.handleTranscodeError(ctx, filePath, streamErr, cmdErr, stderrStr)
 	}
 
 	// Close cache file before renaming
@@ -893,6 +941,11 @@ func (t *Transcoder) transcodeStream(ctx context.Context, filePath string, w io.
 
 // buildFFmpegArgs builds ffmpeg arguments for transcoding
 func (t *Transcoder) buildFFmpegArgs(inputPath, outputPath string, targetWidth int, info *VideoInfo, needsReencode bool) []string {
+	return t.buildFFmpegArgsWithOptions(inputPath, outputPath, targetWidth, info, needsReencode, false)
+}
+
+// buildFFmpegArgsWithOptions builds ffmpeg arguments with option to force CPU encoding
+func (t *Transcoder) buildFFmpegArgsWithOptions(inputPath, outputPath string, targetWidth int, info *VideoInfo, needsReencode, forceCPU bool) []string {
 	args := []string{"-i", inputPath}
 
 	// Check if we need to scale the video
@@ -903,11 +956,14 @@ func (t *Transcoder) buildFFmpegArgs(inputPath, outputPath string, targetWidth i
 	if !needsReencode && !needsScaling {
 		args = append(args, "-c:v", "copy")
 	} else {
-		// Re-encode with h264 - use GPU if available, otherwise CPU
-		if t.gpuAvailable && t.gpuEncoder != "" {
+		// Re-encode with h264 - use GPU if available and not forced to CPU, otherwise CPU
+		if !forceCPU && t.gpuAvailable && t.gpuEncoder != "" {
 			logging.Debug("Using GPU encoder: %s", t.gpuEncoder)
 			args = t.addGPUEncoderArgs(args, targetWidth, info, needsScaling)
 		} else {
+			if forceCPU && t.gpuAvailable {
+				logging.Info("Falling back to CPU encoder after GPU failure")
+			}
 			logging.Debug("Using CPU encoder: libx264")
 			args = t.addCPUEncoderArgs(args, targetWidth, info, needsScaling)
 		}
@@ -952,6 +1008,199 @@ func (t *Transcoder) handleTranscodeError(ctx context.Context, filePath string, 
 	}
 
 	logging.Info("Transcode completed successfully for %s", filePath)
+	return nil
+}
+
+// isGPUError checks if an ffmpeg error is related to GPU hardware access
+func (t *Transcoder) isGPUError(stderrOutput string) bool {
+	lowerOutput := strings.ToLower(stderrOutput)
+
+	// NVIDIA NVENC errors
+	nvidiaErrors := []string{
+		"cannot load libcuda",
+		"libcuda",
+		"no nvenc capable devices found",
+		"nvenc not available",
+		"nvenc",
+		"cuda",
+		"nvcuda",
+	}
+
+	// VA-API (Intel/AMD) errors
+	vaapiErrors := []string{
+		"libva",
+		"vaapi",
+		"/dev/dri",
+		"no va display found",
+		"failed to initialize vaapi",
+		"vaapiencodevp",
+		"cannot open render node",
+		"drm",
+	}
+
+	// VideoToolbox (Apple) errors
+	videotoolboxErrors := []string{
+		"videotoolbox",
+		"kvtcouldnotfindvideoencoder",
+		"coremedia",
+		"vt session",
+		"vtcompressionoutputcallback",
+	}
+
+	// Generic hardware errors
+	genericErrors := []string{
+		"cannot load",
+		"cannot open",
+		"not supported",
+		"no device available",
+		"failed loading",
+		"cannot initialize",
+		"hardware",
+		"device creation failed",
+		"no hwaccel",
+	}
+
+	// Check all error patterns
+	allErrors := make([]string, 0, len(nvidiaErrors)+len(vaapiErrors)+len(videotoolboxErrors)+len(genericErrors))
+	allErrors = append(allErrors, nvidiaErrors...)
+	allErrors = append(allErrors, vaapiErrors...)
+	allErrors = append(allErrors, videotoolboxErrors...)
+	allErrors = append(allErrors, genericErrors...)
+
+	for _, errMsg := range allErrors {
+		if strings.Contains(lowerOutput, errMsg) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryTranscodeWithCPU retries transcoding with CPU encoder after GPU failure
+func (t *Transcoder) retryTranscodeWithCPU(ctx context.Context, filePath string, w io.Writer, cachePath string, targetWidth int, info *VideoInfo, needsReencode bool) error {
+	// Create cache directory if needed
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o750); err != nil {
+		logging.Warn("Failed to create cache directory: %v (continuing without cache)", err)
+		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+	}
+
+	// Create temporary file for atomic write
+	tempPath := cachePath + ".tmp"
+	cacheFile, err := os.Create(tempPath)
+	if err != nil {
+		logging.Warn("Failed to create cache file: %v (continuing without cache)", err)
+		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+	}
+	defer func() {
+		if closeErr := cacheFile.Close(); closeErr != nil {
+			logging.Warn("Failed to close cache file: %v", closeErr)
+		}
+		// Clean up temp file if we didn't rename it
+		_ = os.Remove(tempPath)
+	}()
+
+	// Build ffmpeg command with CPU encoding forced
+	args := t.buildFFmpegArgsWithOptions(filePath, "-", targetWidth, info, needsReencode, true)
+	logging.Debug("FFmpeg command (CPU retry): ffmpeg %v", args)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+
+	// Create a pipe for ffmpeg output
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	// Set up ffmpeg stderr capture
+	var stderr bytes.Buffer
+	logFile := t.createTranscoderLog(filePath, targetWidth)
+	if logFile != nil {
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				logging.Warn("Failed to close transcoder log file: %v", err)
+			}
+		}()
+		cmd.Stderr = io.MultiWriter(&stderr, logFile)
+	} else {
+		cmd.Stderr = &stderr
+	}
+
+	// Start ffmpeg
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	// Track the process
+	t.processMu.Lock()
+	t.processes[filePath] = cmd
+	t.processMu.Unlock()
+
+	defer func() {
+		t.processMu.Lock()
+		delete(t.processes, filePath)
+		t.processMu.Unlock()
+	}()
+
+	logging.Info("FFmpeg (CPU) started, beginning to stream chunks to client...")
+
+	// Create TeeReader to write to cache as we read
+	teeReader := io.TeeReader(stdout, cacheFile)
+
+	// Wrap reader with progress tracking
+	startTime := time.Now()
+	progressReader := &progressTrackingReader{
+		reader:   teeReader,
+		filePath: filePath,
+		lastLog:  startTime,
+	}
+
+	// Stream output
+	var streamErr error
+	if hw, ok := w.(http.ResponseWriter); ok {
+		streamErr = streaming.StreamWithTimeout(ctx, hw, progressReader, t.streamConfig)
+	} else {
+		_, streamErr = io.Copy(w, progressReader)
+	}
+
+	elapsed := time.Since(startTime)
+	logging.Info("Streaming (CPU) completed: %d bytes in %.2fs (%.2f KB/s) - waiting for ffmpeg to finish...",
+		progressReader.totalBytes, elapsed.Seconds(), float64(progressReader.totalBytes)/1024/elapsed.Seconds())
+
+	// Wait for ffmpeg to complete
+	cmdErr := cmd.Wait()
+
+	totalElapsed := time.Since(startTime)
+	logging.Info("FFmpeg (CPU) process completed after %.2fs total", totalElapsed.Seconds())
+
+	// Handle errors
+	if streamErr != nil || cmdErr != nil {
+		logging.Warn("CPU transcode failed, not saving to cache (stream=%v, cmd=%v)", streamErr, cmdErr)
+		return t.handleTranscodeError(ctx, filePath, streamErr, cmdErr, stderr.String())
+	}
+
+	// Close cache file before renaming
+	if err := cacheFile.Close(); err != nil {
+		logging.Warn("Failed to close cache file: %v", err)
+		return nil // Transcode succeeded, cache is bonus
+	}
+
+	// Verify cache file was written
+	fileInfo, err := os.Stat(tempPath)
+	if err != nil {
+		logging.Warn("Cache file missing after write: %v", err)
+		return nil
+	}
+	logging.Debug("Cache temp file written: %d bytes", fileInfo.Size())
+
+	// Atomic rename to final cache path
+	logging.Info("FFmpeg completed, renaming %s to %s", tempPath, cachePath)
+	if err := os.Rename(tempPath, cachePath); err != nil {
+		logging.Warn("Failed to rename cache file: %v", err)
+		return nil // Transcode succeeded, cache is bonus
+	}
+
+	fileSize := float64(fileInfo.Size()) / (1024 * 1024)
+	logging.Info("Successfully cached transcoded video: %s (%.2f MB)", cachePath, fileSize)
+
 	return nil
 }
 
@@ -1173,6 +1422,12 @@ func (t *Transcoder) detectGPU() {
 
 	// Test each encoder
 	for _, test := range encodersToTry {
+		// Pre-check: Verify hardware device accessibility before testing encoder
+		if !t.checkGPUDeviceAccess(test.accel) {
+			logging.Debug("Skipping %s: GPU device not accessible", test.accel)
+			continue
+		}
+
 		if !t.testGPUEncoder(test.encoder) {
 			continue
 		}
@@ -1187,9 +1442,101 @@ func (t *Transcoder) detectGPU() {
 	logging.Warn("No GPU encoder available, falling back to CPU encoding")
 }
 
-// testGPUEncoder tests if a GPU encoder is available
+// checkGPUDeviceAccess verifies that GPU hardware devices are accessible
+func (t *Transcoder) checkGPUDeviceAccess(accel GPUAccel) bool {
+	switch accel {
+	case GPUAccelNVIDIA:
+		// Check for NVIDIA device files
+		logging.Debug("Checking for NVIDIA GPU hardware...")
+		nvidiaDevices := []string{
+			"/dev/nvidia0",
+			"/dev/nvidiactl",
+			"/dev/nvidia-uvm",
+		}
+
+		foundDevice := false
+		for _, device := range nvidiaDevices {
+			if stat, err := os.Stat(device); err == nil {
+				logging.Info("✓ Found NVIDIA device: %s (mode: %v)", device, stat.Mode())
+				foundDevice = true
+			} else {
+				logging.Debug("  Device %s: %v", device, err)
+			}
+		}
+
+		if foundDevice {
+			return true
+		}
+
+		// Fallback: Check if nvidia-smi is available and working
+		logging.Debug("NVIDIA device files not found, trying nvidia-smi as fallback...")
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "nvidia-smi", "-L")
+		output, err := cmd.Output()
+		if err == nil && len(output) > 0 {
+			logging.Info("✓ NVIDIA GPU detected via nvidia-smi: %s", strings.TrimSpace(string(output)))
+			logging.Warn("NVIDIA GPU detected but device files not accessible - container may need --gpus=all")
+			// Allow encoder test to proceed even without device files
+			// The encoder test will definitively determine if GPU encoding works
+			return true
+		}
+
+		logging.Debug("nvidia-smi not available or returned no GPUs")
+		logging.Info("No NVIDIA GPU found (checked /dev/nvidia* and nvidia-smi)")
+		return false
+
+	case GPUAccelVAAPI:
+		// Check for DRI render nodes (VA-API)
+		logging.Debug("Checking for Intel/AMD GPU (VA-API) hardware...")
+		driDevices := []string{
+			"/dev/dri/renderD128",
+			"/dev/dri/renderD129",
+			"/dev/dri/card0",
+			"/dev/dri/card1",
+		}
+
+		for _, device := range driDevices {
+			stat, err := os.Stat(device)
+			if err != nil {
+				logging.Debug("  Device %s: %v", device, err)
+				continue
+			}
+			logging.Info("✓ Found DRI device: %s (mode: %v)", device, stat.Mode())
+			return true
+		}
+
+		logging.Info("No VA-API GPU found (checked /dev/dri/*)")
+		return false
+
+	case GPUAccelVideoToolbox:
+		// VideoToolbox is macOS-only, check if we're on Darwin
+		logging.Debug("Checking for Apple VideoToolbox...")
+		if runtime.GOOS == "darwin" {
+			logging.Info("✓ Running on macOS, VideoToolbox may be available")
+			return true
+		}
+		logging.Debug("Not running on macOS (OS: %s), VideoToolbox not available", runtime.GOOS)
+		return false
+
+	case GPUAccelNone:
+		// No GPU acceleration requested, no device check needed
+		return true
+
+	case GPUAccelAuto:
+		// Auto mode doesn't call this function directly, return true if called
+		return true
+
+	default:
+		// Unknown GPU type, allow test to proceed
+		return true
+	}
+}
+
+// testGPUEncoder tests if a GPU encoder is available and actually works
 func (t *Transcoder) testGPUEncoder(encoder string) bool {
-	// Quick test: check if encoder is in ffmpeg's encoders list
+	// Step 1: Check if encoder is in ffmpeg's encoders list
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -1206,7 +1553,54 @@ func (t *Transcoder) testGPUEncoder(encoder string) bool {
 		return false
 	}
 
-	logging.Debug("✓ Encoder %s is available", encoder)
+	// Step 2: Try to actually use the encoder with a test encode
+	// Generate a 1-frame test video in memory
+	logging.Debug("Testing %s with real encode...", encoder)
+	testCtx, testCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer testCancel()
+
+	// Create a simple test: generate 1 frame with testsrc, encode with GPU encoder, output to null
+	var testArgs []string
+	testArgs = append(testArgs, "-f", "lavfi", "-i", "testsrc=duration=0.1:size=320x240:rate=1", "-frames:v", "1")
+
+	// Add hardware-specific initialization if needed
+	if t.gpuAccel == GPUAccelVAAPI && t.gpuInitFilter != "" {
+		testArgs = append(testArgs, "-vf", t.gpuInitFilter)
+	}
+
+	testArgs = append(testArgs, "-c:v", encoder)
+
+	// Add encoder-specific options
+	switch t.gpuAccel {
+	case GPUAccelNVIDIA:
+		testArgs = append(testArgs, "-preset", "p1") // Fastest preset for test
+	case GPUAccelVAAPI:
+		testArgs = append(testArgs, "-qp", "30")
+	case GPUAccelVideoToolbox:
+		testArgs = append(testArgs, "-b:v", "500k")
+	case GPUAccelNone, GPUAccelAuto:
+		// No specific encoder options needed
+	}
+
+	testArgs = append(testArgs, "-f", "null", "-")
+
+	testCmd := exec.CommandContext(testCtx, "ffmpeg", testArgs...)
+	var stderr bytes.Buffer
+	testCmd.Stderr = &stderr
+
+	if err := testCmd.Run(); err != nil {
+		stderrStr := stderr.String()
+		// Use the isGPUError helper to check if this is a GPU hardware issue
+		if t.isGPUError(stderrStr) {
+			logging.Debug("✗ Encoder %s failed: GPU hardware not accessible", encoder)
+			logging.Debug("Error details: %s", stderrStr)
+			return false
+		}
+		logging.Debug("✗ Encoder %s test failed: %v", encoder, err)
+		return false
+	}
+
+	logging.Debug("✓ Encoder %s is available and working", encoder)
 	return true
 }
 
