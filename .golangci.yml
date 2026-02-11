@@ -213,6 +213,13 @@ linters:
         linters:
           - revive
         text: "stutters"
+      
+      # Package metrics does not actually conflict with any Go standard library package.
+      # The revive warning is overly conservative - there is no "metrics" package in stdlib.
+      - path: internal/metrics/collector.go
+        linters:
+          - revive
+        text: "var-naming.*package names that conflict"
 
 issues:
   max-issues-per-linter: 50
