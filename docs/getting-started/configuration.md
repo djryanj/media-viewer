@@ -107,6 +107,32 @@ How often the thumbnail generator performs a full scan. Defaults to `6h`.
 THUMBNAIL_INTERVAL=6h
 ```
 
+### INDEX_WORKERS
+
+Number of parallel workers for directory indexing. Defaults to 3 for NFS safety.
+
+```bash
+INDEX_WORKERS=3
+```
+
+**When to set this:**
+
+- **NFS-mounted media**: Set to `3` or lower to prevent overwhelming the NFS server
+- **Local storage**: Can increase to `8`-`16` for faster indexing
+- **High-performance storage**: Increase to `8`-`16` for optimal performance
+
+!!! warning "NFS Performance"
+If you see "stale file handle" errors in the logs, your NFS server is being overwhelmed. Reduce `INDEX_WORKERS` to `1` or `2`.
+
+**Recommended values:**
+
+| Storage Type             | Recommended Value |
+| ------------------------ | ----------------- |
+| NFS mount (default)      | `3`               |
+| NFS mount (conservative) | `1`               |
+| Local HDD/SSD            | `8`               |
+| High-performance local   | `8`-`16`          |
+
 ## Metrics Settings
 
 ### METRICS_ENABLED
@@ -289,6 +315,7 @@ services:
             - SESSION_DURATION=12h
             - INDEX_INTERVAL=1h
             - THUMBNAIL_INTERVAL=12h
+            - INDEX_WORKERS=3 # Recommended for NFS mounts
             - METRICS_ENABLED=true
             - LOG_LEVEL=info
             - LOG_STATIC_FILES=false

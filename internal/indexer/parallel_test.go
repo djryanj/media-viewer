@@ -764,3 +764,188 @@ func BenchmarkParallelWalkerStatsUpdate(b *testing.B) {
 		}
 	})
 }
+
+// TestDefaultParallelWalkerConfig_NFSWorkersDefault tests NFS worker default
+func TestDefaultParallelWalkerConfig_NFSWorkersDefault(t *testing.T) {
+	// Clear env var to ensure default behavior
+	oldValue := os.Getenv("INDEX_WORKERS")
+	os.Unsetenv("INDEX_WORKERS")
+	defer func() {
+		if oldValue != "" {
+			os.Setenv("INDEX_WORKERS", oldValue)
+		}
+	}()
+
+	config := DefaultParallelWalkerConfig()
+
+	// Should default to 3 workers for NFS safety
+	if config.NumWorkers != 3 {
+		t.Errorf("NumWorkers = %d, want 3 (default NFS-friendly value)", config.NumWorkers)
+	}
+
+	if config.BatchSize != 500 {
+		t.Errorf("BatchSize = %d, want 500", config.BatchSize)
+	}
+
+	if config.ChannelBuffer != 1000 {
+		t.Errorf("ChannelBuffer = %d, want 1000", config.ChannelBuffer)
+	}
+
+	if !config.SkipHidden {
+		t.Error("SkipHidden should be true by default")
+	}
+}
+
+// TestDefaultParallelWalkerConfig_NFSWorkersEnvVar tests INDEX_WORKERS override
+func TestDefaultParallelWalkerConfig_NFSWorkersEnvVar(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     int
+	}{
+		{
+			name:     "INDEX_WORKERS set to 1",
+			envValue: "1",
+			want:     1,
+		},
+		{
+			name:     "INDEX_WORKERS set to 5",
+			envValue: "5",
+			want:     5,
+		},
+		{
+			name:     "INDEX_WORKERS set to 10",
+			envValue: "10",
+			want:     10,
+		},
+		{
+			name:     "INDEX_WORKERS set to 16",
+			envValue: "16",
+			want:     16,
+		},
+		{
+			name:     "INDEX_WORKERS invalid (non-numeric)",
+			envValue: "invalid",
+			want:     3, // Falls back to default
+		},
+		{
+			name:     "INDEX_WORKERS invalid (negative)",
+			envValue: "-5",
+			want:     3, // Falls back to default
+		},
+		{
+			name:     "INDEX_WORKERS invalid (zero)",
+			envValue: "0",
+			want:     3, // Falls back to default
+		},
+		{
+			name:     "INDEX_WORKERS empty string",
+			envValue: "",
+			want:     3, // Falls back to default (or ForIO calculation, depends on implementation)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldValue := os.Getenv("INDEX_WORKERS")
+			if tt.envValue == "" {
+				os.Unsetenv("INDEX_WORKERS")
+			} else {
+				os.Setenv("INDEX_WORKERS", tt.envValue)
+			}
+			defer func() {
+				if oldValue != "" {
+					os.Setenv("INDEX_WORKERS", oldValue)
+				} else {
+					os.Unsetenv("INDEX_WORKERS")
+				}
+			}()
+
+			config := DefaultParallelWalkerConfig()
+
+			if config.NumWorkers != tt.want {
+				t.Errorf("NumWorkers = %d, want %d for INDEX_WORKERS=%q", config.NumWorkers, tt.want, tt.envValue)
+			}
+		})
+	}
+}
+
+// TestDefaultParallelWalkerConfig_LocalFilesystemOverride tests higher worker count for local FS
+func TestDefaultParallelWalkerConfig_LocalFilesystemOverride(t *testing.T) {
+	// Test that default is 3 (NFS-safe), and can be overridden with INDEX_WORKERS
+	oldValue := os.Getenv("INDEX_WORKERS")
+	os.Unsetenv("INDEX_WORKERS")
+	defer func() {
+		if oldValue != "" {
+			os.Setenv("INDEX_WORKERS", oldValue)
+		}
+	}()
+
+	config := DefaultParallelWalkerConfig()
+
+	// Should be 3 by default (NFS-safe)
+	if config.NumWorkers != 3 {
+		t.Errorf("NumWorkers = %d (expected 3 for NFS-safe default)", config.NumWorkers)
+	}
+
+	// Test with explicit local filesystem override
+	os.Setenv("INDEX_WORKERS", "8")
+	defer os.Unsetenv("INDEX_WORKERS")
+
+	config = DefaultParallelWalkerConfig()
+	if config.NumWorkers != 8 {
+		t.Errorf("NumWorkers = %d, want 8 when INDEX_WORKERS=8", config.NumWorkers)
+	}
+}
+
+// BenchmarkDefaultParallelWalkerConfig_NoEnvVar benchmarks default config creation
+func BenchmarkDefaultParallelWalkerConfig_NoEnvVar(b *testing.B) {
+	oldValue := os.Getenv("INDEX_WORKERS")
+	os.Unsetenv("INDEX_WORKERS")
+	defer func() {
+		if oldValue != "" {
+			os.Setenv("INDEX_WORKERS", oldValue)
+		}
+	}()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = DefaultParallelWalkerConfig()
+	}
+}
+
+// BenchmarkDefaultParallelWalkerConfig_WithEnvVar benchmarks config with env override
+func BenchmarkDefaultParallelWalkerConfig_WithEnvVar(b *testing.B) {
+	oldValue := os.Getenv("INDEX_WORKERS")
+	os.Setenv("INDEX_WORKERS", "5")
+	defer func() {
+		if oldValue != "" {
+			os.Setenv("INDEX_WORKERS", oldValue)
+		} else {
+			os.Unsetenv("INDEX_WORKERS")
+		}
+	}()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = DefaultParallelWalkerConfig()
+	}
+}
+
+// BenchmarkDefaultParallelWalkerConfig_InvalidEnvVar benchmarks with invalid env value
+func BenchmarkDefaultParallelWalkerConfig_InvalidEnvVar(b *testing.B) {
+	oldValue := os.Getenv("INDEX_WORKERS")
+	os.Setenv("INDEX_WORKERS", "invalid")
+	defer func() {
+		if oldValue != "" {
+			os.Setenv("INDEX_WORKERS", oldValue)
+		} else {
+			os.Unsetenv("INDEX_WORKERS")
+		}
+	}()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = DefaultParallelWalkerConfig()
+	}
+}

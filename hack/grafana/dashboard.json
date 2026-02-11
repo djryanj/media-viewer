@@ -4900,12 +4900,526 @@
             "type": "timeseries"
         },
         {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 10,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "showValues": false,
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 123
+            },
+            "id": 232,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "sum(rate(media_viewer_filesystem_retry_attempts_total{job=~\"$instance\"}[5m])) by (operation)",
+                    "legendFormat": "{{operation}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Filesystem Retry Attempts Rate",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 10,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "showValues": false,
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 123
+            },
+            "id": 233,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "histogram_quantile(0.99, sum(rate(media_viewer_filesystem_retry_duration_seconds_bucket{job=~\"$instance\"}[5m])) by (le, operation))",
+                    "legendFormat": "p99 {{operation}}",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "histogram_quantile(0.95, sum(rate(media_viewer_filesystem_retry_duration_seconds_bucket{job=~\"$instance\"}[5m])) by (le, operation))",
+                    "legendFormat": "p95 {{operation}}",
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "histogram_quantile(0.50, sum(rate(media_viewer_filesystem_retry_duration_seconds_bucket{job=~\"$instance\"}[5m])) by (le, operation))",
+                    "legendFormat": "p50 {{operation}}",
+                    "refId": "C"
+                }
+            ],
+            "title": "Filesystem Retry Duration (p50/p95/p99)",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 10,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "showValues": false,
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "red",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 131
+            },
+            "id": 234,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "sum(rate(media_viewer_filesystem_estale_errors_total{job=~\"$instance\"}[5m])) by (operation)",
+                    "legendFormat": "{{operation}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "ESTALE (Stale File Handle) Errors Rate",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "max": 100,
+                    "min": 0,
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "red",
+                                "value": 0
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 90
+                            },
+                            {
+                                "color": "green",
+                                "value": 95
+                            }
+                        ]
+                    },
+                    "unit": "percent"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 131
+            },
+            "id": 235,
+            "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true,
+                "sizing": "auto"
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "100 * sum(rate(media_viewer_filesystem_retry_success_total{job=~\"$instance\"}[5m])) / (sum(rate(media_viewer_filesystem_retry_success_total{job=~\"$instance\"}[5m])) + sum(rate(media_viewer_filesystem_retry_failures_total{job=~\"$instance\"}[5m])))",
+                    "legendFormat": "Success Rate",
+                    "refId": "A"
+                }
+            ],
+            "title": "Filesystem Retry Success Rate",
+            "type": "gauge"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 30,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "showValues": false,
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "normal"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "reqps"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "success"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "green",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "failure"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "red",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 139
+            },
+            "id": 236,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "mean",
+                        "max",
+                        "sum"
+                    ],
+                    "displayMode": "table",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "sum(rate(media_viewer_filesystem_retry_success_total{job=~\"$instance\"}[5m])) by (operation)",
+                    "legendFormat": "success - {{operation}}",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "sum(rate(media_viewer_filesystem_retry_failures_total{job=~\"$instance\"}[5m])) by (operation)",
+                    "legendFormat": "failure - {{operation}}",
+                    "refId": "B"
+                }
+            ],
+            "title": "Filesystem Retry Success vs Failures",
+            "type": "timeseries"
+        },
+        {
             "collapsed": false,
             "gridPos": {
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 123
+                "y": 147
             },
             "id": 103,
             "panels": [],
@@ -4974,7 +5488,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 124
+                "y": 148
             },
             "id": 25,
             "options": {
@@ -5070,7 +5584,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 124
+                "y": 148
             },
             "id": 26,
             "options": {
@@ -5175,7 +5689,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 132
+                "y": 156
             },
             "id": 221,
             "options": {
@@ -5280,7 +5794,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 132
+                "y": 156
             },
             "id": 222,
             "options": {
@@ -5385,7 +5899,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 140
+                "y": 164
             },
             "id": 223,
             "options": {
@@ -5490,7 +6004,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 140
+                "y": 164
             },
             "id": 224,
             "options": {
@@ -5626,7 +6140,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 148
+                "y": 172
             },
             "id": 27,
             "options": {
@@ -5731,7 +6245,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 148
+                "y": 172
             },
             "id": 28,
             "options": {
@@ -5826,7 +6340,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 156
+                "y": 180
             },
             "id": 225,
             "options": {
@@ -5949,7 +6463,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 156
+                "y": 180
             },
             "id": 226,
             "options": {
@@ -5988,7 +6502,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 164
+                "y": 188
             },
             "id": 111,
             "panels": [],
@@ -6057,7 +6571,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 165
+                "y": 189
             },
             "id": 227,
             "options": {
@@ -6153,7 +6667,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 165
+                "y": 189
             },
             "id": 228,
             "options": {
@@ -6258,7 +6772,7 @@
                 "h": 8,
                 "w": 24,
                 "x": 0,
-                "y": 173
+                "y": 197
             },
             "id": 229,
             "options": {
@@ -6354,7 +6868,7 @@
                 "h": 8,
                 "w": 24,
                 "x": 0,
-                "y": 181
+                "y": 205
             },
             "id": 231,
             "options": {

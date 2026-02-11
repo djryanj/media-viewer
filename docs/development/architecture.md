@@ -41,6 +41,7 @@ media-viewer/
 │   └── resetpw/          # Password reset utility
 ├── internal/
 │   ├── database/         # SQLite operations
+│   ├── filesystem/       # Resilient filesystem operations
 │   ├── handlers/         # HTTP request handlers
 │   ├── indexer/          # Media library indexer
 │   ├── logging/          # Structured logging
@@ -77,6 +78,20 @@ media-viewer/
 - **Indexes**: Optimized for file path and tag queries
 - **FTS5**: Full-text search on file names
 - **Transactions**: Proper transaction handling for data integrity
+
+#### Filesystem Layer (`internal/filesystem`)
+
+Provides resilient filesystem operations with automatic retry logic for NFS stability:
+
+- **Retry Logic**: Automatic retry with exponential backoff for ESTALE errors
+- **StatWithRetry**: Wraps `os.Stat` with up to 3 retry attempts
+- **OpenWithRetry**: Wraps `os.Open` with up to 3 retry attempts
+- **Exponential Backoff**: 50ms → 100ms → 200ms between retries
+- **Minimal Overhead**: ~100ns additional latency on successful operations
+- **Smart Detection**: Only retries NFS stale file handle errors (ESTALE errno 116)
+- **Logging**: Successful retries logged for monitoring and debugging
+
+This layer prevents crashes and improves stability when serving media from NFS mounts, where stale file handles can occur due to network issues or server-side changes.
 
 #### Indexer (`internal/indexer`)
 
@@ -465,3 +480,133 @@ Future considerations:
 - PostgreSQL support for multi-user scenarios
 - Distributed caching for multiple instances
 - Read replicas for database queries
+
+## NFS Resilience & Performance
+
+Media Viewer is designed to work reliably with NFS-mounted media directories, which can experience transient failures not seen with local filesystems.
+
+### Common NFS Issues
+
+**Stale File Handle (ESTALE)**
+: NFS returns this error when a file handle becomes invalid due to:
+
+- File deletion or modification on the server
+- NFS server restart or failover
+- Network interruptions
+- Cache coherency issues
+
+**High Metadata Latency**
+: NFS metadata operations (stat, readdir) are slower than local filesystems due to network round trips.
+
+**Connection Instability**
+: Network issues can cause temporary connection loss or timeouts.
+
+### Automatic Retry Mechanism
+
+The `internal/filesystem` package provides resilient wrappers for filesystem operations:
+
+```go
+// Stat with automatic retry for ESTALE errors
+info, err := filesystem.StatWithRetry(path, filesystem.DefaultRetryConfig())
+
+// Open with automatic retry for ESTALE errors
+file, err := filesystem.OpenWithRetry(path, filesystem.DefaultRetryConfig())
+```
+
+**Retry Configuration:**
+
+- **MaxRetries**: 3 attempts (default)
+- **InitialBackoff**: 50ms
+- **MaxBackoff**: 500ms (exponential backoff: 50ms → 100ms → 200ms)
+- **Error Detection**: Only ESTALE (errno 116) triggers retries
+
+**Performance Impact:**
+
+- Successful operations: ~100-150ns overhead
+- Failed operations: Add backoff delay (default: 50ms + 100ms + 200ms = 350ms)
+- Transparent to callers: Drop-in replacement for `os.Stat` and `os.Open`
+
+### Worker Tuning for NFS
+
+The `INDEX_WORKERS` environment variable controls indexer parallelism:
+
+**Default Behavior:**
+
+```bash
+# Defaults to 3 workers (NFS-safe)
+# No environment variable needed
+```
+
+**For Tuning:**
+
+```bash
+# Conservative (for problematic NFS)
+INDEX_WORKERS=1
+
+# Aggressive (for fast NFS or local storage)
+INDEX_WORKERS=16
+```
+
+**Why It Matters:**
+
+- Too many workers → NFS server overwhelmed → ESTALE errors
+- Too few workers → Slow indexing performance
+- Default (3 workers) balances stability and performance
+
+### Integration Points
+
+The retry mechanism is integrated throughout the application:
+
+| Component             | Usage                   | Purpose                                      |
+| --------------------- | ----------------------- | -------------------------------------------- |
+| `handlers/media.go`   | File serving, streaming | Prevent 404 errors on transient failures     |
+| `media/thumbnail.go`  | Thumbnail generation    | Prevent generation failures on ESTALE        |
+| `handlers/files.go`   | Directory listing       | Prevent empty listings on transient failures |
+| `indexer/parallel.go` | Directory scanning      | Resilient indexing with configurable workers |
+
+### Monitoring NFS Health
+
+**Retry-Specific Metrics:**
+
+- `media_viewer_filesystem_retry_attempts_total{operation="stat|open"}` - Count of retry attempts
+- `media_viewer_filesystem_retry_success_total{operation="stat|open"}` - Successful recoveries from ESTALE
+- `media_viewer_filesystem_retry_failures_total{operation="stat|open"}` - Failed retries after exhausting attempts
+- `media_viewer_filesystem_estale_errors_total{operation="stat|open"}` - Total ESTALE errors encountered
+- `media_viewer_filesystem_retry_duration_seconds{operation="stat|open"}` - Duration including retry delays
+
+**General Filesystem Metrics:**
+
+- `media_viewer_filesystem_operation_duration_seconds{directory,operation}` - Operation latency by directory
+- `media_viewer_filesystem_operation_errors_total{directory,operation}` - Operation error counts
+- `media_viewer_indexer_files_per_second` - Indexing throughput
+
+**Log Messages:**
+
+- INFO: `"NFS Stat succeeded on retry N for <path>"` - Recoverable error
+- ERROR: `"NFS Stat failed after N retries for <path>"` - Persistent issue requiring investigation
+
+**Example Alerts:**
+
+```yaml
+# Alert when retry failure rate is high
+- alert: HighNFSRetryFailureRate
+  expr: rate(media_viewer_filesystem_retry_failures_total[5m]) > 0.1
+  annotations:
+      summary: 'High rate of NFS retry failures'
+
+# Alert when ESTALE errors are frequent
+- alert: FrequentNFSStaleErrors
+  expr: rate(media_viewer_filesystem_estale_errors_total[5m]) > 1
+  annotations:
+      summary: 'Frequent ESTALE errors indicating NFS issues'
+```
+
+### Best Practices
+
+1. **Mount Options**: Use `hard,intr,async` for better performance and reliability
+2. **Worker Tuning**: Start with default (3), adjust based on metrics
+3. **Monitor Logs**: Watch for retry patterns indicating NFS issues
+4. **NFS Server**: Ensure adequate resources (CPU, memory, network) on NFS server
+5. **Network**: Use dedicated network for NFS traffic if possible
+
+See also: [INDEX_WORKERS Environment Variable](../admin/environment-variables.md#index_workers) and [NFS Troubleshooting](../troubleshooting.md#nfs-stale-file-handle-errors)

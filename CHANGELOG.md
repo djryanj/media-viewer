@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Improved Stability and Performance for NFS Storage**: Major improvements to prevent crashes and improve responsiveness when media is stored on network filesystems (NFS). ([#253](https://github.com/djryanj/media-viewer/issues/253))
+    - **Automatic Error Recovery**: The application now automatically retries failed operations when network storage becomes temporarily unavailable, preventing crashes during rapid browsing and eliminating "stale file handle" and "broken pipe" errors.
+    - **Better Concurrent Operations**: Improved handling of multiple simultaneous operations (browsing, thumbnail generation, indexing) to prevent the server from becoming unresponsive.
+    - **Faster Response Times**: The application now stops unnecessary work when you navigate away from a page, making the interface more responsive when browsing quickly through your library.
+    - **NFS-Optimized Defaults**: Changed default settings to work better with network storage. For problematic NFS systems, you can further reduce load using the new `INDEX_WORKERS` environment variable (set to 1-3 for NFS, or 8-16 for fast local storage). For thumbnail generation tuning, use `THUMBNAIL_WORKERS` (defaults to auto-calculated, max 6).
+    - **Enhanced Monitoring**: Added new metrics to help diagnose and monitor NFS-related issues if they occur.
+    - **Comprehensive Documentation**: Added troubleshooting guides, configuration examples, and best practices for running Media Viewer on NFS storage.
+
 ## [0.12.2] - 2026-02-10
 
 ### Added

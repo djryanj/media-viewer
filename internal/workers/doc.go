@@ -59,12 +59,12 @@ For fine-grained control, use the Count function directly:
 
 # Environment Variable Override
 
-All functions respect the WORKER_COUNT environment variable, allowing operators
+All functions respect the THUMBNAIL_WORKERS environment variable, allowing operators
 to override the automatic calculation:
 
 	# In Kubernetes deployment
 	env:
-	- name: WORKER_COUNT
+	- name: THUMBNAIL_WORKERS
 	  value: "4"
 
 This is useful for:
@@ -143,7 +143,7 @@ Example Kubernetes deployment with CPU limits:
 	            cpu: "2"        # Limit to 2 CPUs
 	        env:
 	        # Optional: explicit override
-	        - name: WORKER_COUNT
+	        - name: THUMBNAIL_WORKERS
 	          value: "4"
 
 With this configuration:

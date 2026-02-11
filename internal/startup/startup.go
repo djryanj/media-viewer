@@ -105,6 +105,8 @@ func LoadConfig() (*Config, error) {
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
 	thumbnailIntervalStr := getEnv("THUMBNAIL_INTERVAL", "6h")
 	pollIntervalStr := getEnv("POLL_INTERVAL", "30s")
+	indexWorkersStr := getEnv("INDEX_WORKERS", "")
+	thumbnailWorkersStr := getEnv("THUMBNAIL_WORKERS", "")
 	sessionDurationStr := getEnv("SESSION_DURATION", "5m")
 	sessionCleanupStr := getEnv("SESSION_CLEANUP_INTERVAL", "1m")
 	logStaticFiles := getEnvBool("LOG_STATIC_FILES", false)
@@ -128,6 +130,16 @@ func LoadConfig() (*Config, error) {
 	logging.Info("  INDEX_INTERVAL:          %s", indexIntervalStr)
 	logging.Info("  THUMBNAIL_INTERVAL:      %s", thumbnailIntervalStr)
 	logging.Info("  POLL_INTERVAL:           %s", pollIntervalStr)
+	if indexWorkersStr != "" {
+		logging.Info("  INDEX_WORKERS:           %s (override for indexer parallelism)", indexWorkersStr)
+	} else {
+		logging.Info("  INDEX_WORKERS:           3 (default for NFS safety)")
+	}
+	if thumbnailWorkersStr != "" {
+		logging.Info("  THUMBNAIL_WORKERS:       %s (override for thumbnail workers)", thumbnailWorkersStr)
+	} else {
+		logging.Info("  THUMBNAIL_WORKERS:       (auto - CPU-based, max 6)")
+	}
 	logging.Info("  SESSION_DURATION:        %s", sessionDurationStr)
 	logging.Info("  SESSION_CLEANUP_INTERVAL:%s", sessionCleanupStr)
 	logging.Info("  LOG_STATIC_FILES:        %v", logStaticFiles)

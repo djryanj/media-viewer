@@ -9,7 +9,7 @@ DIST_DIR := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 STATIC_DIR := static
 
-.PHONY: all build build-all run dev dev-frontend dev-full \
+.PHONY: all build build-all run dev dev-info dev-frontend dev-full \
         test test-short test-coverage test-coverage-report test-race test-bench test-clean \
         test-unit test-integration test-all test-coverage-merge \
         test-package test-failures \
@@ -57,6 +57,16 @@ dev:
 	WEBAUTHN_RP_ORIGINS=http://localhost:8080 \
 	INDEX_INTERVAL=2m \
 	THUMBNAIL_INTERVAL=4m \
+	SESSION_DURATION=1h \
+	air
+
+dev-info:
+	@echo "Starting Go development server with info level logging..."
+	LOG_LEVEL=info WEBAUTHN_RP_ID=localhost \
+	WEBAUTHN_RP_DISPLAY_NAME="Media Viewer Dev" \
+	WEBAUTHN_RP_ORIGINS=http://localhost:8080 \
+	INDEX_INTERVAL=30m \
+	THUMBNAIL_INTERVAL=6h \
 	SESSION_DURATION=1h \
 	air
 

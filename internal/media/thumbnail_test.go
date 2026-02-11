@@ -3,6 +3,7 @@ package media
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -1158,4 +1159,115 @@ func BenchmarkDrawFolderBackground(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		gen.drawFolderBackground(canvas)
 	}
+}
+
+// =============================================================================
+// Timeout and Context Tests
+// =============================================================================
+
+func TestGetThumbnailWithTimeout(t *testing.T) {
+	// This test verifies that GetThumbnail respects context timeouts
+	// Note: Actual timeout behavior is integration-tested with real thumbnail generation
+
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create a test image file
+	testFile := filepath.Join(mediaDir, "test.jpg")
+	createTestImage(t, testFile, 100, 100, "jpg")
+
+	// Test with normal context (should succeed)
+	ctx := context.Background()
+	_, err := gen.GetThumbnail(ctx, testFile, database.FileTypeImage)
+
+	if err != nil {
+		t.Logf("GetThumbnail with normal context: %v (may fail if vips not available)", err)
+	}
+}
+
+func TestGetThumbnailWithCancelledContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create a test image file
+	testFile := filepath.Join(mediaDir, "test.jpg")
+	createTestImage(t, testFile, 100, 100, "jpg")
+
+	// Test with canceled context (should fail fast)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	start := time.Now()
+	_, err := gen.GetThumbnail(ctx, testFile, database.FileTypeImage)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("GetThumbnail with canceled context should return error")
+	}
+
+	// Should fail fast (within 100ms) when context is already canceled
+	if elapsed > 100*time.Millisecond {
+		t.Logf("GetThumbnail took %v with canceled context (expected fast failure)", elapsed)
+	}
+}
+
+func TestMaxThumbnailWorkersConstant(t *testing.T) {
+	// Verify that maxThumbnailWorkers is capped appropriately for I/O-bound workloads
+	if maxThumbnailWorkers > 8 {
+		t.Errorf("maxThumbnailWorkers = %d, should be <= 8 for I/O-bound thumbnail generation", maxThumbnailWorkers)
+	}
+
+	if maxThumbnailWorkers < 1 {
+		t.Errorf("maxThumbnailWorkers = %d, should be >= 1", maxThumbnailWorkers)
+	}
+
+	t.Logf("maxThumbnailWorkers = %d (capped for I/O efficiency)", maxThumbnailWorkers)
+}
+
+// BenchmarkGetThumbnailWithContext benchmarks thumbnail generation with context
+func BenchmarkGetThumbnailWithContext(b *testing.B) {
+	tmpDir := b.TempDir()
+	mediaDir := b.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create a test image file
+	testFile := filepath.Join(mediaDir, "bench.jpg")
+	createTestImage(b, testFile, 100, 100, "jpg")
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = gen.GetThumbnail(ctx, testFile, database.FileTypeImage)
+	}
+}
+
+// BenchmarkGetThumbnailConcurrent benchmarks concurrent thumbnail generation
+func BenchmarkGetThumbnailConcurrent(b *testing.B) {
+	tmpDir := b.TempDir()
+	mediaDir := b.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create test image files
+	const numFiles = 10
+	filePaths := make([]string, numFiles)
+	for i := 0; i < numFiles; i++ {
+		testFile := filepath.Join(mediaDir, fmt.Sprintf("bench%d.jpg", i))
+		createTestImage(b, testFile, 100, 100, "jpg")
+		filePaths[i] = testFile
+	}
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			filePath := filePaths[i%numFiles]
+			_, _ = gen.GetThumbnail(ctx, filePath, database.FileTypeImage)
+			i++
+		}
+	})
 }

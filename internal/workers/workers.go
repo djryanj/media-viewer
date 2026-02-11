@@ -16,9 +16,11 @@ import (
 //
 // The limit parameter caps the worker count to prevent resource exhaustion.
 // Use 0 for no limit.
+//
+// Can be overridden with THUMBNAIL_WORKERS environment variable.
 func Count(multiplier float64, limit int) int {
 	// Check for manual override first
-	if override := os.Getenv("WORKER_COUNT"); override != "" {
+	if override := os.Getenv("THUMBNAIL_WORKERS"); override != "" {
 		if count, err := strconv.Atoi(override); err == nil && count > 0 {
 			if limit > 0 && count > limit {
 				return limit

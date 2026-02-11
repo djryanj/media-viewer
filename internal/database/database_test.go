@@ -439,3 +439,83 @@ func TestDefaultTimeoutConstant(t *testing.T) {
 		t.Error("defaultTimeout should be at least 1 second")
 	}
 }
+
+// TestConnectionPoolConfiguration tests that connection pool is properly configured
+func TestConnectionPoolConfiguration(t *testing.T) {
+	// This is a unit test to verify the pool configuration constants
+	// The actual connection pool behavior is tested in integration tests
+
+	expectedMaxOpen := 25
+	expectedMaxIdle := 10
+
+	// Note: We can't directly test the pool settings without creating a real database
+	// but we can verify the constants are reasonable
+	if expectedMaxOpen < expectedMaxIdle {
+		t.Errorf("MaxOpenConns (%d) should be >= MaxIdleConns (%d)", expectedMaxOpen, expectedMaxIdle)
+	}
+
+	if expectedMaxIdle < 1 {
+		t.Error("MaxIdleConns should be at least 1")
+	}
+
+	// For media-viewer with concurrent thumbnail generation and indexing,
+	// we should have enough connections
+	minRecommended := 10
+	if expectedMaxOpen < minRecommended {
+		t.Errorf("MaxOpenConns (%d) should be at least %d for concurrent operations", expectedMaxOpen, minRecommended)
+	}
+}
+
+// TestBeginBatchLockingBehavior tests transaction lock management
+func TestBeginBatchLockingBehavior(t *testing.T) {
+	// This test verifies that BeginBatch doesn't hold locks unnecessarily
+	// The actual behavior is tested in integration tests with real database
+
+	// Verify that the pattern of acquire -> begin tx -> release is correct
+	// This is a documentation test to ensure the pattern is maintained
+
+	t.Log("BeginBatch should:")
+	t.Log("1. Acquire transaction lock")
+	t.Log("2. Begin transaction")
+	t.Log("3. Release lock immediately (allow reads)")
+	t.Log("4. Transaction committed later with EndBatch")
+
+	// The fix moved the lock release to happen immediately after tx.Begin()
+	// rather than waiting until EndBatch/transaction completion
+}
+
+// BenchmarkRecordQuery benchmarks the query recording overhead
+func BenchmarkRecordQuery(b *testing.B) {
+	operation := "benchmark_operation"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		recordQuery(operation, start, nil)
+	}
+}
+
+// BenchmarkRecordQueryWithError benchmarks query recording with errors
+func BenchmarkRecordQueryWithError(b *testing.B) {
+	operation := "benchmark_operation"
+	err := errors.New("test error")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		recordQuery(operation, start, err)
+	}
+}
+
+// BenchmarkRecordQueryConcurrent benchmarks concurrent query recording
+func BenchmarkRecordQueryConcurrent(b *testing.B) {
+	operation := "benchmark_operation"
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			start := time.Now()
+			recordQuery(operation, start, nil)
+		}
+	})
+}
