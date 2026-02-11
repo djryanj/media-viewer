@@ -4400,6 +4400,18 @@ select:focus {
     line-height: 1.4;
 }
 
+.cache-action-info p.cache-size {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.cache-action-info p.cache-size strong {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
 /* ===========================================
    CACHE ACTION BUTTONS
    =========================================== */

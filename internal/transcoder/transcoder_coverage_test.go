@@ -722,6 +722,165 @@ func TestGetDirSize_ErrorForNonexistentDir(t *testing.T) {
 }
 
 // =============================================================================
+// GetCacheSize Tests
+// =============================================================================
+
+func TestGetCacheSize_DisabledReturnsZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", false)
+
+	size, count, err := trans.GetCacheSize()
+	if err != nil {
+		t.Errorf("GetCacheSize() error: %v", err)
+	}
+	if size != 0 {
+		t.Errorf("Expected size=0 when disabled, got %d", size)
+	}
+	if count != 0 {
+		t.Errorf("Expected count=0 when disabled, got %d", count)
+	}
+}
+
+func TestGetCacheSize_EmptyCacheReturnsZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	size, count, err := trans.GetCacheSize()
+	if err != nil {
+		t.Errorf("GetCacheSize() error: %v", err)
+	}
+	if size != 0 {
+		t.Errorf("Expected size=0 for empty cache, got %d", size)
+	}
+	if count != 0 {
+		t.Errorf("Expected count=0 for empty cache, got %d", count)
+	}
+}
+
+func TestGetCacheSize_CalculatesSizeAndCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create some test files
+	content1 := []byte("transcoded video 1")
+	content2 := []byte("transcoded video 2 with more content")
+	content3 := []byte("error file content")
+
+	file1 := filepath.Join(tmpDir, "video1.mp4")
+	file2 := filepath.Join(tmpDir, "video2.mp4")
+	errFile := filepath.Join(tmpDir, "video3.mp4.err")
+
+	if err := os.WriteFile(file1, content1, 0o644); err != nil {
+		t.Fatalf("Failed to create file1: %v", err)
+	}
+	if err := os.WriteFile(file2, content2, 0o644); err != nil {
+		t.Fatalf("Failed to create file2: %v", err)
+	}
+	if err := os.WriteFile(errFile, content3, 0o644); err != nil {
+		t.Fatalf("Failed to create error file: %v", err)
+	}
+
+	size, count, err := trans.GetCacheSize()
+	if err != nil {
+		t.Fatalf("GetCacheSize() error: %v", err)
+	}
+
+	// Size should include all files
+	expectedSize := int64(len(content1) + len(content2) + len(content3))
+	if size != expectedSize {
+		t.Errorf("Expected size=%d, got %d", expectedSize, size)
+	}
+
+	// Count should exclude .err files (only 2 video files)
+	if count != 2 {
+		t.Errorf("Expected count=2 (excluding .err files), got %d", count)
+	}
+}
+
+func TestGetCacheSize_HandlesSubdirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create subdirectory
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("Failed to create subdir: %v", err)
+	}
+
+	content1 := []byte("video 1")
+	content2 := []byte("video 2")
+	content3 := []byte("error content")
+
+	file1 := filepath.Join(tmpDir, "video1.mp4")
+	file2 := filepath.Join(subDir, "video2.mp4")
+	errFile := filepath.Join(subDir, "video3.mp4.err")
+
+	if err := os.WriteFile(file1, content1, 0o644); err != nil {
+		t.Fatalf("Failed to create file1: %v", err)
+	}
+	if err := os.WriteFile(file2, content2, 0o644); err != nil {
+		t.Fatalf("Failed to create file2: %v", err)
+	}
+	if err := os.WriteFile(errFile, content3, 0o644); err != nil {
+		t.Fatalf("Failed to create error file: %v", err)
+	}
+
+	size, count, err := trans.GetCacheSize()
+	if err != nil {
+		t.Fatalf("GetCacheSize() error: %v", err)
+	}
+
+	expectedSize := int64(len(content1) + len(content2) + len(content3))
+	if size != expectedSize {
+		t.Errorf("Expected size=%d, got %d", expectedSize, size)
+	}
+
+	// Should count files in subdirectories, excluding .err
+	if count != 2 {
+		t.Errorf("Expected count=2, got %d", count)
+	}
+}
+
+func TestGetCacheSize_MultipleErrorFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true)
+
+	// Create multiple error files and one valid file
+	validContent := []byte("valid video")
+	errContent1 := []byte("error 1")
+	errContent2 := []byte("error 2")
+
+	validFile := filepath.Join(tmpDir, "video1.mp4")
+	errFile1 := filepath.Join(tmpDir, "video2.mp4.err")
+	errFile2 := filepath.Join(tmpDir, "video3.mp4.err")
+
+	if err := os.WriteFile(validFile, validContent, 0o644); err != nil {
+		t.Fatalf("Failed to create valid file: %v", err)
+	}
+	if err := os.WriteFile(errFile1, errContent1, 0o644); err != nil {
+		t.Fatalf("Failed to create error file 1: %v", err)
+	}
+	if err := os.WriteFile(errFile2, errContent2, 0o644); err != nil {
+		t.Fatalf("Failed to create error file 2: %v", err)
+	}
+
+	size, count, err := trans.GetCacheSize()
+	if err != nil {
+		t.Fatalf("GetCacheSize() error: %v", err)
+	}
+
+	expectedSize := int64(len(validContent) + len(errContent1) + len(errContent2))
+	if size != expectedSize {
+		t.Errorf("Expected size=%d, got %d", expectedSize, size)
+	}
+
+	// Should only count the 1 valid file, not the .err files
+	if count != 1 {
+		t.Errorf("Expected count=1, got %d", count)
+	}
+}
+
+// =============================================================================
 // streamFile Tests
 // =============================================================================
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.12.2] - Unreleased
 
+### Added
+
+- **Cache Size Information**: Added cache size and file count display in Settings when managing thumbnails and transcoded videos. Before clearing caches or rebuilding thumbnails, you can now see exactly how much disk space is being used and how many files will be affected. The Cache tab shows current sizes immediately when opened, and confirmation dialogs display the specific amount of data and number of files that will be deleted, helping you make informed decisions about cache management. ([#241](https://github.com/djryanj/media-viewer/issues/241))
+
 ### Fixed
 
 - **Video Dimension Compatibility**: Fixed transcoding failures for videos with unusual dimensions. Some older videos (particularly FLV files and certain codecs) have dimensions that aren't compatible with modern web video formats, causing "height not divisible by 2" errors and preventing playback. The transcoder now automatically adjusts video dimensions during conversion to ensure compatibility, allowing these videos to play successfully in your browser. ([#244](https://github.com/djryanj/media-viewer/issues/244))

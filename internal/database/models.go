@@ -101,13 +101,17 @@ type SearchSuggestion struct {
 
 // IndexStats contains statistics about the indexed media library.
 type IndexStats struct {
-	TotalFiles     int       `json:"totalFiles"`
-	TotalFolders   int       `json:"totalFolders"`
-	TotalImages    int       `json:"totalImages"`
-	TotalVideos    int       `json:"totalVideos"`
-	TotalPlaylists int       `json:"totalPlaylists"`
-	TotalFavorites int       `json:"totalFavorites"`
-	TotalTags      int       `json:"totalTags"`
-	LastIndexed    time.Time `json:"lastIndexed"`
-	IndexDuration  string    `json:"indexDuration"`
+	TotalFiles          int       `json:"totalFiles"`
+	TotalFolders        int       `json:"totalFolders"`
+	TotalImages         int       `json:"totalImages"`
+	TotalVideos         int       `json:"totalVideos"`
+	TotalPlaylists      int       `json:"totalPlaylists"`
+	TotalFavorites      int       `json:"totalFavorites"`
+	TotalTags           int       `json:"totalTags"`
+	ThumbnailCacheBytes int64     `json:"thumbnailCacheBytes"`
+	ThumbnailCacheFiles int       `json:"thumbnailCacheFiles"`
+	TranscodeCacheBytes int64     `json:"transcodeCacheBytes"`
+	TranscodeCacheFiles int       `json:"transcodeCacheFiles"`
+	LastIndexed         time.Time `json:"lastIndexed"`
+	IndexDuration       string    `json:"indexDuration"`
 }
