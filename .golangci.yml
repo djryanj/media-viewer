@@ -1,226 +1,225 @@
 # .golangci.yml - GolangCI-Lint configuration
 # Documentation: https://golangci-lint.run/usage/configuration/
 
-version: "2"
+version: '2'
 
 run:
-  timeout: 5m
-  tests: true
+    timeout: 5m
+    tests: true
 
 output:
-  formats:
-    text:
-      path: stdout
+    formats:
+        text:
+            path: stdout
 
 formatters:
-  enable:
-    - gofmt
-    - goimports
-  
-  settings:
-    gofmt:
-      simplify: true
-    
-    goimports:
-      local-prefixes: 
-        - "media-viewer"
+    enable:
+        - gofmt
+        - goimports
+
+    settings:
+        gofmt:
+            simplify: true
+
+        goimports:
+            local-prefixes:
+                - 'media-viewer'
 
 linters:
-  
-  enable:
-    # Core linters
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    
-    # Additional recommended linters
-    - bodyclose
-    - contextcheck
-    - durationcheck
-    - errname
-    - errorlint
-    - exhaustive
-    - copyloopvar
-    - gocognit
-    - goconst
-    - gocritic
-    - gosec
-    - misspell
-    - nilerr
-    - noctx
-    - prealloc
-    - predeclared
-    - revive
-    - sqlclosecheck
-    - unconvert
-    - unparam
-    - whitespace
+    enable:
+        # Core linters
+        - errcheck
+        - govet
+        - ineffassign
+        - staticcheck
+        - unused
 
-  settings:
-    errcheck:
-      check-type-assertions: true
-      check-blank: false
-      exclude-functions:
-        - (io.Closer).Close
-        - (net/http.ResponseWriter).Write
+        # Additional recommended linters
+        - bodyclose
+        - contextcheck
+        - durationcheck
+        - errname
+        - errorlint
+        - exhaustive
+        - copyloopvar
+        - gocognit
+        - goconst
+        - gocritic
+        - gosec
+        - misspell
+        - nilerr
+        - noctx
+        - prealloc
+        - predeclared
+        - revive
+        - sqlclosecheck
+        - unconvert
+        - unparam
+        - whitespace
 
-    govet:
-      enable-all: true
-      disable:
-        - fieldalignment
+    settings:
+        errcheck:
+            check-type-assertions: true
+            check-blank: false
+            exclude-functions:
+                - (io.Closer).Close
+                - (net/http.ResponseWriter).Write
 
-    gocognit:
-      min-complexity: 30
+        govet:
+            enable-all: true
+            disable:
+                - fieldalignment
 
-    goconst:
-      min-len: 3
-      min-occurrences: 3
+        gocognit:
+            min-complexity: 30
 
-    gocritic:
-      enabled-tags:
-        - diagnostic
-        - experimental
-        - opinionated
-        - performance
-        - style
-      disabled-checks:
-        - whyNoLint
-        - hugeParam
-        - rangeValCopy
+        goconst:
+            min-len: 3
+            min-occurrences: 3
 
-    gosec:
-      excludes:
-        - G104
-        - G304
+        gocritic:
+            enabled-tags:
+                - diagnostic
+                - experimental
+                - opinionated
+                - performance
+                - style
+            disabled-checks:
+                - whyNoLint
+                - hugeParam
+                - rangeValCopy
 
-    misspell:
-      locale: US
+        gosec:
+            excludes:
+                - G104
+                - G304
 
-    revive:
-      confidence: 0.8
-      rules:
-        - name: blank-imports
-        - name: context-as-argument
-        - name: context-keys-type
-        - name: dot-imports
-        - name: error-return
-        - name: error-strings
-        - name: error-naming
-        - name: exported
-        - name: if-return
-        - name: increment-decrement
-        - name: var-naming
-        - name: var-declaration
-        - name: package-comments
-        - name: range
-        - name: receiver-naming
-        - name: time-naming
-        - name: unexported-return
-        - name: indent-error-flow
-        - name: errorf
-        - name: empty-block
-        - name: superfluous-else
-        - name: unused-parameter
-        - name: unreachable-code
-        - name: redefines-builtin-id
+        misspell:
+            locale: US
 
-    staticcheck:
-      checks: ["all"]
+        revive:
+            confidence: 0.8
+            rules:
+                - name: blank-imports
+                - name: context-as-argument
+                - name: context-keys-type
+                - name: dot-imports
+                - name: error-return
+                - name: error-strings
+                - name: error-naming
+                - name: exported
+                - name: if-return
+                - name: increment-decrement
+                - name: var-naming
+                - name: var-declaration
+                - name: package-comments
+                - name: range
+                - name: receiver-naming
+                - name: time-naming
+                - name: unexported-return
+                - name: indent-error-flow
+                - name: errorf
+                - name: empty-block
+                - name: superfluous-else
+                - name: unused-parameter
+                - name: unreachable-code
+                - name: redefines-builtin-id
 
-    unparam:
-      check-exported: false
+        staticcheck:
+            checks: ['all']
 
-  exclusions:
-    rules:
-      - path: _test\.go
-        linters:
-          - gocognit
-          - errcheck
-          - goconst
-          - gosec
-          - unparam
-      
-      - path: generated
-        linters:
-          - lll
-      
-      - linters:
-          - unparam
-        text: "always receives"
-      
-      - linters:
-          - govet
-        text: "shadow: declaration of \"err\""
-        
-      # The defer in resetpw's main() won't run on early database connection failure,
-      # but this is acceptable since there's nothing to clean up if the
-      # database connection failed in the first place
-      - path: cmd/resetpw/main.go
-        linters:
-          - gocritic
-        text: "exitAfterDefer"
-    
-      # SQL string formatting: fmt.Sprintf is used only with safe constant strings
-      # (FilterTypeClause and sort column names), not user input. All actual user
-      # input is passed as query parameters using ? placeholders.
-      - path: internal/database/queries.go
-        linters:
-          - gosec
-        text: "G201"
-    
-      # MD5 is used only for non-cryptographic purposes (file deduplication/hashing
-      # in indexing and thumbnail generation), not for security or integrity checking.
-      # A faster hash would be acceptable but MD5 is standard for this use case.
-      - path: internal/indexer/indexer.go
-        linters:
-          - gosec
-        text: "G(401|501)"
-      
-      # MD5 and file permissions in thumbnail generator:
-      # - MD5 is used for cache key generation (non-cryptographic purpose)
-      # - Directory permissions (0o755) are intentional for cache directory accessibility
-      # - File permissions (0o644) are intentional for world-readable cached files
-      # - math/rand is used for non-cryptographic shuffling of folder thumbnails
-      - path: internal/media/thumbnail.go
-        linters:
-          - gosec
-        text: "G(301|306|401|404|501)"
-      
-      # Directory and file permissions are intentional:
-      # - 0o755 for directories allows proper access in containerized environments
-      # - 0o644 for test files is acceptable as they're temporary test artifacts
-      - path: internal/startup/startup.go
-        linters:
-          - gosec
-        text: "G(301|306)"
-      
-      # FFmpeg command construction is safe: arguments are built from known sources
-      # (configuration, file paths), not from untrusted user input
-      - path: internal/transcoder/transcoder.go
-        linters:
-          - gosec
-        text: "G204"
+        unparam:
+            check-exported: false
 
-      # MediaFile and PlaylistItem names are clear and self-documenting,
-      # despite the minor stuttering with package names (media.MediaFile, playlist.PlaylistItem)
-      - path: internal/playlist/wpl.go
-        linters:
-          - revive
-        text: "stutters"
-      - path: internal/media/types.go
-        linters:
-          - revive
-        text: "stutters"
-      
-      # Package metrics does not actually conflict with any Go standard library package.
-      # The revive warning is overly conservative - there is no "metrics" package in stdlib.
-      - path: internal/metrics/collector.go
-        linters:
-          - revive
-        text: "var-naming.*package names that conflict"
+    exclusions:
+        rules:
+            - path: _test\.go
+              linters:
+                  - gocognit
+                  - errcheck
+                  - goconst
+                  - gosec
+                  - unparam
+
+            - path: generated
+              linters:
+                  - lll
+
+            - linters:
+                  - unparam
+              text: 'always receives'
+
+            - linters:
+                  - govet
+              text: 'shadow: declaration of "err"'
+
+            # The defer in resetpw's main() won't run on early database connection failure,
+            # but this is acceptable since there's nothing to clean up if the
+            # database connection failed in the first place
+            - path: cmd/resetpw/main.go
+              linters:
+                  - gocritic
+              text: 'exitAfterDefer'
+
+            # SQL string formatting: fmt.Sprintf is used only with safe constant strings
+            # (FilterTypeClause and sort column names), not user input. All actual user
+            # input is passed as query parameters using ? placeholders.
+            - path: internal/database/queries.go
+              linters:
+                  - gosec
+              text: 'G201'
+
+            # MD5 is used only for non-cryptographic purposes (file deduplication/hashing
+            # in indexing and thumbnail generation), not for security or integrity checking.
+            # A faster hash would be acceptable but MD5 is standard for this use case.
+            - path: internal/indexer/indexer.go
+              linters:
+                  - gosec
+              text: 'G(401|501)'
+
+            # MD5 and file permissions in thumbnail generator:
+            # - MD5 is used for cache key generation (non-cryptographic purpose)
+            # - Directory permissions (0o755) are intentional for cache directory accessibility
+            # - File permissions (0o644) are intentional for world-readable cached files
+            # - math/rand is used for non-cryptographic shuffling of folder thumbnails
+            - path: internal/media/thumbnail.go
+              linters:
+                  - gosec
+              text: 'G(301|306|401|404|501)'
+
+            # Directory and file permissions are intentional:
+            # - 0o755 for directories allows proper access in containerized environments
+            # - 0o644 for test files is acceptable as they're temporary test artifacts
+            - path: internal/startup/startup.go
+              linters:
+                  - gosec
+              text: 'G(301|306)'
+
+            # FFmpeg command construction is safe: arguments are built from known sources
+            # (configuration, file paths), not from untrusted user input
+            - path: internal/transcoder/transcoder.go
+              linters:
+                  - gosec
+              text: 'G204'
+
+            # MediaFile and PlaylistItem names are clear and self-documenting,
+            # despite the minor stuttering with package names (media.MediaFile, playlist.PlaylistItem)
+            - path: internal/playlist/wpl.go
+              linters:
+                  - revive
+              text: 'stutters'
+            - path: internal/media/types.go
+              linters:
+                  - revive
+              text: 'stutters'
+
+            # Package metrics does not actually conflict with any Go standard library package.
+            # The revive warning is overly conservative - there is no "metrics" package in stdlib.
+            - path: internal/metrics/
+              linters:
+                  - revive
+              text: 'avoid package names that conflict'
 
 issues:
-  max-issues-per-linter: 50
-  max-same-issues: 10
+    max-issues-per-linter: 50
+    max-same-issues: 10
