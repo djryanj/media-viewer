@@ -75,6 +75,7 @@ type Config struct {
 	ThumbnailDir     string
 	TranscodeDir     string
 	TranscoderLogDir string
+	GPUAccel         string // GPU acceleration mode (auto/nvidia/vaapi/videotoolbox/none)
 
 	// Feature flags based on directory availability
 	ThumbnailsEnabled  bool
@@ -100,6 +101,7 @@ func LoadConfig() (*Config, error) {
 	cacheDir := getEnv("CACHE_DIR", "/cache")
 	databaseDir := getEnv("DATABASE_DIR", "/database")
 	transcoderLogDir := getEnv("TRANSCODER_LOG_DIR", "")
+	gpuAccel := getEnv("GPU_ACCEL", "auto")
 	port := getEnv("PORT", "8080")
 	metricsPort := getEnv("METRICS_PORT", "9090")
 	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
@@ -124,6 +126,7 @@ func LoadConfig() (*Config, error) {
 	} else {
 		logging.Info("  TRANSCODER_LOG_DIR:      (not configured)")
 	}
+	logging.Info("  GPU_ACCEL:               %s (auto-detect: nvidia/vaapi/videotoolbox)", gpuAccel)
 	logging.Info("  PORT:                    %s", port)
 	logging.Info("  METRICS_PORT:            %s", metricsPort)
 	logging.Info("  METRICS_ENABLED:         %v", metricsEnabled)
@@ -255,6 +258,7 @@ func LoadConfig() (*Config, error) {
 		ThumbnailDir:          filepath.Join(cacheDir, "thumbnails"),
 		TranscodeDir:          filepath.Join(cacheDir, "transcoded"),
 		TranscoderLogDir:      transcoderLogDir,
+		GPUAccel:              gpuAccel,
 		WebAuthnEnabled:       webAuthnEnabled,
 		WebAuthnRPID:          webAuthnRPID,
 		WebAuthnRPDisplayName: webAuthnRPDisplayName,

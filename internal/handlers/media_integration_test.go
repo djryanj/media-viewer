@@ -50,7 +50,7 @@ func setupMediaIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 
 	// Create dependencies
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, "", false)
+	trans := transcoder.New(cacheDir, "", false, "none")
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 
 	config := &startup.Config{
@@ -98,7 +98,7 @@ func setupMediaIntegrationTestWithThumbnails(t *testing.T) (h *Handlers, cleanup
 
 	// Create dependencies with thumbnails ENABLED
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, "", false)
+	trans := transcoder.New(cacheDir, "", false, "none")
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, true, db, 0, nil)
 
 	config := &startup.Config{
@@ -2402,7 +2402,7 @@ exit 187
 
 	// Create dependencies with transcoding ENABLED
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, "", true)
+	trans := transcoder.New(cacheDir, "", true, "none")
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 
 	config := &startup.Config{
@@ -2547,7 +2547,7 @@ exit 187
 	}()
 
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, "", true)
+	trans := transcoder.New(cacheDir, "", true, "none")
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 
 	config := &startup.Config{

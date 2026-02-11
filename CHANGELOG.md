@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GPU-Accelerated Video Transcoding**: Added support for hardware-accelerated video transcoding using GPU encoders for significantly faster video processing and lower CPU usage. When enabled, transcoding can be 2-5x faster compared to CPU-only encoding, making it ideal for high-resolution videos and systems with limited CPU capacity. The system automatically detects available GPU hardware (NVIDIA NVENC, Intel/AMD VA-API, or Apple VideoToolbox) and falls back to CPU encoding if no GPU is available. Configure with the `GPU_ACCEL` environment variable (default: `auto` for automatic detection). Docker users need to expose GPU devices (`--gpus all` for NVIDIA or `--device /dev/dri:/dev/dri` for Intel/AMD). ([#254](https://github.com/djryanj/media-viewer/issues/254))
+
 - **Improved Stability and Performance for NFS Storage**: Major improvements to prevent crashes and improve responsiveness when media is stored on network filesystems (NFS). ([#253](https://github.com/djryanj/media-viewer/issues/253))
     - **Automatic Error Recovery**: The application now automatically retries failed operations when network storage becomes temporarily unavailable, preventing crashes during rapid browsing and eliminating "stale file handle" and "broken pipe" errors.
     - **Better Concurrent Operations**: Improved handling of multiple simultaneous operations (browsing, thumbnail generation, indexing) to prevent the server from becoming unresponsive.

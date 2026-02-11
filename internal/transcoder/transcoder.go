@@ -20,6 +20,18 @@ import (
 	"media-viewer/internal/streaming"
 )
 
+// GPUAccel represents the GPU acceleration method
+type GPUAccel string
+
+// GPU acceleration mode constants
+const (
+	GPUAccelNone         GPUAccel = "none"         // Disable GPU acceleration
+	GPUAccelAuto         GPUAccel = "auto"         // Auto-detect available GPU
+	GPUAccelNVIDIA       GPUAccel = "nvidia"       // NVENC (NVIDIA)
+	GPUAccelVAAPI        GPUAccel = "vaapi"        // VA-API (Intel/AMD)
+	GPUAccelVideoToolbox GPUAccel = "videotoolbox" // VideoToolbox (macOS)
+)
+
 // Transcoder manages video transcoding operations for compatible playback.
 type Transcoder struct {
 	cacheDir  string
@@ -34,6 +46,14 @@ type Transcoder struct {
 
 	// Streaming configuration
 	streamConfig streaming.TimeoutWriterConfig
+
+	// GPU acceleration
+	gpuAccel         GPUAccel
+	gpuEncoder       string // Actual encoder to use (e.g., "h264_nvenc", "h264_vaapi")
+	gpuInitFilter    string // Hardware initialization filter if needed
+	gpuAvailable     bool
+	gpuDetectionDone bool
+	gpuMu            sync.Mutex
 }
 
 // VideoInfo contains information about a video file.
@@ -58,14 +78,14 @@ var compatibleContainers = map[string]bool{
 	"ogg":  true,
 }
 
-// New creates a new Transcoder instance.
-func New(cacheDir, logDir string, enabled bool) *Transcoder {
+// New creates a new Transcoder instance with the specified GPU acceleration mode.
+func New(cacheDir, logDir string, enabled bool, gpuAccel string) *Transcoder {
 	config := streaming.DefaultTimeoutWriterConfig()
 	config.WriteTimeout = 30 * time.Second
 	config.IdleTimeout = 60 * time.Second
 	config.ChunkSize = 256 * 1024 // 256KB chunks for video
 
-	logging.Info("Transcoder initialized: cacheDir=%q, logDir=%q, enabled=%v", cacheDir, logDir, enabled)
+	logging.Info("Transcoder initialized: cacheDir=%q, logDir=%q, enabled=%v, gpuAccel=%q", cacheDir, logDir, enabled, gpuAccel)
 
 	// Create log directory if specified
 	if logDir != "" {
@@ -74,14 +94,22 @@ func New(cacheDir, logDir string, enabled bool) *Transcoder {
 		}
 	}
 
-	return &Transcoder{
+	t := &Transcoder{
 		cacheDir:     cacheDir,
 		logDir:       logDir,
 		enabled:      enabled,
 		processes:    make(map[string]*exec.Cmd),
 		cacheLocks:   make(map[string]*sync.Mutex),
 		streamConfig: config,
+		gpuAccel:     GPUAccel(gpuAccel),
 	}
+
+	// Detect GPU capabilities if auto or specific GPU requested
+	if t.gpuAccel != GPUAccelNone {
+		t.detectGPU()
+	}
+
+	return t
 }
 
 // IsEnabled returns whether transcoding is enabled.
@@ -875,20 +903,13 @@ func (t *Transcoder) buildFFmpegArgs(inputPath, outputPath string, targetWidth i
 	if !needsReencode && !needsScaling {
 		args = append(args, "-c:v", "copy")
 	} else {
-		// Re-encode with h264
-		args = append(args, "-c:v", "libx264", "-preset", "fast", "-crf", "23")
-
-		// Tier 2: Always add scale filter when re-encoding to ensure output dimensions
-		// match the (possibly adjusted) dimensions from GetVideoInfo
-		if needsScaling {
-			// Scale to requested width, maintaining aspect ratio with even height
-			logging.Debug("Adding scale filter: %dx-2", targetWidth)
-			args = append(args, "-vf", fmt.Sprintf("scale=%d:-2", targetWidth))
+		// Re-encode with h264 - use GPU if available, otherwise CPU
+		if t.gpuAvailable && t.gpuEncoder != "" {
+			logging.Debug("Using GPU encoder: %s", t.gpuEncoder)
+			args = t.addGPUEncoderArgs(args, targetWidth, info, needsScaling)
 		} else {
-			// No size reduction, but force exact dimensions to handle odd dimensions
-			// This ensures output matches Tier 1 adjusted dimensions (always even)
-			logging.Debug("Adding scale filter for exact dimensions: %dx%d", info.Width, info.Height)
-			args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", info.Width, info.Height))
+			logging.Debug("Using CPU encoder: libx264")
+			args = t.addCPUEncoderArgs(args, targetWidth, info, needsScaling)
 		}
 	}
 
@@ -1085,4 +1106,181 @@ func (t *Transcoder) getDirSizeAndCount(path string) (size int64, count int, err
 		return nil
 	})
 	return size, count, err
+}
+
+// detectGPU detects available GPU hardware encoders
+func (t *Transcoder) detectGPU() {
+	t.gpuMu.Lock()
+	defer t.gpuMu.Unlock()
+
+	if t.gpuDetectionDone {
+		return
+	}
+	t.gpuDetectionDone = true
+
+	// If explicitly set to none, don't detect
+	if t.gpuAccel == GPUAccelNone {
+		logging.Info("GPU acceleration disabled (GPU_ACCEL=none)")
+		return
+	}
+
+	logging.Info("Detecting GPU acceleration capabilities (GPU_ACCEL=%s)...", t.gpuAccel)
+
+	// Try encoders in priority order based on configuration
+	var encodersToTry []struct {
+		accel   GPUAccel
+		encoder string
+		filter  string
+	}
+
+	switch t.gpuAccel {
+	case GPUAccelNone:
+		// GPU disabled, nothing to detect
+		return
+	case GPUAccelNVIDIA:
+		encodersToTry = []struct {
+			accel   GPUAccel
+			encoder string
+			filter  string
+		}{{GPUAccelNVIDIA, "h264_nvenc", ""}}
+	case GPUAccelVAAPI:
+		encodersToTry = []struct {
+			accel   GPUAccel
+			encoder string
+			filter  string
+		}{{GPUAccelVAAPI, "h264_vaapi", "format=nv12,hwupload"}}
+	case GPUAccelVideoToolbox:
+		encodersToTry = []struct {
+			accel   GPUAccel
+			encoder string
+			filter  string
+		}{{GPUAccelVideoToolbox, "h264_videotoolbox", ""}}
+	case GPUAccelAuto:
+		// Try in order: NVIDIA, VA-API, VideoToolbox
+		encodersToTry = []struct {
+			accel   GPUAccel
+			encoder string
+			filter  string
+		}{
+			{GPUAccelNVIDIA, "h264_nvenc", ""},
+			{GPUAccelVAAPI, "h264_vaapi", "format=nv12,hwupload"},
+			{GPUAccelVideoToolbox, "h264_videotoolbox", ""},
+		}
+	default:
+		logging.Warn("Unknown GPU acceleration mode: %s, falling back to CPU", t.gpuAccel)
+		return
+	}
+
+	// Test each encoder
+	for _, test := range encodersToTry {
+		if !t.testGPUEncoder(test.encoder) {
+			continue
+		}
+		t.gpuAvailable = true
+		t.gpuEncoder = test.encoder
+		t.gpuInitFilter = test.filter
+		t.gpuAccel = test.accel
+		logging.Info("✓ GPU acceleration enabled: %s (encoder: %s)", test.accel, test.encoder)
+		return
+	}
+
+	logging.Warn("No GPU encoder available, falling back to CPU encoding")
+}
+
+// testGPUEncoder tests if a GPU encoder is available
+func (t *Transcoder) testGPUEncoder(encoder string) bool {
+	// Quick test: check if encoder is in ffmpeg's encoders list
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-encoders")
+	output, err := cmd.Output()
+	if err != nil {
+		logging.Debug("Failed to list encoders: %v", err)
+		return false
+	}
+
+	// Check if encoder is listed
+	if !bytes.Contains(output, []byte(encoder)) {
+		logging.Debug("Encoder %s not found in ffmpeg", encoder)
+		return false
+	}
+
+	logging.Debug("✓ Encoder %s is available", encoder)
+	return true
+}
+
+// addGPUEncoderArgs adds GPU encoder arguments to ffmpeg command
+func (t *Transcoder) addGPUEncoderArgs(args []string, targetWidth int, info *VideoInfo, needsScaling bool) []string {
+	var filters []string
+
+	// Add hardware upload filter if needed (VA-API)
+	if t.gpuInitFilter != "" {
+		filters = append(filters, t.gpuInitFilter)
+	}
+
+	// Add scaling if needed
+	if needsScaling {
+		logging.Debug("Adding GPU scale filter: %dx-2", targetWidth)
+		// For VA-API, use scale_vaapi; for others, use regular scale before encoding
+		if t.gpuAccel == GPUAccelVAAPI {
+			filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=-2", targetWidth))
+		} else {
+			filters = append(filters, fmt.Sprintf("scale=%d:-2", targetWidth))
+		}
+	} else {
+		// Force exact dimensions for odd dimension handling
+		logging.Debug("Adding GPU scale filter for exact dimensions: %dx%d", info.Width, info.Height)
+		if t.gpuAccel == GPUAccelVAAPI {
+			filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=%d", info.Width, info.Height))
+		} else {
+			filters = append(filters, fmt.Sprintf("scale=%d:%d", info.Width, info.Height))
+		}
+	}
+
+	// Apply filters if any
+	if len(filters) > 0 {
+		args = append(args, "-vf", strings.Join(filters, ","))
+	}
+
+	// Add GPU encoder
+	args = append(args, "-c:v", t.gpuEncoder)
+
+	// Add encoder-specific options
+	switch t.gpuAccel {
+	case GPUAccelNVIDIA:
+		// NVENC options
+		args = append(args, "-preset", "p4", "-cq", "23") // p4 = medium quality preset
+	case GPUAccelVAAPI:
+		// VA-API options
+		args = append(args, "-qp", "23")
+	case GPUAccelVideoToolbox:
+		// VideoToolbox options
+		args = append(args, "-b:v", "2M") // Target bitrate for quality
+	case GPUAccelNone, GPUAccelAuto:
+		// Should not reach here, but handle gracefully
+		logging.Warn("Unexpected GPU accel type in addGPUEncoderArgs: %s", t.gpuAccel)
+	}
+
+	return args
+}
+
+// addCPUEncoderArgs adds CPU encoder arguments to ffmpeg command
+func (t *Transcoder) addCPUEncoderArgs(args []string, targetWidth int, info *VideoInfo, needsScaling bool) []string {
+	args = append(args, "-c:v", "libx264", "-preset", "fast", "-crf", "23")
+
+	// Tier 2: Always add scale filter when re-encoding to ensure output dimensions
+	// match the (possibly adjusted) dimensions from GetVideoInfo
+	if needsScaling {
+		// Scale to requested width, maintaining aspect ratio with even height
+		logging.Debug("Adding scale filter: %dx-2", targetWidth)
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:-2", targetWidth))
+	} else {
+		// No size reduction, but force exact dimensions to handle odd dimensions
+		// This ensures output matches Tier 1 adjusted dimensions (always even)
+		logging.Debug("Adding scale filter for exact dimensions: %dx%d", info.Width, info.Height)
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", info.Width, info.Height))
+	}
+
+	return args
 }

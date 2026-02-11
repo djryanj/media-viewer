@@ -59,6 +59,73 @@ docker run -d \
   ghcr.io/djryanj/media-viewer:latest
 ```
 
+## GPU-Accelerated Transcoding (Optional)
+
+For significantly faster video transcoding, you can enable GPU acceleration:
+
+### NVIDIA GPU
+
+Add GPU support to docker-compose.yml:
+
+```yaml
+services:
+    media-viewer:
+        image: ghcr.io/djryanj/media-viewer:latest
+        runtime: nvidia # Use NVIDIA runtime
+        environment:
+            - GPU_ACCEL=nvidia
+        # ... rest of configuration
+```
+
+Or with docker run:
+
+```bash
+docker run -d \
+  --gpus all \
+  -e GPU_ACCEL=nvidia \
+  ... \
+  ghcr.io/djryanj/media-viewer:latest
+```
+
+**Requirements:** NVIDIA GPU with NVENC support, NVIDIA container toolkit installed
+
+### Intel/AMD GPU (VA-API)
+
+Add device mapping to docker-compose.yml:
+
+```yaml
+services:
+    media-viewer:
+        image: ghcr.io/djryanj/media-viewer:latest
+        devices:
+            - /dev/dri:/dev/dri
+        environment:
+            - GPU_ACCEL=vaapi
+        # ... rest of configuration
+```
+
+Or with docker run:
+
+```bash
+docker run -d \
+  --device /dev/dri:/dev/dri \
+  -e GPU_ACCEL=vaapi \
+  ... \
+  ghcr.io/djryanj/media-viewer:latest
+```
+
+**Requirements:** Intel or AMD GPU with VA-API support, `/dev/dri` device available
+
+### Performance
+
+GPU transcoding provides 2-5x faster video processing with lower CPU usage, especially beneficial for:
+
+- 4K/8K video transcoding
+- Multiple concurrent transcode operations
+- Systems with limited CPU capacity
+
+If GPU is unavailable or fails, the system automatically falls back to CPU transcoding.
+
 ## Building from Source
 
 For development or custom deployments:

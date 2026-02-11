@@ -39,7 +39,7 @@ func setupFavoritesIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	}
 
 	idx := indexer.New(db, mediaDir, 0)
-	trans := transcoder.New(cacheDir, "", false)
+	trans := transcoder.New(cacheDir, "", false, "none")
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 
 	config := &startup.Config{

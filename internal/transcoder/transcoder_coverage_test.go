@@ -42,7 +42,7 @@ echo '{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"d
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	// Test with a fake file path (ffprobe won't actually read it)
@@ -91,7 +91,7 @@ echo '{"streams":[{"codec_name":"hevc","width":1920,"height":1080}],"format":{"d
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	info, err := trans.GetVideoInfo(ctx, "/fake/video.mp4")
@@ -127,7 +127,7 @@ echo '{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"d
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	// .mkv is not a compatible container
@@ -161,7 +161,7 @@ exit 1
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	_, err := trans.GetVideoInfo(ctx, "/fake/video.mp4")
@@ -193,7 +193,7 @@ sleep 10
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -223,7 +223,7 @@ echo '{"streams":[{"codec_name":"h264","width":1919,"height":1080}],"format":{"d
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	info, err := trans.GetVideoInfo(ctx, "/fake/video.mp4")
@@ -259,7 +259,7 @@ echo '{"streams":[{"codec_name":"vp6f","width":648,"height":459}],"format":{"dur
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	info, err := trans.GetVideoInfo(ctx, "/fake/video.flv")
@@ -295,7 +295,7 @@ echo '{"streams":[{"codec_name":"h264","width":1279,"height":719}],"format":{"du
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	info, err := trans.GetVideoInfo(ctx, "/fake/video.mp4")
@@ -355,7 +355,7 @@ EOF
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 	ctx := context.Background()
 
 	var buf bytes.Buffer
@@ -409,7 +409,7 @@ EOF
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
 	// Create transcoder with transcoding disabled
-	trans := New(tmpDir, "", false)
+	trans := New(tmpDir, "", false, "none")
 	ctx := context.Background()
 
 	var buf bytes.Buffer
@@ -425,7 +425,7 @@ EOF
 
 func TestStreamVideo_ErrorWhenFileNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 	ctx := context.Background()
 
 	var buf bytes.Buffer
@@ -460,7 +460,7 @@ func TestClearCache_RemovesFilesAndReturnsSize(t *testing.T) {
 		t.Fatalf("Failed to create file2: %v", err)
 	}
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 
 	freedBytes, err := trans.ClearCache()
 	if err != nil {
@@ -500,7 +500,7 @@ func TestClearCache_HandlesSubdirectories(t *testing.T) {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 
 	freedBytes, err := trans.ClearCache()
 	if err != nil {
@@ -524,7 +524,7 @@ func TestClearCache_ReturnsZeroWhenCacheDirEmpty(t *testing.T) {
 		t.Fatalf("Failed to create cache dir: %v", err)
 	}
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 
 	freedBytes, err := trans.ClearCache()
 	if err != nil {
@@ -537,7 +537,7 @@ func TestClearCache_ReturnsZeroWhenCacheDirEmpty(t *testing.T) {
 }
 
 func TestClearCache_ReturnsZeroWhenNoCacheDir(t *testing.T) {
-	trans := New("", "", true)
+	trans := New("", "", true, "none")
 
 	freedBytes, err := trans.ClearCache()
 	if err != nil {
@@ -550,7 +550,7 @@ func TestClearCache_ReturnsZeroWhenNoCacheDir(t *testing.T) {
 }
 
 func TestClearCache_HandlesNonexistentCacheDir(t *testing.T) {
-	trans := New("/nonexistent/cache/dir", "", true)
+	trans := New("/nonexistent/cache/dir", "", true, "none")
 
 	freedBytes, err := trans.ClearCache()
 	if err != nil {
@@ -567,7 +567,7 @@ func TestClearCache_HandlesNonexistentCacheDir(t *testing.T) {
 // =============================================================================
 
 func TestCleanup_KillsActiveProcesses(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	// Create a mock process (sleep command)
 	ctx := context.Background()
@@ -609,7 +609,7 @@ func TestCleanup_KillsActiveProcesses(t *testing.T) {
 }
 
 func TestCleanup_HandlesEmptyProcessMap(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	// Should not panic with empty process map
 	trans.Cleanup()
@@ -620,7 +620,7 @@ func TestCleanup_HandlesEmptyProcessMap(t *testing.T) {
 }
 
 func TestCleanup_HandlesNilProcess(_ *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	// Add nil process (edge case)
 	trans.processMu.Lock()
@@ -652,7 +652,7 @@ func TestGetDirSize_CalculatesCorrectSize(t *testing.T) {
 		t.Fatalf("Failed to create file2: %v", err)
 	}
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	size, err := trans.getDirSize(tmpDir)
 	if err != nil {
@@ -685,7 +685,7 @@ func TestGetDirSize_HandlesSubdirectories(t *testing.T) {
 		t.Fatalf("Failed to create file2: %v", err)
 	}
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	size, err := trans.getDirSize(tmpDir)
 	if err != nil {
@@ -701,7 +701,7 @@ func TestGetDirSize_HandlesSubdirectories(t *testing.T) {
 func TestGetDirSize_ReturnsZeroForEmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	size, err := trans.getDirSize(tmpDir)
 	if err != nil {
@@ -714,7 +714,7 @@ func TestGetDirSize_ReturnsZeroForEmptyDir(t *testing.T) {
 }
 
 func TestGetDirSize_ErrorForNonexistentDir(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	_, err := trans.getDirSize("/nonexistent/directory")
 	if err == nil {
@@ -728,7 +728,7 @@ func TestGetDirSize_ErrorForNonexistentDir(t *testing.T) {
 
 func TestGetCacheSize_DisabledReturnsZero(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", false)
+	trans := New(tmpDir, "", false, "none")
 
 	size, count, err := trans.GetCacheSize()
 	if err != nil {
@@ -744,7 +744,7 @@ func TestGetCacheSize_DisabledReturnsZero(t *testing.T) {
 
 func TestGetCacheSize_EmptyCacheReturnsZero(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	size, count, err := trans.GetCacheSize()
 	if err != nil {
@@ -760,7 +760,7 @@ func TestGetCacheSize_EmptyCacheReturnsZero(t *testing.T) {
 
 func TestGetCacheSize_CalculatesSizeAndCount(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create some test files
 	content1 := []byte("transcoded video 1")
@@ -800,7 +800,7 @@ func TestGetCacheSize_CalculatesSizeAndCount(t *testing.T) {
 
 func TestGetCacheSize_HandlesSubdirectories(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create subdirectory
 	subDir := filepath.Join(tmpDir, "subdir")
@@ -844,7 +844,7 @@ func TestGetCacheSize_HandlesSubdirectories(t *testing.T) {
 
 func TestGetCacheSize_MultipleErrorFiles(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create multiple error files and one valid file
 	validContent := []byte("valid video")
@@ -894,7 +894,7 @@ func TestStreamFile_StreamsFileContent(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 	ctx := context.Background()
 
 	var buf bytes.Buffer
@@ -909,7 +909,7 @@ func TestStreamFile_StreamsFileContent(t *testing.T) {
 }
 
 func TestStreamFile_ErrorWhenFileNotFound(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	var buf bytes.Buffer
@@ -929,7 +929,7 @@ func TestStreamFile_RespectsContext(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -968,7 +968,7 @@ EOF
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -986,7 +986,7 @@ func BenchmarkStreamFile(b *testing.B) {
 		b.Fatalf("Failed to create test file: %v", err)
 	}
 
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -1000,7 +1000,7 @@ func BenchmarkClearCache(b *testing.B) {
 	tmpDir := b.TempDir()
 	cacheDir := filepath.Join(tmpDir, "cache")
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1066,7 +1066,7 @@ func TestGetVideoInfoIntegration_RealVideo(t *testing.T) {
 	checkFFmpegAvailable(t)
 	testVideo := getTestVideoPath(t)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	info, err := trans.GetVideoInfo(ctx, testVideo)
@@ -1099,7 +1099,7 @@ func TestStreamVideoIntegration_DirectStream(t *testing.T) {
 	checkFFmpegAvailable(t)
 	testVideo := getTestVideoPath(t)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	var buf bytes.Buffer
@@ -1121,7 +1121,7 @@ func TestStreamVideoIntegration_WithResize(t *testing.T) {
 	testVideo := getTestVideoPath(t)
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -1155,7 +1155,7 @@ func TestStreamVideoIntegration_ContextCancellation(t *testing.T) {
 	checkFFmpegAvailable(t)
 	testVideo := getTestVideoPath(t)
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	// Create a context that cancels immediately
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1197,7 +1197,7 @@ func TestGetVideoInfoIntegration_VariousFormats(t *testing.T) {
 				return
 			}
 
-			trans := New("/tmp/cache", "", true)
+			trans := New("/tmp/cache", "", true, "none")
 			ctx := context.Background()
 
 			info, err := trans.GetVideoInfo(ctx, testFile)
@@ -1220,7 +1220,7 @@ func TestTranscodeAndStreamIntegration_FullProcess(t *testing.T) {
 	testVideo := getTestVideoPath(t)
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -1274,7 +1274,7 @@ func TestTranscodeIntegration_OddDimensions(t *testing.T) {
 		t.Skipf("Skipping test: ffmpeg not available or failed: %v", err)
 	}
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 	ctx := context.Background()
 
 	// Get video info - should adjust odd dimensions
@@ -1331,7 +1331,7 @@ func TestTranscodeIntegration_OddDimensionsIncompatibleCodec(t *testing.T) {
 		t.Skipf("Skipping test: ffmpeg/libx265 not available or failed: %v", err)
 	}
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 	ctx := context.Background()
 
 	// Get video info
@@ -1370,7 +1370,7 @@ func TestCleanupIntegration_WithActiveTranscode(t *testing.T) {
 	testVideo := getTestVideoPath(t)
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	ctx := context.Background()
 
@@ -1412,7 +1412,7 @@ func BenchmarkGetVideoInfoIntegration(b *testing.B) {
 		b.Skip("Test video not found")
 	}
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -1435,7 +1435,7 @@ func BenchmarkStreamVideoIntegration(b *testing.B) {
 		b.Skip("Test video not found")
 	}
 
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -1455,7 +1455,7 @@ func TestTranscodeAndStream_AlwaysCache(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create a real test video file with h264 codec
 	testVideo := createTestH264Video(t, tmpDir)
@@ -1491,7 +1491,7 @@ func TestTranscodeAndStream_HybridCaching_ReencodeCache(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create a test video with incompatible codec (simulated)
 	testVideo := createTestH264Video(t, tmpDir) // We'll pretend it needs re-encoding
@@ -1600,7 +1600,7 @@ exit 1
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 	ctx := context.Background()
 
 	// Get video info
@@ -1692,7 +1692,7 @@ exit 187
 	}()
 	_ = os.Setenv("PATH", tmpDir+":"+oldPath)
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 	ctx := context.Background()
 
 	// Get video info
@@ -1766,7 +1766,7 @@ func TestGetOrStartTranscodeAndWait_SuccessfulTranscodeCleansErrorFile(t *testin
 		t.Skipf("Skipping test: ffmpeg not available or failed: %v", err)
 	}
 
-	trans := New(cacheDir, "", true)
+	trans := New(cacheDir, "", true, "none")
 	ctx := context.Background()
 
 	// Get video info

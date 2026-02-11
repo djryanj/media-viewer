@@ -4,39 +4,41 @@ Complete reference for all environment variables supported by Media Viewer.
 
 ## Quick Reference
 
-| Variable                      | Default        | Description                                          |
-| ----------------------------- | -------------- | ---------------------------------------------------- |
-| **Paths**                     |                |                                                      |
-| `MEDIA_DIR`                   | `/media`       | Media directory path                                 |
-| `CACHE_DIR`                   | `/cache`       | Cache directory for thumbnails and transcoded videos |
-| `DATABASE_DIR`                | `/database`    | Database directory path                              |
-| `TRANSCODER_LOG_DIR`          | _(none)_       | Transcoder log directory (optional)                  |
-| **Network**                   |                |                                                      |
-| `PORT`                        | `8080`         | HTTP server port                                     |
-| `METRICS_PORT`                | `9090`         | Prometheus metrics port                              |
-| `METRICS_ENABLED`             | `true`         | Enable/disable metrics server                        |
-| **Indexing & Scanning**       |                |                                                      |
-| `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                         |
-| `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                 |
-| `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                   |
-| `INDEX_WORKERS`               | `3`            | Parallel indexer workers (tune for NFS/local)        |
-| `THUMBNAIL_WORKERS`           | _(auto)_       | Thumbnail generation workers (tune for performance)  |
-| **Authentication & Sessions** |                |                                                      |
-| `SESSION_DURATION`            | `24h`          | User session lifetime                                |
-| `SESSION_CLEANUP`             | `1h`           | Expired session cleanup interval                     |
-| **WebAuthn**                  |                |                                                      |
-| `WEBAUTHN_ENABLED`            | `false`        | Enable passkey authentication                        |
-| `WEBAUTHN_RP_ID`              | _(none)_       | Relying Party ID (required if enabled)               |
-| `WEBAUTHN_RP_NAME`            | `Media Viewer` | Display name for WebAuthn prompts                    |
-| `WEBAUTHN_ORIGINS`            | _(none)_       | Allowed origins (required if enabled)                |
-| **Memory Management**         |                |                                                      |
-| `MEMORY_LIMIT`                | _(none)_       | Container memory limit in bytes                      |
-| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.0-1.0)                   |
-| `GOMEMLIMIT`                  | _(none)_       | Direct Go memory limit override                      |
-| **Logging**                   |                |                                                      |
-| `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                |
-| `LOG_STATIC_FILES`            | `false`        | Log static file requests                             |
-| `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                            |
+| Variable                      | Default        | Description                                            |
+| ----------------------------- | -------------- | ------------------------------------------------------ |
+| **Paths**                     |                |                                                        |
+| `MEDIA_DIR`                   | `/media`       | Media directory path                                   |
+| `CACHE_DIR`                   | `/cache`       | Cache directory for thumbnails and transcoded videos   |
+| `DATABASE_DIR`                | `/database`    | Database directory path                                |
+| `TRANSCODER_LOG_DIR`          | _(none)_       | Transcoder log directory (optional)                    |
+| **Video Transcoding**         |                |                                                        |
+| `GPU_ACCEL`                   | `auto`         | GPU acceleration (auto/nvidia/vaapi/videotoolbox/none) |
+| **Network**                   |                |                                                        |
+| `PORT`                        | `8080`         | HTTP server port                                       |
+| `METRICS_PORT`                | `9090`         | Prometheus metrics port                                |
+| `METRICS_ENABLED`             | `true`         | Enable/disable metrics server                          |
+| **Indexing & Scanning**       |                |                                                        |
+| `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                           |
+| `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                   |
+| `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                     |
+| `INDEX_WORKERS`               | `3`            | Parallel indexer workers (tune for NFS/local)          |
+| `THUMBNAIL_WORKERS`           | _(auto)_       | Thumbnail generation workers (tune for performance)    |
+| **Authentication & Sessions** |                |                                                        |
+| `SESSION_DURATION`            | `24h`          | User session lifetime                                  |
+| `SESSION_CLEANUP`             | `1h`           | Expired session cleanup interval                       |
+| **WebAuthn**                  |                |                                                        |
+| `WEBAUTHN_ENABLED`            | `false`        | Enable passkey authentication                          |
+| `WEBAUTHN_RP_ID`              | _(none)_       | Relying Party ID (required if enabled)                 |
+| `WEBAUTHN_RP_NAME`            | `Media Viewer` | Display name for WebAuthn prompts                      |
+| `WEBAUTHN_ORIGINS`            | _(none)_       | Allowed origins (required if enabled)                  |
+| **Memory Management**         |                |                                                        |
+| `MEMORY_LIMIT`                | _(none)_       | Container memory limit in bytes                        |
+| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.0-1.0)                     |
+| `GOMEMLIMIT`                  | _(none)_       | Direct Go memory limit override                        |
+| **Logging**                   |                |                                                        |
+| `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                  |
+| `LOG_STATIC_FILES`            | `false`        | Log static file requests                               |
+| `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                              |
 
 ## Paths
 
@@ -89,6 +91,69 @@ TRANSCODER_LOG_DIR=/logs/transcoder
 - When configured, FFmpeg logs for each transcode operation are saved to this directory
 - Log files are named: `YYYYMMDD-HHMMSS-videoname-wWIDTH.log`
 - Useful for debugging transcode issues
+
+### GPU_ACCEL
+
+Enables GPU-accelerated video transcoding for better performance.
+
+```bash
+GPU_ACCEL=auto
+```
+
+- Default: `auto` (automatically detect available GPU)
+- Options:
+    - `auto` - Auto-detect GPU (tries NVIDIA → VA-API → VideoToolbox)
+    - `nvidia` - Force NVIDIA NVENC (requires NVIDIA GPU and drivers)
+    - `vaapi` - Force VA-API (Intel/AMD GPUs on Linux)
+    - `videotoolbox` - Force VideoToolbox (macOS/Apple Silicon)
+    - `none` - Disable GPU acceleration (CPU-only)
+
+**GPU Requirements:**
+
+- **NVIDIA**: Requires NVIDIA GPU with NVENC support and CUDA drivers
+    - Docker: Use `--gpus all` flag or `--runtime=nvidia`
+    - Docker Compose: Add `runtime: nvidia` or use `deploy.resources.reservations.devices`
+- **Intel/AMD (VA-API)**: Requires `/dev/dri` device access
+    - Docker: Add `--device /dev/dri:/dev/dri`
+    - Docker Compose: Add device mapping under `devices:`
+- **macOS (VideoToolbox)**: Native support, no additional configuration needed
+
+**Performance Impact:**
+
+GPU transcoding can be 2-5x faster than CPU transcoding while using less CPU resources. Particularly beneficial for:
+
+- High-resolution videos (4K, 8K)
+- Multiple concurrent transcoding operations
+- Systems with limited CPU capacity
+
+**Example Docker Run with GPU:**
+
+```bash
+# NVIDIA GPU
+docker run --gpus all -e GPU_ACCEL=nvidia ...
+
+# Intel/AMD GPU (VA-API)
+docker run --device /dev/dri:/dev/dri -e GPU_ACCEL=vaapi ...
+```
+
+**Example Docker Compose with GPU:**
+
+```yaml
+services:
+  media-viewer:
+    # NVIDIA
+    runtime: nvidia
+    environment:
+      - GPU_ACCEL=nvidia
+
+    # OR for Intel/AMD
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - GPU_ACCEL=vaapi
+```
+
+If a GPU is not available or initialization fails, the system automatically falls back to CPU transcoding.
 
 ## Network
 

@@ -252,13 +252,13 @@ test-coverage-merge:
 # This target runs all checks typically needed before submitting a pull request
 pr-check:
 	@echo "Running PR checks..."
-	@echo "Step 1/3: Fixing lint issues..."
+	@echo "Step 1/3: Running Go linter (will auto-fix some lint issues)..."
 	@$(MAKE) lint-fix
 	@echo "\nStep 2/3: Running tests..."
 	@$(MAKE) test
 	@echo "\nStep 3/3: Running race detector..."
 	@$(MAKE) test-race
-	@echo "\n✓ All PR checks completed successfully!"
+	@echo "\nAll PR checks completed successfully!"
 
 test-clean:
 	@echo "Cleaning test artifacts..."

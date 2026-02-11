@@ -36,7 +36,7 @@ A lightweight, containerized, single-user web application for browsing and viewi
 - Browse folders and files with thumbnail previews
 - Lightbox viewer with swipe/keyboard navigation
 - Windows Media Player playlist support (.wpl)
-- Automatic video transcoding for browser compatibility
+- Automatic video transcoding with optional GPU acceleration (NVIDIA/Intel/AMD)
 - Full-text fuzzy search with tag support
 - Tag files for organization
 - Pin favorites to the home page
@@ -86,6 +86,7 @@ services:
             - METRICS_PORT=9090
             - METRICS_ENABLED=true
             - INDEX_INTERVAL=30m
+            # - GPU_ACCEL=auto  # Optional: auto (default), nvidia, vaapi, videotoolbox, or none
             # - INDEX_WORKERS=3  # Optional: Set to 3 for NFS mounts, 8-16 for fast local storage
             # - TRANSCODER_LOG_DIR=/logs/transcoder  # Optional: Enable to save FFmpeg logs
         restart: unless-stopped

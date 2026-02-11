@@ -106,7 +106,7 @@ func main() {
 
 	// Initialize transcoder
 	startup.LogTranscoderInit(config.TranscodingEnabled)
-	trans := transcoder.New(config.TranscodeDir, config.TranscoderLogDir, config.TranscodingEnabled)
+	trans := transcoder.New(config.TranscodeDir, config.TranscoderLogDir, config.TranscodingEnabled, config.GPUAccel)
 
 	// Initialize thumbnail generator
 	startup.LogThumbnailInit(config.ThumbnailsEnabled)
