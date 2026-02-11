@@ -16,6 +16,7 @@
 - [ ] `chore`: Changes to build process or auxiliary tools
 - [ ] `build`: Changes that affect the build system or dependencies
 - [ ] `breaking`: Breaking change (add `!` after type, e.g., `feat!:`)
+- [ ] `release`: Release a new version
 
 ## Component
 
@@ -30,19 +31,23 @@
 - [ ] Favorites
 - [ ] Docker
 - [ ] Documentation
-- [ ] Other: _____
+- [ ] Metrics/Monitoring
+- [ ] Other: **\_**
 
 ## Checklist
 
 - [ ] My PR title follows the [Conventional Commits](https://www.conventionalcommits.org/) format
-  - Example: `feat(api): add video streaming endpoint`
-  - Example: `fix(database): resolve connection timeout issue`
+    - Example: `feat(api): add video streaming endpoint`
+    - Example: `fix(database): resolve connection timeout issue`
 - [ ] My code follows the project's style guidelines
 - [ ] I have performed a self-review of my code
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings or errors
-- [ ] I have tested my changes locally
+- [ ] I have run `make pr-check` and all checks passed
+    - Lint fixes: ✓
+    - Tests: ✓
+    - Race detector: ✓
 
 ## Related Issues
 

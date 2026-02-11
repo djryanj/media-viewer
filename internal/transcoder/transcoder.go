@@ -463,7 +463,12 @@ func (t *Transcoder) transcodeDirectToCache(ctx context.Context, filePath, cache
 		cmd.Stderr = &stderr
 	}
 
-	// Track the process
+	// Start FFmpeg (it will write directly to tmpPath)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	// Track the process AFTER Start() succeeds to avoid race with Cleanup()
 	t.processMu.Lock()
 	t.processes[filePath] = cmd
 	t.processMu.Unlock()
@@ -473,11 +478,6 @@ func (t *Transcoder) transcodeDirectToCache(ctx context.Context, filePath, cache
 		delete(t.processes, filePath)
 		t.processMu.Unlock()
 	}()
-
-	// Start FFmpeg (it will write directly to tmpPath)
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
-	}
 
 	// Wait for FFmpeg to complete
 	cmdErr := cmd.Wait()
@@ -722,7 +722,12 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 		cmd.Stderr = &stderr
 	}
 
-	// Track the process
+	// Start ffmpeg
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	// Track the process AFTER Start() succeeds to avoid race with Cleanup()
 	t.processMu.Lock()
 	t.processes[filePath] = cmd
 	t.processMu.Unlock()
@@ -732,11 +737,6 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 		delete(t.processes, filePath)
 		t.processMu.Unlock()
 	}()
-
-	// Start ffmpeg
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
-	}
 
 	logging.Info("FFmpeg started, beginning to stream chunks to client...")
 
@@ -833,7 +833,12 @@ func (t *Transcoder) transcodeStream(ctx context.Context, filePath string, w io.
 		cmd.Stderr = &stderr
 	}
 
-	// Track the process
+	// Start ffmpeg
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	// Track the process AFTER Start() succeeds to avoid race with Cleanup()
 	t.processMu.Lock()
 	t.processes[filePath] = cmd
 	t.processMu.Unlock()
@@ -843,11 +848,6 @@ func (t *Transcoder) transcodeStream(ctx context.Context, filePath string, w io.
 		delete(t.processes, filePath)
 		t.processMu.Unlock()
 	}()
-
-	// Start ffmpeg
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
-	}
 
 	// Stream output with timeout protection
 	var streamErr error

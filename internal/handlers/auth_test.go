@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 // =============================================================================
 
 type mockAuthDB struct {
+	mu                  sync.RWMutex                 // Protects all fields below
 	users               map[int64]*database.User     // userID -> User
 	sessions            map[string]*database.Session // token -> Session
 	nextUserID          int64
@@ -53,14 +55,21 @@ func newMockAuthDB() *mockAuthDB {
 }
 
 func (m *mockAuthDB) IsSetupComplete(_ context.Context) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.setupCompleteVal
 }
 
 func (m *mockAuthDB) HasUsers(_ context.Context) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.hasUsersVal
 }
 
 func (m *mockAuthDB) CreateUser(_ context.Context, password string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.createUserErr != nil {
 		return m.createUserErr
 	}
@@ -84,6 +93,9 @@ func (m *mockAuthDB) CreateUser(_ context.Context, password string) error {
 }
 
 func (m *mockAuthDB) ValidatePassword(_ context.Context, password string) (*database.User, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	if m.validatePasswordErr != nil {
 		return nil, m.validatePasswordErr
 	}
@@ -98,6 +110,9 @@ func (m *mockAuthDB) ValidatePassword(_ context.Context, password string) (*data
 }
 
 func (m *mockAuthDB) CreateSession(_ context.Context, userID int64) (*database.Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.createSessionErr != nil {
 		return nil, m.createSessionErr
 	}
@@ -124,6 +139,9 @@ func (m *mockAuthDB) CreateSession(_ context.Context, userID int64) (*database.S
 }
 
 func (m *mockAuthDB) DeleteSession(_ context.Context, token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.deleteSessionErr != nil {
 		return m.deleteSessionErr
 	}
@@ -133,6 +151,9 @@ func (m *mockAuthDB) DeleteSession(_ context.Context, token string) error {
 }
 
 func (m *mockAuthDB) ValidateSession(_ context.Context, token string) (*database.Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.validateSessionErr != nil {
 		return nil, m.validateSessionErr
 	}
@@ -151,6 +172,9 @@ func (m *mockAuthDB) ValidateSession(_ context.Context, token string) (*database
 }
 
 func (m *mockAuthDB) ExtendSession(_ context.Context, token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.extendSessionErr != nil {
 		return m.extendSessionErr
 	}
@@ -165,6 +189,9 @@ func (m *mockAuthDB) ExtendSession(_ context.Context, token string) error {
 }
 
 func (m *mockAuthDB) UpdatePassword(_ context.Context, newPassword string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.updatePasswordErr != nil {
 		return m.updatePasswordErr
 	}

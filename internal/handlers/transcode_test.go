@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"media-viewer/internal/transcoder"
@@ -329,12 +330,16 @@ func TestClearTranscodeCacheErrorConditions(t *testing.T) {
 func TestClearTranscodeCacheConcurrent(t *testing.T) {
 	t.Parallel()
 
+	var mu sync.Mutex
 	callCount := 0
 	h := &mockHandlers{
 		transcoder: &mockTranscoder{
 			clearCacheFunc: func() (int64, error) {
+				mu.Lock()
 				callCount++
-				return int64(callCount * 1024), nil
+				result := int64(callCount * 1024)
+				mu.Unlock()
+				return result, nil
 			},
 		},
 	}

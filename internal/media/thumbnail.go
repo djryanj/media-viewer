@@ -240,9 +240,9 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 		return nil, fmt.Errorf("thumbnails disabled")
 	}
 
-	// Check if context is already canceled
+	// Check if context is already cancelled
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context canceled: %w", err)
+		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
 	start := time.Now()
@@ -398,6 +398,11 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePath string) (image.Image, error) {
 	logging.Debug("Opening image: %s", filePath)
 
+	// Check if context is cancelled before starting
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
 	// Check memory before processing
 	if t.memoryMonitor != nil && !t.memoryMonitor.WaitIfPaused() {
 		return nil, fmt.Errorf("thumbnail generation stopped")
@@ -411,6 +416,11 @@ func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePat
 
 	logging.Debug("Constrained load failed for %s: %v, trying fallback methods", filePath, err)
 
+	// Check if context is cancelled before trying fallback
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
 	// Try standard imaging library
 	img, err = imaging.Open(filePath, imaging.AutoOrientation(true))
 	if err == nil {
@@ -418,6 +428,11 @@ func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePat
 	}
 
 	logging.Debug("imaging.Open failed for %s: %v, trying ffmpeg fallback", filePath, err)
+
+	// Check if context is cancelled before trying ffmpeg
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
 
 	// FFmpeg fallback
 	img, err = t.generateImageWithFFmpeg(ctx, filePath)
@@ -529,6 +544,11 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	// First attempt failed or produced no output - likely a short video
 	logging.Debug("FFmpeg first attempt failed or produced no output for %s: %v, stderr: %s", filePath, err, stderr.String())
 
+	// Check if context is cancelled before retrying
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
 	// Second attempt: Probe duration and use intelligent seek time
 	duration, probeErr := t.getVideoDuration(ctx, filePath)
 	if probeErr == nil && duration > 0 {
@@ -571,6 +591,11 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 		logging.Debug("FFmpeg intelligent retry failed for %s: %v, stderr: %s", filePath, err, stderr.String())
 	} else {
 		logging.Debug("Could not probe video duration for %s: %v, skipping intelligent retry", filePath, probeErr)
+	}
+
+	// Check if context is cancelled before final fallback
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
 	// Final fallback: Try without seek time (most compatible, slowest)
@@ -737,6 +762,12 @@ func (t *ThumbnailGenerator) findImagesForFolder(ctx context.Context, relativePa
 
 	// Generate thumbnails for each candidate
 	for _, f := range candidates {
+		// Check if context is cancelled
+		if err := ctx.Err(); err != nil {
+			logging.Debug("Context cancelled while generating folder thumbnail components")
+			break
+		}
+
 		fullPath := filepath.Join(t.mediaDir, f.Path)
 
 		var img image.Image
