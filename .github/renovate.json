@@ -17,9 +17,6 @@
     "automergeType": "pr",
     "prHourlyLimit": 5,
     "prConcurrentLimit": 10,
-    "baseBranches": [
-        "main"
-    ],
     "ignorePaths": [
         "**/vendor/**"
     ],
@@ -38,9 +35,9 @@
             "matchUpdateTypes": [
                 "minor"
             ],
-            "matchPackagePatterns": [
-                "^golang",
-                "^alpine"
+            "matchPackageNames": [
+                "/^golang/",
+                "/^alpine/"
             ],
             "automerge": true
         },
@@ -88,16 +85,10 @@
         ]
     },
     "dockerfile": {
-        "enabled": true,
-        "fileMatch": [
-            "(^|/)Dockerfile[^/]*$"
-        ]
+        "enabled": true
     },
     "github-actions": {
-        "enabled": true,
-        "fileMatch": [
-            "^\\.github/workflows/[^/]+\\.ya?ml$"
-        ]
+        "enabled": true
     },
     "vulnerabilityAlerts": {
         "enabled": true,

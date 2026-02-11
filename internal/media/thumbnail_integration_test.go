@@ -1095,8 +1095,11 @@ func TestWorkerPoolContextCancellation(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// Should finish quickly due to cancellation
-	if elapsed > 500*time.Millisecond {
-		t.Errorf("Processing took %v, expected quicker cancellation", elapsed)
+	// Note: race detector makes operations significantly slower (5-10x),
+	// so we use a generous timeout that works for both normal and race builds
+	maxExpected := 3 * time.Second
+	if elapsed > maxExpected {
+		t.Errorf("Processing took %v, expected quicker cancellation (max %v)", elapsed, maxExpected)
 	}
 
 	stats := gen.GetStatus().Generation

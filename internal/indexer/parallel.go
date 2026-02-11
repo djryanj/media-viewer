@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,7 +17,6 @@ import (
 	"media-viewer/internal/logging"
 	"media-viewer/internal/mediatypes"
 	"media-viewer/internal/metrics"
-	"media-viewer/internal/workers"
 )
 
 // ParallelWalkerConfig configures the parallel directory walker
@@ -33,8 +33,17 @@ type ParallelWalkerConfig struct {
 
 // DefaultParallelWalkerConfig returns sensible defaults based on available resources
 func DefaultParallelWalkerConfig() ParallelWalkerConfig {
+	// Default to 3 workers - safe for NFS and still performant for local filesystems
+	// Users can override with INDEX_WORKERS environment variable if needed
+	numWorkers := 3
+	if override := os.Getenv("INDEX_WORKERS"); override != "" {
+		if count, err := strconv.Atoi(override); err == nil && count > 0 {
+			numWorkers = count
+		}
+	}
+
 	return ParallelWalkerConfig{
-		NumWorkers:    workers.ForIO(8), // I/O bound, max 8
+		NumWorkers:    numWorkers,
 		BatchSize:     500,
 		ChannelBuffer: 1000,
 		SkipHidden:    true,

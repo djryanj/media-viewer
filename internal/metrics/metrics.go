@@ -396,6 +396,50 @@ var (
 	)
 )
 
+// Filesystem retry metrics for NFS resilience
+var (
+	FilesystemRetryAttempts = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_filesystem_retry_attempts_total",
+			Help: "Total number of filesystem retry attempts by operation",
+		},
+		[]string{"operation"}, // operation: stat/open
+	)
+
+	FilesystemRetrySuccess = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_filesystem_retry_success_total",
+			Help: "Total number of successful filesystem retries by operation",
+		},
+		[]string{"operation"}, // operation: stat/open
+	)
+
+	FilesystemRetryFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_filesystem_retry_failures_total",
+			Help: "Total number of failed filesystem retries (exhausted all attempts) by operation",
+		},
+		[]string{"operation"}, // operation: stat/open
+	)
+
+	FilesystemStaleErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_filesystem_estale_errors_total",
+			Help: "Total number of ESTALE (stale file handle) errors encountered by operation",
+		},
+		[]string{"operation"}, // operation: stat/open
+	)
+
+	FilesystemRetryDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_filesystem_retry_duration_seconds",
+			Help:    "Duration of filesystem operations including retries",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5},
+		},
+		[]string{"operation"}, // operation: stat/open
+	)
+)
+
 // Enhanced indexer metrics
 var (
 	IndexerRunDuration = promauto.NewHistogram(

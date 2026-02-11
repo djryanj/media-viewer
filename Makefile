@@ -9,9 +9,9 @@ DIST_DIR := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 STATIC_DIR := static
 
-.PHONY: all build build-all run dev dev-frontend dev-full \
+.PHONY: all build build-all run dev dev-info dev-frontend dev-full \
         test test-short test-coverage test-coverage-report test-race test-bench test-clean \
-        test-unit test-integration test-all test-coverage-merge \
+        test-unit test-integration test-all test-coverage-merge pr-check \
         test-package test-failures \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fix \
@@ -60,6 +60,16 @@ dev:
 	SESSION_DURATION=1h \
 	air
 
+dev-info:
+	@echo "Starting Go development server with info level logging..."
+	LOG_LEVEL=info WEBAUTHN_RP_ID=localhost \
+	WEBAUTHN_RP_DISPLAY_NAME="Media Viewer Dev" \
+	WEBAUTHN_RP_ORIGINS=http://localhost:8080 \
+	INDEX_INTERVAL=30m \
+	THUMBNAIL_INTERVAL=6h \
+	SESSION_DURATION=1h \
+	air
+
 dev-frontend:
 	@echo "Starting frontend development server with live reload..."
 	@cd $(STATIC_DIR) && npm run dev:proxy
@@ -81,68 +91,108 @@ PKG ?= ./...
 TESTARGS ?=
 TESTTIMEOUT ?= 10m
 
+# Catch-all rule to prevent make from treating package names as targets
+%:
+	@:
+
 test:
 	@echo "Running tests..."
-	$(GO_TEST) -v ./...
+	$(GO_TEST) -v ./... 2>&1 | tee test.log
 
 test-short:
 	@echo "Running tests (short mode)..."
-	$(GO_TEST) -short -v ./...
+	$(GO_TEST) -short -v ./... 2>&1 | tee short.log
 
-# Test a specific package or set of tests
+# Test specific packages
 # Automatically resolves short package names (e.g., "indexer" -> "./internal/indexer")
 # Examples:
-#   make test-package PKG=indexer
-#   make test-package PKG=indexer TESTARGS="-run=TestNew"
-#   make test-package PKG=handlers TESTARGS="-run=TestHealth"
-#   make test-package PKG=./internal/indexer (also works with full paths)
+#   make test-package database
+#   make test-package database handlers
+#   make test-package indexer TESTARGS="-run=TestNew"
+#   make test-package ./internal/indexer (also works with full paths)
+#   make test-package PKG=indexer (legacy syntax still supported)
 test-package:
-	@if [ "$(PKG)" = "./..." ]; then \
+	@goals="$(filter-out test-package,$(MAKECMDGOALS))"; \
+	pkgs="$${goals:-$(PKG)}"; \
+	if [ "$$pkgs" = "./..." ] || [ -z "$$pkgs" ]; then \
 		echo "Running all tests..."; \
-		$(GO_TEST) -v ./... $(TESTARGS) -timeout $(TESTTIMEOUT); \
-	elif echo "$(PKG)" | grep -q "^\./"; then \
-		echo "Running tests for $(PKG) $(TESTARGS)..."; \
-		$(GO_TEST) -v $(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+		$(GO_TEST) -v ./... $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee all.log; \
 	else \
-		echo "Running tests for ./internal/$(PKG) $(TESTARGS)..."; \
-		$(GO_TEST) -v ./internal/$(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+		for pkg in $$pkgs; do \
+			if echo "$$pkg" | grep -q "^\./"; then \
+				pkg_path="$$pkg"; \
+				pkg_name=$$(echo "$$pkg" | sed 's|^.*/||'); \
+			else \
+				pkg_path="./internal/$$pkg"; \
+				pkg_name="$$pkg"; \
+			fi; \
+			echo "Running tests for $$pkg_path $(TESTARGS)... (logging to $$pkg_name.log)"; \
+			$(GO_TEST) -v $$pkg_path $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee $$pkg_name.log; \
+		done; \
 	fi
 
 # Run tests and show only failures
 # Examples:
-#   make test-failures PKG=database
-#   make test-failures                          (all packages)
-#   make test-failures PKG=handlers TESTARGS="-run=TestHealth"
+#   make test-failures database
+#   make test-failures database handlers
+#   make test-failures (all packages)
+#   make test-failures indexer TESTARGS="-run=TestNew"
+#   make test-failures PKG=handlers (legacy syntax still supported)
 test-failures:
-	@echo "Running tests and showing failures only..."
-	@if [ "$(PKG)" = "./..." ] || [ -z "$(PKG)" ]; then \
-		$(GO_TEST) -v ./... $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | grep -E "FAIL|--- FAIL|panic" || echo "✓ All tests passed!"; \
-	elif echo "$(PKG)" | grep -q "^\./"; then \
-		$(GO_TEST) -v $(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | grep -E "FAIL|--- FAIL|panic" || echo "✓ All tests passed!"; \
+	@goals="$(filter-out test-failures,$(MAKECMDGOALS))"; \
+	pkgs="$${goals:-$(PKG)}"; \
+	echo "Running tests and showing failures only..."; \
+	if [ "$$pkgs" = "./..." ] || [ -z "$$pkgs" ]; then \
+		$(GO_TEST) -v ./... $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee failures-all.log | grep -E "FAIL|--- FAIL|panic" || echo "✓ All tests passed!"; \
 	else \
-		$(GO_TEST) -v ./internal/$(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | grep -E "FAIL|--- FAIL|panic" || echo "✓ All tests passed!"; \
+		for pkg in $$pkgs; do \
+			if echo "$$pkg" | grep -q "^\./"; then \
+				pkg_path="$$pkg"; \
+				pkg_name=$$(echo "$$pkg" | sed 's|^.*/||'); \
+			else \
+				pkg_path="./internal/$$pkg"; \
+				pkg_name="$$pkg"; \
+			fi; \
+			echo "Testing $$pkg_path... (logging to failures-$$pkg_name.log)"; \
+			$(GO_TEST) -v $$pkg_path $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee failures-$$pkg_name.log | grep -E "FAIL|--- FAIL|panic" || echo "✓ Tests passed for $$pkg_name!"; \
+		done; \
 	fi
 
 # Run tests with coverage report
 # Automatically resolves short package names (e.g., "indexer" -> "./internal/indexer")
 # Examples:
-#   make test-coverage                           (all packages)
-#   make test-coverage PKG=indexer               (specific package)
-#   make test-coverage PKG=handlers TESTARGS="-run=TestHealth"
+#   make test-coverage (all packages)
+#   make test-coverage database
+#   make test-coverage database handlers
+#   make test-coverage indexer TESTARGS="-run=TestNew"
+#   make test-coverage PKG=handlers (legacy syntax still supported)
 test-coverage:
-	@if [ "$(PKG)" = "./..." ] || [ -z "$(PKG)" ]; then \
+	@goals="$(filter-out test-coverage,$(MAKECMDGOALS))"; \
+	pkgs="$${goals:-$(PKG)}"; \
+	if [ "$$pkgs" = "./..." ] || [ -z "$$pkgs" ]; then \
 		echo "Running tests with coverage for all packages..."; \
-		$(GO_TEST) -v -coverprofile=coverage.out ./... $(TESTARGS) -timeout $(TESTTIMEOUT); \
-	elif echo "$(PKG)" | grep -q "^\./"; then \
-		echo "Running tests with coverage for $(PKG) $(TESTARGS)..."; \
-		$(GO_TEST) -v -coverprofile=coverage.out $(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+		$(GO_TEST) -v -coverprofile=coverage.out ./... $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee coverage-all.log; \
+		go tool cover -html=coverage.out -o coverage.html; \
+		echo "Coverage report: coverage.html"; \
+		go tool cover -func=coverage.out | grep total; \
 	else \
-		echo "Running tests with coverage for ./internal/$(PKG) $(TESTARGS)..."; \
-		$(GO_TEST) -v -coverprofile=coverage.out ./internal/$(PKG) $(TESTARGS) -timeout $(TESTTIMEOUT); \
+		for pkg in $$pkgs; do \
+			if echo "$$pkg" | grep -q "^\./"; then \
+				pkg_path="$$pkg"; \
+				pkg_name=$$(echo "$$pkg" | sed 's|^.*/||'); \
+			else \
+				pkg_path="./internal/$$pkg"; \
+				pkg_name="$$pkg"; \
+			fi; \
+			echo "Running tests with coverage for $$pkg_path... (logging to coverage-$$pkg_name.log)"; \
+			$(GO_TEST) -v -coverprofile=coverage-$$pkg_name.out $$pkg_path $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee coverage-$$pkg_name.log; \
+			if [ -f coverage-$$pkg_name.out ]; then \
+				go tool cover -html=coverage-$$pkg_name.out -o coverage-$$pkg_name.html; \
+				echo "Coverage report for $$pkg_name: coverage-$$pkg_name.html"; \
+				go tool cover -func=coverage-$$pkg_name.out | grep total; \
+			fi; \
+		done; \
 	fi
-	@go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report: coverage.html"
-	@go tool cover -func=coverage.out | grep total
 
 test-coverage-report:
 	@echo "Generating coverage report..."
@@ -150,18 +200,18 @@ test-coverage-report:
 
 test-race:
 	@echo "Running tests with race detector..."
-	$(GO_TEST) -race -v ./...
+	$(GO_TEST) -race -v ./... 2>&1 | tee race.log
 
 test-bench:
 	@echo "Running benchmarks..."
-	$(GO_TEST) -bench=. -benchmem ./...
+	$(GO_TEST) -bench=. -benchmem ./... 2>&1 | tee bench.log
 
 # Run only unit tests (fast, no integration tag)
 # Unit tests are tests that don't require external dependencies
 # They use t.Parallel() and should complete quickly
 test-unit:
 	@echo "Running unit tests (excluding integration)..."
-	$(GO_TEST) -short -v -coverprofile=coverage-unit.out -json ./... 2>&1 | tee test-unit.json | grep -v '"Action":"output"' || true
+	$(GO_TEST) -short -v -coverprofile=coverage-unit.out -json ./... 2>&1 | tee unit.log | tee test-unit.json | grep -v '"Action":"output"' || true
 	@echo "\nUnit test coverage:"
 	@go tool cover -func=coverage-unit.out | grep total || true
 
@@ -171,7 +221,7 @@ test-unit:
 test-integration:
 	@echo "Running integration tests only..."
 	@echo "Note: Integration tests may take longer as they test with real dependencies"
-	$(GO_TEST) -v -run=Integration -coverprofile=coverage-integration.out -json ./... 2>&1 | tee test-integration.json | grep -v '"Action":"output"' || true
+	$(GO_TEST) -v -run=Integration -coverprofile=coverage-integration.out -json ./... 2>&1 | tee integration.log | tee test-integration.json | grep -v '"Action":"output"' || true
 	@if [ -f coverage-integration.out ]; then \
 		echo "\nIntegration test coverage:"; \
 		go tool cover -func=coverage-integration.out | grep total || true; \
@@ -180,7 +230,7 @@ test-integration:
 # Run all tests (unit + integration)
 test-all:
 	@echo "Running all tests (unit + integration)..."
-	$(GO_TEST) -v -coverprofile=coverage-all.out ./...
+	$(GO_TEST) -v -coverprofile=coverage-all.out ./... 2>&1 | tee all.log
 	@echo "\nOverall test coverage:"
 	@go tool cover -func=coverage-all.out | grep total
 
@@ -198,9 +248,21 @@ test-coverage-merge:
 		exit 1; \
 	fi
 
+# Run PR checks: lint fixes, tests, and race detection
+# This target runs all checks typically needed before submitting a pull request
+pr-check:
+	@echo "Running PR checks..."
+	@echo "Step 1/3: Fixing lint issues..."
+	@$(MAKE) lint-fix
+	@echo "\nStep 2/3: Running tests..."
+	@$(MAKE) test
+	@echo "\nStep 3/3: Running race detector..."
+	@$(MAKE) test-race
+	@echo "\n✓ All PR checks completed successfully!"
+
 test-clean:
 	@echo "Cleaning test artifacts..."
-	rm -f coverage.out coverage.html coverage-*.out coverage-*.html test-*.json
+	rm -f coverage.out coverage.html coverage-*.out coverage-*.html test-*.json *.log
 	go clean -testcache
 
 # =============================================================================

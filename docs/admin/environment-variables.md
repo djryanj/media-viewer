@@ -19,6 +19,8 @@ Complete reference for all environment variables supported by Media Viewer.
 | `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                         |
 | `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                 |
 | `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                   |
+| `INDEX_WORKERS`               | `3`            | Parallel indexer workers (tune for NFS/local)        |
+| `THUMBNAIL_WORKERS`           | _(auto)_       | Thumbnail generation workers (tune for performance)  |
 | **Authentication & Sessions** |                |                                                      |
 | `SESSION_DURATION`            | `24h`          | User session lifetime                                |
 | `SESSION_CLEANUP`             | `1h`           | Expired session cleanup interval                     |
@@ -173,6 +175,124 @@ THUMBNAIL_INTERVAL=6h
 - Small library (< 1000 files): `6h`
 - Medium library (1000-10000 files): `12h`
 - Large library (> 10000 files): `24h`
+
+### INDEX_WORKERS
+
+Number of parallel workers for directory indexing. Critical for NFS stability and performance.
+
+```bash
+INDEX_WORKERS=3
+```
+
+- Default: `3` (NFS-safe default)
+- **For NFS mounts**: Set to `3` or lower
+- **For local filesystems**: Can increase to `8`-`16` for better performance
+- Must be a positive integer
+
+**Why this matters:**
+
+NFS servers can be overwhelmed by concurrent metadata operations during indexing. Too many parallel workers reading directory structures simultaneously can cause:
+
+- Stale file handle errors (ESTALE)
+- Slow indexing performance
+- NFS server load spikes
+- Server crashes or hangs during rapid browsing
+
+**NFS Resilience Features:**
+
+Media Viewer includes automatic retry logic for NFS operations:
+
+- Stale file handle errors (ESTALE) trigger automatic retry with exponential backoff
+- Up to 3 retry attempts (50ms → 100ms → 200ms backoff)
+- Applies to file stat and open operations
+- Zero overhead for successful operations (~100ns)
+- Successful retries logged for monitoring
+
+This retry logic works best when combined with appropriate worker tuning via `INDEX_WORKERS`.
+
+**Recommended values:**
+
+- **NFS mount**: `1`-`3` workers (start with 3)
+- **Local SSD/HDD**: `4`-`8` workers
+- **High-performance local storage**: `8`-`16` workers
+
+**Example configurations:**
+
+```yaml
+# For NFS-mounted media (conservative)
+environment:
+    - INDEX_WORKERS=3
+
+# For NFS-mounted media (aggressive, if NFS is fast)
+environment:
+    - INDEX_WORKERS=5
+
+# For local SSD (use default)
+environment:
+    # INDEX_WORKERS not set - uses default of 3
+
+# For high-performance local storage
+environment:
+    - INDEX_WORKERS=16
+```
+
+**When to adjust:**
+
+- Seeing "stale file handle" errors in logs → reduce to 1-2
+- Indexing is slow on fast local storage → increase to 8-16
+- NFS server CPU high during indexing → reduce to 1-2
+
+### THUMBNAIL_WORKERS
+
+Number of parallel workers for thumbnail generation. Auto-calculated based on CPU cores but can be overridden.
+
+```bash
+THUMBNAIL_WORKERS=6
+```
+
+- Default: Auto-calculated (1.5× CPU cores, max 6)
+- **For most systems**: Use default (no override needed
+  )
+- **For resource-constrained**: Set to `2`-`4` to limit resource usage
+- **For high-performance**: Set to `8`-`12` for faster thumbnail generation
+- Must be a positive integer
+
+**Why this matters:**
+
+Thumbnail generation uses both CPU (for image decoding/encoding) and I/O (reading media files). The default auto-calculation provides good balance:
+
+- Uses libvips for efficient image processing
+- Respects container CPU limits (via GOMAXPROCS)
+- Capped at 6 workers to prevent overwhelming NFS mounts
+- Automatically reduced under memory pressure
+
+**Recommended values:**
+
+- **Default (no override)**: Let the system auto-calculate (recommended for most users)
+- **Resource-constrained**: `2`-`4` to limit CPU/memory usage
+- **High-performance local storage**: `8`-`12` workers
+
+**Example configurations:**
+
+```yaml
+# Use default auto-calculated workers (recommended)
+environment:
+    # THUMBNAIL_WORKERS not set - auto-calculated
+
+# Limit resources on constrained system
+environment:
+    - THUMBNAIL_WORKERS=2
+
+# High-performance system with fast storage
+environment:
+    - THUMBNAIL_WORKERS=10
+```
+
+**When to adjust:**
+
+- System running out of memory during thumbnail generation → reduce to 2-4
+- Thumbnails generating too slowly on powerful system → increase to 8-12
+- High CPU usage during thumbnail scans → reduce to 2-4
 
 ## Authentication & Sessions
 
@@ -416,6 +536,7 @@ services:
             - INDEX_INTERVAL=30m
             - POLL_INTERVAL=30s
             - THUMBNAIL_INTERVAL=6h
+            - INDEX_WORKERS=3 # Set to 3 for NFS mounts, 8-16 for fast local storage
 
             # Sessions
             - SESSION_DURATION=24h
@@ -506,6 +627,7 @@ METRICS_ENABLED=true
 INDEX_INTERVAL=30m
 POLL_INTERVAL=30s
 THUMBNAIL_INTERVAL=6h
+INDEX_WORKERS=3  # For NFS mounts; 8-16 for fast local storage
 
 # Sessions
 SESSION_DURATION=24h

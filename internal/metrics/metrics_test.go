@@ -602,6 +602,11 @@ func TestFilesystemMetrics(t *testing.T) {
 	}{
 		{"FilesystemOperationDuration", FilesystemOperationDuration},
 		{"FilesystemOperationErrors", FilesystemOperationErrors},
+		{"FilesystemRetryAttempts", FilesystemRetryAttempts},
+		{"FilesystemRetrySuccess", FilesystemRetrySuccess},
+		{"FilesystemRetryFailures", FilesystemRetryFailures},
+		{"FilesystemStaleErrors", FilesystemStaleErrors},
+		{"FilesystemRetryDuration", FilesystemRetryDuration},
 	}
 
 	for _, tt := range tests {
@@ -618,6 +623,15 @@ func TestFilesystemMetricOperations(t *testing.T) {
 		FilesystemOperationDuration.WithLabelValues("media", "read").Observe(0.001)
 		FilesystemOperationDuration.WithLabelValues("cache", "write").Observe(0.01)
 		FilesystemOperationDuration.WithLabelValues("database", "stat").Observe(0.0005)
+	})
+
+	t.Run("FilesystemRetryMetrics", func(_ *testing.T) {
+		FilesystemRetryAttempts.WithLabelValues("stat").Inc()
+		FilesystemRetrySuccess.WithLabelValues("stat").Inc()
+		FilesystemRetryFailures.WithLabelValues("open").Inc()
+		FilesystemStaleErrors.WithLabelValues("stat").Inc()
+		FilesystemRetryDuration.WithLabelValues("stat").Observe(0.05)
+		FilesystemRetryDuration.WithLabelValues("open").Observe(0.1)
 	})
 
 	t.Run("FilesystemOperationErrors", func(_ *testing.T) {

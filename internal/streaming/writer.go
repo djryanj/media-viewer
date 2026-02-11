@@ -60,7 +60,8 @@ type TimeoutWriter struct {
 	startTime    time.Time
 	lastWrite    time.Time
 	bytesWritten int64
-	mu           sync.Mutex
+	mu           sync.Mutex // Protects internal state (lastWrite, bytesWritten, closed)
+	writeMu      sync.Mutex // Serializes actual writes to underlying writer
 	closed       bool
 	flusher      http.Flusher
 }
@@ -163,8 +164,11 @@ func (tw *TimeoutWriter) writeWithTimeout(p []byte) (int, error) {
 	resultCh := make(chan writeResult, 1)
 
 	// Perform write in goroutine
+	// writeMu serializes writes to prevent concurrent access to the underlying writer
 	go func() {
+		tw.writeMu.Lock()
 		n, err := tw.w.Write(p)
+		tw.writeMu.Unlock()
 		resultCh <- writeResult{n, err}
 	}()
 

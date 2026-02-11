@@ -284,10 +284,8 @@ jobs:
         name: Race Detector
         runs-on: ubuntu-latest
         needs: changes
-        # Only run when explicitly requested via label (not ready for general use)
         if: |
             github.event_name == 'pull_request' &&
-            contains(github.event.pull_request.labels.*.name, 'test:race') &&
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository

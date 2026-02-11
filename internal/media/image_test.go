@@ -12,7 +12,7 @@ import (
 )
 
 // createTestImage creates a solid color test image and saves it to the given path
-func createTestImage(t *testing.T, path string, width, height int, format string) {
+func createTestImage(t testing.TB, path string, width, height int, format string) {
 	t.Helper()
 
 	// Create image

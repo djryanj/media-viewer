@@ -37,3 +37,4 @@ jobs:
               env:
                   LOG_LEVEL: ${{ github.event.inputs.dryRun == 'true' && 'debug' || 'info' }}
                   RENOVATE_DRY_RUN: ${{ github.event.inputs.dryRun || 'false' }}
+                  RENOVATE_REPOSITORIES: ${{ github.repository }}

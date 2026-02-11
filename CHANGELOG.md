@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.13.0] [Unreleased]
+
+### Added
+
+- **Improved Stability and Performance for NFS Storage**: Major improvements to prevent crashes and improve responsiveness when media is stored on network filesystems (NFS). ([#253](https://github.com/djryanj/media-viewer/issues/253))
+    - **Automatic Error Recovery**: The application now automatically retries failed operations when network storage becomes temporarily unavailable, preventing crashes during rapid browsing and eliminating "stale file handle" and "broken pipe" errors.
+    - **Better Concurrent Operations**: Improved handling of multiple simultaneous operations (browsing, thumbnail generation, indexing) to prevent the server from becoming unresponsive.
+    - **Faster Response Times**: The application now stops unnecessary work when you navigate away from a page, making the interface more responsive when browsing quickly through your library.
+    - **NFS-Optimized Defaults**: Changed default settings to work better with network storage. For problematic NFS systems, you can further reduce load using the new `INDEX_WORKERS` environment variable (set to 1-3 for NFS, or 8-16 for fast local storage). For thumbnail generation tuning, use `THUMBNAIL_WORKERS` (defaults to auto-calculated, max 6).
+    - **Enhanced Monitoring**: Added new metrics to help diagnose and monitor NFS-related issues if they occur.
+    - **Comprehensive Documentation**: Added troubleshooting guides, configuration examples, and best practices for running Media Viewer on NFS storage.
+
+- **Improved Test Commands**: Enhanced Makefile test commands to be more convenient and provide better output logging. You can now test multiple packages at once using simple space-delimited syntax (e.g., `make test-package database handlers`) instead of running separate commands. All test output is automatically saved to log files for later review, with each package getting its own log file for easy troubleshooting.
+
+- Enabled race detector on pull request builds now that race conditions have been resolved
+
+### Fixed
+
+- **Enhanced Stability**: Fixed several internal concurrency issues that could cause crashes or unpredictable behavior under heavy load. These improvements ensure the application runs more reliably when multiple users are browsing simultaneously or when many background operations are happening at once. Benchmark testing confirms these fixes resolved critical transcoder package failures while improving video streaming performance by 44% (TimeoutWriter) and reducing memory allocations by 27%, with only minor overhead in non-critical paths.
+
+- **Thumbnail Generation Responsiveness**: Improved how thumbnail generation responds when cancelled or interrupted. When navigating quickly through your library, the system now stops unnecessary thumbnail generation much faster, making the application feel more responsive and preventing wasted resources on thumbnails you'll never see.
+
+- **Test Infrastructure**: Fixed various issues in the application's internal testing system to ensure better reliability and accuracy when verifying application behavior. These improvements help maintain code quality and catch potential issues before they affect users.
+
+- Renovatebot config should now actually make renovatebot work
+
+### Changed
+
+- Changed Pull Request template with some better checkboxes
+
 ## [0.12.2] - 2026-02-10
 
 ### Added

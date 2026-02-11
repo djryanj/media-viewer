@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -545,4 +547,156 @@ func TestWidthParsing(t *testing.T) {
 			}
 		})
 	}
+}
+
+// =============================================================================
+// NFS Retry Logic Tests
+// =============================================================================
+
+func TestStatWithRetry_WrapperFunction(t *testing.T) {
+	t.Parallel()
+
+	// Test that the wrapper function properly delegates
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	// Create a test file
+	err := writeFile(testFile, []byte("test content"))
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Test successful stat
+	config := DefaultNFSRetryConfig()
+	info, err := StatWithRetry(testFile, config)
+	if err != nil {
+		t.Errorf("statWithRetry() error = %v, want nil", err)
+	}
+	if info == nil {
+		t.Error("statWithRetry() returned nil FileInfo")
+	}
+	if info != nil && info.Size() != 12 {
+		t.Errorf("FileInfo.Size() = %d, want 12", info.Size())
+	}
+}
+
+func TestStatWithRetry_NonExistent(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	nonExistent := filepath.Join(tmpDir, "nonexistent.txt")
+
+	// Test stat on non-existent file
+	config := DefaultNFSRetryConfig()
+	_, err := StatWithRetry(nonExistent, config)
+	if err == nil {
+		t.Error("statWithRetry() on non-existent file should return error")
+	}
+}
+
+func TestOpenWithRetry_WrapperFunction(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	// Create a test file
+	content := []byte("test content for reading")
+	err := writeFile(testFile, content)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Test successful open
+	config := DefaultNFSRetryConfig()
+	file, err := OpenWithRetry(testFile, config)
+	if err != nil {
+		t.Errorf("openWithRetry() error = %v, want nil", err)
+	}
+	if file == nil {
+		t.Fatal("openWithRetry() returned nil file")
+	}
+	defer file.Close()
+
+	// Verify we can read from the file
+	buf := make([]byte, len(content))
+	n, err := file.Read(buf)
+	if err != nil {
+		t.Errorf("file.Read() error = %v", err)
+	}
+	if n != len(content) {
+		t.Errorf("file.Read() read %d bytes, want %d", n, len(content))
+	}
+	if !bytes.Equal(buf, content) {
+		t.Errorf("file.Read() content = %q, want %q", string(buf), string(content))
+	}
+}
+
+func TestOpenWithRetry_NonExistent(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	nonExistent := filepath.Join(tmpDir, "nonexistent.txt")
+
+	// Test open on non-existent file
+	config := DefaultNFSRetryConfig()
+	file, err := OpenWithRetry(nonExistent, config)
+	if err == nil {
+		if file != nil {
+			file.Close()
+		}
+		t.Error("openWithRetry() on non-existent file should return error")
+	}
+	if file != nil {
+		file.Close()
+		t.Error("openWithRetry() should return nil file on error")
+	}
+}
+
+// BenchmarkStatWithRetry benchmarks the retry wrapper overhead
+func BenchmarkStatWithRetry(b *testing.B) {
+	tmpDir := b.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	err := writeFile(testFile, []byte("test"))
+	if err != nil {
+		b.Fatalf("Failed to create test file: %v", err)
+	}
+
+	config := DefaultNFSRetryConfig()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := StatWithRetry(testFile, config)
+		if err != nil {
+			b.Fatalf("statWithRetry error: %v", err)
+		}
+	}
+}
+
+func BenchmarkOpenWithRetry(b *testing.B) {
+	tmpDir := b.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	err := writeFile(testFile, []byte("test content"))
+	if err != nil {
+		b.Fatalf("Failed to create test file: %v", err)
+	}
+
+	config := DefaultNFSRetryConfig()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		file, err := OpenWithRetry(testFile, config)
+		if err != nil {
+			b.Fatalf("openWithRetry error: %v", err)
+		}
+		file.Close()
+	}
+}
+
+// Helper function to write files in tests
+func writeFile(path string, data []byte) error {
+	// Import os at top of file if not already present
+	return os.WriteFile(path, data, 0o644)
 }

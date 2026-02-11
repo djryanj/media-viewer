@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1009,7 +1010,7 @@ func BenchmarkClearCache(b *testing.B) {
 			b.Fatalf("Failed to create cache dir: %v", err)
 		}
 		for j := 0; j < 10; j++ {
-			file := filepath.Join(cacheDir, "file"+string(rune(j))+".mp4")
+			file := filepath.Join(cacheDir, "file"+strconv.Itoa(j)+".mp4")
 			if err := os.WriteFile(file, []byte("test"), 0o644); err != nil {
 				b.Fatalf("Failed to create file: %v", err)
 			}

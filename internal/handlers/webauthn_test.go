@@ -908,7 +908,8 @@ func TestWebAuthnEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			// Note: Not using t.Parallel() here because we're modifying
+			// the global webAuthnEnabled variable
 
 			originalEnabled := webAuthnEnabled
 			t.Cleanup(func() {

@@ -60,9 +60,9 @@ func New(ctx context.Context, dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Allow multiple readers
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
+	// Allow multiple readers - increased for better concurrency under load
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(time.Hour)
 
 	d := &Database{
@@ -279,27 +279,33 @@ func (d *Database) Close() error {
 
 // BeginBatch starts a transaction for batch operations.
 // The caller is responsible for calling EndBatch when done.
-// Note: This acquires an exclusive lock that is held until EndBatch is called.
+// Note: Acquires write lock only during transaction begin, not for entire duration.
 func (d *Database) BeginBatch() (*sql.Tx, error) {
+	// Use shorter-lived lock - only protect transaction creation
 	d.mu.Lock()
-	d.txStart = time.Now() // Record transaction start time
+	txStart := time.Now()
 
 	// Use background context - transaction lifetime is managed by EndBatch, not a timeout.
 	// The timeout context pattern doesn't work here because defer cancel() would
 	// cancel the transaction immediately when this function returns.
 	tx, err := d.db.BeginTx(context.Background(), nil)
+	d.mu.Unlock() // Release lock immediately after transaction starts
+
 	if err != nil {
-		d.mu.Unlock()
 		return nil, err
 	}
+
+	// Store transaction start time in context for metrics
+	// This is a workaround since we can't store it in the struct without holding the lock
+	// The EndBatch function will use time.Since on a passed start time
+	d.txStart = txStart
+
 	return tx, nil
 }
 
-// EndBatch commits or rolls back a transaction and releases the lock.
+// EndBatch commits or rolls back a transaction.
 func (d *Database) EndBatch(tx *sql.Tx, err error) error {
-	defer d.mu.Unlock()
-
-	// Record transaction duration
+	// Record transaction duration (txStart set by BeginBatch)
 	duration := time.Since(d.txStart).Seconds()
 
 	if err != nil {

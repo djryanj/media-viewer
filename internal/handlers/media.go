@@ -122,6 +122,14 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	}
 
+	// Check if client has disconnected before opening file
+	select {
+	case <-r.Context().Done():
+		logging.Debug("Client disconnected before file open: %s", filePath)
+		return
+	default:
+	}
+
 	http.ServeFile(w, r, fullPath)
 }
 
@@ -178,7 +186,8 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	// Validate file/folder exists on disk (skip for folders as they're handled differently)
 	if file.Type != database.FileTypeFolder {
-		fileInfo, err := os.Stat(fullPath)
+		retryConfig := DefaultNFSRetryConfig()
+		fileInfo, err := StatWithRetry(fullPath, retryConfig)
 		if err != nil {
 			if os.IsNotExist(err) {
 				logging.Warn("Thumbnail: file not found: %s", fullPath)
@@ -281,9 +290,15 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		logging.Warn("StreamVideo: File not found: %s", fullPath)
-		http.Error(w, "File not found", http.StatusNotFound)
+	retryConfig := DefaultNFSRetryConfig()
+	if _, err := StatWithRetry(fullPath, retryConfig); err != nil {
+		if os.IsNotExist(err) {
+			logging.Warn("StreamVideo: File not found: %s", fullPath)
+			http.Error(w, "File not found", http.StatusNotFound)
+		} else {
+			logging.Error("StreamVideo: Failed to access file %s: %v", fullPath, err)
+			http.Error(w, "Failed to access file", http.StatusInternalServerError)
+		}
 		return
 	}
 

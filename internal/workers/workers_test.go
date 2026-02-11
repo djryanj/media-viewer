@@ -8,17 +8,17 @@ import (
 
 func TestCount(t *testing.T) {
 	// Save and restore original environment
-	originalEnv := os.Getenv("WORKER_COUNT")
+	originalEnv := os.Getenv("THUMBNAIL_WORKERS")
 	defer func() {
 		if originalEnv != "" {
-			os.Setenv("WORKER_COUNT", originalEnv)
+			os.Setenv("THUMBNAIL_WORKERS", originalEnv)
 		} else {
-			os.Unsetenv("WORKER_COUNT")
+			os.Unsetenv("THUMBNAIL_WORKERS")
 		}
 	}()
 
 	// Clear any existing override
-	os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
 
 	availableCPU := runtime.GOMAXPROCS(0)
 
@@ -137,8 +137,8 @@ func TestCountWithEnvOverride(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("WORKER_COUNT", tt.envValue)
-			defer os.Unsetenv("WORKER_COUNT")
+			os.Setenv("THUMBNAIL_WORKERS", tt.envValue)
+			defer os.Unsetenv("THUMBNAIL_WORKERS")
 
 			got := Count(1.0, tt.limit)
 
@@ -149,7 +149,7 @@ func TestCountWithEnvOverride(t *testing.T) {
 				}
 			} else {
 				if got != tt.expected {
-					t.Errorf("Count(1.0, %d) with WORKER_COUNT=%s = %d, want %d", tt.limit, tt.envValue, got, tt.expected)
+					t.Errorf("Count(1.0, %d) with THUMBNAIL_WORKERS=%s = %d, want %d", tt.limit, tt.envValue, got, tt.expected)
 				}
 			}
 		})
@@ -157,8 +157,8 @@ func TestCountWithEnvOverride(t *testing.T) {
 }
 
 func TestForCPU(t *testing.T) {
-	os.Unsetenv("WORKER_COUNT")
-	defer os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
+	defer os.Unsetenv("THUMBNAIL_WORKERS")
 
 	tests := []struct {
 		name      string
@@ -208,8 +208,8 @@ func TestForCPU(t *testing.T) {
 }
 
 func TestForIO(t *testing.T) {
-	os.Unsetenv("WORKER_COUNT")
-	defer os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
+	defer os.Unsetenv("THUMBNAIL_WORKERS")
 
 	tests := []struct {
 		name    string
@@ -244,8 +244,8 @@ func TestForIO(t *testing.T) {
 }
 
 func TestForMixed(t *testing.T) {
-	os.Unsetenv("WORKER_COUNT")
-	defer os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
+	defer os.Unsetenv("THUMBNAIL_WORKERS")
 
 	got := ForMixed(0)
 
@@ -263,8 +263,8 @@ func TestForMixed(t *testing.T) {
 }
 
 func TestCountBoundaries(t *testing.T) {
-	os.Unsetenv("WORKER_COUNT")
-	defer os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
+	defer os.Unsetenv("THUMBNAIL_WORKERS")
 
 	tests := []struct {
 		name       string
@@ -296,8 +296,8 @@ func TestCountBoundaries(t *testing.T) {
 }
 
 func TestWorkerCountConsistency(t *testing.T) {
-	os.Unsetenv("WORKER_COUNT")
-	defer os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
+	defer os.Unsetenv("THUMBNAIL_WORKERS")
 
 	// Multiple calls with same parameters should return same result
 	multiplier := 1.5
@@ -313,7 +313,7 @@ func TestWorkerCountConsistency(t *testing.T) {
 }
 
 func BenchmarkCount(b *testing.B) {
-	os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
 
 	b.Run("No override", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
@@ -322,8 +322,8 @@ func BenchmarkCount(b *testing.B) {
 	})
 
 	b.Run("With override", func(b *testing.B) {
-		os.Setenv("WORKER_COUNT", "8")
-		defer os.Unsetenv("WORKER_COUNT")
+		os.Setenv("THUMBNAIL_WORKERS", "8")
+		defer os.Unsetenv("THUMBNAIL_WORKERS")
 
 		for i := 0; i < b.N; i++ {
 			_ = Count(1.5, 10)
@@ -332,7 +332,7 @@ func BenchmarkCount(b *testing.B) {
 }
 
 func BenchmarkForCPU(b *testing.B) {
-	os.Unsetenv("WORKER_COUNT")
+	os.Unsetenv("THUMBNAIL_WORKERS")
 
 	for i := 0; i < b.N; i++ {
 		_ = ForCPU(0)
