@@ -81,12 +81,21 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 FROM alpine:3.23
 
 # Install runtime dependencies in a single layer
+# Note: Alpine's ffmpeg includes VA-API support for Intel/AMD GPU transcoding
+# For NVIDIA GPU support, use the NVIDIA Container Toolkit at runtime
+# See docs/admin/docker-gpu.md for GPU configuration details
 RUN apk add --no-cache \
     ffmpeg \
     ca-certificates \
     tzdata \
     sqlite \
     vips \
+    # VA-API support for Intel/AMD GPU transcoding
+    libva \
+    libva-intel-driver \
+    mesa-va-gallium \
+    intel-media-driver \
+    libdrm \
     && rm -rf /var/cache/apk/*
 
 # Create directories with proper permissions
@@ -110,7 +119,8 @@ ENV MEDIA_DIR=/media \
     CACHE_DIR=/cache \
     DATABASE_DIR=/database \
     PORT=8080 \
-    INDEX_INTERVAL=30m
+    INDEX_INTERVAL=30m \
+    GPU_ACCEL=auto
 
 # Expose port
 EXPOSE 8080

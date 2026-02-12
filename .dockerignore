@@ -1,21 +1,52 @@
-sample-media/
+# Git and version control
+.git/
+.gitignore
+.github/
+
+# Docker files
 Dockerfile
+Dockerfile.gpu
+.dockerignore
+
+# Development environment
 .devcontainer/
-Makefile
-README.md
+.vscode/
+.env
 .air.toml
+.editorconfig
+
+# Documentation
+docs/
+site/
+mkdocs.yml
+requirements.txt
+*.md
+AI.md
+CHANGELOG.md
+CONTRIBUTING.md
+README.md
+TESTING.md
+
+# Build and development tools
+Makefile
+hack/
+tmp/
+
+# Frontend development
 generate-icons.js
 eslint.config.js
 jsconfig.json
 .prettierrc
-.github/
-tmp/
-.editorconfig
-stylelintrc.json
-.vscode/
-.env
+.prettierignore
+.stylelintrc.json
 **/node_modules
-site/
+
+# Linting and code quality
+.golangci.yml
+
+# Sample data
+**/sample-media
+sample-media/
 
 # Ignore test files
 *_test.go

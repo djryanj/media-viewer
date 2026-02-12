@@ -19,7 +19,7 @@ make test-coverage
 ### Run tests for a specific package
 
 ```bash
-make test-package PKG=handlers
+make test-package handlers
 ```
 
 ### Run tests with race detector
