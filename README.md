@@ -70,7 +70,7 @@ version: '3.8'
 
 services:
     media-viewer:
-        image: ghcr.io/djryanj/media-viewer:latest
+        image: ghcr.io/djryanj/media-viewer:latest # Use :latest-nvidia for NVIDIA GPUs
         ports:
             - '8080:8080'
             - '9090:9090'
@@ -129,17 +129,45 @@ docker run -d \
 Pull from GitHub Container Registry:
 
 ```bash
+# Standard Alpine-based image (VA-API support for Intel/AMD GPUs)
 docker pull ghcr.io/djryanj/media-viewer:latest
+
+# NVIDIA-optimized Debian-based image (NVIDIA NVENC support)
+docker pull ghcr.io/djryanj/media-viewer:latest-nvidia
 ```
+
+### Image Flavors
+
+Two image variants are available:
+
+**Standard Image (Alpine)**
+
+- Supports Intel/AMD GPU acceleration (VA-API) on amd64
+- Smaller image size (~150MB)
+- Use for Intel Quick Sync, AMD GPUs, or CPU-only transcoding
+- **Does not support NVIDIA GPUs**
+
+**NVIDIA Image (Debian)**
+
+- Supports NVIDIA GPU acceleration (NVENC)
+- Debian-based for glibc compatibility with NVIDIA drivers
+- Larger image size (~300MB)
+- Use for NVIDIA GPUs only
+- **Does not support Intel/AMD VA-API**
+
+See [GPU Support Documentation](https://djryanj.github.io/media-viewer/admin/docker-gpu/) for details.
 
 ### Available Tags
 
-| Tag           | Description                            |
-| ------------- | -------------------------------------- |
-| `latest`      | Latest stable release from main branch |
-| `v1.0.0`      | Specific version tag                   |
-| `v1.0`        | Latest patch version of 1.0.x          |
-| `sha-abc1234` | Specific commit build                  |
+| Tag             | Description                              |
+| --------------- | ---------------------------------------- |
+| `latest`        | Latest stable release (Alpine-based)     |
+| `latest-nvidia` | Latest stable release (NVIDIA-optimized) |
+| `v1.0.0`        | Specific version (Alpine-based)          |
+| `v1.0.0-nvidia` | Specific version (NVIDIA-optimized)      |
+| `v1.0`          | Latest patch version of 1.0.x            |
+| `v1.0-nvidia`   | Latest patch of 1.0.x (NVIDIA)           |
+| `sha-abc1234`   | Specific commit build                    |
 
 ### Build from Source
 

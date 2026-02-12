@@ -6,6 +6,7 @@
 # Docker files
 Dockerfile
 Dockerfile.gpu
+Dockerfile.nvidia
 .dockerignore
 
 # Development environment

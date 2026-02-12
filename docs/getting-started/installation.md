@@ -6,6 +6,15 @@ Media Viewer can be deployed using Docker (recommended) or built from source wit
 
 Docker is the recommended installation method as it handles all dependencies automatically.
 
+### Image Selection
+
+Two image variants are available:
+
+- **`ghcr.io/djryanj/media-viewer:latest`** - Alpine-based, supports Intel/AMD VA-API GPU acceleration
+- **`ghcr.io/djryanj/media-viewer:latest-nvidia`** - Debian-based, supports NVIDIA NVENC GPU acceleration
+
+For GPU support details, see the [GPU Support Guide](../admin/docker-gpu.md).
+
 ### Using Docker Compose
 
 Create a `docker-compose.yml` file:
@@ -15,7 +24,7 @@ version: '3.8'
 
 services:
     media-viewer:
-        image: ghcr.io/djryanj/media-viewer:latest
+        image: ghcr.io/djryanj/media-viewer:latest # Use :latest-nvidia for NVIDIA GPUs
         container_name: media-viewer
         ports:
             - '8080:8080'
@@ -65,12 +74,14 @@ For significantly faster video transcoding, you can enable GPU acceleration:
 
 ### NVIDIA GPU
 
+**Important:** Use the NVIDIA-optimized image for NVIDIA GPU support.
+
 Add GPU support to docker-compose.yml:
 
 ```yaml
 services:
     media-viewer:
-        image: ghcr.io/djryanj/media-viewer:latest
+        image: ghcr.io/djryanj/media-viewer:latest-nvidia # Use NVIDIA image
         runtime: nvidia # Use NVIDIA runtime
         environment:
             - GPU_ACCEL=nvidia
@@ -83,11 +94,16 @@ Or with docker run:
 docker run -d \
   --gpus all \
   -e GPU_ACCEL=nvidia \
-  ... \
-  ghcr.io/djryanj/media-viewer:latest
+  -p 8080:8080 \
+  -v /path/to/media:/media:ro \
+  ghcr.io/djryanj/media-viewer:latest-nvidia
 ```
 
-**Requirements:** NVIDIA GPU with NVENC support, NVIDIA container toolkit installed
+**Requirements:**
+
+- NVIDIA GPU with NVENC support
+- NVIDIA Container Toolkit installed on host
+- Use `:latest-nvidia` or `:v1.0.0-nvidia` image tags (Debian-based)
 
 ### Intel/AMD GPU (VA-API)
 
