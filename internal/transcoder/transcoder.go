@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"media-viewer/internal/logging"
@@ -55,6 +56,9 @@ type Transcoder struct {
 	gpuAvailable     bool
 	gpuDetectionDone bool
 	gpuMu            sync.Mutex
+
+	// Shutdown flag to prevent retries during cleanup
+	shuttingDown atomic.Bool
 }
 
 // VideoInfo contains information about a video file.
@@ -467,6 +471,16 @@ func (t *Transcoder) transcodeDirectToCache(ctx context.Context, filePath, cache
 	// Try with GPU first, then retry with CPU if GPU fails
 	err := t.transcodeDirectToCacheWithOptions(ctx, filePath, cachePath, targetWidth, info, needsReencode, false)
 	if err != nil && t.gpuAvailable && t.isGPUError(err.Error()) {
+		// Don't retry if shutting down or context canceled
+		if t.shuttingDown.Load() {
+			logging.Info("Shutdown in progress, skipping CPU retry for: %s", filePath)
+			return err
+		}
+		if ctx.Err() != nil {
+			logging.Info("Context canceled during GPU transcode, skipping CPU retry: %s", filePath)
+			return ctx.Err()
+		}
+
 		logging.Warn("GPU encoding failed for background transcode of %s, retrying with CPU...", filePath)
 
 		// Disable GPU
@@ -886,6 +900,30 @@ func (t *Transcoder) handleTranscodeFailure(ctx context.Context, filePath string
 
 	// Check if this is a GPU-related error and retry with CPU if we haven't already
 	if t.gpuAvailable && t.isGPUError(stderrStr) {
+		// Don't retry if shutting down or context canceled
+		if t.shuttingDown.Load() {
+			logging.Info("Shutdown in progress, skipping CPU retry for: %s", filePath)
+			// Close and remove the failed temp file
+			if err := cacheFile.Close(); err != nil {
+				logging.Debug("Error closing temp file: %v", err)
+			}
+			if err := os.Remove(tempPath); err != nil {
+				logging.Debug("Error removing temp file: %v", err)
+			}
+			return fmt.Errorf("transcode canceled during shutdown")
+		}
+		if ctx.Err() != nil {
+			logging.Info("Context canceled during GPU transcode, skipping CPU retry: %s", filePath)
+			// Close and remove the failed temp file
+			if err := cacheFile.Close(); err != nil {
+				logging.Debug("Error closing temp file: %v", err)
+			}
+			if err := os.Remove(tempPath); err != nil {
+				logging.Debug("Error removing temp file: %v", err)
+			}
+			return ctx.Err()
+		}
+
 		logging.Warn("GPU encoding failed for %s, retrying with CPU encoder...", filePath)
 		logging.Debug("GPU error: %s", stderrStr)
 
@@ -1289,6 +1327,9 @@ func (t *Transcoder) retryTranscodeWithCPU(ctx context.Context, filePath string,
 
 // Cleanup stops all active transcoding processes.
 func (t *Transcoder) Cleanup() {
+	// Set shutdown flag to prevent GPU-to-CPU retries
+	t.shuttingDown.Store(true)
+
 	t.processMu.Lock()
 	defer t.processMu.Unlock()
 
