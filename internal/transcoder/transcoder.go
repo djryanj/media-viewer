@@ -1000,7 +1000,14 @@ func (t *Transcoder) buildFFmpegArgs(inputPath, outputPath string, targetWidth i
 
 // buildFFmpegArgsWithOptions builds ffmpeg arguments with option to force CPU encoding
 func (t *Transcoder) buildFFmpegArgsWithOptions(inputPath, outputPath string, targetWidth int, info *VideoInfo, needsReencode, forceCPU bool) []string {
-	args := []string{"-i", inputPath}
+	var args []string
+
+	// Initialize hardware device for VA-API if using GPU
+	if !forceCPU && t.gpuAvailable && t.gpuEncoder != "" && t.gpuAccel == GPUAccelVAAPI {
+		args = append(args, "-init_hw_device", "vaapi=vaapi0:/dev/dri/renderD128", "-filter_hw_device", "vaapi0")
+	}
+
+	args = append(args, "-i", inputPath)
 
 	// Check if we need to scale the video
 	needsScaling := targetWidth > 0 && targetWidth < info.Width
@@ -1644,6 +1651,13 @@ func (t *Transcoder) testGPUEncoder(encoder string, accel GPUAccel, initFilter s
 
 	// Create a simple test: generate 1 frame with testsrc, encode with GPU encoder, output to null
 	var testArgs []string
+
+	// Initialize hardware device for VA-API
+	if accel == GPUAccelVAAPI {
+		logging.Debug("  Initializing VA-API hardware device")
+		testArgs = append(testArgs, "-init_hw_device", "vaapi=vaapi0:/dev/dri/renderD128", "-filter_hw_device", "vaapi0")
+	}
+
 	testArgs = append(testArgs, "-f", "lavfi", "-i", "testsrc=duration=0.1:size=320x240:rate=1", "-frames:v", "1")
 
 	// Add hardware-specific initialization if needed

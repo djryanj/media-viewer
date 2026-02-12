@@ -512,6 +512,70 @@ func TestBuildFFmpegArgs_Copy_NoGPU(t *testing.T) {
 	}
 }
 
+func TestBuildFFmpegArgs_WithVAAPI(t *testing.T) {
+	trans := New("/tmp/cache", "", true, "none")
+	// Simulate VA-API GPU available
+	trans.gpuAvailable = true
+	trans.gpuEncoder = "h264_vaapi"
+	trans.gpuAccel = GPUAccelVAAPI
+	trans.gpuInitFilter = "format=nv12,hwupload"
+
+	info := &VideoInfo{
+		Codec:  "hevc", // Needs re-encode
+		Width:  1920,
+		Height: 1080,
+	}
+
+	args := trans.buildFFmpegArgs("/test/input.mkv", "/test/output.mp4", 0, info, true)
+
+	// Should have VA-API hardware device initialization
+	foundInitHwDevice := false
+	foundFilterHwDevice := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-init_hw_device" && args[i+1] == "vaapi=vaapi0:/dev/dri/renderD128" {
+			foundInitHwDevice = true
+		}
+		if args[i] == "-filter_hw_device" && args[i+1] == "vaapi0" {
+			foundFilterHwDevice = true
+		}
+	}
+	if !foundInitHwDevice {
+		t.Error("Expected -init_hw_device vaapi=vaapi0:/dev/dri/renderD128 for VA-API")
+	}
+	if !foundFilterHwDevice {
+		t.Error("Expected -filter_hw_device vaapi0 for VA-API")
+	}
+
+	// Should use VA-API GPU encoder
+	foundGPUEncoder := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-c:v" && args[i+1] == "h264_vaapi" {
+			foundGPUEncoder = true
+			break
+		}
+	}
+	if !foundGPUEncoder {
+		t.Error("Expected GPU encoder h264_vaapi when VA-API is available")
+	}
+
+	// Hardware init should come before input file
+	inputIndex := -1
+	initIndex := -1
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-i" {
+			inputIndex = i
+		}
+		if args[i] == "-init_hw_device" {
+			initIndex = i
+		}
+	}
+	if initIndex == -1 || inputIndex == -1 {
+		t.Error("Expected both -init_hw_device and -i to be in args")
+	} else if initIndex > inputIndex {
+		t.Error("Expected -init_hw_device to come before -i (input file)")
+	}
+}
+
 // =============================================================================
 // GPU Type Constants Tests
 // =============================================================================
@@ -762,6 +826,109 @@ func TestBuildFFmpegArgsWithOptions_GPUAvailable(t *testing.T) {
 	}
 	if !foundGPUEncoder {
 		t.Error("Expected GPU encoder h264_nvenc when forceCPU=false and GPU available")
+	}
+}
+
+func TestBuildFFmpegArgsWithOptions_VAAPI(t *testing.T) {
+	trans := New("/tmp/cache", "", true, "none")
+	// Simulate VA-API GPU available
+	trans.gpuAvailable = true
+	trans.gpuEncoder = "h264_vaapi"
+	trans.gpuAccel = GPUAccelVAAPI
+	trans.gpuInitFilter = "format=nv12,hwupload"
+
+	info := &VideoInfo{
+		Codec:  "hevc", // Needs re-encode
+		Width:  1920,
+		Height: 1080,
+	}
+
+	// Call with forceCPU=false (should use GPU with hardware init)
+	args := trans.buildFFmpegArgsWithOptions("/test/input.mkv", "/test/output.mp4", 0, info, true, false)
+
+	// Should have VA-API hardware device initialization
+	foundInitHwDevice := false
+	foundFilterHwDevice := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-init_hw_device" && args[i+1] == "vaapi=vaapi0:/dev/dri/renderD128" {
+			foundInitHwDevice = true
+		}
+		if args[i] == "-filter_hw_device" && args[i+1] == "vaapi0" {
+			foundFilterHwDevice = true
+		}
+	}
+	if !foundInitHwDevice {
+		t.Error("Expected -init_hw_device vaapi=vaapi0:/dev/dri/renderD128 for VA-API when forceCPU=false")
+	}
+	if !foundFilterHwDevice {
+		t.Error("Expected -filter_hw_device vaapi0 for VA-API when forceCPU=false")
+	}
+
+	// Should use VA-API GPU encoder
+	foundGPUEncoder := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-c:v" && args[i+1] == "h264_vaapi" {
+			foundGPUEncoder = true
+			break
+		}
+	}
+	if !foundGPUEncoder {
+		t.Error("Expected GPU encoder h264_vaapi when VA-API is available and forceCPU=false")
+	}
+}
+
+func TestBuildFFmpegArgsWithOptions_VAAPI_ForceCPU(t *testing.T) {
+	trans := New("/tmp/cache", "", true, "none")
+	// Simulate VA-API GPU available
+	trans.gpuAvailable = true
+	trans.gpuEncoder = "h264_vaapi"
+	trans.gpuAccel = GPUAccelVAAPI
+	trans.gpuInitFilter = "format=nv12,hwupload"
+
+	info := &VideoInfo{
+		Codec:  "hevc", // Needs re-encode
+		Width:  1920,
+		Height: 1080,
+	}
+
+	// Call with forceCPU=true (should NOT use GPU or hardware init)
+	args := trans.buildFFmpegArgsWithOptions("/test/input.mkv", "/test/output.mp4", 0, info, true, true)
+
+	// Should NOT have VA-API hardware device initialization when forceCPU=true
+	foundInitHwDevice := false
+	foundFilterHwDevice := false
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-init_hw_device" {
+			foundInitHwDevice = true
+		}
+		if args[i] == "-filter_hw_device" {
+			foundFilterHwDevice = true
+		}
+	}
+	if foundInitHwDevice {
+		t.Error("Did not expect -init_hw_device when forceCPU=true")
+	}
+	if foundFilterHwDevice {
+		t.Error("Did not expect -filter_hw_device when forceCPU=true")
+	}
+
+	// Should use CPU encoder as fallback
+	foundCPUEncoder := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-c:v" && args[i+1] == "libx264" {
+			foundCPUEncoder = true
+			break
+		}
+	}
+	if !foundCPUEncoder {
+		t.Error("Expected CPU encoder libx264 when forceCPU=true")
+	}
+
+	// Should NOT use GPU encoder
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-c:v" && args[i+1] == "h264_vaapi" {
+			t.Error("Did not expect GPU encoder when forceCPU=true")
+		}
 	}
 }
 
