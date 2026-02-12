@@ -1087,3 +1087,281 @@ func createTestVideo(t *testing.T, dir string) string {
 
 	return videoPath
 }
+
+// =============================================================================
+// Helper Function Tests
+// =============================================================================
+
+func TestGetEncoderInfo(t *testing.T) {
+	tests := []struct {
+		name          string
+		gpuAvailable  bool
+		gpuEncoder    string
+		gpuAccel      GPUAccel
+		targetWidth   int
+		videoWidth    int
+		needsReencode bool
+		expected      string
+	}{
+		{
+			name:          "Stream copy mode",
+			gpuAvailable:  false,
+			targetWidth:   0,
+			videoWidth:    1920,
+			needsReencode: false,
+			expected:      " [stream copy]",
+		},
+		{
+			name:          "GPU encoding",
+			gpuAvailable:  true,
+			gpuEncoder:    "h264_nvenc",
+			gpuAccel:      GPUAccelNVIDIA,
+			targetWidth:   1280,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [GPU: nvidia/h264_nvenc]",
+		},
+		{
+			name:          "CPU encoding",
+			gpuAvailable:  false,
+			targetWidth:   1280,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [CPU: libx264]",
+		},
+		{
+			name:          "GPU encoding with VA-API",
+			gpuAvailable:  true,
+			gpuEncoder:    "h264_vaapi",
+			gpuAccel:      GPUAccelVAAPI,
+			targetWidth:   720,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [GPU: vaapi/h264_vaapi]",
+		},
+		{
+			name:          "No scaling but needs reencode",
+			gpuAvailable:  false,
+			targetWidth:   0,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [CPU: libx264]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans := New("/tmp/cache", "", true, "none")
+			trans.gpuAvailable = tt.gpuAvailable
+			trans.gpuEncoder = tt.gpuEncoder
+			trans.gpuAccel = tt.gpuAccel
+
+			info := &VideoInfo{
+				Width:  tt.videoWidth,
+				Height: 1080,
+			}
+
+			result := trans.getEncoderInfo(tt.targetWidth, info, tt.needsReencode)
+
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestFinalizeCache(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupTempFile bool
+		tempSize      int
+		expectSuccess bool
+	}{
+		{
+			name:          "Successful cache finalization",
+			setupTempFile: true,
+			tempSize:      1024,
+			expectSuccess: true,
+		},
+		{
+			name:          "Missing temp file",
+			setupTempFile: false,
+			expectSuccess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans := New("/tmp/cache", "", true, "none")
+
+			dir := t.TempDir()
+			tempPath := filepath.Join(dir, "test.mp4.tmp")
+			cachePath := filepath.Join(dir, "test.mp4")
+
+			if tt.setupTempFile {
+				// Create temp file with some data
+				data := make([]byte, tt.tempSize)
+				if err := os.WriteFile(tempPath, data, 0o644); err != nil {
+					t.Fatalf("Failed to create temp file: %v", err)
+				}
+			}
+
+			trans.finalizeCache(tempPath, cachePath)
+
+			if tt.expectSuccess {
+				// Verify cache file exists
+				if _, err := os.Stat(cachePath); err != nil {
+					t.Errorf("Expected cache file to exist: %v", err)
+				}
+
+				// Verify temp file was removed
+				if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+					t.Error("Expected temp file to be removed")
+				}
+			} else {
+				// Verify cache file does not exist if temp file was missing
+				if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+					t.Error("Expected cache file to not exist when temp file is missing")
+				}
+			}
+		})
+	}
+}
+
+func TestStreamToCacheAndWriter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping stream test in short mode")
+	}
+
+	trans := New("/tmp/cache", "", true, "none")
+	ctx := context.Background()
+
+	// Create a pipe to simulate ffmpeg stdout
+	reader, writer := io.Pipe()
+
+	// Create cache file
+	dir := t.TempDir()
+	cacheFile, err := os.Create(filepath.Join(dir, "cache.mp4"))
+	if err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+	defer cacheFile.Close()
+
+	// Create output buffer
+	output := &bytes.Buffer{}
+
+	// Write test data in background
+	testData := []byte("test video data")
+	go func() {
+		writer.Write(testData)
+		writer.Close()
+	}()
+
+	// Test streaming
+	err = trans.streamToCacheAndWriter(ctx, reader, cacheFile, output, "/test/video.mp4")
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Verify data was written to output
+	if !bytes.Equal(output.Bytes(), testData) {
+		t.Errorf("Expected output %q, got %q", testData, output.Bytes())
+	}
+
+	// Verify data was written to cache
+	cacheFile.Close()
+	cacheData, err := os.ReadFile(filepath.Join(dir, "cache.mp4"))
+	if err != nil {
+		t.Fatalf("Failed to read cache file: %v", err)
+	}
+
+	if !bytes.Equal(cacheData, testData) {
+		t.Errorf("Expected cache data %q, got %q", testData, cacheData)
+	}
+}
+
+func TestHandleTranscodeFailure(t *testing.T) {
+	tests := []struct {
+		name              string
+		gpuAvailable      bool
+		isGPUError        bool
+		expectRetry       bool
+		expectGPUDisabled bool
+	}{
+		{
+			name:              "GPU error triggers retry",
+			gpuAvailable:      true,
+			isGPUError:        true,
+			expectRetry:       true,
+			expectGPUDisabled: true,
+		},
+		{
+			name:              "Non-GPU error does not retry",
+			gpuAvailable:      true,
+			isGPUError:        false,
+			expectRetry:       false,
+			expectGPUDisabled: false,
+		},
+		{
+			name:              "GPU not available, no retry",
+			gpuAvailable:      false,
+			isGPUError:        true,
+			expectRetry:       false,
+			expectGPUDisabled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans := New("/tmp/cache", "", true, "none")
+			trans.gpuAvailable = tt.gpuAvailable
+
+			dir := t.TempDir()
+			tempPath := filepath.Join(dir, "test.mp4.tmp")
+			cachePath := filepath.Join(dir, "test.mp4")
+
+			// Create temp file
+			cacheFile, err := os.Create(tempPath)
+			if err != nil {
+				t.Fatalf("Failed to create temp file: %v", err)
+			}
+
+			ctx := context.Background()
+			output := &bytes.Buffer{}
+
+			var stderr bytes.Buffer
+			if tt.isGPUError {
+				stderr.WriteString("libcuda.so.1: cannot open shared object file")
+			} else {
+				stderr.WriteString("Unknown decoder")
+			}
+
+			streamErr := fmt.Errorf("stream error")
+			cmdErr := fmt.Errorf("command error")
+
+			// Call handleTranscodeFailure
+			err = trans.handleTranscodeFailure(ctx, "/test/video.mp4", output, cachePath,
+				1280, &VideoInfo{Width: 1920, Height: 1080}, true,
+				streamErr, cmdErr, &stderr, cacheFile, tempPath)
+
+			// We always expect an error
+			if err == nil {
+				t.Error("Expected error, got nil")
+			}
+
+			// Verify GPU disabled state
+			trans.gpuMu.Lock()
+			gpuDisabled := !trans.gpuAvailable
+			trans.gpuMu.Unlock()
+
+			if tt.expectGPUDisabled && !gpuDisabled {
+				t.Error("Expected GPU to be disabled")
+			}
+
+			if !tt.expectGPUDisabled && gpuDisabled && tt.gpuAvailable {
+				t.Error("Expected GPU to remain available")
+			}
+		})
+	}
+}
