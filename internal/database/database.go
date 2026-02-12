@@ -104,6 +104,10 @@ func (d *Database) initialize(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_files_mod_time ON files(mod_time);
 	CREATE INDEX IF NOT EXISTS idx_files_name ON files(name COLLATE NOCASE);
 
+	-- Composite indexes for optimized queries
+	CREATE INDEX IF NOT EXISTS idx_files_parent_type ON files(parent_path, type);
+	CREATE INDEX IF NOT EXISTS idx_files_name_type ON files(name COLLATE NOCASE, type);
+
 	-- Full-text search table
 	CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
 		name,

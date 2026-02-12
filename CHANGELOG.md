@@ -17,7 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Docker Health Check Compatibility**: Fixed health check endpoints failing in Debian-based Docker images (including the NVIDIA GPU image). GNU wget's `--spider` flag uses HEAD requests, while BusyBox wget uses GET requests. Health endpoints now accept both HTTP methods to ensure Docker HEALTHCHECK works correctly across all image variants. This fix prevents containers from being incorrectly marked as unhealthy in orchestrated environments like Kubernetes and Docker Swarm. ([#264](https://github.com/djryanj/media-viewer/issues/264))
 
-- **Large Directory Performance**: Significantly improved loading speed for directories containing thousands of files. Browsing directories with many items is now 5x faster - for example, a directory with 14,000 files now loads in 100ms instead of 500ms. This improvement is especially noticeable when browsing large photo collections or video libraries, making navigation feel much more responsive. Additionally, the application now uses HTTP caching to avoid re-downloading the same directory listing repeatedly. When you navigate back to a previously viewed directory, your browser can now serve it instantly from cache if nothing has changed, making navigation feel instantaneous. ([#261](https://github.com/djryanj/media-viewer/issues/261))
+- **Large Directory Performance**: Significantly improved loading speed for directories containing thousands of files. Browsing directories with many items is now 5x faster - for example, a directory with 14,000 files now loads in 100ms instead of 500ms. This improvement applies across the application:
+    - **Directory listings**: Faster browsing with large folders
+    - **Search results**: Faster search with hundreds of matching files
+    - **Favorites view**: Faster loading when you have many favorited folders
+    - **HTTP caching**: Browser instantly serves previously viewed directories from cache when nothing has changed
+
+    These optimizations eliminate thousands of redundant database queries that were previously being made for each directory view, search, or favorites list. The improvements are especially noticeable when browsing large photo collections or video libraries, making navigation feel much more responsive. ([#261](https://github.com/djryanj/media-viewer/issues/261))
 
 - **NVIDIA GPU Support in Docker**: Requires `Dockerfile.nvidia` (Debian-based) due to musl/glibc incompatibility. Alpine-based standard Dockerfile cannot load NVIDIA drivers even with NVIDIA Container Toolkit configured. Docker users need `--gpus all` flag with Debian image. ([#259](https://github.com/djryanj/media-viewer/issues/259)). New docker tags like `:latest-nvidia`, `:v1.0.0-nvidia`, `:v1.0-nvidia` now available. ([#265](https://github.com/djryanj/media-viewer/issues/265))
 

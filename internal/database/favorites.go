@@ -86,10 +86,18 @@ func (d *Database) GetFavorites(ctx context.Context) ([]MediaFile, error) {
 // getFavoritesUnlocked returns favorites without acquiring lock.
 // Caller must hold at least a read lock.
 func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error) {
+	// Optimized query with LEFT JOIN for folder counts (eliminates N+1 for folders)
 	query := `
-		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+		SELECT
+			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+			COALESCE(fc.item_count, 0) as folder_count
 		FROM favorites fav
 		INNER JOIN files f ON fav.path = f.path
+		LEFT JOIN (
+			SELECT parent_path, COUNT(*) as item_count
+			FROM files
+			GROUP BY parent_path
+		) fc ON f.path = fc.parent_path AND f.type = 'folder'
 		ORDER BY fav.created_at DESC
 	`
 
@@ -108,10 +116,12 @@ func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error
 		var file MediaFile
 		var modTime int64
 		var mimeType *string
+		var folderCount int
 
 		if err := rows.Scan(
 			&file.ID, &file.Name, &file.Path, &file.ParentPath,
 			&file.Type, &file.Size, &modTime, &mimeType,
+			&folderCount,
 		); err != nil {
 			continue
 		}
@@ -127,7 +137,7 @@ func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error
 		}
 
 		if file.Type == FileTypeFolder {
-			file.ItemCount = d.getItemCountUnlocked(ctx, file.Path)
+			file.ItemCount = folderCount
 		}
 
 		favorites = append(favorites, file)
@@ -146,16 +156,6 @@ func (d *Database) GetFavoriteCount(ctx context.Context) int {
 
 	var count int
 	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites").Scan(&count); err != nil {
-		return 0
-	}
-	return count
-}
-
-// getItemCountUnlocked gets item count without acquiring lock.
-// Caller must hold at least a read lock.
-func (d *Database) getItemCountUnlocked(ctx context.Context, path string) int {
-	var count int
-	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM files WHERE parent_path = ?", path).Scan(&count); err != nil {
 		return 0
 	}
 	return count
