@@ -159,19 +159,44 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 
 	offset := (opts.Page - 1) * opts.PageSize
 
+	// Optimized query with LEFT JOINs to fetch favorites, tags, and folder counts in one query
+	// This eliminates the N+1 query problem where we previously did separate queries per file
 	selectQuery := `
-		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
-		FROM files
-		WHERE parent_path = ?
+		SELECT
+			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+			CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
+			GROUP_CONCAT(t.name, ',') as tags,
+			COALESCE(fc.item_count, 0) as folder_count
+		FROM files f
+		LEFT JOIN favorites fav ON f.path = fav.path
+		LEFT JOIN file_tags ft ON f.path = ft.file_path
+		LEFT JOIN tags t ON ft.tag_id = t.id
+		LEFT JOIN (
+			SELECT parent_path, COUNT(*) as item_count
+			FROM files
+			GROUP BY parent_path
+		) fc ON f.path = fc.parent_path AND f.type = 'folder'
+		WHERE f.parent_path = ?
 	`
 	selectArgs := []interface{}{opts.Path}
 
 	if opts.FilterType != "" {
-		selectQuery += ` AND (type = 'folder' OR type = ?)`
+		selectQuery += ` AND (f.type = 'folder' OR f.type = ?)`
 		selectArgs = append(selectArgs, opts.FilterType)
 	}
 
-	selectQuery += fmt.Sprintf(` ORDER BY (CASE WHEN type = 'folder' THEN 0 ELSE 1 END), %s %s`, sortColumn, sortDir)
+	// Group by all non-aggregated columns
+	selectQuery += ` GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path, fc.item_count`
+
+	// Add table prefix to sort column for JOIN query
+	var orderColumn string
+	if sortColumn == NameCollation {
+		orderColumn = "f.name COLLATE NOCASE"
+	} else {
+		orderColumn = "f." + sortColumn
+	}
+
+	selectQuery += fmt.Sprintf(` ORDER BY (CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END), %s %s`, orderColumn, sortDir)
 	selectQuery += ` LIMIT ? OFFSET ?`
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
@@ -186,7 +211,7 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 		}
 	}()
 
-	return d.scanDirectoryItemsUnlocked(ctx, rows)
+	return d.scanDirectoryItemsUnlocked(rows)
 }
 
 // getSortColumn returns the SQL column for sorting.
@@ -205,19 +230,51 @@ func getSortColumn(field SortField) string {
 	}
 }
 
-// scanDirectoryItemsUnlocked scans rows into MediaFile structs and enriches them.
+// scanDirectoryItemsUnlocked scans rows into MediaFile structs with all data from optimized query.
 // Caller must hold at least a read lock.
-func (d *Database) scanDirectoryItemsUnlocked(ctx context.Context, rows *sql.Rows) ([]MediaFile, error) {
+func (d *Database) scanDirectoryItemsUnlocked(rows *sql.Rows) ([]MediaFile, error) {
 	logging.Debug("ListDirectory: scanning rows...")
 
 	var items []MediaFile
 	for rows.Next() {
-		file, err := scanMediaFileRow(rows)
-		if err != nil {
+		var file MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+		var isFavorite int
+		var tagsString sql.NullString
+		var folderCount int
+
+		if err := rows.Scan(
+			&file.ID, &file.Name, &file.Path, &file.ParentPath,
+			&file.Type, &file.Size, &modTime, &mimeType,
+			&isFavorite, &tagsString, &folderCount,
+		); err != nil {
 			return nil, err
 		}
 
-		d.enrichMediaFileUnlocked(ctx, &file)
+		file.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			file.MimeType = mimeType.String
+		}
+
+		// Set thumbnail URL for supported types
+		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
+			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		}
+
+		// Parse favorite status
+		file.IsFavorite = isFavorite == 1
+
+		// Parse tags from comma-separated string
+		if tagsString.Valid && tagsString.String != "" {
+			file.Tags = strings.Split(tagsString.String, ",")
+		}
+
+		// Set folder item count
+		if file.Type == FileTypeFolder {
+			file.ItemCount = folderCount
+		}
+
 		items = append(items, file)
 	}
 
@@ -227,47 +284,6 @@ func (d *Database) scanDirectoryItemsUnlocked(ctx context.Context, rows *sql.Row
 	}
 
 	return items, nil
-}
-
-// scanMediaFileRow scans a single row into a MediaFile struct.
-func scanMediaFileRow(rows *sql.Rows) (MediaFile, error) {
-	var file MediaFile
-	var modTime int64
-	var mimeType sql.NullString
-
-	if err := rows.Scan(
-		&file.ID, &file.Name, &file.Path, &file.ParentPath,
-		&file.Type, &file.Size, &modTime, &mimeType,
-	); err != nil {
-		logging.Error("ListDirectory scan failed: %v", err)
-		return MediaFile{}, fmt.Errorf("scan failed: %w", err)
-	}
-
-	file.ModTime = time.Unix(modTime, 0)
-	if mimeType.Valid {
-		file.MimeType = mimeType.String
-	}
-
-	return file, nil
-}
-
-// enrichMediaFileUnlocked adds computed fields to a MediaFile.
-// Caller must hold at least a read lock.
-func (d *Database) enrichMediaFileUnlocked(ctx context.Context, file *MediaFile) {
-	switch file.Type {
-	case FileTypeImage, FileTypeVideo, FileTypeFolder:
-		file.ThumbnailURL = "/api/thumbnail/" + file.Path
-	case FileTypePlaylist, FileTypeOther:
-		// No thumbnail
-	}
-
-	if file.Type == FileTypeFolder {
-		file.ItemCount = d.getItemCountUnlocked(ctx, file.Path)
-	}
-
-	file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
-	tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
-	file.Tags = tags
 }
 
 // buildDirectoryListingUnlocked constructs the final DirectoryListing response.
@@ -416,13 +432,18 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 	var conditions []string
 	var args []interface{}
 
-	// Base query - start with all files
+	// Base query with LEFT JOINs for favorites and tags to eliminate N+1
 	baseQuery := `
-		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+		       COALESCE(fav.path IS NOT NULL, 0) AS is_favorite,
+		       GROUP_CONCAT(t_all.name, ',') AS tags
 		FROM files f
+		LEFT JOIN favorites fav ON f.path = fav.path
+		LEFT JOIN file_tags ft_all ON f.path = ft_all.file_path
+		LEFT JOIN tags t_all ON ft_all.tag_id = t_all.id
 	`
 
-	// Add JOINs for included tags
+	// Add JOINs for included tags (for filtering)
 	for i, tag := range includedTags {
 		alias := fmt.Sprintf("ft_inc_%d", i)
 		tagAlias := fmt.Sprintf("t_inc_%d", i)
@@ -457,8 +478,8 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	// Build count query
-	countBaseQuery := "SELECT DISTINCT f.path FROM files f"
+	// Build count query (simpler, just count distinct paths)
+	countBaseQuery := "SELECT COUNT(DISTINCT f.path) FROM files f"
 	for i := range includedTags {
 		alias := fmt.Sprintf("ft_inc_%d", i)
 		tagAlias := fmt.Sprintf("t_inc_%d", i)
@@ -468,7 +489,10 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 		`, alias, alias, tagAlias, alias, tagAlias, tagAlias)
 	}
 
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM (%s %s)", countBaseQuery, whereClause)
+	countQuery := countBaseQuery
+	if whereClause != "" {
+		countQuery += " " + whereClause
+	}
 
 	var totalItems int
 	err := d.db.QueryRowContext(ctx, countQuery, args...).Scan(&totalItems)
@@ -482,8 +506,15 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 	}
 	offset := (opts.Page - 1) * opts.PageSize
 
+	// Add GROUP BY for aggregation
+	groupBy := " GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path"
+
 	// Full select query with pagination
-	selectQuery := baseQuery + " " + whereClause + " ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?"
+	selectQuery := baseQuery
+	if whereClause != "" {
+		selectQuery += " " + whereClause
+	}
+	selectQuery += groupBy + " ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?"
 	selectArgs := make([]interface{}, len(args), len(args)+2)
 	copy(selectArgs, args)
 	selectArgs = append(selectArgs, opts.PageSize, offset)
@@ -503,10 +534,13 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 		var file MediaFile
 		var modTime int64
 		var mimeType sql.NullString
+		var isFavorite int
+		var tagsString sql.NullString
 
 		if err := rows.Scan(
 			&file.ID, &file.Name, &file.Path, &file.ParentPath,
 			&file.Type, &file.Size, &modTime, &mimeType,
+			&isFavorite, &tagsString,
 		); err != nil {
 			continue
 		}
@@ -520,9 +554,13 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 			file.ThumbnailURL = "/api/thumbnail/" + file.Path
 		}
 
-		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
-		file.Tags = tags
-		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
+		// Parse favorite status (already fetched from JOIN)
+		file.IsFavorite = isFavorite == 1
+
+		// Parse tags from comma-separated string (already fetched from JOIN)
+		if tagsString.Valid && tagsString.String != "" {
+			file.Tags = strings.Split(tagsString.String, ",")
+		}
 
 		items = append(items, file)
 	}
@@ -586,27 +624,39 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		filterArgs = append(filterArgs, opts.FilterType)
 	}
 
-	// FTS query with tag filters
+	// FTS query with LEFT JOINs for favorites and tags (eliminates N+1)
 	ftsQuery := fmt.Sprintf(`
-		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+		       CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
+		       GROUP_CONCAT(t_all.name, ',') as tags
 		FROM files f
 		INNER JOIN files_fts fts ON f.id = fts.rowid
 		%s
+		LEFT JOIN favorites fav ON f.path = fav.path
+		LEFT JOIN file_tags ft_all ON f.path = ft_all.file_path
+		LEFT JOIN tags t_all ON ft_all.tag_id = t_all.id
 		WHERE files_fts MATCH ?
 		%s
 		%s
+		GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path
 	`, inclusionJoins, filterClause, exclusionClause)
 
-	// Tag name matching query with tag filters
+	// Tag name matching query with LEFT JOINs for favorites and tags (eliminates N+1)
 	tagQuery := fmt.Sprintf(`
-		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+		       CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
+		       GROUP_CONCAT(t_all.name, ',') as tags
 		FROM files f
 		INNER JOIN file_tags ft ON f.path = ft.file_path
 		INNER JOIN tags t ON ft.tag_id = t.id
 		%s
+		LEFT JOIN favorites fav ON f.path = fav.path
+		LEFT JOIN file_tags ft_all ON f.path = ft_all.file_path
+		LEFT JOIN tags t_all ON ft_all.tag_id = t_all.id
 		WHERE t.name LIKE ?
 		%s
 		%s
+		GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path
 	`, inclusionJoins, filterClause, exclusionClause)
 
 	// Build args for FTS query
@@ -623,9 +673,10 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 	tagArgs = append(tagArgs, filterArgs...)
 	tagArgs = append(tagArgs, exclusionArgs...)
 
-	// Combined query
+	// Combined query - UNION of FTS and tag queries (already have favorites/tags from JOINs)
 	combinedQuery := fmt.Sprintf(`
-		SELECT id, name, path, parent_path, type, size, mod_time, mime_type FROM (
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type, is_favorite, tags
+		FROM (
 			%s
 			UNION
 			%s
@@ -633,27 +684,33 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		ORDER BY name COLLATE NOCASE
 	`, ftsQuery, tagQuery)
 
-	// Count query
+	// Build count query (simpler versions for UNION counting)
+	ftsCountQuery := fmt.Sprintf(`
+		SELECT DISTINCT f.path
+		FROM files f
+		INNER JOIN files_fts fts ON f.id = fts.rowid
+		%s
+		WHERE files_fts MATCH ?
+		%s
+		%s
+	`, inclusionJoins, filterClause, exclusionClause)
+
+	tagCountQuery := fmt.Sprintf(`
+		SELECT DISTINCT f.path
+		FROM files f
+		INNER JOIN file_tags ft ON f.path = ft.file_path
+		INNER JOIN tags t ON ft.tag_id = t.id
+		%s
+		WHERE t.name LIKE ?
+		%s
+		%s
+	`, inclusionJoins, filterClause, exclusionClause)
+
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
-			SELECT DISTINCT path FROM (
-				SELECT f.path FROM files f
-				INNER JOIN files_fts fts ON f.id = fts.rowid
-				%s
-				WHERE files_fts MATCH ?
-				%s
-				%s
-				UNION
-				SELECT f.path FROM files f
-				INNER JOIN file_tags ft ON f.path = ft.file_path
-				INNER JOIN tags t ON ft.tag_id = t.id
-				%s
-				WHERE t.name LIKE ?
-				%s
-				%s
-			)
+			SELECT path FROM (%s UNION %s)
 		)
-	`, inclusionJoins, filterClause, exclusionClause, inclusionJoins, filterClause, exclusionClause)
+	`, ftsCountQuery, tagCountQuery)
 
 	// Build count args (same pattern twice for UNION)
 	countArgs := make([]interface{}, 0, len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs)+len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs))
@@ -705,10 +762,13 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		var file MediaFile
 		var modTime int64
 		var mimeType sql.NullString
+		var isFavorite int
+		var tagsString sql.NullString
 
 		if err := rows.Scan(
 			&file.ID, &file.Name, &file.Path, &file.ParentPath,
 			&file.Type, &file.Size, &modTime, &mimeType,
+			&isFavorite, &tagsString,
 		); err != nil {
 			continue
 		}
@@ -722,9 +782,13 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 			file.ThumbnailURL = "/api/thumbnail/" + file.Path
 		}
 
-		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
-		file.Tags = tags
-		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
+		// Parse favorite status (already fetched from JOIN)
+		file.IsFavorite = isFavorite == 1
+
+		// Parse tags from comma-separated string (already fetched from JOIN)
+		if tagsString.Valid && tagsString.String != "" {
+			file.Tags = strings.Split(tagsString.String, ",")
+		}
 
 		items = append(items, file)
 	}
@@ -1121,6 +1185,7 @@ func (d *Database) GetAllPlaylists(ctx context.Context) ([]MediaFile, error) {
 }
 
 // GetMediaInDirectory returns all media files in a directory (for lightbox).
+// Optimized to fetch favorites and tags in a single query using JOINs to eliminate N+1 queries.
 func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
 	start := time.Now()
 	var err error
@@ -1147,12 +1212,40 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		sortDir = "DESC"
 	}
 
+	// Add table prefix to sort column for JOIN query
+	// Handle special case of NameCollation which is "name COLLATE NOCASE"
+	if sortColumn == NameCollation {
+		sortColumn = "f.name COLLATE NOCASE"
+	} else {
+		sortColumn = "f." + sortColumn
+	}
+
+	// For non-name sorts, add secondary sort by name for stable ordering
+	secondarySort := ""
+	if sortField != SortByName && sortField != "" {
+		secondarySort = ", f.name COLLATE NOCASE ASC"
+	}
+
+	// Optimized query: fetch files with favorites and tags in a single query using LEFT JOINs.
+	// This eliminates the N+1 query problem where we previously did 1 query per file for
+	// favorites and tags, resulting in thousands of queries for large directories.
+	//
+	// GROUP_CONCAT aggregates all tags for each file into a comma-separated string.
+	// We don't use DISTINCT since the GROUP BY already ensures uniqueness per file.
+	// The LEFT JOIN on favorites means is_favorite will be 1 if a favorite exists, NULL otherwise.
 	query := fmt.Sprintf(`
-		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
-		FROM files
-		WHERE parent_path = ? AND type IN ('image', 'video')
-		ORDER BY %s %s
-	`, sortColumn, sortDir)
+		SELECT
+			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+			CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
+			GROUP_CONCAT(t.name, ',') as tags
+		FROM files f
+		LEFT JOIN favorites fav ON f.path = fav.path
+		LEFT JOIN file_tags ft ON f.path = ft.file_path
+		LEFT JOIN tags t ON ft.tag_id = t.id
+		WHERE f.parent_path = ? AND f.type IN ('image', 'video')
+		GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path
+		ORDER BY %s %s%s
+	`, sortColumn, sortDir, secondarySort)
 
 	rows, err := d.db.QueryContext(ctx, query, parentPath)
 	if err != nil {
@@ -1169,10 +1262,13 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		var file MediaFile
 		var modTime int64
 		var mimeType sql.NullString
+		var isFavorite int
+		var tagsString sql.NullString
 
 		if err := rows.Scan(
 			&file.ID, &file.Name, &file.Path, &file.ParentPath,
 			&file.Type, &file.Size, &modTime, &mimeType,
+			&isFavorite, &tagsString,
 		); err != nil {
 			return nil, err
 		}
@@ -1182,11 +1278,14 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 			file.MimeType = mimeType.String
 		}
 		file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		file.IsFavorite = isFavorite == 1
 
-		// Use unlocked versions since we already hold the lock
-		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
-		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
-		file.Tags = tags
+		// Parse comma-separated tags from GROUP_CONCAT
+		if tagsString.Valid && tagsString.String != "" {
+			file.Tags = strings.Split(tagsString.String, ",")
+		} else {
+			file.Tags = []string{}
+		}
 
 		files = append(files, file)
 	}
