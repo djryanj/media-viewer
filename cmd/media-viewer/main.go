@@ -266,10 +266,10 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	r := mux.NewRouter()
 
 	// Health check and version routes (no auth required)
-	r.HandleFunc("/health", h.HealthCheck).Methods("GET")
-	r.HandleFunc("/healthz", h.HealthCheck).Methods("GET")
+	r.HandleFunc("/health", h.HealthCheck).Methods("GET", "HEAD")
+	r.HandleFunc("/healthz", h.HealthCheck).Methods("GET", "HEAD")
 	r.HandleFunc("/livez", h.LivenessCheck).Methods("GET", "HEAD")
-	r.HandleFunc("/readyz", h.ReadinessCheck).Methods("GET")
+	r.HandleFunc("/readyz", h.ReadinessCheck).Methods("GET", "HEAD")
 	r.HandleFunc("/version", h.GetVersion).Methods("GET")
 
 	// PWA assets (must be accessible without auth for install prompts)
