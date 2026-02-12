@@ -777,7 +777,7 @@ func TestTestGPUEncoder_InvalidEncoder(t *testing.T) {
 	trans := New("/tmp/cache", "", true, "none")
 
 	// Test with a non-existent encoder
-	result := trans.testGPUEncoder("invalid_encoder_xyz")
+	result := trans.testGPUEncoder("invalid_encoder_xyz", GPUAccelNone, "")
 
 	if result {
 		t.Error("Expected testGPUEncoder to return false for invalid encoder")
@@ -793,7 +793,7 @@ func TestTestGPUEncoder_LibX264(t *testing.T) {
 
 	// Test with libx264 which should be available in most ffmpeg builds
 	// Note: This is a CPU encoder, but we're testing the encoder detection logic
-	result := trans.testGPUEncoder("libx264")
+	result := trans.testGPUEncoder("libx264", GPUAccelNone, "")
 
 	// libx264 should be available
 	if !result {

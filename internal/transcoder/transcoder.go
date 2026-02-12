@@ -1428,7 +1428,7 @@ func (t *Transcoder) detectGPU() {
 			continue
 		}
 
-		if !t.testGPUEncoder(test.encoder) {
+		if !t.testGPUEncoder(test.encoder, test.accel, test.filter) {
 			continue
 		}
 		t.gpuAvailable = true
@@ -1535,7 +1535,7 @@ func (t *Transcoder) checkGPUDeviceAccess(accel GPUAccel) bool {
 }
 
 // testGPUEncoder tests if a GPU encoder is available and actually works
-func (t *Transcoder) testGPUEncoder(encoder string) bool {
+func (t *Transcoder) testGPUEncoder(encoder string, accel GPUAccel, initFilter string) bool {
 	// Step 1: Check if encoder is in ffmpeg's encoders list
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1564,14 +1564,14 @@ func (t *Transcoder) testGPUEncoder(encoder string) bool {
 	testArgs = append(testArgs, "-f", "lavfi", "-i", "testsrc=duration=0.1:size=320x240:rate=1", "-frames:v", "1")
 
 	// Add hardware-specific initialization if needed
-	if t.gpuAccel == GPUAccelVAAPI && t.gpuInitFilter != "" {
-		testArgs = append(testArgs, "-vf", t.gpuInitFilter)
+	if initFilter != "" {
+		testArgs = append(testArgs, "-vf", initFilter)
 	}
 
 	testArgs = append(testArgs, "-c:v", encoder)
 
 	// Add encoder-specific options
-	switch t.gpuAccel {
+	switch accel {
 	case GPUAccelNVIDIA:
 		testArgs = append(testArgs, "-preset", "p1") // Fastest preset for test
 	case GPUAccelVAAPI:
