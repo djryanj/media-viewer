@@ -3,6 +3,7 @@ package transcoder
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -1515,5 +1516,68 @@ func TestBuildFFmpegArgsWithOptions_AudioEncoding(t *testing.T) {
 	}
 	if !foundAudioBitrate {
 		t.Error("Expected audio bitrate in args")
+	}
+}
+
+// TestGPURetryCancelledContext verifies that GPU failures during shutdown
+// do not retry with CPU encoding
+func TestGPURetryCancelledContext(t *testing.T) {
+	trans := New("/tmp/cache", "", true, "none")
+
+	// Simulate GPU available
+	trans.gpuAvailable = true
+	trans.gpuEncoder = "h264_nvenc"
+	trans.gpuAccel = GPUAccelNVIDIA
+
+	// Simulate shutdown
+	trans.shuttingDown.Store(true)
+
+	// Create minimal video info for testing
+	info := &VideoInfo{
+		Codec:    "h264",
+		Width:    1920,
+		Height:   1080,
+		Duration: 10.0,
+	}
+
+	// Test transcodeDirectToCache with GPU error during shutdown
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "test.mp4")
+	ctx := context.Background()
+
+	// This should fail immediately without retrying CPU
+	err := trans.transcodeDirectToCache(ctx, "/nonexistent/file.mp4", cachePath, 0, info, false)
+
+	// Verify we got an error (FFmpeg will fail on nonexistent file)
+	if err == nil {
+		t.Error("Expected error for nonexistent file")
+	}
+
+	// Verify GPU is still available (wasn't disabled by retry logic)
+	if !trans.gpuAvailable {
+		t.Error("GPU should still be available after shutdown skip")
+	}
+
+	// Verify shutdown flag is still set
+	if !trans.shuttingDown.Load() {
+		t.Error("Shutdown flag should still be set")
+	}
+}
+
+// TestCleanupSetsShutdownFlag verifies that Cleanup() sets the shutdown flag
+func TestCleanupSetsShutdownFlag(t *testing.T) {
+	trans := New("/tmp/cache", "", true, "none")
+
+	// Verify shutdown flag is initially false
+	if trans.shuttingDown.Load() {
+		t.Error("Shutdown flag should be false initially")
+	}
+
+	// Call Cleanup
+	trans.Cleanup()
+
+	// Verify shutdown flag is now set
+	if !trans.shuttingDown.Load() {
+		t.Error("Shutdown flag should be true after Cleanup()")
 	}
 }
