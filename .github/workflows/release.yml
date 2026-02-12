@@ -99,6 +99,7 @@ jobs:
               uses: docker/build-push-action@v6
               with:
                   context: .
+                  file: Dockerfile
                   platforms: linux/amd64,linux/arm64
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
@@ -108,9 +109,78 @@ jobs:
                       COMMIT=${{ steps.build-info.outputs.commit }}
                       BUILD_TIME=${{ steps.build-info.outputs.build_time }}
                   cache-from: |
-                      type=gha,scope=buildkit-${{ github.ref_name }}
-                      type=gha,scope=buildkit-main
-                  cache-to: type=gha,mode=max,scope=buildkit-${{ github.ref_name }}
+                      type=gha,scope=buildkit-Dockerfile-${{ github.ref_name }}
+                      type=gha,scope=buildkit-Dockerfile-main
+                  cache-to: type=gha,mode=max,scope=buildkit-Dockerfile-${{ github.ref_name }}
+                  provenance: false
+                  sbom: false
+
+    # Build and push NVIDIA-optimized Docker image (Debian-based for glibc)
+    docker-nvidia:
+        name: Build and Push Docker (NVIDIA)
+        runs-on: ubuntu-latest
+        needs: test
+        outputs:
+            digest: ${{ steps.build-push.outputs.digest }}
+            tags: ${{ steps.meta.outputs.tags }}
+            version: ${{ steps.build-info.outputs.version }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v3
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Log in to Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Extract metadata for Docker
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  flavor: |
+                      suffix=-nvidia,onlatest=true
+                  tags: |
+                      type=semver,pattern=v{{version}}
+                      type=semver,pattern=v{{major}}.{{minor}}
+                      type=semver,pattern=v{{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+                      type=raw,value=latest
+
+            - name: Get build information
+              id: build-info
+              run: |
+                  echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+                  echo "commit=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+                  echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+            - name: Build and push Docker image
+              id: build-push
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  file: Dockerfile.nvidia
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  build-args: |
+                      VERSION=${{ steps.build-info.outputs.version }}
+                      COMMIT=${{ steps.build-info.outputs.commit }}
+                      BUILD_TIME=${{ steps.build-info.outputs.build_time }}
+                  cache-from: |
+                      type=gha,scope=buildkit-Dockerfile.nvidia-${{ github.ref_name }}
+                      type=gha,scope=buildkit-Dockerfile.nvidia-main
+                  cache-to: type=gha,mode=max,scope=buildkit-Dockerfile.nvidia-${{ github.ref_name }}
                   provenance: false
                   sbom: false
 
@@ -144,11 +214,41 @@ jobs:
                   path: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
                   retention-days: 90
 
+    # Generate SBOM for NVIDIA image
+    sbom-nvidia:
+        name: Generate SBOM (NVIDIA)
+        runs-on: ubuntu-latest
+        needs: docker-nvidia
+        outputs:
+            sbom-file: ${{ steps.sbom.outputs.sbom-file }}
+        steps:
+            - name: Log in to Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Generate SBOM
+              id: sbom
+              uses: anchore/sbom-action@v0
+              with:
+                  image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.docker-nvidia.outputs.digest }}
+                  format: spdx-json
+                  output-file: ${{ github.event.repository.name }}-${{ needs.docker-nvidia.outputs.version }}-nvidia-sbom.spdx.json
+
+            - name: Upload SBOM as artifact
+              uses: actions/upload-artifact@v6
+              with:
+                  name: sbom-nvidia
+                  path: ${{ github.event.repository.name }}-${{ needs.docker-nvidia.outputs.version }}-nvidia-sbom.spdx.json
+                  retention-days: 90
+
     # Create GitHub Release with changelog and SBOM
     release:
         name: Create GitHub Release
         runs-on: ubuntu-latest
-        needs: [docker, sbom]
+        needs: [docker, docker-nvidia, sbom, sbom-nvidia]
         steps:
             - name: Checkout code
               uses: actions/checkout@v6
@@ -159,6 +259,12 @@ jobs:
               uses: actions/download-artifact@v7
               with:
                   name: sbom
+                  path: ./artifacts
+
+            - name: Download NVIDIA SBOM artifact
+              uses: actions/download-artifact@v7
+              with:
+                  name: sbom-nvidia
                   path: ./artifacts
 
             - name: Generate changelog
@@ -177,8 +283,9 @@ jobs:
 
                       ---
 
-                      ## Docker Image
+                      ## Docker Images
 
+                      ### Standard Image (Alpine-based, VA-API support)
                       ```bash
                       docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.docker.outputs.version }}
                       ```
@@ -189,9 +296,20 @@ jobs:
 
                       **Digest:** `${{ needs.docker.outputs.digest }}`
 
+                      ### NVIDIA Image (Debian-based, NVIDIA NVENC support)
+                      ```bash
+                      docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.docker-nvidia.outputs.version }}-nvidia
+                      ```
+
+                      **Available tags:**
+                      - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.docker-nvidia.outputs.version }}-nvidia`
+                      - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-nvidia`
+
+                      **Digest:** `${{ needs.docker-nvidia.outputs.digest }}`
+
                       ## Software Bill of Materials (SBOM)
 
-                      The SBOM for this release is attached below in SPDX JSON format.
+                      SBOMs for both images are attached below in SPDX JSON format.
                   draft: false
                   prerelease: ${{ contains(github.ref_name, '-') }}
                   files: |

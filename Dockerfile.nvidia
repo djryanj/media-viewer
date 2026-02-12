@@ -1,0 +1,119 @@
+# syntax=docker/dockerfile:1
+# NVIDIA GPU-optimized Dockerfile using Debian base for glibc compatibility
+# Alpine Linux is incompatible with NVIDIA drivers (musl vs glibc)
+
+# Build stage - Use Debian-based Go image for glibc compatibility
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS builder
+
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libsqlite3-dev \
+    libvips-dev \
+    shared-mime-info \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the main application
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=1 \
+    GOOS=${TARGETOS:-linux} \
+    GOARCH=${TARGETARCH:-amd64} \
+    go build \
+    -tags 'fts5' \
+    -ldflags "-s -w \
+    -X 'media-viewer/internal/startup.Version=${VERSION}' \
+    -X 'media-viewer/internal/startup.Commit=${COMMIT}' \
+    -X 'media-viewer/internal/startup.BuildTime=${BUILD_TIME}'" \
+    -o media-viewer ./cmd/media-viewer
+
+# Build password reset tool
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=1 \
+    GOOS=${TARGETOS:-linux} \
+    GOARCH=${TARGETARCH:-amd64} \
+    go build \
+    -tags 'fts5' \
+    -ldflags "-s -w \
+    -X 'media-viewer/internal/startup.Version=${VERSION}' \
+    -X 'media-viewer/internal/startup.Commit=${COMMIT}' \
+    -X 'media-viewer/internal/startup.BuildTime=${BUILD_TIME}'" \
+    -o resetpw ./cmd/resetpw
+
+# Runtime stage - Debian for NVIDIA GPU compatibility (glibc-based)
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN DEBIAN_FRONTEND=noninteractive \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    ca-certificates \
+    tzdata \
+    libsqlite3-0 \
+    libvips42 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure ldconfig to find NVIDIA libraries mounted by Container Toolkit
+RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf && \
+    echo "/usr/local/nvidia/lib64" >> /etc/ld.so.conf.d/nvidia.conf
+
+# Create directories with proper permissions
+RUN mkdir -p /media /cache /database && \
+    chown -R nobody:nogroup /media /cache /database
+
+# Copy binaries from builder
+COPY --from=builder /app/media-viewer /app/media-viewer
+COPY --from=builder /app/resetpw /app/resetpw
+
+# Copy static files
+COPY --from=builder /app/static /app/static
+
+# Set ownership of application files
+RUN chown -R nobody:nogroup /app
+
+WORKDIR /app
+
+# Environment variables
+# NVIDIA Container Toolkit mounts libraries to these paths
+ENV MEDIA_DIR=/media \
+    CACHE_DIR=/cache \
+    DATABASE_DIR=/database \
+    PORT=8080 \
+    INDEX_INTERVAL=30m \
+    GPU_ACCEL=auto \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+
+# Expose port
+EXPOSE 8080
+
+# Switch to unprivileged user
+USER nobody:nogroup
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/readyz || exit 1
+
+# Run the application
+CMD ["./media-viewer"]

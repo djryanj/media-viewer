@@ -13,6 +13,16 @@ on:
                 required: false
                 default: 'linux/amd64,linux/arm64'
                 type: string
+            dockerfile:
+                description: 'Path to Dockerfile'
+                required: false
+                default: 'Dockerfile'
+                type: string
+            image-suffix:
+                description: 'Suffix to append to image tags (e.g., -nvidia)'
+                required: false
+                default: ''
+                type: string
         outputs:
             digest:
                 description: 'Image digest'
@@ -64,6 +74,8 @@ jobs:
               uses: docker/metadata-action@v5
               with:
                   images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  flavor: |
+                      suffix=${{ inputs.image-suffix }},onlatest=true
                   tags: |
                       # For PRs: pr-<number>
                       type=ref,event=pr
@@ -92,6 +104,7 @@ jobs:
               uses: docker/build-push-action@v6
               with:
                   context: .
+                  file: ${{ inputs.dockerfile }}
                   platforms: ${{ github.event_name != 'pull_request' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
@@ -102,9 +115,9 @@ jobs:
                       BUILD_TIME=${{ steps.build-info.outputs.build_time }}
                   # Aggressive caching for faster builds
                   cache-from: |
-                      type=gha,scope=buildkit-${{ github.ref_name }}
-                      type=gha,scope=buildkit-main
-                  cache-to: type=gha,mode=max,scope=buildkit-${{ github.ref_name }}
+                      type=gha,scope=buildkit-${{ inputs.dockerfile }}-${{ github.ref_name }}
+                      type=gha,scope=buildkit-${{ inputs.dockerfile }}-main
+                  cache-to: type=gha,mode=max,scope=buildkit-${{ inputs.dockerfile }}-${{ github.ref_name }}
                   # Disable for faster builds
                   provenance: false
                   sbom: false
