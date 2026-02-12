@@ -1210,12 +1210,13 @@ func (t *ThumbnailGenerator) runGeneration(incremental bool) {
 		return
 	}
 
-	if t.isGenerating.Load() {
+	// Use CompareAndSwap to atomically check and set the flag
+	// This prevents race conditions where multiple goroutines could pass a Load() check
+	if !t.isGenerating.CompareAndSwap(false, true) {
 		logging.Info("Thumbnail generation already in progress, skipping")
 		return
 	}
 
-	t.isGenerating.Store(true)
 	defer t.isGenerating.Store(false)
 
 	ctx := context.Background()
