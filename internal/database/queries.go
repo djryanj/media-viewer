@@ -1121,6 +1121,7 @@ func (d *Database) GetAllPlaylists(ctx context.Context) ([]MediaFile, error) {
 }
 
 // GetMediaInDirectory returns all media files in a directory (for lightbox).
+// Optimized to fetch favorites and tags in a single query using JOINs to eliminate N+1 queries.
 func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
 	start := time.Now()
 	var err error
@@ -1147,12 +1148,40 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		sortDir = "DESC"
 	}
 
+	// Add table prefix to sort column for JOIN query
+	// Handle special case of NameCollation which is "name COLLATE NOCASE"
+	if sortColumn == NameCollation {
+		sortColumn = "f.name COLLATE NOCASE"
+	} else {
+		sortColumn = "f." + sortColumn
+	}
+
+	// For non-name sorts, add secondary sort by name for stable ordering
+	secondarySort := ""
+	if sortField != SortByName && sortField != "" {
+		secondarySort = ", f.name COLLATE NOCASE ASC"
+	}
+
+	// Optimized query: fetch files with favorites and tags in a single query using LEFT JOINs.
+	// This eliminates the N+1 query problem where we previously did 1 query per file for
+	// favorites and tags, resulting in thousands of queries for large directories.
+	//
+	// GROUP_CONCAT aggregates all tags for each file into a comma-separated string.
+	// We don't use DISTINCT since the GROUP BY already ensures uniqueness per file.
+	// The LEFT JOIN on favorites means is_favorite will be 1 if a favorite exists, NULL otherwise.
 	query := fmt.Sprintf(`
-		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
-		FROM files
-		WHERE parent_path = ? AND type IN ('image', 'video')
-		ORDER BY %s %s
-	`, sortColumn, sortDir)
+		SELECT
+			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+			CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
+			GROUP_CONCAT(t.name, ',') as tags
+		FROM files f
+		LEFT JOIN favorites fav ON f.path = fav.path
+		LEFT JOIN file_tags ft ON f.path = ft.file_path
+		LEFT JOIN tags t ON ft.tag_id = t.id
+		WHERE f.parent_path = ? AND f.type IN ('image', 'video')
+		GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path
+		ORDER BY %s %s%s
+	`, sortColumn, sortDir, secondarySort)
 
 	rows, err := d.db.QueryContext(ctx, query, parentPath)
 	if err != nil {
@@ -1169,10 +1198,13 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		var file MediaFile
 		var modTime int64
 		var mimeType sql.NullString
+		var isFavorite int
+		var tagsString sql.NullString
 
 		if err := rows.Scan(
 			&file.ID, &file.Name, &file.Path, &file.ParentPath,
 			&file.Type, &file.Size, &modTime, &mimeType,
+			&isFavorite, &tagsString,
 		); err != nil {
 			return nil, err
 		}
@@ -1182,11 +1214,14 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 			file.MimeType = mimeType.String
 		}
 		file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		file.IsFavorite = isFavorite == 1
 
-		// Use unlocked versions since we already hold the lock
-		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
-		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
-		file.Tags = tags
+		// Parse comma-separated tags from GROUP_CONCAT
+		if tagsString.Valid && tagsString.String != "" {
+			file.Tags = strings.Split(tagsString.String, ",")
+		} else {
+			file.Tags = []string{}
+		}
 
 		files = append(files, file)
 	}

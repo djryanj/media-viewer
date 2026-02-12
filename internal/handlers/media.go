@@ -92,6 +92,36 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 		files = []database.MediaFile{}
 	}
 
+	// Generate ETag based on directory state for HTTP caching
+	// Include: path, sort params, file count, and latest modification time
+	// This ensures the ETag changes when directory contents change
+	lastModTime := int64(0)
+	for i := range files {
+		if files[i].ModTime.Unix() > lastModTime {
+			lastModTime = files[i].ModTime.Unix()
+		}
+	}
+
+	etagData := fmt.Sprintf("%s_%s_%s_%d_%d", parentPath, sortField, sortOrder, len(files), lastModTime)
+	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
+
+	// Set cache headers
+	// Use "private" since response includes user-specific data (favorites)
+	// max-age=300 (5 minutes) to balance freshness with caching benefit
+	// must-revalidate ensures stale cache is revalidated
+	w.Header().Set("Cache-Control", "private, max-age=300, must-revalidate")
+	w.Header().Set("ETag", etag)
+
+	// Check If-None-Match header for conditional request
+	clientETag := r.Header.Get("If-None-Match")
+	if clientETag != "" && clientETag == etag {
+		logging.Debug("GetMediaFiles: 304 Not Modified for %s (ETag match: %s)", parentPath, etag)
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	// Return full response
+	logging.Debug("GetMediaFiles: serving %s (%d files, ETag: %s)", parentPath, len(files), etag)
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, files)
 }
