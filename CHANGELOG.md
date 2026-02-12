@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Thumbnail Generation Reliability**: Fixed an issue where thumbnail generation could run multiple times simultaneously, causing thumbnails to be invalidated and regenerated unnecessarily. This could happen when the scheduled thumbnail generation triggered at the same time as indexing completed or when a manual rebuild was requested. The system now properly ensures only one thumbnail generation process runs at a time, preventing wasted resources and cache conflicts. ([#260](https://github.com/djryanj/media-viewer/issues/260))
+
 - **NVIDIA GPU Support in Docker**: Requires `Dockerfile.nvidia` (Debian-based) due to musl/glibc incompatibility. Alpine-based standard Dockerfile cannot load NVIDIA drivers even with NVIDIA Container Toolkit configured. Docker users need `--gpus all` flag with Debian image. ([#259](https://github.com/djryanj/media-viewer/issues/259)). New docker tags like `:latest-nvidia`, `:v1.0.0-nvidia`, `:v1.0-nvidia` now available.
 
 ## [0.13.0] - 2026-02-11
