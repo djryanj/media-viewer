@@ -5,6 +5,9 @@
 # Build stage - Use Debian-based Go image for glibc compatibility
 FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS builder
 
+# Install xx for cross-compilation support
+COPY --from=tonistiigi/xx:1.9.0 / /
+
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETOS
@@ -15,13 +18,26 @@ ARG BUILD_TIME=unknown
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+# Install build dependencies for the build platform
+RUN DEBIAN_FRONTEND=noninteractive \
+    apt-get update && apt-get install -y --no-install-recommends \
+    clang \
+    lld \
+    make \
+    git \
     pkg-config \
+    shared-mime-info \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install target platform dependencies
+RUN DEBIAN_FRONTEND=noninteractive \
+    xx-apt-get update && \
+    xx-apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libc6-dev \
     libsqlite3-dev \
     libvips-dev \
-    shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy go mod files first for better caching
@@ -35,8 +51,12 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=1 \
-    GOOS=${TARGETOS:-linux} \
-    GOARCH=${TARGETARCH:-amd64} \
+    GOOS=$(xx-info os) \
+    GOARCH=$(xx-info arch) \
+    CC="xx-clang" \
+    CXX="xx-clang++" \
+    PKG_CONFIG="$(xx-info)-pkg-config" \
+    PKG_CONFIG_PATH="$(xx-info sysroot)usr/lib/pkgconfig:$(xx-info sysroot)usr/share/pkgconfig" \
     go build \
     -tags 'fts5' \
     -ldflags "-s -w \
@@ -49,8 +69,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=1 \
-    GOOS=${TARGETOS:-linux} \
-    GOARCH=${TARGETARCH:-amd64} \
+    GOOS=$(xx-info os) \
+    GOARCH=$(xx-info arch) \
+    CC="xx-clang" \
+    CXX="xx-clang++" \
+    PKG_CONFIG="$(xx-info)-pkg-config" \
+    PKG_CONFIG_PATH="$(xx-info sysroot)usr/lib/pkgconfig:$(xx-info sysroot)usr/share/pkgconfig" \
     go build \
     -tags 'fts5' \
     -ldflags "-s -w \
