@@ -41,7 +41,7 @@ func setupAuthIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	}
 
 	idx := indexer.New(db, mediaDir, 0)                                            // No auto-indexing in tests
-	trans := transcoder.New(cacheDir, "", false)                                   // Disabled in tests
+	trans := transcoder.New(cacheDir, "", false, "none")                           // Disabled in tests
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil) // Disabled in tests
 
 	config := &startup.Config{

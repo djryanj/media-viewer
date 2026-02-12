@@ -55,7 +55,7 @@ func setupWebAuthnCoverageTest(t *testing.T, enableWebAuthn bool) (h *Handlers, 
 	idx := indexer.New(db, mediaDir, 0)
 
 	// Create transcoder
-	trans := transcoder.New(cacheDir, "", false)
+	trans := transcoder.New(cacheDir, "", false, "none")
 
 	// Create thumbnail generator
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)

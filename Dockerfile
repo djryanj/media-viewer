@@ -80,7 +80,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Runtime stage
 FROM alpine:3.23
 
-# Install runtime dependencies in a single layer
+ARG TARGETARCH
+
+# Install common runtime dependencies
 RUN apk add --no-cache \
     ffmpeg \
     ca-certificates \
@@ -88,6 +90,19 @@ RUN apk add --no-cache \
     sqlite \
     vips \
     && rm -rf /var/cache/apk/*
+
+# Install VA-API support for x86_64/amd64 only (Intel/AMD GPU transcoding)
+# ARM64 doesn't have Intel VA-API hardware
+# For NVIDIA GPU support on any arch, use the NVIDIA Container Toolkit at runtime
+# See docs/admin/docker-gpu.md for GPU configuration details
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        apk add --no-cache \
+            libva \
+            libva-intel-driver \
+            mesa-va-gallium \
+            intel-media-driver \
+            libdrm; \
+    fi
 
 # Create directories with proper permissions
 RUN mkdir -p /media /cache /database && \
@@ -110,7 +125,8 @@ ENV MEDIA_DIR=/media \
     CACHE_DIR=/cache \
     DATABASE_DIR=/database \
     PORT=8080 \
-    INDEX_INTERVAL=30m
+    INDEX_INTERVAL=30m \
+    GPU_ACCEL=auto
 
 # Expose port
 EXPOSE 8080

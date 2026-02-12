@@ -17,7 +17,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	if trans == nil {
 		t.Fatal("New() returned nil")
@@ -51,7 +51,7 @@ func TestIsEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			trans := New("/tmp/cache", "", tt.enabled)
+			trans := New("/tmp/cache", "", tt.enabled, "none")
 
 			if trans.IsEnabled() != tt.enabled {
 				t.Errorf("Expected IsEnabled()=%v, got %v", tt.enabled, trans.IsEnabled())
@@ -138,7 +138,7 @@ func TestCompatibleContainers(t *testing.T) {
 }
 
 func TestTranscoderStreamConfig(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	// Check that stream config was set up
 	if trans.streamConfig.WriteTimeout != 30*time.Second {
@@ -155,7 +155,7 @@ func TestTranscoderStreamConfig(t *testing.T) {
 }
 
 func TestTranscoderProcessManagement(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	// Process map should be initialized
 	if trans.processes == nil {
@@ -233,7 +233,7 @@ func TestVideoInfoNeedsTranscode(t *testing.T) {
 }
 
 func TestTranscoderDisabled(t *testing.T) {
-	trans := New("/tmp/cache", "", false)
+	trans := New("/tmp/cache", "", false, "none")
 
 	if trans.IsEnabled() {
 		t.Error("Transcoder should be disabled")
@@ -246,7 +246,7 @@ func TestTranscoderDisabled(t *testing.T) {
 }
 
 func TestTranscoderProcessMap(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	if trans.processes == nil {
 		t.Fatal("Process map should be initialized")
@@ -258,7 +258,7 @@ func TestTranscoderProcessMap(t *testing.T) {
 }
 
 func TestGetVideoInfoWithInvalidFile(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	ctx := context.Background()
 
@@ -270,7 +270,7 @@ func TestGetVideoInfoWithInvalidFile(t *testing.T) {
 }
 
 func TestGetVideoInfoContextCancellation(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -283,7 +283,7 @@ func TestGetVideoInfoContextCancellation(t *testing.T) {
 
 func TestStreamConfigDefaults(t *testing.T) {
 	// Test that New() sets up reasonable stream config defaults
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	config := trans.streamConfig
 
@@ -367,7 +367,7 @@ func TestCompatibleContainersMapNotEmpty(t *testing.T) {
 
 func BenchmarkNewTranscoder(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_ = New("/tmp/cache", "", true)
+		_ = New("/tmp/cache", "", true, "none")
 	}
 }
 
@@ -390,7 +390,7 @@ func BenchmarkVideoInfoCreation(b *testing.B) {
 // TestGetCachedFile_ValidCache tests that a valid cached file is returned
 func TestGetCachedFile_ValidCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create source file
 	sourcePath := filepath.Join(tmpDir, "source.mp4")
@@ -428,7 +428,7 @@ func TestGetCachedFile_ValidCache(t *testing.T) {
 // TestGetCachedFile_StaleCache tests that stale cache is detected and deleted
 func TestGetCachedFile_StaleCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create cached file first
 	cachePath := filepath.Join(tmpDir, "cached.mp4")
@@ -460,7 +460,7 @@ func TestGetCachedFile_StaleCache(t *testing.T) {
 // TestGetCachedFile_MissingCache tests handling of missing cache file
 func TestGetCachedFile_MissingCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create source file
 	sourcePath := filepath.Join(tmpDir, "source.mp4")
@@ -478,7 +478,7 @@ func TestGetCachedFile_MissingCache(t *testing.T) {
 
 // TestGetCacheLock tests that cache locks are created and reused
 func TestGetCacheLock(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	// Get lock for first time
 	lock1 := trans.getCacheLock("test-key")
@@ -501,7 +501,7 @@ func TestGetCacheLock(t *testing.T) {
 
 // TestGetCacheLock_Concurrent tests concurrent access to cache locks
 func TestGetCacheLock_Concurrent(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	const goroutines = 10
 	var wg sync.WaitGroup
@@ -527,7 +527,7 @@ func TestGetCacheLock_Concurrent(t *testing.T) {
 
 // TestBuildFFmpegArgs_Remux tests ffmpeg args for remux operation
 func TestBuildFFmpegArgs_Remux(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	info := &VideoInfo{
 		Codec:  "h264",
@@ -553,7 +553,7 @@ func TestBuildFFmpegArgs_Remux(t *testing.T) {
 
 // TestBuildFFmpegArgs_Reencode tests ffmpeg args for re-encode operation
 func TestBuildFFmpegArgs_Reencode(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	info := &VideoInfo{
 		Codec:  "hevc",
@@ -579,7 +579,7 @@ func TestBuildFFmpegArgs_Reencode(t *testing.T) {
 
 // TestBuildFFmpegArgs_WithScale tests ffmpeg args include scale filter
 func TestBuildFFmpegArgs_WithScale(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	info := &VideoInfo{
 		Codec:  "h264",
@@ -605,7 +605,7 @@ func TestBuildFFmpegArgs_WithScale(t *testing.T) {
 
 // TestBuildFFmpegArgs_NoScaleWhenLarger tests no scaling when target is larger
 func TestBuildFFmpegArgs_NoScaleWhenLarger(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	info := &VideoInfo{
 		Codec:  "h264",
@@ -722,7 +722,7 @@ func TestCacheKeyGeneration(t *testing.T) {
 
 // TestTranscoderInitializesCacheLocks tests that cache locks map is initialized
 func TestTranscoderInitializesCacheLocks(t *testing.T) {
-	trans := New("/tmp/cache", "", true)
+	trans := New("/tmp/cache", "", true, "none")
 
 	if trans.cacheLocks == nil {
 		t.Error("cacheLocks map should be initialized")
@@ -736,7 +736,7 @@ func TestTranscoderInitializesCacheLocks(t *testing.T) {
 // TestServeCachedFile_ValidCache tests serving a valid cached file
 func TestServeCachedFile_ValidCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create source file
 	sourcePath := filepath.Join(tmpDir, "source.mp4")
@@ -769,7 +769,7 @@ func TestServeCachedFile_ValidCache(t *testing.T) {
 // TestServeCachedFile_WithHTTPResponseWriter tests serving with proper headers
 func TestServeCachedFile_WithHTTPResponseWriter(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create source file
 	sourcePath := filepath.Join(tmpDir, "source.mp4")
@@ -822,7 +822,7 @@ func TestServeCachedFile_WithHTTPResponseWriter(t *testing.T) {
 // TestServeCachedFile_StaleCache tests that stale cache returns error
 func TestServeCachedFile_StaleCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create cache first (old)
 	cachePath := filepath.Join(tmpDir, "cached.mp4")
@@ -853,7 +853,7 @@ func TestServeCachedFile_StaleCache(t *testing.T) {
 // TestServeCachedFile_MissingCache tests handling of missing cache
 func TestServeCachedFile_MissingCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	sourcePath := filepath.Join(tmpDir, "source.mp4")
 	if err := os.WriteFile(sourcePath, []byte("source"), 0o644); err != nil {
@@ -898,7 +898,7 @@ func TestGetOrStartTranscodeAndWait_CachedFile(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create a test video
 	testVideo := createTestVideo(t, tmpDir)
@@ -944,7 +944,7 @@ func TestGetOrStartTranscodeAndWait_WaitsForCompletion(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create a test video
 	testVideo := createTestVideo(t, tmpDir)
@@ -996,7 +996,7 @@ func TestGetOrStartTranscodeAndWait_ConcurrentRequests(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", true)
+	trans := New(tmpDir, "", true, "none")
 
 	// Create a test video
 	testVideo := createTestVideo(t, tmpDir)
@@ -1039,7 +1039,7 @@ func TestGetOrStartTranscodeAndWait_ConcurrentRequests(t *testing.T) {
 // TestGetOrStartTranscodeAndWait_Disabled tests error when transcoding disabled
 func TestGetOrStartTranscodeAndWait_Disabled(t *testing.T) {
 	tmpDir := t.TempDir()
-	trans := New(tmpDir, "", false) // disabled
+	trans := New(tmpDir, "", false, "none") // disabled
 
 	info := &VideoInfo{
 		Codec:    "hevc",
@@ -1086,4 +1086,282 @@ func createTestVideo(t *testing.T, dir string) string {
 	}
 
 	return videoPath
+}
+
+// =============================================================================
+// Helper Function Tests
+// =============================================================================
+
+func TestGetEncoderInfo(t *testing.T) {
+	tests := []struct {
+		name          string
+		gpuAvailable  bool
+		gpuEncoder    string
+		gpuAccel      GPUAccel
+		targetWidth   int
+		videoWidth    int
+		needsReencode bool
+		expected      string
+	}{
+		{
+			name:          "Stream copy mode",
+			gpuAvailable:  false,
+			targetWidth:   0,
+			videoWidth:    1920,
+			needsReencode: false,
+			expected:      " [stream copy]",
+		},
+		{
+			name:          "GPU encoding",
+			gpuAvailable:  true,
+			gpuEncoder:    "h264_nvenc",
+			gpuAccel:      GPUAccelNVIDIA,
+			targetWidth:   1280,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [GPU: nvidia/h264_nvenc]",
+		},
+		{
+			name:          "CPU encoding",
+			gpuAvailable:  false,
+			targetWidth:   1280,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [CPU: libx264]",
+		},
+		{
+			name:          "GPU encoding with VA-API",
+			gpuAvailable:  true,
+			gpuEncoder:    "h264_vaapi",
+			gpuAccel:      GPUAccelVAAPI,
+			targetWidth:   720,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [GPU: vaapi/h264_vaapi]",
+		},
+		{
+			name:          "No scaling but needs reencode",
+			gpuAvailable:  false,
+			targetWidth:   0,
+			videoWidth:    1920,
+			needsReencode: true,
+			expected:      " [CPU: libx264]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans := New("/tmp/cache", "", true, "none")
+			trans.gpuAvailable = tt.gpuAvailable
+			trans.gpuEncoder = tt.gpuEncoder
+			trans.gpuAccel = tt.gpuAccel
+
+			info := &VideoInfo{
+				Width:  tt.videoWidth,
+				Height: 1080,
+			}
+
+			result := trans.getEncoderInfo(tt.targetWidth, info, tt.needsReencode)
+
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestFinalizeCache(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupTempFile bool
+		tempSize      int
+		expectSuccess bool
+	}{
+		{
+			name:          "Successful cache finalization",
+			setupTempFile: true,
+			tempSize:      1024,
+			expectSuccess: true,
+		},
+		{
+			name:          "Missing temp file",
+			setupTempFile: false,
+			expectSuccess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans := New("/tmp/cache", "", true, "none")
+
+			dir := t.TempDir()
+			tempPath := filepath.Join(dir, "test.mp4.tmp")
+			cachePath := filepath.Join(dir, "test.mp4")
+
+			if tt.setupTempFile {
+				// Create temp file with some data
+				data := make([]byte, tt.tempSize)
+				if err := os.WriteFile(tempPath, data, 0o644); err != nil {
+					t.Fatalf("Failed to create temp file: %v", err)
+				}
+			}
+
+			trans.finalizeCache(tempPath, cachePath)
+
+			if tt.expectSuccess {
+				// Verify cache file exists
+				if _, err := os.Stat(cachePath); err != nil {
+					t.Errorf("Expected cache file to exist: %v", err)
+				}
+
+				// Verify temp file was removed
+				if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+					t.Error("Expected temp file to be removed")
+				}
+			} else {
+				// Verify cache file does not exist if temp file was missing
+				if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+					t.Error("Expected cache file to not exist when temp file is missing")
+				}
+			}
+		})
+	}
+}
+
+func TestStreamToCacheAndWriter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping stream test in short mode")
+	}
+
+	trans := New("/tmp/cache", "", true, "none")
+	ctx := context.Background()
+
+	// Create a pipe to simulate ffmpeg stdout
+	reader, writer := io.Pipe()
+
+	// Create cache file
+	dir := t.TempDir()
+	cacheFile, err := os.Create(filepath.Join(dir, "cache.mp4"))
+	if err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+	defer cacheFile.Close()
+
+	// Create output buffer
+	output := &bytes.Buffer{}
+
+	// Write test data in background
+	testData := []byte("test video data")
+	go func() {
+		writer.Write(testData)
+		writer.Close()
+	}()
+
+	// Test streaming
+	err = trans.streamToCacheAndWriter(ctx, reader, cacheFile, output, "/test/video.mp4")
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Verify data was written to output
+	if !bytes.Equal(output.Bytes(), testData) {
+		t.Errorf("Expected output %q, got %q", testData, output.Bytes())
+	}
+
+	// Verify data was written to cache
+	cacheFile.Close()
+	cacheData, err := os.ReadFile(filepath.Join(dir, "cache.mp4"))
+	if err != nil {
+		t.Fatalf("Failed to read cache file: %v", err)
+	}
+
+	if !bytes.Equal(cacheData, testData) {
+		t.Errorf("Expected cache data %q, got %q", testData, cacheData)
+	}
+}
+
+func TestHandleTranscodeFailure(t *testing.T) {
+	tests := []struct {
+		name              string
+		gpuAvailable      bool
+		isGPUError        bool
+		expectRetry       bool
+		expectGPUDisabled bool
+	}{
+		{
+			name:              "GPU error triggers retry",
+			gpuAvailable:      true,
+			isGPUError:        true,
+			expectRetry:       true,
+			expectGPUDisabled: true,
+		},
+		{
+			name:              "Non-GPU error does not retry",
+			gpuAvailable:      true,
+			isGPUError:        false,
+			expectRetry:       false,
+			expectGPUDisabled: false,
+		},
+		{
+			name:              "GPU not available, no retry",
+			gpuAvailable:      false,
+			isGPUError:        true,
+			expectRetry:       false,
+			expectGPUDisabled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans := New("/tmp/cache", "", true, "none")
+			trans.gpuAvailable = tt.gpuAvailable
+
+			dir := t.TempDir()
+			tempPath := filepath.Join(dir, "test.mp4.tmp")
+			cachePath := filepath.Join(dir, "test.mp4")
+
+			// Create temp file
+			cacheFile, err := os.Create(tempPath)
+			if err != nil {
+				t.Fatalf("Failed to create temp file: %v", err)
+			}
+
+			ctx := context.Background()
+			output := &bytes.Buffer{}
+
+			var stderr bytes.Buffer
+			if tt.isGPUError {
+				stderr.WriteString("libcuda.so.1: cannot open shared object file")
+			} else {
+				stderr.WriteString("Unknown decoder")
+			}
+
+			streamErr := fmt.Errorf("stream error")
+			cmdErr := fmt.Errorf("command error")
+
+			// Call handleTranscodeFailure
+			err = trans.handleTranscodeFailure(ctx, "/test/video.mp4", output, cachePath,
+				1280, &VideoInfo{Width: 1920, Height: 1080}, true,
+				streamErr, cmdErr, &stderr, cacheFile, tempPath)
+
+			// We always expect an error
+			if err == nil {
+				t.Error("Expected error, got nil")
+			}
+
+			// Verify GPU disabled state
+			trans.gpuMu.Lock()
+			gpuDisabled := !trans.gpuAvailable
+			trans.gpuMu.Unlock()
+
+			if tt.expectGPUDisabled && !gpuDisabled {
+				t.Error("Expected GPU to be disabled")
+			}
+
+			if !tt.expectGPUDisabled && gpuDisabled && tt.gpuAvailable {
+				t.Error("Expected GPU to remain available")
+			}
+		})
+	}
 }
