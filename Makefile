@@ -10,7 +10,7 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 STATIC_DIR := static
 
 .PHONY: all build build-all run dev dev-info dev-frontend dev-full \
-        test test-short test-coverage test-coverage-report test-race test-bench test-clean \
+        test test-short test-coverage test-coverage-report test-race test-bench test-bench-performance test-bench-large test-performance test-clean \
         test-unit test-integration test-all test-coverage-merge pr-check \
         test-package test-failures \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
@@ -205,6 +205,23 @@ test-race:
 test-bench:
 	@echo "Running benchmarks..."
 	$(GO_TEST) -bench=. -benchmem ./... 2>&1 | tee bench.log
+
+test-bench-performance:
+	@echo "Running performance optimization benchmarks..."
+	@echo "This includes benchmarks for cache size optimization, query optimization, and HTTP endpoints"
+	$(GO_TEST) -bench=BenchmarkGetCacheSize -benchmem ./internal/media/ 2>&1 | tee bench-cache.log
+	$(GO_TEST) -bench=BenchmarkListDirectory -benchmem ./internal/database/ 2>&1 | tee bench-queries.log
+	$(GO_TEST) -bench=BenchmarkGetMediaInDirectory -benchmem ./internal/database/ 2>&1 | tee bench-media.log
+	$(GO_TEST) -bench=Benchmark.*Endpoint -benchmem ./internal/handlers/ 2>&1 | tee bench-handlers.log
+	@echo "Benchmark results saved to bench-*.log files"
+
+test-bench-large:
+	@echo "Running large dataset benchmarks (this may take a while)..."
+	$(GO_TEST) -bench=.*Large -benchtime=10s -timeout=30m ./internal/database/ ./internal/media/ 2>&1 | tee bench-large.log
+
+test-performance:
+	@echo "Running performance tests..."
+	$(GO_TEST) -v -run=".*Performance.*" -timeout=30m ./internal/database/ ./internal/media/ ./internal/handlers/ 2>&1 | tee test-performance.log
 
 # Run only unit tests (fast, no integration tag)
 # Unit tests are tests that don't require external dependencies
@@ -453,7 +470,10 @@ help:
 	@echo "                             make test-coverage PKG=handlers TESTARGS='-run=TestHealth'"
 	@echo "  test-coverage-report     Display coverage report summary"
 	@echo "  test-race                Run tests with race detector"
-	@echo "  test-bench               Run benchmarks"
+	@echo "  test-bench               Run all benchmarks"
+	@echo "  test-bench-performance   Run performance optimization benchmarks"
+	@echo "  test-bench-large         Run large dataset benchmarks"
+	@echo "  test-performance         Run performance tests"
 	@echo "  test-clean               Clean test artifacts"
 	@echo ""
 	@echo "Lint targets (Go):"

@@ -217,20 +217,51 @@ WEBAUTHN_ORIGINS=https://example.com,https://media.example.com
 
 ## Memory Settings
 
+### MEMORY_RATIO (Recommended)
+
+Percentage of container memory to allocate to Go heap (0.0-1.0). **Recommended for production.**
+
+```bash
+MEMORY_RATIO=0.75  # Recommended value for production
+```
+
+**Why use MEMORY_RATIO:**
+
+- ✅ Container-aware: Respects memory limits
+- ✅ Adaptive: GC scales with workload
+- ✅ Lower overhead: 0.16% CPU during heavy load
+- ✅ Memory-safe: Prevents OOM conditions
+
+**Benchmark results** (3,106 thumbnail test):
+
+- `0.85` (default): 0.18% overhead, 7 GC/s under load
+- `0.75` (recommended): 0.16% overhead, 6 GC/s under load ✅
+- `0.70`: 0.20% overhead, 8 GC/s under load
+
+### GOGC (Alternative)
+
+Go garbage collection target percentage. Use for non-containerized deployments.
+
+```bash
+GOGC=150
+```
+
+**When to use GOGC:**
+
+- Running on bare metal or VMs (not containerized)
+- No memory limits set
+- Want simple, fixed configuration
+
+**Performance:** 0.15% CPU overhead, 4.5 GC/s (constant rate)
+
+**Note:** MEMORY_RATIO=0.75 is preferred for Docker/Kubernetes deployments.
+
 ### MEMORY_LIMIT
 
 Container memory limit in bytes (typically set via Kubernetes Downward API).
 
 ```bash
 MEMORY_LIMIT=536870912  # 512MB
-```
-
-### MEMORY_RATIO
-
-Percentage of container memory to allocate to Go heap (0.0-1.0). Defaults to `0.85`.
-
-```bash
-MEMORY_RATIO=0.85
 ```
 
 ### GOMEMLIMIT

@@ -40,6 +40,15 @@ spec:
                   env:
                       - name: LOG_HEALTH_CHECKS
                         value: 'false'
+                      - name: MEMORY_LIMIT
+                        valueFrom:
+                            resourceFieldRef:
+                                resource: limits.memory
+                      - name: MEMORY_RATIO
+                        value: '0.75'
+                      # Alternative: Use GOGC for non-containerized deployments
+                      # - name: GOGC
+                      #   value: '150'
                   resources:
                       requests:
                           gpu.intel.com/i915: '1'

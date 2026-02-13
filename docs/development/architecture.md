@@ -610,3 +610,10 @@ The retry mechanism is integrated throughout the application:
 5. **Network**: Use dedicated network for NFS traffic if possible
 
 See also: [INDEX_WORKERS Environment Variable](../admin/environment-variables.md#index_workers) and [NFS Troubleshooting](../troubleshooting.md#nfs-stale-file-handle-errors)
+
+## See Also
+
+- [Monitoring Stack](monitoring.md) - Development monitoring with Prometheus and Grafana
+- [Testing Guide](testing.md) - Backend testing practices
+- [Memory & GC Tuning](../admin/memory-tuning.md) - Performance optimization
+- [Metrics Reference](../admin/metrics.md) - Complete metrics documentation

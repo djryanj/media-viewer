@@ -42,6 +42,8 @@ services:
             - METRICS_ENABLED=true
             - INDEX_INTERVAL=30m
             - SESSION_DURATION=24h
+            - MEMORY_RATIO=0.75 # Recommended: Adaptive GC
+            # - GOGC=150  # Alternative for non-containerized deployments
         restart: unless-stopped
 
 volumes:
@@ -85,6 +87,8 @@ services:
         runtime: nvidia # Use NVIDIA runtime
         environment:
             - GPU_ACCEL=nvidia
+            - MEMORY_RATIO=0.75 # Recommended: Adaptive GC
+            # - GOGC=150  # Alternative for non-containerized deployments
         # ... rest of configuration
 ```
 
@@ -117,6 +121,8 @@ services:
             - /dev/dri:/dev/dri
         environment:
             - GPU_ACCEL=vaapi
+            - MEMORY_RATIO=0.75 # Recommended: Adaptive GC
+            # - GOGC=150  # Alternative for non-containerized deployments
         # ... rest of configuration
 ```
 

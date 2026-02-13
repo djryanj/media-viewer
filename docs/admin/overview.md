@@ -11,6 +11,7 @@ This section covers server administration, configuration, and monitoring for Med
 ## Monitoring & Operations
 
 - **[Metrics & Monitoring](metrics.md)** - Prometheus metrics for performance monitoring and alerting
+- **[Memory & GC Tuning](memory-tuning.md)** - Optimize garbage collection and memory usage
 - **[Thumbnail Management](thumbnails.md)** - Thumbnail generation, caching, and maintenance
 
 ## Advanced Features
@@ -47,7 +48,7 @@ Use [Prometheus metrics](metrics.md) to identify bottlenecks:
 - **Filesystem Latency**: Critical for NFS deployments - monitor `filesystem_operation_duration`
 - **Indexing Performance**: Track `indexer_files_per_second` and batch processing times
 - **Thumbnail Generation**: Analyze phase timing (decode/resize/encode) to optimize
-- **Memory Usage**: Monitor memory metrics to tune `GOMEMLIMIT`
+- **Memory & GC**: Tune `MEMORY_RATIO` or `GOGC` for optimal performance - see [Memory & GC Tuning](memory-tuning.md)
 - **Database Performance**: Watch transaction durations and query latencies
 
 See [Metrics & Monitoring](metrics.md) for detailed guidance.

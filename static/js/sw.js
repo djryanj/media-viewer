@@ -1,8 +1,18 @@
 /**
  * Service Worker for Media Viewer PWA
+ *
+ * Caching Strategy:
+ * - App Shell (HTML/CSS/JS): Pre-cached on install, cache-first with background update
+ * - Static Assets (images/fonts): Cache-first with background update
+ * - Navigation: Network-first with cache fallback
+ * - API endpoints with ETag support: Network-first with cache fallback (respects 304)
+ *   - /api/media (large responses up to 4MB)
+ *   - /api/files (directory listings)
+ *   - /api/thumbnail (cached thumbnails)
+ * - Uncached paths: /login.html, /api/auth, /api/logout (always fresh)
  */
 
-const CACHE_NAME = 'media-viewer-v2';
+const CACHE_NAME = 'media-viewer-v4';
 
 // Assets to cache on install (app shell)
 const PRECACHE_ASSETS = [
@@ -27,10 +37,18 @@ const PRECACHE_ASSETS = [
     '/icons/icon-512x512.png',
 ];
 
-// Paths that should NEVER be cached
+// Paths that should NEVER be cached (always fresh from network)
 const NO_CACHE_PATHS = [
-    '/api/',
     '/login.html', // Don't cache login page - always fetch fresh
+    '/api/auth', // Authentication endpoints
+    '/api/logout', // Logout endpoint
+];
+
+// API paths with network-first caching (have ETags/304 support)
+const NETWORK_FIRST_API_PATHS = [
+    '/api/media', // Large responses with ETag support
+    '/api/files', // Directory listings with ETag support
+    '/api/thumbnail', // Thumbnails with ETag support
 ];
 
 // Install event - cache app shell
@@ -106,6 +124,53 @@ self.addEventListener('fetch', (event) => {
                     );
                 }
                 return new Response('Offline', { status: 503 });
+            })
+        );
+        return;
+    }
+
+    // Network-first for API paths with ETag revalidation
+    // Check cache first, extract ETag, and use If-None-Match to get 304 responses
+    const isNetworkFirstAPI = NETWORK_FIRST_API_PATHS.some((path) => url.pathname.startsWith(path));
+
+    if (isNetworkFirstAPI) {
+        event.respondWith(
+            caches.match(request).then((cached) => {
+                // Build request with If-None-Match header if we have a cached response
+                let fetchRequest = request;
+                if (cached && cached.headers.has('ETag')) {
+                    const etag = cached.headers.get('ETag');
+                    const headers = new Headers(request.headers);
+                    headers.set('If-None-Match', etag);
+                    fetchRequest = new Request(request, { headers });
+                }
+
+                return fetch(fetchRequest)
+                    .then((response) => {
+                        // 304 Not Modified - return cached response (it has the body)
+                        if (response.status === 304 && cached) {
+                            console.debug('[SW] 304 Not Modified, using cache:', url.pathname);
+                            return cached;
+                        }
+
+                        // Fresh response - cache it
+                        if (response.ok) {
+                            const responseClone = response.clone();
+                            caches.open(CACHE_NAME).then((cache) => {
+                                cache.put(request, responseClone);
+                            });
+                        }
+                        return response;
+                    })
+                    .catch(() => {
+                        // Network failed, try serving from cache
+                        if (cached) {
+                            console.debug('[SW] Serving from cache (offline):', url.pathname);
+                            return cached;
+                        }
+                        // No cache available
+                        return new Response('Offline - resource not in cache', { status: 503 });
+                    });
             })
         );
         return;

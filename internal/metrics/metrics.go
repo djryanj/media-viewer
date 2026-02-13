@@ -349,6 +349,27 @@ var (
 			Help: "Total number of completed GC cycles",
 		},
 	)
+
+	GoGCPauseTotalSeconds = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_go_gc_pause_total_seconds",
+			Help: "Cumulative seconds spent in GC stop-the-world pauses",
+		},
+	)
+
+	GoGCPauseLastSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_go_gc_pause_last_seconds",
+			Help: "Duration of the last GC pause in seconds",
+		},
+	)
+
+	GoGCCPUFraction = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_go_gc_cpu_fraction",
+			Help: "Fraction of CPU time used by GC (0.0-1.0)",
+		},
+	)
 )
 
 // Polling-based change detection metrics

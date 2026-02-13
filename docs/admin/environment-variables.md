@@ -33,12 +33,14 @@ Complete reference for all environment variables supported by Media Viewer.
 | `WEBAUTHN_ORIGINS`            | _(none)_       | Allowed origins (required if enabled)                  |
 | **Memory Management**         |                |                                                        |
 | `MEMORY_LIMIT`                | _(none)_       | Container memory limit in bytes                        |
-| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.0-1.0)                     |
+| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.75 recommended)            |
+| `GOGC`                        | `150`          | Go GC target percentage (Go default: 100)              |
 | `GOMEMLIMIT`                  | _(none)_       | Direct Go memory limit override                        |
 | **Logging**                   |                |                                                        |
 | `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                  |
 | `LOG_STATIC_FILES`            | `false`        | Log static file requests                               |
 | `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                              |
+| `SLOW_QUERY_THRESHOLD_MS`     | `100`          | Threshold (ms) for logging slow database queries       |
 
 ## Paths
 
@@ -467,8 +469,68 @@ MEMORY_RATIO=0.85
 **Recommended values:**
 
 - Small library, few videos: `0.85` (default)
-- Large library, active transcoding: `0.75`
+- Large library, active transcoding: `0.75` **(recommended for production)**
 - Heavy concurrent thumbnail generation: `0.70`
+
+**Benchmark Results:**
+
+Testing with 3,106 thumbnail generation workload:
+
+| MEMORY_RATIO           | GC CPU %  | Idle GC Rate | Load GC Rate | Memory Usage |
+| ---------------------- | --------- | ------------ | ------------ | ------------ |
+| 0.85 (default)         | 0.18%     | 0.3/s        | 7/s          | 520 MB       |
+| **0.75 (recommended)** | **0.16%** | **0.2/s**    | **6/s**      | **534 MB**   |
+| 0.70                   | 0.20%     | 0.4/s        | 8/s          | 480 MB       |
+
+**Why 0.75 is optimal:**
+
+- ✅ Lowest GC overhead (0.16%)
+- ✅ Adaptive: scales with workload
+- ✅ More cache space (+6% vs default)
+- ✅ Container-aware (respects memory limits)
+
+For detailed tuning guidance, see [Memory and GC Tuning](memory-tuning.md).
+
+### GOGC
+
+Go garbage collection target percentage. Controls how much the heap can grow before triggering GC.
+
+```bash
+GOGC=150
+```
+
+- **Default**: `100` (Go runtime default)
+- **Alternative to MEMORY_RATIO**: Use `150` for non-containerized deployments
+- **Effect**: Higher values = less frequent GC, more memory usage
+- **Note**: MEMORY_RATIO approach is preferred for production containerized deployments
+
+**Comparison:**
+
+| Approach              | Idle Overhead | Load Overhead | Memory Behavior |
+| --------------------- | ------------- | ------------- | --------------- |
+| **MEMORY_RATIO=0.75** | **0.009%**    | **0.16%**     | **Adaptive** ✅ |
+| GOGC=150              | 0.15%         | 0.15%         | Fixed 📊        |
+
+**How GOGC works:**
+
+- `GOGC=100`: GC triggers at 2x live heap (e.g., 10MB → 20MB)
+- `GOGC=150`: GC triggers at 2.5x live heap (e.g., 10MB → 25MB)
+- `GOGC=200`: GC triggers at 3x live heap (e.g., 10MB → 30MB)
+
+**When to use GOGC:**
+
+- **Use GOGC=150** when:
+    - Not using containers (bare metal, VMs)
+    - Memory is unlimited
+    - Want simple, predictable configuration
+
+- **Use MEMORY_RATIO=0.75** when:
+    - Running in Docker/Kubernetes
+    - Have memory limits set
+    - Want adaptive behavior
+    - Need optimal performance (recommended)
+
+For comprehensive tuning guidance, benchmarks, and troubleshooting, see [Memory and GC Tuning](memory-tuning.md).
 
 ### GOMEMLIMIT
 
@@ -519,6 +581,21 @@ LOG_HEALTH_CHECKS=true
 
 - Default: `true`
 - Set to `false` to reduce log noise from monitoring
+
+### SLOW_QUERY_THRESHOLD_MS
+
+Threshold in milliseconds for logging slow database queries.
+
+```bash
+SLOW_QUERY_THRESHOLD_MS=100
+```
+
+- Default: `100` (100 milliseconds)
+- Queries exceeding this threshold will be logged as warnings
+- Useful for identifying performance bottlenecks in production
+- Set to a higher value (e.g., `500`) if you want to only log very slow queries
+- Set to `0` to log all queries (not recommended for production)
+- Example log output: `Slow query detected: operation=list_directory duration=0.235s status=success`
 
 ## Duration Format
 

@@ -13,7 +13,7 @@ See the [OpenAPI Specification](openapi.md) for interactive documentation:
 - `GET /livez` - Liveness probe
 - `GET /readyz` - Readiness probe
 - `GET /version` - Version information
-- `GET /metrics` - Prometheus metrics (port 9090)
+- `GET /metrics` - Prometheus metrics (port 9090 internal, 9091 on host)
 
 **Statistics:**
 

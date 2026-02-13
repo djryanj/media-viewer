@@ -6,7 +6,6 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"media-viewer/internal/logging"
@@ -74,7 +73,6 @@ func LoadJPEGDownsampled(path string, targetWidth, targetHeight int) (image.Imag
 		intermediateWidth := targetWidth * 2
 		intermediateHeight := targetHeight * 2
 		intermediate := imaging.Resize(img, intermediateWidth, intermediateHeight, imaging.Box)
-		runtime.GC() // Force GC to reclaim large image memory
 
 		// Stage 2: High-quality resize to final size
 		return imaging.Resize(intermediate, targetWidth, targetHeight, imaging.Lanczos), nil
