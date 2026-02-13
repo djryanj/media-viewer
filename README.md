@@ -1,6 +1,8 @@
 # Media Viewer
 
-<div style="text-align:center"><img src="static/icons/icon-192x192.png" /></div>
+<div align="center">
+  <img src="static/icons/icon-192x192.png" alt="Media Viewer Logo">
+</div>
 
 A lightweight, containerized, single-user web application for browsing and viewing images and videos from a mounted directory.
 
@@ -54,6 +56,7 @@ A lightweight, containerized, single-user web application for browsing and viewi
 - [User Guide](https://djryanj.github.io/media-viewer/user-guide/overview/)
 - [API Documentation](https://djryanj.github.io/media-viewer/api/overview/)
 - [Development Guide](https://djryanj.github.io/media-viewer/development/contributing/)
+- [Monitoring & Performance Testing](https://djryanj.github.io/media-viewer/development/monitoring/)
 
 ## AI Disclosure
 
@@ -86,6 +89,8 @@ services:
             - METRICS_PORT=9090
             - METRICS_ENABLED=true
             - INDEX_INTERVAL=30m
+            - MEMORY_RATIO=0.75 # Recommended: Adaptive GC with 0.16% CPU overhead
+            # - GOGC=150  # Alternative for non-containerized deployments
             # - GPU_ACCEL=auto  # Optional: auto (default), nvidia, vaapi, videotoolbox, or none
             # - INDEX_WORKERS=3  # Optional: Set to 3 for NFS mounts, 8-16 for fast local storage
             # - TRANSCODER_LOG_DIR=/logs/transcoder  # Optional: Enable to save FFmpeg logs

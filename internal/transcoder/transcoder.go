@@ -59,6 +59,12 @@ type Transcoder struct {
 
 	// Shutdown flag to prevent retries during cleanup
 	shuttingDown atomic.Bool
+
+	// Cache size caching (2-minute cache like thumbnail generator)
+	cachedSize      atomic.Int64
+	cachedCount     atomic.Int64
+	lastCacheUpdate atomic.Int64 // Unix timestamp
+	cacheMu         sync.Mutex   // Protects recalculation
 }
 
 // VideoInfo contains information about a video file.
@@ -1399,7 +1405,44 @@ func (t *Transcoder) GetCacheSize() (size int64, count int, err error) {
 		return 0, 0, nil
 	}
 
-	return t.getDirSizeAndCount(t.cacheDir)
+	// Check if cache is still valid (2 minutes)
+	const cacheDuration = 2 * 60 // 2 minutes in seconds
+	now := time.Now().Unix()
+	lastUpdate := t.lastCacheUpdate.Load()
+
+	if now-lastUpdate < cacheDuration {
+		// Return cached values
+		return t.cachedSize.Load(), int(t.cachedCount.Load()), nil
+	}
+
+	// Cache expired or not initialized, recalculate
+	t.cacheMu.Lock()
+	defer t.cacheMu.Unlock()
+
+	// Double-check after acquiring lock (another goroutine might have updated it)
+	lastUpdate = t.lastCacheUpdate.Load()
+	if now-lastUpdate < cacheDuration {
+		return t.cachedSize.Load(), int(t.cachedCount.Load()), nil
+	}
+
+	// Recalculate cache size
+	size, count, err = t.getDirSizeAndCount(t.cacheDir)
+	if err != nil {
+		// On error, return cached values if available
+		cachedSize := t.cachedSize.Load()
+		cachedCount := t.cachedCount.Load()
+		if cachedSize > 0 || cachedCount > 0 {
+			return cachedSize, int(cachedCount), nil
+		}
+		return 0, 0, err
+	}
+
+	// Update cache
+	t.cachedSize.Store(size)
+	t.cachedCount.Store(int64(count))
+	t.lastCacheUpdate.Store(now)
+
+	return size, count, nil
 }
 
 // progressTrackingReader wraps an io.Reader to log streaming progress

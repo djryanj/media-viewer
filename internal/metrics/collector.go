@@ -119,6 +119,17 @@ func (c *Collector) collectMemoryMetrics() {
 		c.lastGCCount = memStats.NumGC
 	}
 
+	// Track GC pause times
+	GoGCPauseTotalSeconds.Add(float64(memStats.PauseTotalNs) / 1e9)
+	if memStats.NumGC > 0 {
+		// Get the most recent pause time (ring buffer)
+		idx := (memStats.NumGC + 255) % 256
+		GoGCPauseLastSeconds.Set(float64(memStats.PauseNs[idx]) / 1e9)
+	}
+
+	// Track GC CPU overhead (fraction of time spent in GC)
+	GoGCCPUFraction.Set(memStats.GCCPUFraction)
+
 	// Report GOMEMLIMIT
 	if limit := debug.SetMemoryLimit(-1); limit > 0 && limit < 1<<62 {
 		GoMemLimit.Set(float64(limit))

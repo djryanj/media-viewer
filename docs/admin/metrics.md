@@ -188,22 +188,26 @@ Monitor authentication and session management.
 
 Monitor memory usage and garbage collection.
 
-| Metric                                | Type    | Labels | Description                                         |
-| ------------------------------------- | ------- | ------ | --------------------------------------------------- |
-| `media_viewer_memory_usage_ratio`     | Gauge   | -      | Memory usage as ratio of limit (0.0-1.0)            |
-| `media_viewer_memory_paused`          | Gauge   | -      | Whether processing is paused due to memory pressure |
-| `media_viewer_memory_gc_pauses_total` | Counter | -      | Times processing was paused due to memory pressure  |
-| `media_viewer_go_memlimit_bytes`      | Gauge   | -      | Configured GOMEMLIMIT in bytes                      |
-| `media_viewer_go_memalloc_bytes`      | Gauge   | -      | Current Go heap allocation                          |
-| `media_viewer_go_memsys_bytes`        | Gauge   | -      | Total memory obtained from OS                       |
-| `media_viewer_go_gc_runs_total`       | Counter | -      | Completed garbage collection cycles                 |
+| Metric                                   | Type    | Labels | Description                                         |
+| ---------------------------------------- | ------- | ------ | --------------------------------------------------- |
+| `media_viewer_memory_usage_ratio`        | Gauge   | -      | Memory usage as ratio of limit (0.0-1.0)            |
+| `media_viewer_memory_paused`             | Gauge   | -      | Whether processing is paused due to memory pressure |
+| `media_viewer_memory_gc_pauses_total`    | Counter | -      | Times processing was paused due to memory pressure  |
+| `media_viewer_go_memlimit_bytes`         | Gauge   | -      | Configured GOMEMLIMIT in bytes                      |
+| `media_viewer_go_memalloc_bytes`         | Gauge   | -      | Current Go heap allocation                          |
+| `media_viewer_go_memsys_bytes`           | Gauge   | -      | Total memory obtained from OS                       |
+| `media_viewer_go_gc_runs_total`          | Counter | -      | Completed garbage collection cycles                 |
+| `media_viewer_go_gc_pause_total_seconds` | Counter | -      | Cumulative time spent in GC pauses                  |
+| `media_viewer_go_gc_pause_last_seconds`  | Gauge   | -      | Duration of most recent GC pause                    |
+| `media_viewer_go_gc_cpu_fraction`        | Gauge   | -      | Fraction of CPU time used by GC (0.0-1.0)           |
 
 **Use cases:**
 
 - Monitor memory pressure during indexing
-- Tune GOMEMLIMIT for your environment
+- Tune GOMEMLIMIT and GOGC for your environment
 - Detect memory leaks
-- Correlate GC pauses with performance issues
+- Measure GC CPU overhead and pause times
+- Evaluate impact of GC configuration changes
 
 ### Application Info
 
@@ -286,6 +290,44 @@ rate(media_viewer_db_transaction_duration_seconds_count{type="commit"}[5m])
 rate(media_viewer_db_size_bytes{file="main"}[1h])
 ```
 
+### Garbage Collection Performance
+
+Monitor CPU overhead and pause times from garbage collection:
+
+```promql
+# GC frequency (collections per second)
+rate(media_viewer_go_gc_runs_total[5m])
+
+# Total GC pause time per second (in milliseconds)
+rate(media_viewer_go_gc_pause_total_seconds[5m]) * 1000
+
+# GC CPU overhead percentage
+media_viewer_go_gc_cpu_fraction * 100
+
+# Most recent GC pause duration (in milliseconds)
+media_viewer_go_gc_pause_last_seconds * 1000
+
+# Memory allocation rate (MB/s)
+rate(media_viewer_go_memalloc_bytes[5m]) / 1024 / 1024
+
+# Memory pressure (% of GOMEMLIMIT used)
+media_viewer_go_memalloc_bytes / media_viewer_go_memlimit_bytes * 100
+
+# GC efficiency: bytes allocated per GC cycle
+rate(media_viewer_go_memalloc_bytes[5m]) / rate(media_viewer_go_gc_runs_total[5m])
+```
+
+**Interpreting GC metrics:**
+
+- **GC CPU Fraction > 0.05 (5%)**: GC overhead is high, consider tuning
+- **GC Frequency > 1/sec**: Very frequent collections, increase `GOGC` or `GOMEMLIMIT`
+- **Pause Time > 10ms**: May cause latency spikes in request handling
+- **Memory Pressure > 90%**: Runtime is aggressively GC'ing to stay under limit
+
+**For detailed tuning guidance, see [Memory and GC Tuning](memory-tuning.md).**
+
+````
+
 ### HTTP Performance
 
 ```promql
@@ -298,7 +340,7 @@ histogram_quantile(0.95,
 
 # Error rate (4xx + 5xx)
 sum(rate(media_viewer_http_requests_total{status=~"4..|5.."}[5m]))
-```
+````
 
 ### Transcoder Performance
 
@@ -418,6 +460,7 @@ Use metrics to guide performance optimization:
 
 ## See Also
 
+- [Memory and GC Tuning](memory-tuning.md) - Optimize garbage collection and memory usage
 - [Server Configuration](server-config.md) - Performance configuration options
 - [Thumbnail Management](thumbnails.md) - Thumbnail generation and caching
 - [Environment Variables](environment-variables.md) - Configuration reference

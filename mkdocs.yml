@@ -100,6 +100,7 @@ nav:
           - WebAuthn Setup: admin/webauthn.md
           - Thumbnail Management: admin/thumbnails.md
           - Metrics & Monitoring: admin/metrics.md
+          - Memory & GC Tuning: admin/memory-tuning.md
           - Security: admin/security.md
     - API Reference:
           - Overview: api/overview.md
@@ -114,6 +115,7 @@ nav:
           - OpenAPI Spec: api/openapi.md
     - Development:
           - Architecture: development/architecture.md
+          - Monitoring Stack: development/monitoring.md
           - Testing: development/testing.md
           - Sample Media: development/sample-media.md
           - Contributing: development/contributing.md

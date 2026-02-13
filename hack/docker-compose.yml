@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  media-viewer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: media-viewer
+    ports:
+      # Bind to all interfaces (0.0.0.0) for localhost and external access
+      - "0.0.0.0:8081:8080"
+    environment:
+      - MEDIA_DIR=/media
+      - CACHE_DIR=/cache
+      - DATABASE_DIR=/database
+      - PORT=8080
+      - THUMBNAILS_ENABLED=true
+      - INDEX_INTERVAL=30m
+      - THUMBNAIL_GENERATION_INTERVAL=60m
+      - LOG_LEVEL=debug
+      # Memory configuration for GC monitoring
+      - MEMORY_LIMIT=2147483648  # 2 GiB
+      - MEMORY_RATIO=0.75  # 75% of MEMORY_LIMIT for GOGC calculation
+      # Uncomment to test different GOGC values
+      # - GOGC=150
+      # - GOGC=200
+    volumes:
+      # Bind mount for media files (use absolute path)
+      #
+      # IMPORTANT: Update this path to point to your media directory
+      #
+      # Windows examples:
+      #   - C:\\Users\\YourName\\Videos\\media-viewer:/media
+      #   - D:\\Media\\Videos:/media
+      #
+      # Linux examples:
+      #   - /home/yourname/media-viewer:/media
+      #   - /mnt/nas/media:/media
+      #
+      # macOS examples:
+      #   - /Users/yourname/media-viewer:/media
+      #   - /Volumes/Media/videos:/media
+      #
+      # Note: The directory must exist on the host before starting
+      - C:\\Users\\YourName\\Videos\\media-viewer:/media
+      - cache-data:/cache
+      - db-data:/database
+    networks:
+      - monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/readyz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      # Bind to all interfaces for localhost and external access
+      - "0.0.0.0:9091:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    networks:
+      - monitoring
+    restart: unless-stopped
+    depends_on:
+      - media-viewer
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      # Bind to all interfaces for localhost and external access
+      - "0.0.0.0:3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboard.json:/var/lib/grafana/dashboards/media-viewer.json:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+networks:
+  monitoring:
+    driver: bridge
+    # Bridge network allows:
+    # - Container-to-container communication via service names
+    # - Host access via localhost or host IP
+    # - External access if firewall allows
+
+volumes:
+  # media-data volume removed - using bind mount instead
+  cache-data:
+  db-data:
+  prometheus-data:
+  grafana-data:

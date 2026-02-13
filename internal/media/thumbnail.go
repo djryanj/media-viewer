@@ -335,7 +335,6 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 		thumb = img // Folders already at correct size
 	} else {
 		thumb = imaging.Fit(img, 200, 200, imaging.Lanczos)
-		runtime.GC() // Force GC to reclaim memory from large source image
 	}
 	metrics.ThumbnailGenerationDurationDetailed.WithLabelValues(fileTypeStr, "resize").Observe(time.Since(resizeStart).Seconds())
 

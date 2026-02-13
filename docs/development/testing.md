@@ -751,6 +751,12 @@ Times vary based on system performance and video complexity.
 - **Target:** >80% (project-wide goal)
 - **Test count:** 46 tests (37 unit + 9 integration) + 5 benchmarks
 
+## See Also
+
+- [Monitoring Stack](monitoring.md) - Performance testing and metrics monitoring
+- [Architecture](architecture.md) - System architecture overview
+- [Memory & GC Tuning](../admin/memory-tuning.md) - Performance optimization guide
+
 ## Resources
 
 - [Go Testing Package](https://pkg.go.dev/testing)

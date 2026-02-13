@@ -1,8 +1,18 @@
 /**
  * Service Worker for Media Viewer PWA
+ *
+ * Caching Strategy:
+ * - App Shell (HTML/CSS/JS): Pre-cached on install, cache-first with background update
+ * - Static Assets (images/fonts): Cache-first with background update
+ * - Navigation: Network-first with cache fallback
+ * - API endpoints with ETag support: Network-first with cache fallback (respects 304)
+ *   - /api/media (large responses up to 4MB)
+ *   - /api/files (directory listings)
+ *   - /api/thumbnail (cached thumbnails)
+ * - Uncached paths: /login.html, /api/auth, /api/logout (always fresh)
  */
 
-const CACHE_NAME = 'media-viewer-v2';
+const CACHE_NAME = 'media-viewer-v3';
 
 // Assets to cache on install (app shell)
 const PRECACHE_ASSETS = [
@@ -27,10 +37,18 @@ const PRECACHE_ASSETS = [
     '/icons/icon-512x512.png',
 ];
 
-// Paths that should NEVER be cached
+// Paths that should NEVER be cached (always fresh from network)
 const NO_CACHE_PATHS = [
-    '/api/',
     '/login.html', // Don't cache login page - always fetch fresh
+    '/api/auth', // Authentication endpoints
+    '/api/logout', // Logout endpoint
+];
+
+// API paths with network-first caching (have ETags/304 support)
+const NETWORK_FIRST_API_PATHS = [
+    '/api/media', // Large responses with ETag support
+    '/api/files', // Directory listings with ETag support
+    '/api/thumbnail', // Thumbnails with ETag support
 ];
 
 // Install event - cache app shell
@@ -107,6 +125,38 @@ self.addEventListener('fetch', (event) => {
                 }
                 return new Response('Offline', { status: 503 });
             })
+        );
+        return;
+    }
+
+    // Network-first for API paths with ETag support (respects 304 Not Modified)
+    const isNetworkFirstAPI = NETWORK_FIRST_API_PATHS.some((path) => url.pathname.startsWith(path));
+
+    if (isNetworkFirstAPI) {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    // Only cache successful responses (200, 304)
+                    // Don't cache errors or redirects
+                    if (response.ok || response.status === 304) {
+                        const responseClone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(request, responseClone);
+                        });
+                    }
+                    return response;
+                })
+                .catch(() => {
+                    // Network failed, try serving from cache
+                    return caches.match(request).then((cached) => {
+                        if (cached) {
+                            console.debug('[SW] Serving from cache (offline):', url.pathname);
+                            return cached;
+                        }
+                        // No cache available
+                        return new Response('Offline - resource not in cache', { status: 503 });
+                    });
+                })
         );
         return;
     }
