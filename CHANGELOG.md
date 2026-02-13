@@ -7,30 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [Unreleased]
+## [0.13.2] - Unreleased
 
 ### Added
 
-- **Garbage Collection Performance Monitoring**: Added comprehensive GC metrics to track garbage collection overhead and tune performance:
+- **Garbage Collection Performance Monitoring** ([#261](https://github.com/djryanj/media-viewer/issues/261), [#262](https://github.com/djryanj/media-viewer/issues/2602)): Added comprehensive GC metrics to track garbage collection overhead and tune performance:
     - `media_viewer_go_gc_cpu_fraction` - Percentage of CPU time spent in GC
     - `media_viewer_go_gc_pause_total_seconds` - Cumulative time spent in GC pauses
     - `media_viewer_go_gc_pause_last_seconds` - Duration of most recent GC pause
     - Enhanced Grafana dashboard with dedicated "Garbage Collection Performance" section
     - Complete monitoring stack with Docker Compose, Prometheus, and Grafana in `hack/` directory
-    - Detailed GC tuning guide in `hack/GC-MONITORING.md`
-    - Helper scripts for both Linux/macOS (bash) and Windows (PowerShell):
-        - `start-monitoring.sh` / `start-monitoring.ps1` - Start monitoring stack with health checks
-        - `generate-load.sh` / `generate-load.ps1` - Generate load for GC performance testing
-- **Network Access Documentation**: Added comprehensive `hack/NETWORK-ACCESS.md` guide covering:
-    - Localhost, LAN, and external access configurations
-    - Firewall setup for Windows, Linux, and macOS
-    - Troubleshooting connection issues
-    - IP address discovery and port testing
-    - Security considerations for different access scenarios
 
 ### Changed
 
-- **Garbage Collection Optimization**: Removed manual `runtime.GC()` calls from image and thumbnail processing hot paths:
+- **Garbage Collection Optimization** ([#261](https://github.com/djryanj/media-viewer/issues/261), [#262](https://github.com/djryanj/media-viewer/issues/2602)): Removed manual `runtime.GC()` calls from image and thumbnail processing hot paths:
     - Removed forced GC after thumbnail resizing (was triggering GC on every thumbnail)
     - Removed forced GC after intermediate image resize operations
     - Retained memory monitor GC triggers for emergency memory pressure situations (>85% memory usage)
@@ -39,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         - After (MEMORY_RATIO=0.75): 0.2-6 GC/s (adaptive), 0.16% CPU overhead ✅
         - Improvement: **91% reduction in GC CPU overhead**
     - Result: Dramatically better throughput and predictable latency for image operations
-- **Memory Configuration Guidance**: Updated all documentation to recommend `MEMORY_RATIO=0.75` for production containerized deployments:
+- **Memory Configuration Guidance** ([#261](https://github.com/djryanj/media-viewer/issues/261), [#262](https://github.com/djryanj/media-viewer/issues/2602)): Updated all documentation to recommend `MEMORY_RATIO=0.75` for production containerized deployments:
     - **Recommended approach** (containerized): `MEMORY_RATIO=0.75`
         - Adaptive: 0.2 GC/s idle → 6 GC/s under heavy load
         - Container-aware: Respects memory limits, prevents OOM
@@ -50,11 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         - Benchmarked: 0.15% CPU overhead
     - Updated README, installation guide, configuration docs, Kubernetes manifests with production-tested settings
     - Added comprehensive GC monitoring guide (hack/GC-MONITORING.md) with real-world benchmarks
-- **Docker Compose Network Configuration**: Updated monitoring stack ports to explicitly bind to `0.0.0.0` for improved accessibility:
-    - Services (Media Viewer, Prometheus, Grafana) now accessible from localhost, host IP, and external machines
-    - Added network configuration comments explaining bridge network capabilities
-    - Enhanced README with troubleshooting steps for connection issues
-- **Service Worker Caching Strategy**: Updated PWA service worker (v3) to use network-first caching for expensive API endpoints that have proper HTTP caching (ETag/304 support):
+- **Service Worker Caching Strategy** ([#261](https://github.com/djryanj/media-viewer/issues/261), [#262](https://github.com/djryanj/media-viewer/issues/2602)): Updated PWA service worker (v3) to use network-first caching for expensive API endpoints that have proper HTTP caching (ETag/304 support):
     - `/api/media` - Large responses (up to 4MB before gzip) now use network-first with cache fallback
     - `/api/files` - Directory listings use network-first for better offline experience
     - `/api/thumbnail` - Thumbnail requests use network-first with cache fallback
@@ -62,9 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - New behavior: Expensive endpoints go to network first (respecting 304 Not Modified), but fall back to cache when offline
     - Benefits: Better offline support while still respecting server-side cache headers and ETag validation
 
+- build(deps): bump github.com/mattn/go-sqlite3 from 1.14.33 to 1.14.34 ([#252](https://github.com/djryanj/media-viewer/pull/252))
+- build(deps): bump golang.org/x/image from 0.35.0 to 0.36.0 ([#251](https://github.com/djryanj/media-viewer/pull/251))
+- build(deps): bump golang.org/x/term from 0.39.0 to 0.40.0 ([#250](https://github.com/djryanj/media-viewer/pull/250))
+- build(deps): bump renovatebot/github-action from 46.0.1 to 46.0.2 ([#249](https://github.com/djryanj/media-viewer/pull/249))
+- build(deps): bump golang from 1.25-alpine to 1.26-alpine ([#248](https://github.com/djryanj/media-viewer/pull/248))
+- build(deps): bump golang.org/x/crypto from 0.47.0 to 0.48.0 ([#247](https://github.com/djryanj/media-viewer/pull/247))
+- Bump Go version to 1.26 ([#272](https://github.com/djryanj/media-viewer/pull/272))
+
 ### Performance
 
-- **Significant API Latency Improvements**: Dramatically improved response times for key API endpoints, especially noticeable with large libraries (40,000+ items) and directories with 14,000+ files:
+- **Significant API Latency Improvements** ([#261](https://github.com/djryanj/media-viewer/issues/261), [#262](https://github.com/djryanj/media-viewer/issues/2602)): Dramatically improved response times for key API endpoints, especially noticeable with large libraries (40,000+ items) and directories with 14,000+ files:
     - **`/api/stats`**: Reduced p95 latency from 242ms to ~20ms (12x faster) by implementing a 2-minute cache for both thumbnail and transcode cache size calculations, using atomic operations instead of walking the entire directory tree on every request
     - **`/api/files`**: Reduced p95 latency from 95ms to ~40ms (2.4x faster) by optimizing the folder count subquery to only calculate counts for folders in the current result set rather than materializing counts for all folders in the database
     - **Database Query Optimization**: Added composite indexes for JOIN operations (`idx_files_parent_type_name`, `idx_files_parent_type_modtime`, `idx_files_parent_type_size`, `idx_files_path_type`) to accelerate directory listing queries with sorting and filtering, particularly beneficial for large directories

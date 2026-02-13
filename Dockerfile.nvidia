@@ -3,7 +3,7 @@
 # Alpine Linux is incompatible with NVIDIA drivers (musl vs glibc)
 
 # Build stage - Use Debian-based Go image for glibc compatibility
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
 
 # Install xx for cross-compilation support
 COPY --from=tonistiigi/xx:1.9.0 / /
