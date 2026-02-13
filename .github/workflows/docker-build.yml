@@ -36,7 +36,7 @@ env:
     IMAGE_NAME: ${{ github.repository }}
 
 concurrency:
-    group: docker-${{ github.ref }}
+    group: docker-${{ github.ref }}-${{ inputs.dockerfile }}
     cancel-in-progress: true
 
 jobs:
