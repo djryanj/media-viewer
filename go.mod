@@ -10,7 +10,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/crypto v0.47.0
-	golang.org/x/image v0.35.0
+	golang.org/x/image v0.36.0
 	golang.org/x/term v0.40.0
 )
 
@@ -32,6 +32,6 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 )
