@@ -153,10 +153,10 @@ docker-compose up -d
 
 Record baseline metrics in Grafana:
 
-- GC CPU Fraction: ****\_**%**
-- GC Frequency: ****\_**** GCs/min
-- P95 Thumbnail Time: ****\_**** ms
-- Memory Usage: ****\_**%**
+- GC CPU Fraction: \***\*\_**%\*\*
+- GC Frequency: \***\*\_\*\*** GCs/min
+- P95 Thumbnail Time: \***\*\_\*\*** ms
+- Memory Usage: \***\*\_**%\*\*
 
 ### 2. Run Load Tests
 
@@ -496,6 +496,7 @@ See the [Metrics & Monitoring](../admin/metrics.md) documentation for production
 
 ## See Also
 
+- [Profiling Guide](profiling.md) - CPU, memory, and database profiling techniques
 - [Memory & GC Tuning](../admin/memory-tuning.md) - Detailed tuning guide with benchmarks
 - [Metrics Reference](../admin/metrics.md) - Complete metrics documentation
 - [Architecture Overview](architecture.md) - System architecture and design

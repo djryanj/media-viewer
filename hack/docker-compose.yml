@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   media-viewer:
     build:
@@ -9,6 +7,7 @@ services:
     ports:
       # Bind to all interfaces (0.0.0.0) for localhost and external access
       - "0.0.0.0:8081:8080"
+      - "0.0.0.0:9092:9090"  # Metrics and profiling server
     environment:
       - MEDIA_DIR=/media
       - CACHE_DIR=/cache
@@ -24,6 +23,8 @@ services:
       # Uncomment to test different GOGC values
       # - GOGC=150
       # - GOGC=200
+      # Enable profiling (block/mutex profiling for contention analysis)
+      # - ENABLE_PROFILING=true
     volumes:
       # Bind mount for media files (use absolute path)
       #
@@ -42,7 +43,7 @@ services:
       #   - /Volumes/Media/videos:/media
       #
       # Note: The directory must exist on the host before starting
-      - C:\\Users\\YourName\\Videos\\media-viewer:/media
+      - D:\\Installs\\pr0n:/media
       - cache-data:/cache
       - db-data:/database
     networks:

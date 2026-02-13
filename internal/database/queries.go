@@ -234,7 +234,8 @@ func getSortColumn(field SortField) string {
 func (d *Database) scanDirectoryItemsUnlocked(rows *sql.Rows) ([]MediaFile, error) {
 	logging.Debug("ListDirectory: scanning rows...")
 
-	var items []MediaFile
+	// Pre-allocate with reasonable capacity
+	items := make([]MediaFile, 0, 128)
 	for rows.Next() {
 		var file MediaFile
 		var modTime int64
@@ -265,9 +266,11 @@ func (d *Database) scanDirectoryItemsUnlocked(rows *sql.Rows) ([]MediaFile, erro
 		file.IsFavorite = isFavorite == 1
 
 		// Parse tags from comma-separated string
+		// Optimize for common case: many files have no tags
 		if tagsString.Valid && tagsString.String != "" {
 			file.Tags = strings.Split(tagsString.String, ",")
 		}
+		// else: file.Tags is already nil, no need to allocate empty slice
 
 		// Set folder item count
 		if file.Type == FileTypeFolder {
@@ -528,7 +531,8 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 		}
 	}()
 
-	var items []MediaFile
+	// Pre-allocate with PageSize capacity since we know the max results
+	items := make([]MediaFile, 0, opts.PageSize)
 	for rows.Next() {
 		var file MediaFile
 		var modTime int64
@@ -560,12 +564,9 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 		if tagsString.Valid && tagsString.String != "" {
 			file.Tags = strings.Split(tagsString.String, ",")
 		}
+		// else: file.Tags is already nil
 
 		items = append(items, file)
-	}
-
-	if items == nil {
-		items = []MediaFile{}
 	}
 
 	return &SearchResult{
@@ -756,7 +757,8 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		}
 	}()
 
-	var items []MediaFile
+	// Pre-allocate with PageSize capacity
+	items := make([]MediaFile, 0, opts.PageSize)
 	for rows.Next() {
 		var file MediaFile
 		var modTime int64
@@ -788,11 +790,9 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		if tagsString.Valid && tagsString.String != "" {
 			file.Tags = strings.Split(tagsString.String, ",")
 		}
+		// else: file.Tags is already nil
 
 		items = append(items, file)
-	}
-	if items == nil {
-		items = []MediaFile{}
 	}
 
 	return &SearchResult{
@@ -1159,7 +1159,8 @@ func (d *Database) GetAllPlaylists(ctx context.Context) ([]MediaFile, error) {
 		}
 	}()
 
-	var playlists []MediaFile
+	// Pre-allocate for playlists (typically small number < 50)
+	playlists := make([]MediaFile, 0, 32)
 	for rows.Next() {
 		var file MediaFile
 		var modTime int64
@@ -1256,7 +1257,12 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		}
 	}()
 
-	var files []MediaFile
+	// Pre-allocate slice with reasonable capacity to reduce reallocation overhead.
+	// Most directories have < 100 files, but some have 1000+.
+	// Start with 128 capacity as a balance - will grow if needed but avoids
+	// multiple reallocations for typical directories.
+	files := make([]MediaFile, 0, 128)
+
 	for rows.Next() {
 		var file MediaFile
 		var modTime int64
@@ -1280,11 +1286,11 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		file.IsFavorite = isFavorite == 1
 
 		// Parse comma-separated tags from GROUP_CONCAT
+		// Optimize for common case: many files have no tags
 		if tagsString.Valid && tagsString.String != "" {
 			file.Tags = strings.Split(tagsString.String, ",")
-		} else {
-			file.Tags = []string{}
 		}
+		// else: file.Tags is already nil (zero value), no need to explicitly set empty slice
 
 		files = append(files, file)
 	}
@@ -1322,7 +1328,8 @@ func (d *Database) GetMediaFilesInFolder(ctx context.Context, folderPath string,
 		}
 	}()
 
-	var files []MediaFile
+	// Pre-allocate with exact limit capacity since results are bounded
+	files := make([]MediaFile, 0, limit)
 	for rows.Next() {
 		var f MediaFile
 		var modTime int64
@@ -1406,7 +1413,8 @@ func (d *Database) GetSubfolders(ctx context.Context, parentPath string) ([]Medi
 		}
 	}()
 
-	var folders []MediaFile
+	// Pre-allocate for subfolders (typically < 100 in a directory)
+	folders := make([]MediaFile, 0, 64)
 	for rows.Next() {
 		var f MediaFile
 		var modTime int64
@@ -1472,7 +1480,8 @@ func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
 		}
 	}()
 
-	var files []MediaFile
+	// Pre-allocate for all files in database (typically 1000-10000+)
+	files := make([]MediaFile, 0, 2048)
 	for rows.Next() {
 		var f MediaFile
 		var modTime int64
@@ -1545,7 +1554,10 @@ func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
 		}
 	}()
 
-	var files []MediaFile
+	// Pre-allocate with larger capacity since this queries ALL files in database.
+	// Typical libraries have 1000-10000+ files. Start with 2048 to minimize
+	// reallocations while not over-allocating for small libraries.
+	files := make([]MediaFile, 0, 2048)
 	for rows.Next() {
 		var f MediaFile
 		var modTime int64
@@ -1625,7 +1637,8 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 		}
 	}()
 
-	var files []MediaFile
+	// Pre-allocate for incremental updates. Typically 100s of files, not thousands.
+	files := make([]MediaFile, 0, 256)
 	for rows.Next() {
 		var file MediaFile
 		var modTime int64
@@ -1780,7 +1793,9 @@ func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]bool, err
 
 // scanMediaFiles is a helper to scan rows into MediaFile slices.
 func (d *Database) scanMediaFiles(rows *sql.Rows) ([]MediaFile, error) {
-	var files []MediaFile
+	// Pre-allocate with reasonable capacity. Called by multiple functions
+	// with varying result sizes (folders, updated files, etc.)
+	files := make([]MediaFile, 0, 128)
 	for rows.Next() {
 		var f MediaFile
 		var modTime int64

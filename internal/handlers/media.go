@@ -60,6 +60,36 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 
 	logging.Debug("ListFiles completed, found %d items", len(listing.Items))
 
+	// Generate ETag based on directory state for HTTP caching
+	// Include: path, sort, filter, page, pageSize, count, and latest modification time
+	lastModTime := int64(0)
+	for i := range listing.Items {
+		if listing.Items[i].ModTime.Unix() > lastModTime {
+			lastModTime = listing.Items[i].ModTime.Unix()
+		}
+	}
+
+	etagData := fmt.Sprintf("%s_%s_%s_%s_%d_%d_%d_%d_%d",
+		opts.Path, opts.SortField, opts.SortOrder, opts.FilterType,
+		opts.Page, opts.PageSize, listing.TotalItems, len(listing.Items), lastModTime)
+	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
+
+	// Set cache headers
+	// Use "private" since response may include user-specific data
+	// max-age=300 (5 minutes) balances freshness with caching benefit
+	w.Header().Set("Cache-Control", "private, max-age=300, must-revalidate")
+	w.Header().Set("ETag", etag)
+
+	// Check If-None-Match header for conditional request
+	clientETag := r.Header.Get("If-None-Match")
+	if clientETag != "" && clientETag == etag {
+		logging.Debug("ListFiles: 304 Not Modified for %s (ETag match: %s)", opts.Path, etag)
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	// Return full response
+	logging.Debug("ListFiles: serving %s (%d items, ETag: %s)", opts.Path, len(listing.Items), etag)
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, listing)
 }

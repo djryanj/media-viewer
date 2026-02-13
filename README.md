@@ -56,6 +56,7 @@ A lightweight, containerized, single-user web application for browsing and viewi
 - [User Guide](https://djryanj.github.io/media-viewer/user-guide/overview/)
 - [API Documentation](https://djryanj.github.io/media-viewer/api/overview/)
 - [Development Guide](https://djryanj.github.io/media-viewer/development/contributing/)
+- [Performance Profiling](https://djryanj.github.io/media-viewer/development/profiling/)
 - [Monitoring & Performance Testing](https://djryanj.github.io/media-viewer/development/monitoring/)
 
 ## AI Disclosure

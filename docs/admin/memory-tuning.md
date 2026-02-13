@@ -224,7 +224,7 @@ Enable metrics and run under typical load:
 
 ```bash
 # Check current GC metrics
-curl http://localhost:9090/metrics | grep -E "gc_cpu|gc_runs|memory_usage"
+curl http://localhost:9091/metrics | grep -E "gc_cpu|gc_runs|memory_usage"
 ```
 
 Record baseline values:
@@ -542,7 +542,7 @@ Understanding the fundamental trade-off:
 
 **Check:**
 
-1. Configuration actually applied: `curl http://localhost:9090/metrics | grep memlimit`
+1. Configuration actually applied: `curl http://localhost:9091/metrics | grep memlimit`
 2. Container has enough memory: `docker stats`
 3. No memory leaks: Monitor `media_viewer_go_memsys_bytes` over days
 

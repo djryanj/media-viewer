@@ -753,6 +753,7 @@ Times vary based on system performance and video complexity.
 
 ## See Also
 
+- [Profiling Guide](profiling.md) - CPU, memory, and database profiling
 - [Monitoring Stack](monitoring.md) - Performance testing and metrics monitoring
 - [Architecture](architecture.md) - System architecture overview
 - [Memory & GC Tuning](../admin/memory-tuning.md) - Performance optimization guide

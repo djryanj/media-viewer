@@ -1379,6 +1379,336 @@ func TestListFilesEmptyDirectoryIntegration(t *testing.T) {
 	}
 }
 
+// TestListFilesCacheHeadersIntegration tests that proper cache headers are set
+func TestListFilesCacheHeadersIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add test files
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.ListFiles(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	// Check Cache-Control header
+	cacheControl := w.Header().Get("Cache-Control")
+	expectedCache := "private, max-age=300, must-revalidate"
+	if cacheControl != expectedCache {
+		t.Errorf("expected Cache-Control %q, got %q", expectedCache, cacheControl)
+	}
+
+	// Check ETag header is present and properly formatted
+	etag := w.Header().Get("ETag")
+	if etag == "" {
+		t.Error("expected ETag header to be set")
+	}
+	if !strings.HasPrefix(etag, `"`) || !strings.HasSuffix(etag, `"`) {
+		t.Errorf("expected ETag to be quoted, got %q", etag)
+	}
+}
+
+// TestListFilesConditionalRequestIntegration tests If-None-Match conditional requests
+func TestListFilesConditionalRequestIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add test files
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
+
+	// First request - get ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+
+	h.ListFiles(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on first request, got %d", w1.Code)
+	}
+
+	etag := w1.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header on first request")
+	}
+
+	// Second request - use If-None-Match with same ETag
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req2.Header.Set("If-None-Match", etag)
+	w2 := httptest.NewRecorder()
+
+	h.ListFiles(w2, req2)
+
+	// Should return 304 Not Modified
+	if w2.Code != http.StatusNotModified {
+		t.Errorf("expected status 304 for matching ETag, got %d", w2.Code)
+	}
+
+	// Body should be empty for 304
+	if w2.Body.Len() != 0 {
+		t.Errorf("expected empty body for 304, got %d bytes", w2.Body.Len())
+	}
+
+	// ETag header should still be present in 304 response
+	if w2.Header().Get("ETag") != etag {
+		t.Error("expected ETag header in 304 response")
+	}
+}
+
+// TestListFilesETagChangeOnModificationIntegration tests that ETag changes when content changes
+func TestListFilesETagChangeOnModificationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add initial files
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+
+	// Get initial ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag on first request")
+	}
+
+	// Add another file (changes file count and potentially lastModTime)
+	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
+
+	// Get new ETag
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+
+	etag2 := w2.Header().Get("ETag")
+	if etag2 == "" {
+		t.Fatal("expected ETag on second request")
+	}
+
+	// ETags should be different
+	if etag1 == etag2 {
+		t.Errorf("expected different ETags after content change, got same: %s", etag1)
+	}
+
+	// Old ETag should not return 304
+	req3 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req3.Header.Set("If-None-Match", etag1)
+	w3 := httptest.NewRecorder()
+	h.ListFiles(w3, req3)
+
+	if w3.Code != http.StatusOK {
+		t.Errorf("expected status 200 for stale ETag, got %d", w3.Code)
+	}
+}
+
+// TestListFilesETagDiffersBySortIntegration tests that different sort parameters produce different ETags
+func TestListFilesETagDiffersBySortIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add test files
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
+
+	// Get ETag with name sort
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files?sort=name&order=asc", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+	etag1 := w1.Header().Get("ETag")
+
+	// Get ETag with date sort
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files?sort=date&order=desc", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+	etag2 := w2.Header().Get("ETag")
+
+	// ETags should be different for different sort parameters
+	if etag1 == etag2 {
+		t.Errorf("expected different ETags for different sort parameters, got same: %s", etag1)
+	}
+}
+
+// TestListFilesETagDiffersByPathIntegration tests that different paths produce different ETags
+func TestListFilesETagDiffersByPathIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add files in different directories
+	addTestMediaFile(t, h, "folder1/image1.jpg", database.FileTypeImage, "image1")
+	addTestMediaFile(t, h, "folder2/image2.jpg", database.FileTypeImage, "image2")
+
+	// Get ETag for folder1
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files?path=folder1", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+	etag1 := w1.Header().Get("ETag")
+
+	// Get ETag for folder2
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files?path=folder2", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+	etag2 := w2.Header().Get("ETag")
+
+	// ETags should be different for different paths
+	if etag1 == etag2 {
+		t.Errorf("expected different ETags for different paths, got same: %s", etag1)
+	}
+}
+
+// TestListFilesETagDiffersByPageIntegration tests that different pages produce different ETags
+func TestListFilesETagDiffersByPageIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add enough files for multiple pages
+	for i := 1; i <= 10; i++ {
+		addTestMediaFile(t, h, fmt.Sprintf("image%d.jpg", i), database.FileTypeImage, "content")
+	}
+
+	// Get ETag for page 1
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files?page=1&pageSize=5", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+	etag1 := w1.Header().Get("ETag")
+
+	// Get ETag for page 2
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files?page=2&pageSize=5", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+	etag2 := w2.Header().Get("ETag")
+
+	// ETags should be different for different pages
+	if etag1 == etag2 {
+		t.Errorf("expected different ETags for different pages, got same: %s", etag1)
+	}
+}
+
+// TestListFilesETagDiffersByFilterTypeIntegration tests that different filter types produce different ETags
+func TestListFilesETagDiffersByFilterTypeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add mixed content
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+	addTestMediaFile(t, h, "video1.mp4", database.FileTypeVideo, "video1")
+
+	// Get ETag without filter
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+	etag1 := w1.Header().Get("ETag")
+
+	// Get ETag with image filter
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files?type=image", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+	etag2 := w2.Header().Get("ETag")
+
+	// ETags should be different for different filters
+	if etag1 == etag2 {
+		t.Errorf("expected different ETags for different filter types, got same: %s", etag1)
+	}
+}
+
+// TestListFilesETagStableForSameStateIntegration tests that ETag is stable when directory state is unchanged
+func TestListFilesETagStableForSameStateIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add test files
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
+
+	// Get ETag first time
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+	etag1 := w1.Header().Get("ETag")
+
+	// Get ETag second time (no changes)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+	etag2 := w2.Header().Get("ETag")
+
+	// ETags should be identical
+	if etag1 != etag2 {
+		t.Errorf("expected same ETag for unchanged state, got %s and %s", etag1, etag2)
+	}
+}
+
+// TestListFilesConditionalRequestWithStaleETagIntegration tests that stale ETags return full response
+func TestListFilesConditionalRequestWithStaleETagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add initial file
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+
+	// Get initial ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+	oldETag := w1.Header().Get("ETag")
+
+	// Modify content
+	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
+
+	// Request with stale ETag should return 200 with full response
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req2.Header.Set("If-None-Match", oldETag)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Errorf("expected status 200 for stale ETag, got %d", w2.Code)
+	}
+
+	if w2.Body.Len() == 0 {
+		t.Error("expected full response body for stale ETag, got empty")
+	}
+
+	// New ETag should be different
+	newETag := w2.Header().Get("ETag")
+	if newETag == oldETag {
+		t.Error("expected new ETag to differ from old ETag")
+	}
+}
+
 // TestGetMediaFilesEmptyResultIntegration tests GetMediaFiles with no media files
 func TestGetMediaFilesEmptyResultIntegration(t *testing.T) {
 	if testing.Short() {

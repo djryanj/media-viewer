@@ -212,7 +212,7 @@ See [Troubleshooting](troubleshooting.md#slow-indexing) for more details.
 
 ### How can I monitor performance?
 
-Media Viewer exposes Prometheus metrics on port 9090 (if enabled). You can use Grafana or other monitoring tools to visualize:
+Media Viewer exposes Prometheus metrics on port 9090 internally (port 9091 when using Docker Compose). You can use Grafana or other monitoring tools to visualize:
 
 - Memory usage
 - Indexing performance
