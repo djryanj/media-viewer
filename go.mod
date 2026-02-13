@@ -1,6 +1,6 @@
 module media-viewer
 
-go 1.25
+go 1.26
 
 require (
 	github.com/davidbyttow/govips/v2 v2.16.0
