@@ -39,6 +39,7 @@ Complete reference for all environment variables supported by Media Viewer.
 | `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                  |
 | `LOG_STATIC_FILES`            | `false`        | Log static file requests                               |
 | `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                              |
+| `SLOW_QUERY_THRESHOLD_MS`     | `100`          | Threshold (ms) for logging slow database queries       |
 
 ## Paths
 
@@ -519,6 +520,21 @@ LOG_HEALTH_CHECKS=true
 
 - Default: `true`
 - Set to `false` to reduce log noise from monitoring
+
+### SLOW_QUERY_THRESHOLD_MS
+
+Threshold in milliseconds for logging slow database queries.
+
+```bash
+SLOW_QUERY_THRESHOLD_MS=100
+```
+
+- Default: `100` (100 milliseconds)
+- Queries exceeding this threshold will be logged as warnings
+- Useful for identifying performance bottlenecks in production
+- Set to a higher value (e.g., `500`) if you want to only log very slow queries
+- Set to `0` to log all queries (not recommended for production)
+- Example log output: `Slow query detected: operation=list_directory duration=0.235s status=success`
 
 ## Duration Format
 

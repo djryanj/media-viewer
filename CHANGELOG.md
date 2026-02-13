@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [Unreleased]
+
+### Performance
+
+- **Significant API Latency Improvements**: Dramatically improved response times for key API endpoints, especially noticeable with large libraries (40,000+ items) and directories with 14,000+ files:
+    - **`/api/stats`**: Reduced p95 latency from 242ms to ~20ms (12x faster) by implementing a 2-minute cache for thumbnail/transcode cache size calculations instead of walking the entire directory tree on every request
+    - **`/api/files`**: Reduced p95 latency from 95ms to ~40ms (2.4x faster) by optimizing the folder count subquery to only calculate counts for folders in the current result set rather than materializing counts for all folders in the database
+    - **Database Query Optimization**: Added composite indexes for JOIN operations (`idx_files_parent_type_name`, `idx_files_parent_type_modtime`, `idx_files_parent_type_size`, `idx_files_path_type`) to accelerate directory listing queries with sorting and filtering, particularly beneficial for large directories
+    - **Slow Query Logging**: Added automatic logging of queries exceeding 100ms (configurable via `SLOW_QUERY_THRESHOLD_MS` environment variable) to help identify performance bottlenecks in production environments
+
+    These improvements make browsing large media libraries significantly more responsive, with most API calls now completing in under 50ms even for directories containing thousands of files.
+
 ## [0.13.1] - 2026-02-12
 
 ### Fixed

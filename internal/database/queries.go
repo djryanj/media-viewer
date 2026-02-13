@@ -161,21 +161,20 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 
 	// Optimized query with LEFT JOINs to fetch favorites, tags, and folder counts in one query
 	// This eliminates the N+1 query problem where we previously did separate queries per file
+	//
+	// OPTIMIZATION: The folder count subquery now only calculates counts for folders that are
+	// actually in the result set (via WHERE clause), rather than materializing counts for ALL
+	// folders in the database. This dramatically improves performance for large libraries.
 	selectQuery := `
 		SELECT
 			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
 			CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
 			GROUP_CONCAT(t.name, ',') as tags,
-			COALESCE(fc.item_count, 0) as folder_count
+			(SELECT COUNT(*) FROM files WHERE parent_path = f.path) as folder_count
 		FROM files f
 		LEFT JOIN favorites fav ON f.path = fav.path
 		LEFT JOIN file_tags ft ON f.path = ft.file_path
 		LEFT JOIN tags t ON ft.tag_id = t.id
-		LEFT JOIN (
-			SELECT parent_path, COUNT(*) as item_count
-			FROM files
-			GROUP BY parent_path
-		) fc ON f.path = fc.parent_path AND f.type = 'folder'
 		WHERE f.parent_path = ?
 	`
 	selectArgs := []interface{}{opts.Path}
@@ -185,8 +184,8 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 		selectArgs = append(selectArgs, opts.FilterType)
 	}
 
-	// Group by all non-aggregated columns
-	selectQuery += ` GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path, fc.item_count`
+	// Group by all non-aggregated columns (excluding folder_count which is a subquery)
+	selectQuery += ` GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path`
 
 	// Add table prefix to sort column for JOIN query
 	var orderColumn string

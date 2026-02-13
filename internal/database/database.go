@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +19,17 @@ import (
 
 // Default timeout for database operations
 const defaultTimeout = 5 * time.Second
+
+// getSlowQueryThreshold returns the threshold for logging slow queries
+// Can be configured via SLOW_QUERY_THRESHOLD_MS environment variable
+func getSlowQueryThreshold() float64 {
+	if thresholdStr := os.Getenv("SLOW_QUERY_THRESHOLD_MS"); thresholdStr != "" {
+		if threshold, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
+			return threshold / 1000.0 // Convert ms to seconds
+		}
+	}
+	return 0.1 // Default 100ms
+}
 
 // Database manages all database operations for the media viewer.
 type Database struct {
@@ -107,6 +119,15 @@ func (d *Database) initialize(ctx context.Context) error {
 	-- Composite indexes for optimized queries
 	CREATE INDEX IF NOT EXISTS idx_files_parent_type ON files(parent_path, type);
 	CREATE INDEX IF NOT EXISTS idx_files_name_type ON files(name COLLATE NOCASE, type);
+
+	-- Additional composite indexes for JOIN performance
+	-- For GetMediaInDirectory and ListDirectory with sorting and filtering
+	CREATE INDEX IF NOT EXISTS idx_files_parent_type_name ON files(parent_path, type, name COLLATE NOCASE);
+	CREATE INDEX IF NOT EXISTS idx_files_parent_type_modtime ON files(parent_path, type, mod_time);
+	CREATE INDEX IF NOT EXISTS idx_files_parent_type_size ON files(parent_path, type, size);
+
+	-- For folder count lookups (important for large directories)
+	CREATE INDEX IF NOT EXISTS idx_files_path_type ON files(path, type);
 
 	-- Full-text search table
 	CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
@@ -475,6 +496,14 @@ func recordQuery(operation string, start time.Time, err error) {
 	}
 	metrics.DBQueryTotal.WithLabelValues(operation, status).Inc()
 	metrics.DBQueryDuration.WithLabelValues(operation).Observe(duration)
+
+	// Log slow queries for debugging performance issues
+	// Threshold can be configured via SLOW_QUERY_THRESHOLD_MS env var (default: 100ms)
+	threshold := getSlowQueryThreshold()
+	if duration > threshold {
+		logging.Warn("Slow query detected: operation=%s duration=%.3fs status=%s error=%v",
+			operation, duration, status, err)
+	}
 }
 
 // UpdateDBMetrics updates database connection metrics

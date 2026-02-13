@@ -79,9 +79,12 @@ type ThumbnailGenerator struct {
 	generationStats GenerationStats
 
 	// Cache metrics state
-	cacheMetricsMu sync.RWMutex
-	lastCacheSize  int64
-	lastCacheCount int
+	cacheMetricsMu  sync.RWMutex
+	lastCacheSize   int64
+	lastCacheCount  int
+	cachedSize      atomic.Int64
+	cachedCount     atomic.Int64
+	lastCacheUpdate atomic.Int64 // Unix timestamp
 
 	// Per-file locks to allow parallel generation of different files
 	fileLocks sync.Map
@@ -1808,20 +1811,56 @@ func (t *ThumbnailGenerator) GetCacheSize() (size int64, count int, err error) {
 		return 0, 0, nil
 	}
 
-	err = filepath.Walk(t.cacheDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	// Check if cached value is fresh (within 2 minutes)
+	lastUpdate := t.lastCacheUpdate.Load()
+	now := time.Now().Unix()
+	if lastUpdate > 0 && (now-lastUpdate) < 120 {
+		// Return cached values
+		return t.cachedSize.Load(), int(t.cachedCount.Load()), nil
+	}
+
+	// Calculate cache size synchronously only if cache is stale
+	// Use a mutex to prevent multiple simultaneous walks
+	t.cacheMetricsMu.Lock()
+	defer t.cacheMetricsMu.Unlock()
+
+	// Double-check after acquiring lock
+	lastUpdate = t.lastCacheUpdate.Load()
+	if lastUpdate > 0 && (now-lastUpdate) < 120 {
+		return t.cachedSize.Load(), int(t.cachedCount.Load()), nil
+	}
+
+	// Walk directory to calculate fresh values
+	var newSize int64
+	var newCount int
+	err = filepath.Walk(t.cacheDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 		if !info.IsDir() {
-			size += info.Size()
+			newSize += info.Size()
 			// Exclude .meta files from count
 			if !strings.HasSuffix(path, ".meta") {
-				count++
+				newCount++
 			}
 		}
 		return nil
 	})
-	return size, count, err
+
+	if err == nil {
+		// Update cached values atomically
+		t.cachedSize.Store(newSize)
+		t.cachedCount.Store(int64(newCount))
+		t.lastCacheUpdate.Store(now)
+		return newSize, newCount, nil
+	}
+
+	// On error, return cached values if available
+	if lastUpdate > 0 {
+		return t.cachedSize.Load(), int(t.cachedCount.Load()), nil
+	}
+
+	return 0, 0, err
 }
 
 // =============================================================================
