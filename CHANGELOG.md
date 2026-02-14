@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- build:fixed PR cleanup action so that it properly cleans up all docker images related to the PR ([#274](https://github.com/djryanj/media-viewer/issues/274))
+
 ## [0.13.2] - 2026-02-13
 
 ### Added
