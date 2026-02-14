@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [Unreleased]
+## [0.13.3] - 2026-02-13
 
 ### Added
 
@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Thumbnail cleanup operations are now **8-25x faster** (2.5 seconds → ~100-300ms on 40,000+ item libraries)
     - Opening folders and viewing media is now **5-10x faster** (100ms → 10-20ms for large directories)
     - Improved performance when browsing folders with favorites and tags
-- build:fixed PR cleanup action so that it properly cleans up all docker images related to the PR ([#274](https://github.com/djryanj/media-viewer/issues/274))
+- build: fixed PR cleanup action so that it properly cleans up all docker images related to the PR ([#274](https://github.com/djryanj/media-viewer/issues/274))
+- extra: grafana dashboard updated to remove junk, fix variable so it detects the existence of the app before needing http requests to it
 
 ## [0.13.2] - 2026-02-13
 
