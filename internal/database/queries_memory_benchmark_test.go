@@ -194,6 +194,100 @@ func BenchmarkGetMediaInDirectory_MemoryLarge(b *testing.B) {
 	}
 }
 
+// =============================================================================
+// Covering Index Optimization Benchmarks
+// =============================================================================
+
+// BenchmarkGetMediaInDirectory_CoveringIndexName benchmarks the covering index for name sorting
+// This specifically tests the idx_files_media_directory_name covering index optimization
+func BenchmarkGetMediaInDirectory_CoveringIndexName(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping covering index benchmark in short mode")
+	}
+
+	db, cleanup := setupBenchmarkDatabase(b, 10000, 0.1, 3)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		files, err := db.GetMediaInDirectory(ctx, "bench", SortByName, SortAsc)
+		if err != nil {
+			b.Fatalf("GetMediaInDirectory failed: %v", err)
+		}
+		_ = files
+	}
+}
+
+// BenchmarkGetMediaInDirectory_CoveringIndexDate benchmarks the covering index for date sorting
+// This specifically tests the idx_files_media_directory_date covering index optimization
+func BenchmarkGetMediaInDirectory_CoveringIndexDate(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping covering index benchmark in short mode")
+	}
+
+	db, cleanup := setupBenchmarkDatabase(b, 10000, 0.1, 3)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		files, err := db.GetMediaInDirectory(ctx, "bench", SortByDate, SortDesc)
+		if err != nil {
+			b.Fatalf("GetMediaInDirectory failed: %v", err)
+		}
+		_ = files
+	}
+}
+
+// BenchmarkGetMediaInDirectory_CoveringIndexNameDesc benchmarks name sorting descending
+func BenchmarkGetMediaInDirectory_CoveringIndexNameDesc(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping covering index benchmark in short mode")
+	}
+
+	db, cleanup := setupBenchmarkDatabase(b, 10000, 0.1, 3)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		files, err := db.GetMediaInDirectory(ctx, "bench", SortByName, SortDesc)
+		if err != nil {
+			b.Fatalf("GetMediaInDirectory failed: %v", err)
+		}
+		_ = files
+	}
+}
+
+// BenchmarkGetMediaInDirectory_CoveringIndexDateAsc benchmarks date sorting ascending
+func BenchmarkGetMediaInDirectory_CoveringIndexDateAsc(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping covering index benchmark in short mode")
+	}
+
+	db, cleanup := setupBenchmarkDatabase(b, 10000, 0.1, 3)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		files, err := db.GetMediaInDirectory(ctx, "bench", SortByDate, SortAsc)
+		if err != nil {
+			b.Fatalf("GetMediaInDirectory failed: %v", err)
+		}
+		_ = files
+	}
+}
+
 // BenchmarkListDirectory_MemorySmall tracks allocations for small directories
 func BenchmarkListDirectory_MemorySmall(b *testing.B) {
 	db, cleanup := setupBenchmarkDatabase(b, 100, 0.1, 2)
@@ -260,6 +354,109 @@ func BenchmarkGetAllMediaFilesForThumbnails_Memory(b *testing.B) {
 			b.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
 		}
 		_ = files
+	}
+}
+
+// =============================================================================
+// GetAllIndexedPaths Benchmarks
+// =============================================================================
+
+// BenchmarkGetAllIndexedPaths_Small benchmarks with a small library (500 files)
+func BenchmarkGetAllIndexedPaths_Small(b *testing.B) {
+	db, cleanup := setupGetAllFilesBenchmark(b, 500)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		paths, err := db.GetAllIndexedPaths(ctx)
+		if err != nil {
+			b.Fatalf("GetAllIndexedPaths failed: %v", err)
+		}
+		_ = paths
+	}
+}
+
+// BenchmarkGetAllIndexedPaths_Medium benchmarks with a medium library (2,000 files)
+func BenchmarkGetAllIndexedPaths_Medium(b *testing.B) {
+	db, cleanup := setupGetAllFilesBenchmark(b, 2000)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		paths, err := db.GetAllIndexedPaths(ctx)
+		if err != nil {
+			b.Fatalf("GetAllIndexedPaths failed: %v", err)
+		}
+		_ = paths
+	}
+}
+
+// BenchmarkGetAllIndexedPaths_Large benchmarks with a large library (5,000 files)
+func BenchmarkGetAllIndexedPaths_Large(b *testing.B) {
+	db, cleanup := setupGetAllFilesBenchmark(b, 5000)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		paths, err := db.GetAllIndexedPaths(ctx)
+		if err != nil {
+			b.Fatalf("GetAllIndexedPaths failed: %v", err)
+		}
+		_ = paths
+	}
+}
+
+// BenchmarkGetAllIndexedPaths_Huge benchmarks with a huge library (10,000 files)
+func BenchmarkGetAllIndexedPaths_Huge(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping huge benchmark in short mode")
+	}
+
+	db, cleanup := setupGetAllFilesBenchmark(b, 10000)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		paths, err := db.GetAllIndexedPaths(ctx)
+		if err != nil {
+			b.Fatalf("GetAllIndexedPaths failed: %v", err)
+		}
+		_ = paths
+	}
+}
+
+// BenchmarkGetAllIndexedPaths_RealWorld benchmarks with a real-world sized library (40,000 files)
+// This matches the user's production scenario where latency was 2.5 seconds
+func BenchmarkGetAllIndexedPaths_RealWorld(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping real-world benchmark in short mode")
+	}
+
+	db, cleanup := setupGetAllFilesBenchmark(b, 40000)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		paths, err := db.GetAllIndexedPaths(ctx)
+		if err != nil {
+			b.Fatalf("GetAllIndexedPaths failed: %v", err)
+		}
+		_ = paths
 	}
 }
 

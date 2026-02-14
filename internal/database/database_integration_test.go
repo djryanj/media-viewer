@@ -1072,6 +1072,151 @@ func TestGetMediaInDirectory(t *testing.T) {
 	}
 }
 
+func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Verify that the covering indexes exist
+	var indexCount int
+	query := `
+		SELECT COUNT(*)
+		FROM sqlite_master
+		WHERE type = 'index'
+		AND name IN ('idx_files_media_directory_name', 'idx_files_media_directory_date', 'idx_files_path')
+	`
+	err := db.db.QueryRowContext(ctx, query).Scan(&indexCount)
+	if err != nil {
+		t.Fatalf("Failed to check for covering indexes: %v", err)
+	}
+
+	if indexCount != 3 {
+		t.Errorf("Expected 3 covering indexes, got %d", indexCount)
+		t.Log("Missing one or more of: idx_files_media_directory_name, idx_files_media_directory_date, idx_files_path")
+	}
+
+	// Insert a larger set of files to test index performance
+	tx, _ := db.BeginBatch()
+	baseTime := time.Now().Add(-24 * time.Hour)
+	for i := 0; i < 500; i++ {
+		file := MediaFile{
+			Name:       fmt.Sprintf("file_%04d.jpg", i),
+			Path:       fmt.Sprintf("testdir/file_%04d.jpg", i),
+			ParentPath: "testdir",
+			Type:       FileTypeImage,
+			Size:       int64(1024 * (i + 1)),
+			ModTime:    baseTime.Add(time.Duration(i) * time.Minute),
+			MimeType:   "image/jpeg",
+		}
+		_ = db.UpsertFile(tx, &file)
+	}
+	_ = db.EndBatch(tx, nil)
+
+	// Test sorting by name (should use idx_files_media_directory_name)
+	files, err := db.GetMediaInDirectory(ctx, "testdir", SortByName, SortAsc)
+	if err != nil {
+		t.Fatalf("GetMediaInDirectory with name sort failed: %v", err)
+	}
+	if len(files) != 500 {
+		t.Errorf("Expected 500 files, got %d", len(files))
+	}
+	// Verify sort order
+	if files[0].Name != "file_0000.jpg" {
+		t.Errorf("First file should be file_0000.jpg, got %s", files[0].Name)
+	}
+
+	// Test sorting by date (should use idx_files_media_directory_date)
+	files, err = db.GetMediaInDirectory(ctx, "testdir", SortByDate, SortDesc)
+	if err != nil {
+		t.Fatalf("GetMediaInDirectory with date sort failed: %v", err)
+	}
+	if len(files) != 500 {
+		t.Errorf("Expected 500 files, got %d", len(files))
+	}
+	// Verify sort order (descending date means newest file first)
+	if files[0].Name != "file_0499.jpg" {
+		t.Errorf("First file should be file_0499.jpg (newest), got %s", files[0].Name)
+	}
+
+	// Verify that the query returns all expected columns (tests covering index completeness)
+	for _, file := range files[:10] { // Check first 10
+		if file.ID == 0 {
+			t.Error("File ID should not be 0")
+		}
+		if file.Path == "" {
+			t.Error("File path should not be empty")
+		}
+		if file.Size == 0 {
+			t.Error("File size should not be 0")
+		}
+		if file.ModTime.IsZero() {
+			t.Error("File mod_time should not be zero")
+		}
+		if file.MimeType == "" {
+			t.Error("File mime_type should not be empty")
+		}
+	}
+}
+
+func TestGetMediaInDirectory_WithFavoritesAndTags(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Insert files
+	files := []MediaFile{
+		{Name: "file1.jpg", Path: "test/file1.jpg", ParentPath: "test", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
+		{Name: "file2.jpg", Path: "test/file2.jpg", ParentPath: "test", Type: FileTypeImage, Size: 2048, ModTime: time.Now()},
+	}
+
+	tx, _ := db.BeginBatch()
+	for i := range files {
+		_ = db.UpsertFile(tx, &files[i])
+	}
+	_ = db.EndBatch(tx, nil)
+
+	// Add favorites
+	if err := db.AddFavorite(ctx, "test/file1.jpg", "file1.jpg", FileTypeImage); err != nil {
+		t.Fatalf("Failed to add favorite: %v", err)
+	}
+
+	// Add tags
+	if err := db.AddTagToFile(ctx, "test/file1.jpg", "test-tag"); err != nil {
+		t.Fatalf("Failed to add tag: %v", err)
+	}
+	if err := db.AddTagToFile(ctx, "test/file2.jpg", "another-tag"); err != nil {
+		t.Fatalf("Failed to add tag: %v", err)
+	}
+
+	// Query with covering index and verify JOINs work correctly
+	files, err := db.GetMediaInDirectory(ctx, "test", SortByName, SortAsc)
+	if err != nil {
+		t.Fatalf("GetMediaInDirectory failed: %v", err)
+	}
+
+	if len(files) != 2 {
+		t.Fatalf("Expected 2 files, got %d", len(files))
+	}
+
+	// Verify favorites are included correctly (tests idx_favorites_path join)
+	if !files[0].IsFavorite {
+		t.Error("file1.jpg should be marked as favorite")
+	}
+	if files[1].IsFavorite {
+		t.Error("file2.jpg should not be marked as favorite")
+	}
+
+	// Verify tags are included correctly (tests idx_file_tags_path join)
+	if len(files[0].Tags) != 1 || files[0].Tags[0] != "test-tag" {
+		t.Errorf("file1.jpg should have tag 'test-tag', got %v", files[0].Tags)
+	}
+	if len(files[1].Tags) != 1 || files[1].Tags[0] != "another-tag" {
+		t.Errorf("file2.jpg should have tag 'another-tag', got %v", files[1].Tags)
+	}
+}
+
 func TestGetAllMediaFiles(t *testing.T) {
 	db, _ := setupTestDB(t)
 	defer db.Close()
@@ -1203,10 +1348,13 @@ func TestGetAllIndexedPaths(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert files
+	// Insert files of different types - should include images, videos, and folders
 	files := []MediaFile{
 		{Name: "image1.jpg", Path: "path/image1.jpg", ParentPath: "path", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "image2.jpg", Path: "path/image2.jpg", ParentPath: "path", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
+		{Name: "video1.mp4", Path: "path/video1.mp4", ParentPath: "path", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
+		{Name: "subfolder", Path: "path/subfolder", ParentPath: "path", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
+		{Name: "playlist.m3u", Path: "path/playlist.m3u", ParentPath: "path", Type: FileTypePlaylist, Size: 512, ModTime: time.Now()},
 	}
 
 	tx, _ := db.BeginBatch()
@@ -1220,12 +1368,79 @@ func TestGetAllIndexedPaths(t *testing.T) {
 		t.Fatalf("GetAllIndexedPaths failed: %v", err)
 	}
 
-	if len(paths) != 2 {
-		t.Errorf("Got %d paths, want 2", len(paths))
+	// Should return images, videos, and folders, but NOT playlists
+	expectedCount := 4
+	if len(paths) != expectedCount {
+		t.Errorf("Got %d paths, want %d", len(paths), expectedCount)
 	}
 
-	if !paths["path/image1.jpg"] || !paths["path/image2.jpg"] {
-		t.Error("Missing expected paths in result")
+	// Verify expected paths are present
+	expectedPaths := []string{
+		"path/image1.jpg",
+		"path/image2.jpg",
+		"path/video1.mp4",
+		"path/subfolder",
+	}
+
+	for _, expectedPath := range expectedPaths {
+		if !paths[expectedPath] {
+			t.Errorf("Missing expected path: %s", expectedPath)
+		}
+	}
+
+	// Verify playlist is NOT included
+	if paths["path/playlist.m3u"] {
+		t.Error("Playlist path should not be included in GetAllIndexedPaths result")
+	}
+}
+
+func TestGetAllIndexedPaths_LargeSet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping large set test in short mode")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Insert a larger set of files to test pre-allocation optimization
+	fileCount := 1000
+	tx, _ := db.BeginBatch()
+
+	for i := 0; i < fileCount; i++ {
+		file := MediaFile{
+			Name:       fmt.Sprintf("file_%04d.jpg", i),
+			Path:       fmt.Sprintf("test/file_%04d.jpg", i),
+			ParentPath: "test",
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+		}
+		_ = db.UpsertFile(tx, &file)
+	}
+	_ = db.EndBatch(tx, nil)
+
+	paths, err := db.GetAllIndexedPaths(ctx)
+	if err != nil {
+		t.Fatalf("GetAllIndexedPaths failed: %v", err)
+	}
+
+	if len(paths) != fileCount {
+		t.Errorf("Got %d paths, want %d", len(paths), fileCount)
+	}
+
+	// Spot check a few paths
+	testPaths := []string{
+		"test/file_0000.jpg",
+		"test/file_0500.jpg",
+		"test/file_0999.jpg",
+	}
+
+	for _, testPath := range testPaths {
+		if !paths[testPath] {
+			t.Errorf("Missing expected path: %s", testPath)
+		}
 	}
 }
 
