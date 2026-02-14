@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- build(docs): Added a github action to automatically create changelog entries for bot-submitted PRs ([#276](https://github.com/djryanj/media-viewer/issues/276))
+
 ### Changed
 
 - build:fixed PR cleanup action so that it properly cleans up all docker images related to the PR ([#274](https://github.com/djryanj/media-viewer/issues/274))
