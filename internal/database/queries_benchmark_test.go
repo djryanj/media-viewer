@@ -270,6 +270,88 @@ func BenchmarkGetMediaInDirectory_Empty(b *testing.B) {
 }
 
 // =============================================================================
+// Covering Index Performance Tests
+// =============================================================================
+
+// BenchmarkGetMediaInDirectory_CoveringIndex_RealWorld simulates the user's exact scenario
+// A directory with 1000 files with tags and favorites, sorted by name
+// This demonstrates the performance improvement from covering indexes
+func BenchmarkGetMediaInDirectory_CoveringIndex_RealWorld(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping real-world benchmark in short mode")
+	}
+
+	// Setup: 1000 files, 10% favorites, 2-3 tags per file (typical usage)
+	db, cleanup := setupBenchmarkDatabase(b, 1000, 0.1, 2)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs() // Track allocations to show memory efficiency
+
+	for i := 0; i < b.N; i++ {
+		files, err := db.GetMediaInDirectory(ctx, "bench", SortByName, SortAsc)
+		if err != nil {
+			b.Fatalf("GetMediaInDirectory failed: %v", err)
+		}
+		if len(files) == 0 {
+			b.Fatal("Expected files to be returned")
+		}
+	}
+}
+
+// BenchmarkGetMediaInDirectory_CoveringIndex_DateSort tests date sorting performance
+// This uses the idx_files_media_directory_date covering index
+func BenchmarkGetMediaInDirectory_CoveringIndex_DateSort(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping real-world benchmark in short mode")
+	}
+
+	db, cleanup := setupBenchmarkDatabase(b, 1000, 0.1, 2)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		files, err := db.GetMediaInDirectory(ctx, "bench", SortByDate, SortDesc)
+		if err != nil {
+			b.Fatalf("GetMediaInDirectory failed: %v", err)
+		}
+		if len(files) == 0 {
+			b.Fatal("Expected files to be returned")
+		}
+	}
+}
+
+// BenchmarkGetMediaInDirectory_PathIndexJoins benchmarks JOIN performance with path index
+// Tests the idx_files_path index optimization for favorites and file_tags JOINs
+func BenchmarkGetMediaInDirectory_PathIndexJoins(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping path index benchmark in short mode")
+	}
+
+	// Many favorites and tags to stress-test JOIN performance
+	db, cleanup := setupBenchmarkDatabase(b, 1000, 0.5, 5)
+	defer cleanup()
+
+	ctx := context.Background()
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		files, err := db.GetMediaInDirectory(ctx, "bench", SortByName, SortAsc)
+		if err != nil {
+			b.Fatalf("GetMediaInDirectory failed: %v", err)
+		}
+		if len(files) == 0 {
+			b.Fatal("Expected files to be returned")
+		}
+	}
+}
+
+// =============================================================================
 // Helper for ListDirectory, Search, and GetFavorites benchmarks
 // =============================================================================
 

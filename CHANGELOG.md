@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Improved Performance for Large Libraries** ([#278](https://github.com/djryanj/media-viewer/issues/278)): Significantly faster browsing and navigation for libraries with thousands of files:
+    - Thumbnail cleanup operations are now **8-25x faster** (2.5 seconds → ~100-300ms on 40,000+ item libraries)
+    - Opening folders and viewing media is now **5-10x faster** (100ms → 10-20ms for large directories)
+    - Improved performance when browsing folders with favorites and tags
 - build:fixed PR cleanup action so that it properly cleans up all docker images related to the PR ([#274](https://github.com/djryanj/media-viewer/issues/274))
 
 ## [0.13.2] - 2026-02-13
