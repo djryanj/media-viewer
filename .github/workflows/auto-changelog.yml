@@ -1,0 +1,151 @@
+name: Auto Changelog for Bots
+
+on:
+    pull_request:
+        types: [opened, reopened]
+
+permissions:
+    contents: write
+    pull-requests: read
+
+jobs:
+    update-changelog:
+        name: Update Changelog
+        # Only run for bot PRs
+        if: |
+            github.event.pull_request.user.login == 'dependabot[bot]' ||
+            github.event.pull_request.user.login == 'github-actions[bot]'
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout PR branch
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.event.pull_request.head.ref }}
+                  repository: ${{ github.event.pull_request.head.repo.full_name }}
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Update CHANGELOG.md
+              env:
+                  PR_TITLE: ${{ github.event.pull_request.title }}
+                  PR_NUMBER: ${{ github.event.pull_request.number }}
+                  PR_URL: ${{ github.event.pull_request.html_url }}
+              run: |
+                  set -e
+
+                  echo "Processing PR #${PR_NUMBER}: ${PR_TITLE}"
+
+                  # Check if CHANGELOG.md exists
+                  if [ ! -f CHANGELOG.md ]; then
+                      echo "CHANGELOG.md not found, skipping"
+                      exit 0
+                  fi
+
+                  # Format the changelog entry
+                  ENTRY="- ${PR_TITLE} ([#${PR_NUMBER}](${PR_URL}))"
+
+                  # Check if this entry already exists
+                  if grep -qF "${ENTRY}" CHANGELOG.md; then
+                      echo "Entry already exists in CHANGELOG.md"
+                      exit 0
+                  fi
+
+                  # Create a temporary file
+                  TMP_FILE=$(mktemp)
+
+                  # Find the first "### Changed" section and add the entry after it
+                  # If no "### Changed" exists, find the first version section and add "### Changed" after it
+                  awk -v entry="${ENTRY}" '
+                  BEGIN { found_changed = 0; added = 0; in_unreleased = 0; found_version = 0 }
+
+                  # Track if we are in an Unreleased or version section
+                  /^## \[Unreleased\]/ || /^## \[[0-9]+\.[0-9]+\.[0-9]+\]/ {
+                      print
+                      if (!found_version) {
+                          found_version = 1
+                      }
+                      next
+                  }
+
+                  # If we find "### Changed", note it
+                  /^### Changed$/ {
+                      if (found_version && !added) {
+                          found_changed = 1
+                          print
+                          next
+                      }
+                  }
+
+                  # After finding "### Changed", add entry after it (before any content)
+                  found_changed == 1 && !added && /^$/ {
+                      print ""
+                      print entry
+                      added = 1
+                      next
+                  }
+
+                  # If we hit another ### section without adding, create ### Changed section
+                  /^### / {
+                      if (found_version && !added && !found_changed) {
+                          print ""
+                          print "### Changed"
+                          print ""
+                          print entry
+                          added = 1
+                      }
+                      print
+                      next
+                  }
+
+                  # Print all other lines
+                  { print }
+
+                  END {
+                      # If we never added the entry, something went wrong
+                      if (!added) {
+                          exit 1
+                      }
+                  }
+                  ' CHANGELOG.md > "$TMP_FILE"
+
+                  # Check if awk succeeded
+                  if [ $? -ne 0 ]; then
+                      echo "Error: Could not find appropriate location in CHANGELOG.md"
+                      echo "Please ensure CHANGELOG.md has a version section (e.g., ## [0.13.2]) with a '### Changed' section"
+                      rm -f "$TMP_FILE"
+                      exit 1
+                  fi
+
+                  # Replace the original file
+                  mv "$TMP_FILE" CHANGELOG.md
+
+                  echo "Successfully added entry to CHANGELOG.md"
+
+            - name: Check for changes
+              id: check_changes
+              run: |
+                  if git diff --quiet CHANGELOG.md; then
+                      echo "changed=false" >> $GITHUB_OUTPUT
+                  else
+                      echo "changed=true" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Commit changes
+              if: steps.check_changes.outputs.changed == 'true'
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add CHANGELOG.md
+                  git commit -m "docs: update CHANGELOG.md for PR #${{ github.event.pull_request.number }}"
+                  git push
+
+            - name: Comment on PR
+              if: steps.check_changes.outputs.changed == 'true'
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      await github.rest.issues.createComment({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: context.issue.number,
+                          body: 'CHANGELOG.md has been automatically updated with this PR.'
+                      });
