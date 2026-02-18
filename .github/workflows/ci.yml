@@ -364,10 +364,13 @@ jobs:
             - name: Build backend
               run: make build
 
+            - name: Download sample media
+              run: make download-sample-media
+
             - name: Start backend server
               run: |
                   # Start backend in background
-                  ./media-viewer &
+                  MEDIA_DIR=/tmp/media CACHE_DIR=/tmp/cache DATABASE_DIR=/tmp/database METRICS_ENABLED=false LOG_HEALTH_CHECKS=false ./media-viewer &
                   BACKEND_PID=$!
                   echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
 

@@ -16,7 +16,7 @@ STATIC_DIR := static
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fix \
         frontend-format frontend-format-check frontend-check frontend-dev \
-        frontend-test frontend-test-unit frontend-test-integration frontend-test-e2e frontend-test-coverage frontend-test-unit-coverage frontend-test-unit-watch frontend-test-unit-ui \
+        frontend-test frontend-test-unit frontend-test-integration frontend-test-integration-auto frontend-test-e2e frontend-test-coverage frontend-test-unit-coverage frontend-test-unit-watch frontend-test-unit-ui \
 		frontend-test-file frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug frontend-test-e2e-coverage frontend-test-e2e-report \
 		icons docs-serve docs-build docs-deploy \
 		download-sample-media
@@ -271,12 +271,18 @@ test-coverage-merge:
 # This target runs all checks typically needed before submitting a pull request
 pr-check:
 	@echo "Running PR checks..."
-	@echo "Step 1/3: Running Go linter (will auto-fix some lint issues)..."
+	@echo "Step 1/6: Running Go linter (will auto-fix some lint issues)..."
 	@$(MAKE) lint-fix
-	@echo "\nStep 2/3: Running tests..."
+	@echo "\nStep 2/6: Running tests..."
 	@$(MAKE) test
-	@echo "\nStep 3/3: Running race detector..."
+	@echo "\nStep 3/6: Running race detector..."
 	@$(MAKE) test-race
+	@echo "\nStep 4/6: Running frontend checks..."
+	@$(MAKE) frontend-check
+	@echo "\nStep 5/6: Running frontend unit tests..."
+	@$(MAKE) frontend-test-unit
+	@echo "\nStep 6/6: Running frontend integration tests..."
+	@$(MAKE) frontend-test-integration-auto
 	@echo "\nAll PR checks completed successfully!"
 
 test-clean:
@@ -290,11 +296,11 @@ test-clean:
 
 lint:
 	@echo "Linting Go code..."
-	golangci-lint run
+	golangci-lint run  --config=.golangci.yml
 
 lint-fix:
 	@echo "Fixing Go lint issues..."
-	golangci-lint run --fix
+	golangci-lint run --fix --config=.golangci.yml
 
 # =============================================================================
 # Frontend Targets
@@ -341,6 +347,14 @@ frontend-test:
 	@echo "Running all frontend tests (requires backend for integration/e2e tests)..."
 	@echo "Note: Start backend with 'make dev' in another terminal first"
 	cd $(STATIC_DIR) && npm test
+
+frontend-test-integration-auto:
+    @echo "Starting backend (dev-info) in background..."
+    @trap 'kill $$BACK_PID' EXIT; \
+    $(MAKE) dev-info & \
+    BACK_PID=$$!; \
+    sleep 3; \
+    $(MAKE) frontend-test-integration
 
 frontend-test-unit:
 	@echo "Running frontend unit tests (no backend required)..."
