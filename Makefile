@@ -349,12 +349,12 @@ frontend-test:
 	cd $(STATIC_DIR) && npm test
 
 frontend-test-integration-auto:
-    @echo "Starting backend (dev-info) in background..."
-    @trap 'kill $$BACK_PID' EXIT; \
-    $(MAKE) dev-info & \
-    BACK_PID=$$!; \
-    sleep 3; \
-    $(MAKE) frontend-test-integration
+	@echo "Starting backend (dev-info) in background..."
+	@trap 'kill $$BACK_PID' EXIT; \
+	$(MAKE) dev-info & \
+	BACK_PID=$$!; \
+	sleep 3; \
+	$(MAKE) frontend-test-integration
 
 frontend-test-unit:
 	@echo "Running frontend unit tests (no backend required)..."
