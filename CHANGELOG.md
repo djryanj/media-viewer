@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.13.3] - 2026-02-13
 
+
+### Changed
+
+- build(deps): bump renovatebot/github-action from 46.0.2 to 46.1.1 ([#282](https://github.com/djryanj/media-viewer/pull/282))
 ### Added
 
 - build(docs): Added a github action to automatically create changelog entries for bot-submitted PRs ([#276](https://github.com/djryanj/media-viewer/issues/276))
