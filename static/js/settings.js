@@ -1754,6 +1754,10 @@ class SettingsManager {
     }
 }
 
+// Export class for testing
+window.Settings = SettingsManager;
+window.SettingsManager = SettingsManager;
+
 // Initialize settings manager when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     window.settingsManager = new SettingsManager();

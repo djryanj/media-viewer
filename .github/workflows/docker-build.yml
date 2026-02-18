@@ -42,7 +42,7 @@ concurrency:
 jobs:
     build:
         name: Build Docker Image
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         permissions:
             contents: read
             packages: write

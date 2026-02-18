@@ -279,3 +279,6 @@ const Preferences = {
         return !!folderPrefs[path];
     },
 };
+
+// Export for testing
+window.Preferences = Preferences;

@@ -1468,7 +1468,7 @@ const Lightbox = {
 
         if (this.preloadCache.has(imageUrl)) {
             const cachedImg = this.preloadCache.get(imageUrl);
-            if (cachedImg.complete && cachedImg.naturalWidth > 0) {
+            if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
                 this.elements.image.src = cachedImg.src;
                 this.elements.image.classList.remove('hidden');
                 this.hideLoading();
@@ -2075,6 +2075,9 @@ const Lightbox = {
         }
     },
 };
+
+// Export for testing
+window.Lightbox = Lightbox;
 
 document.addEventListener('DOMContentLoaded', () => {
     Lightbox.init();

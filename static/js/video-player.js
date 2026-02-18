@@ -515,3 +515,6 @@ class VideoPlayer {
         }
     }
 }
+
+// Export class for testing
+window.VideoPlayer = VideoPlayer;

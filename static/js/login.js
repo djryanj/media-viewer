@@ -2,7 +2,7 @@
  * Login Page Controller
  * Handles password authentication and passkey (WebAuthn) authentication
  */
-(function () {
+const LoginForm = (function () {
     'use strict';
 
     // DOM Elements - cached after DOM ready
@@ -733,10 +733,19 @@
         }
     }
 
-    // Initialize when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
+    // Return public API
+    return {
+        init,
+        cacheElements,
+    };
 })();
+
+// Export for testing
+window.LoginForm = LoginForm;
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => LoginForm.init());
+} else {
+    LoginForm.init();
+}

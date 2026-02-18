@@ -473,6 +473,9 @@ class WebAuthnManager {
     }
 }
 
+// Export class for testing
+window.WebAuthnManager = WebAuthnManager;
+
 // Create and export singleton instance
 window.webAuthnManager = new WebAuthnManager();
 

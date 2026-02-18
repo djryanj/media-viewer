@@ -1128,6 +1128,10 @@ const Playlist = {
     },
 };
 
+// Export for testing
+window.Playlist = Playlist;
+window.PlaylistControls = Playlist;
+
 document.addEventListener('DOMContentLoaded', () => {
     Playlist.init();
 });

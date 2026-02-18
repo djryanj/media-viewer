@@ -12,13 +12,16 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Install ffmpeg and sqlite
-echo -e "${BLUE}[INFO] Installing ffmpeg and sqlite...${NC}"
+echo -e "${BLUE}[INFO] Installing ffmpeg and sqlite and other dependencies...${NC}"
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     ffmpeg \
     sqlite3 \
     libvips-dev \
     gcc \
-    && sudo rm -rf /var/lib/apt/lists/*
+    libxcomposite1 \
+    libxdamage1 \
+    libgtk-3-0t64 \
+    libatk1.0-0t64
 echo -e "${GREEN}[SUCCESS] ffmpeg and sqlite installed${NC}"
 
 # Setup directories with correct permissions
@@ -118,6 +121,21 @@ if [ -f "static/package.json" ]; then
     cd static
     npm install
     echo -e "${GREEN}[SUCCESS] npm dependencies installed${NC}"
+    cd ..
+fi
+
+# Install Playwright system dependencies and browsers
+if [ -f "static/playwright.config.js" ]; then
+    echo -e "${BLUE}[INFO] Installing Playwright system dependencies...${NC}"
+    cd static
+    # Install system dependencies (requires sudo)
+    sudo npx playwright install-deps
+    echo -e "${GREEN}[SUCCESS] Playwright system dependencies installed${NC}"
+
+    echo -e "${BLUE}[INFO] Installing Playwright browsers...${NC}"
+    npx playwright install
+    echo -e "${GREEN}[SUCCESS] Playwright browsers installed${NC}"
+    cd ..
 fi
 
 # Install mkdocs requirements (if applicable)

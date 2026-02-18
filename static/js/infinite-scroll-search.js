@@ -310,7 +310,7 @@ const InfiniteScrollSearch = {
      * Get all loaded items
      */
     getAllLoadedItems() {
-        return this.state.loadedItems;
+        return [...this.state.loadedItems];
     },
 };
 

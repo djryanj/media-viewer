@@ -15,11 +15,12 @@ concurrency:
 jobs:
     changes:
         name: Detect Changes
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         permissions:
             pull-requests: read
         outputs:
             go: ${{ steps.filter.outputs.go }}
+            frontend: ${{ steps.filter.outputs.frontend }}
             static-only: ${{ steps.filter.outputs.static-only }}
             docker: ${{ steps.filter.outputs.docker }}
             docker-related: ${{ steps.filter.outputs.docker-related }}
@@ -39,6 +40,15 @@ jobs:
                         - 'go.mod'
                         - 'go.sum'
                         - 'Makefile'
+                      frontend:
+                        - 'static/**/*.js'
+                        - 'static/**/*.css'
+                        - 'static/**/*.html'
+                        - 'static/package.json'
+                        - 'static/package-lock.json'
+                        - 'static/vitest.config.js'
+                        - 'static/playwright.config.js'
+                        - 'static/eslint.config.js'
                       static-only:
                         - 'static/**'
                       docker:
@@ -53,7 +63,7 @@ jobs:
 
     lint:
         name: Lint
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         needs: changes
         # Skip if only static files changed (no Go changes)
         if: needs.changes.outputs.go == 'true'
@@ -80,7 +90,7 @@ jobs:
 
     build:
         name: Build Check
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         needs: changes
         # Skip if only static files changed (no Go changes)
         if: needs.changes.outputs.go == 'true'
@@ -109,7 +119,7 @@ jobs:
 
     test-unit:
         name: Unit Tests
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         needs: changes
         # Skip if only static files changed (no Go changes)
         if: needs.changes.outputs.go == 'true'
@@ -235,7 +245,7 @@ jobs:
 
     test-integration:
         name: Integration Tests
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         needs: changes
         # Only run on PRs (not on regular branch pushes)
         if: |
@@ -284,7 +294,7 @@ jobs:
 
     test-race:
         name: Race Detector
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         needs: changes
         if: |
             github.event_name == 'pull_request' &&
@@ -308,15 +318,134 @@ jobs:
               run: |
                   make test-race
 
+    test-frontend:
+        name: Frontend Tests
+        runs-on: home-runners
+        needs: changes
+        # Run if frontend files changed, or if both Go and frontend changed
+        if: |
+            needs.changes.outputs.frontend == 'true' ||
+            (needs.changes.outputs.go == 'true' && needs.changes.outputs.frontend == 'true')
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '20'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            # commenting out for now as not ready for production
+            # - name: Install Playwright browsers
+            #   working-directory: ./static
+            #   run: npx playwright install --with-deps
+
+            - name: Run frontend unit tests (no backend required)
+              working-directory: ./static
+              run: npm run test:unit:only
+
+            - name: Build backend
+              run: make build
+
+            - name: Start backend server
+              run: |
+                  # Start backend in background
+                  ./media-viewer &
+                  BACKEND_PID=$!
+                  echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
+
+                  # Wait for server to be ready
+                  echo "Waiting for backend to start..."
+                  for i in {1..30}; do
+                    if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+                      echo "Backend is ready!"
+                      break
+                    fi
+                    if [ $i -eq 30 ]; then
+                      echo "Backend failed to start"
+                      exit 1
+                    fi
+                    sleep 1
+                  done
+
+            - name: Run frontend integration tests
+              working-directory: ./static
+              run: npm run test:integration
+              env:
+                  TEST_BASE_URL: http://localhost:8080
+
+            # commenting out for now as not ready for production
+            # - name: Run frontend E2E tests
+            #   working-directory: ./static
+            #   run: npm run test:e2e
+            #   env:
+            #       BASE_URL: http://localhost:8080
+
+            - name: Stop backend server
+              if: always()
+              run: |
+                  if [ -n "$BACKEND_PID" ]; then
+                    kill $BACKEND_PID || true
+                  fi
+
+            - name: Generate frontend coverage summary
+              if: always()
+              run: |
+                  echo "## Frontend Test Coverage" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  if [ -f static/coverage/coverage-summary.json ]; then
+                    echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+                    cat static/coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
+                    echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "No coverage report generated" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+            - name: Upload frontend coverage
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: frontend-test-results
+                  path: |
+                      static/coverage/
+                      static/e2e/playwright-report/
+                      static/e2e/test-results/
+
+            - name: Upload Playwright report
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: playwright-report
+                  path: static/e2e/playwright-report/
+                  retention-days: 30
+
     build-docker:
         name: Build Docker Image
-        needs: [changes, lint, test-unit, build]
+        needs: [changes, lint, test-unit, test-frontend, build]
         # On branch pushes: only if Dockerfile or GHA files changed
         # On PRs: always build and push (after tests pass)
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
+            (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
             (needs.build.result == 'success' || needs.build.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
@@ -334,13 +463,14 @@ jobs:
 
     build-docker-nvidia:
         name: Build Docker Image (NVIDIA)
-        needs: [changes, lint, test-unit, build]
+        needs: [changes, lint, test-unit, test-frontend, build]
         # On branch pushes: only if Dockerfile or GHA files changed
         # On PRs: always build and push (after tests pass)
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
+            (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
             (needs.build.result == 'success' || needs.build.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
@@ -385,9 +515,18 @@ jobs:
 
     ci-success:
         name: CI Success
-        runs-on: ubuntu-latest
+        runs-on: home-runners
         needs:
-            [lint, build, test-unit, test-integration, test-race, build-docker, build-docker-nvidia]
+            [
+                lint,
+                build,
+                test-unit,
+                test-integration,
+                test-race,
+                test-frontend,
+                build-docker,
+                build-docker-nvidia,
+            ]
         if: always()
         steps:
             - name: Check required jobs passed
@@ -407,6 +546,12 @@ jobs:
                   # Check unit tests (required if ran)
                   if [[ "${{ needs.test-unit.result }}" == "failure" ]]; then
                     echo "❌ Unit tests failed"
+                    exit 1
+                  fi
+
+                  # Check frontend tests (required if ran)
+                  if [[ "${{ needs.test-frontend.result }}" == "failure" ]]; then
+                    echo "❌ Frontend tests failed"
                     exit 1
                   fi
 

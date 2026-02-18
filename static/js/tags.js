@@ -380,7 +380,7 @@ const Tags = {
             return;
         }
 
-        const hasNonCommonTags = this.bulkPaths.length > 1 && allTags.length > commonTags.length;
+        const _hasNonCommonTags = this.bulkPaths.length > 1 && allTags.length > commonTags.length;
 
         allTags.forEach((tag) => {
             const isCommon = commonTags.includes(tag);
@@ -397,9 +397,9 @@ const Tags = {
 
             tagEl.innerHTML = `
                 ${this.escapeHtml(tag)}
-                ${!isCommon ? `<span class="tag-partial-indicator" title="${this.escapeHtml(tooltipText)}">~</span>` : ''}
-                ${!isCommon && this.bulkPaths.length > 1 ? `<button class="tag-merge" data-tag="${this.escapeHtml(tag)}" title="Apply to all items"><i data-lucide="plus-circle"></i></button>` : ''}
-                <button class="tag-remove" data-tag="${this.escapeHtml(tag)}" title="${isCommon ? 'Remove from all' : 'Remove from items that have it'}"><i data-lucide="x"></i></button>
+                ${!isCommon ? `<span class="tag-partial-indicator" title="${this.escapeAttr(tooltipText)}">~</span>` : ''}
+                ${!isCommon && this.bulkPaths.length > 1 ? `<button class="tag-merge" data-tag="${this.escapeAttr(tag)}" title="Apply to all items"><i data-lucide="plus-circle"></i></button>` : ''}
+                <button class="tag-remove" data-tag="${this.escapeAttr(tag)}" title="${isCommon ? 'Remove from all' : 'Remove from items that have it'}"><i data-lucide="x"></i></button>
             `;
 
             // Bind remove handler
@@ -441,7 +441,7 @@ const Tags = {
             });
 
             if (response.ok) {
-                const result = await response.json();
+                const _result = await response.json();
 
                 // Reload tags to reflect the change
                 await this.loadBulkTags(this.bulkPaths);
@@ -522,7 +522,7 @@ const Tags = {
             tagEl.title = `Click to search for "${tag}"`;
             tagEl.innerHTML = `
                 ${this.escapeHtml(tag)}
-                <button class="tag-remove" data-tag="${this.escapeHtml(tag)}" title="Remove tag"><i data-lucide="x"></i></button>
+                <button class="tag-remove" data-tag="${this.escapeAttr(tag)}" title="Remove tag"><i data-lucide="x"></i></button>
             `;
 
             tagEl.querySelector('.tag-remove').addEventListener('click', (e) => {
@@ -557,7 +557,7 @@ const Tags = {
         this.elements.tagSuggestions.innerHTML = matches
             .map(
                 (tag) => `
-                <div class="tag-suggestion" data-tag="${this.escapeHtml(tag.name)}">
+                <div class="tag-suggestion" data-tag="${this.escapeAttr(tag.name)}">
                     ${this.highlightMatch(tag.name, query)}
                     <span class="tag-count">(${tag.itemCount})</span>
                 </div>
@@ -576,6 +576,7 @@ const Tags = {
     },
 
     highlightMatch(text, query) {
+        if (!query || query.length === 0) return this.escapeHtml(text);
         const lowerText = text.toLowerCase();
         const idx = lowerText.indexOf(query);
         if (idx === -1) return this.escapeHtml(text);
@@ -865,6 +866,15 @@ const Tags = {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    },
+
+    escapeAttr(text) {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     },
 
     renderItemTags(tags) {
