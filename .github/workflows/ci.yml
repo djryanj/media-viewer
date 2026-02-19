@@ -113,10 +113,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            # - name: Install libvips
-            #   run: |
-            #       sudo apt-get update
-            #       sudo apt-get install -y libvips-dev
+            - name: Install libvips
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -169,7 +169,6 @@ jobs:
     build:
         name: Backend Build Check
         runs-on: ubuntu-latest
-        # CHANGED: Now depends on lint — don't build if lint fails
         needs: [changes, lint]
         if: |
             always() &&
@@ -179,10 +178,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            # - name: Install libvips
-            #   run: |
-            #       sudo apt-get update
-            #       sudo apt-get install -y libvips-dev
+            - name: Install libvips
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -208,7 +207,6 @@ jobs:
     test-unit:
         name: Backend Unit Tests
         runs-on: ubuntu-latest
-        # CHANGED: Now depends on lint — don't test if lint fails
         needs: [changes, lint]
         if: |
             always() &&
@@ -218,10 +216,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            # - name: Install libvips
-            #   run: |
-            #       sudo apt-get update
-            #       sudo apt-get install -y libvips-dev
+            - name: Install libvips
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -318,10 +316,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            # - name: Install system dependencies
-            #   run: |
-            #       sudo apt-get update
-            #       sudo apt-get install -y libvips-dev ffmpeg
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -370,8 +368,6 @@ jobs:
     test-race:
         name: Backend Race Detector
         runs-on: ubuntu-latest
-        # CHANGED: Now depends on test-unit — race detection is expensive,
-        # only run if unit tests pass
         needs: [changes, test-unit]
         if: |
             github.event_name == 'pull_request' &&
@@ -381,10 +377,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            # - name: Install libvips and ffmpeg
-            #   run: |
-            #       sudo apt-get update
-            #       sudo apt-get install -y libvips-dev ffmpeg
+            - name: Install libvips and ffmpeg
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Go
               uses: actions/setup-go@v6
