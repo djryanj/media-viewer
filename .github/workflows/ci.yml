@@ -74,10 +74,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            - name: Install libvips
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libvips-dev
+            # - name: Install libvips
+            #   run: |
+            #       sudo apt-get update
+            #       sudo apt-get install -y libvips-dev
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -140,10 +140,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            - name: Install libvips
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libvips-dev
+            # - name: Install libvips
+            #   run: |
+            #       sudo apt-get update
+            #       sudo apt-get install -y libvips-dev
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -179,10 +179,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            - name: Install libvips
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libvips-dev
+            # - name: Install libvips
+            #   run: |
+            #       sudo apt-get update
+            #       sudo apt-get install -y libvips-dev
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -331,10 +331,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            - name: Install libvips and ffmpeg
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+            # - name: Install libvips and ffmpeg
+            #   run: |
+            #       sudo apt-get update
+            #       sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Go
               uses: actions/setup-go@v6
