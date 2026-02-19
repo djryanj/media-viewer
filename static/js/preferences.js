@@ -59,7 +59,9 @@ const Preferences = {
      * @returns {*} Preference value or default
      */
     get(key) {
-        return this.current.hasOwnProperty(key) ? this.current[key] : this.defaults[key];
+        return Object.prototype.hasOwnProperty.call(this.current, key)
+            ? this.current[key]
+            : this.defaults[key];
     },
 
     /**

@@ -223,7 +223,7 @@ const Gallery = {
                     img.onerror = handleFailure;
                     img.src = blobUrl;
                 })
-                .catch((error) => {
+                .catch((_) => {
                     clearTimeout(timeoutId);
                     if (!imageLoaded) {
                         handleFailure();
@@ -1049,7 +1049,7 @@ const Gallery = {
                     img.onerror = handleRetryFailure;
                     img.src = blobUrl;
                 })
-                .catch((error) => {
+                .catch((_) => {
                     clearTimeout(timeoutId);
                     if (!retryLoaded) {
                         handleRetryFailure();

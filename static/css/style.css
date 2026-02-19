@@ -102,13 +102,13 @@ a {
 
     /* Semantic colors */
     --success: #2ecc71;
-    --success-bg: rgba(46, 204, 113, 0.15);
+    --success-bg: rgb(46 204 113 / 15%);
     --error: #e74c3c;
-    --error-bg: rgba(231, 76, 60, 0.15);
+    --error-bg: rgb(231 76 60 / 15%);
     --warning: #f39c12;
-    --warning-bg: rgba(243, 156, 18, 0.15);
+    --warning-bg: rgb(243 156 18 / 15%);
     --info: #3498db;
-    --info-bg: rgba(52, 152, 219, 0.15);
+    --info-bg: rgb(52 152 219 / 15%);
 
     /* State colors */
     --favorite-color: #f1c40f;
@@ -124,7 +124,7 @@ a {
     /* Borders and shadows */
     --border-color: #2a2a4a;
     --border-focus: #5dade2;
-    --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --shadow: 0 4px 6px rgb(0 0 0 / 30%);
     --radius: 8px;
     --transition: 0.2s ease;
 
@@ -185,7 +185,7 @@ body {
 }
 
 .logo-link:hover {
-    opacity: 0.9;
+    opacity: 90%;
 }
 
 .header-logo {
@@ -253,7 +253,7 @@ body {
 .search-box input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+    box-shadow: 0 0 0 2px rgb(93 173 226 / 30%);
 }
 
 .search-box input::placeholder {
@@ -355,7 +355,7 @@ select:focus {
 }
 
 /* Header Responsive */
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .header-inner {
         padding: 1rem;
     }
@@ -382,7 +382,7 @@ select:focus {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .header-inner {
         display: flex;
         flex-direction: row;
@@ -444,7 +444,7 @@ select:focus {
     }
 }
 
-@media (min-width: 1200px) {
+@media (width >= 1200px) {
     .header-inner {
         padding: 1rem 2rem;
         gap: 2rem;
@@ -521,13 +521,13 @@ select:focus {
     flex-shrink: 0;
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .breadcrumb-inner {
         padding: 0.5rem 1.5rem;
     }
 }
 
-@media (min-width: 1200px) {
+@media (width >= 1200px) {
     .breadcrumb-inner {
         padding: 0.5rem 2rem;
     }
@@ -544,7 +544,7 @@ select:focus {
     margin: 0 auto;
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .main-content {
         padding: 1rem;
         padding-bottom: 4rem;
@@ -565,7 +565,6 @@ select:focus {
     position: relative;
     background: var(--bg-secondary);
     overflow: hidden;
-    -webkit-user-select: none;
     user-select: none;
 }
 
@@ -581,7 +580,7 @@ select:focus {
 }
 
 .gallery-item-thumb:active {
-    opacity: 0.8;
+    opacity: 80%;
 }
 
 .gallery-item-thumb img {
@@ -589,12 +588,12 @@ select:focus {
     height: 100%;
     object-fit: cover;
     object-position: center;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.2s ease;
 }
 
 .gallery-item-thumb img.loaded {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .gallery-item-icon {
@@ -619,8 +618,8 @@ select:focus {
     padding: 1rem 0.375rem 0.25rem;
     background: linear-gradient(
         to top,
-        rgba(0, 0, 0, 0.7) 0%,
-        rgba(0, 0, 0, 0.3) 50%,
+        rgb(0 0 0 / 70%) 0%,
+        rgb(0 0 0 / 30%) 50%,
         transparent 100%
     );
     pointer-events: none;
@@ -629,11 +628,11 @@ select:focus {
 .gallery-item-mobile-info .gallery-item-name {
     font-size: 0.5rem;
     font-weight: 400;
-    color: rgba(255, 255, 255, 0.85);
+    color: rgb(255 255 255 / 85%);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 50%);
     pointer-events: none;
 }
 
@@ -650,11 +649,11 @@ select:focus {
 .gallery-item-mobile-info .item-tag {
     font-size: 0.5rem;
     padding: 0.125rem 0.375rem;
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
     border-radius: 2px;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgb(255 255 255 / 90%);
     white-space: nowrap;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+    text-shadow: 0 1px 1px rgb(0 0 0 / 30%);
     pointer-events: auto;
     cursor: pointer;
     min-height: 1.25rem;
@@ -663,7 +662,7 @@ select:focus {
 }
 
 .gallery-item-mobile-info .item-tag.more {
-    background: rgba(233, 69, 96, 0.5);
+    background: rgb(233 69 96 / 50%);
 }
 
 .gallery-item-mobile-info .item-tag:not(.more):active {
@@ -688,7 +687,7 @@ select:focus {
     height: 24px;
     border: none;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgb(0 0 0 / 50%);
     color: var(--text-secondary);
     font-size: 0.75rem;
     cursor: pointer;
@@ -700,17 +699,17 @@ select:focus {
         background var(--transition),
         color var(--transition);
     z-index: 10;
-    opacity: 0;
+    opacity: 0%;
 }
 
 .gallery-item-thumb:active .pin-button,
 .pin-button.pinned {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .pin-button.pinned {
     color: var(--favorite-color);
-    background: rgba(0, 0, 0, 0.7);
+    background: rgb(0 0 0 / 70%);
     box-shadow: 0 0 0 2px var(--favorite-color);
 }
 
@@ -723,7 +722,7 @@ select:focus {
     height: 24px;
     border: none;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgb(0 0 0 / 50%);
     color: var(--text-secondary);
     font-size: 0.625rem;
     cursor: pointer;
@@ -734,18 +733,18 @@ select:focus {
         opacity var(--transition),
         background var(--transition);
     z-index: 10;
-    opacity: 0;
+    opacity: 0%;
 }
 
 .gallery-item-thumb:active .tag-button,
 .tag-button.has-tags {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .tag-button.has-tags {
     color: var(--text-secondary);
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+    background: rgb(0 0 0 / 40%);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 20%);
 }
 
 /* Download button */
@@ -757,7 +756,7 @@ select:focus {
     height: 24px;
     border: none;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgb(0 0 0 / 50%);
     color: var(--text-secondary);
     font-size: 0.625rem;
     cursor: pointer;
@@ -769,15 +768,15 @@ select:focus {
         background var(--transition),
         color var(--transition);
     z-index: 10;
-    opacity: 0;
+    opacity: 0%;
 }
 
 .gallery-item-thumb:active .download-button {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .download-button:hover {
-    background: rgba(0, 0, 0, 0.7);
+    background: rgb(0 0 0 / 70%);
     color: white;
 }
 
@@ -789,7 +788,7 @@ select:focus {
     transform: translate(-50%, -50%);
     width: 32px;
     height: 32px;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgb(0 0 0 / 60%);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -802,16 +801,18 @@ select:focus {
 
 /* Double-tap feedback */
 .gallery-item.favorite-flash {
-    animation: favoriteFlash 0.3s ease;
+    animation: favorite-flash 0.3s ease;
 }
 
-@keyframes favoriteFlash {
+@keyframes favorite-flash {
     0% {
         transform: scale(1);
     }
+
     50% {
         transform: scale(0.95);
     }
+
     100% {
         transform: scale(1);
     }
@@ -823,7 +824,7 @@ select:focus {
 }
 
 /* Gallery Responsive */
-@media (min-width: 480px) {
+@media (width >= 480px) {
     .gallery {
         grid-template-columns: repeat(4, 1fr);
         gap: 3px;
@@ -838,7 +839,7 @@ select:focus {
     }
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .gallery {
         grid-template-columns: repeat(5, 1fr);
         gap: 4px;
@@ -864,7 +865,7 @@ select:focus {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .gallery {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: 1rem;
@@ -887,7 +888,7 @@ select:focus {
     }
 
     .gallery-item-thumb:active {
-        opacity: 1;
+        opacity: 100%;
     }
 
     .gallery-item:hover .gallery-item-thumb {
@@ -1010,7 +1011,7 @@ select:focus {
         justify-content: center;
         width: 1.125rem;
         padding: 0.1875rem;
-        background: rgba(0, 0, 0, 0.2);
+        background: rgb(0 0 0 / 20%);
         border: none;
         color: var(--text-secondary);
         cursor: pointer;
@@ -1057,7 +1058,7 @@ select:focus {
     .pin-button,
     .tag-button,
     .download-button {
-        opacity: 0;
+        opacity: 0%;
         width: 32px;
         height: 32px;
     }
@@ -1065,18 +1066,18 @@ select:focus {
     .gallery-item-thumb:hover .pin-button,
     .gallery-item-thumb:hover .tag-button,
     .gallery-item-thumb:hover .download-button {
-        opacity: 1;
+        opacity: 100%;
     }
 
     .pin-button.pinned,
     .tag-button.has-tags {
-        opacity: 1;
+        opacity: 100%;
     }
 
     .pin-button:hover,
     .tag-button:hover,
     .download-button:hover {
-        background: rgba(0, 0, 0, 0.8);
+        background: rgb(0 0 0 / 80%);
         color: var(--text-primary);
     }
 
@@ -1099,7 +1100,7 @@ select:focus {
 
     .select-checkbox {
         position: absolute;
-        opacity: 0;
+        opacity: 0%;
         width: 0;
         height: 0;
         pointer-events: none;
@@ -1153,7 +1154,7 @@ select:focus {
     }
 }
 
-@media (min-width: 1200px) {
+@media (width >= 1200px) {
     .gallery {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     }
@@ -1223,7 +1224,7 @@ select:focus {
 }
 
 .favorites-fade.hidden {
-    opacity: 0;
+    opacity: 0%;
 }
 
 .favorites-fade-left {
@@ -1279,7 +1280,7 @@ select:focus {
 }
 
 .favorites-gallery .pin-button {
-    opacity: 1;
+    opacity: 100%;
     width: 20px;
     height: 20px;
     font-size: 0.625rem;
@@ -1298,7 +1299,7 @@ select:focus {
     left: 0.25rem;
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .favorites-inner {
         padding: 0.75rem 1rem;
     }
@@ -1324,7 +1325,7 @@ select:focus {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .favorites-inner {
         padding: 1rem 1.5rem;
     }
@@ -1361,11 +1362,11 @@ select:focus {
     }
 
     .favorites-gallery .gallery-item-thumb:hover .pin-button {
-        opacity: 1;
+        opacity: 100%;
     }
 }
 
-@media (min-width: 1200px) {
+@media (width >= 1200px) {
     .favorites-inner {
         padding: 1rem 2rem;
     }
@@ -1464,7 +1465,7 @@ select:focus {
 }
 
 .search-dropdown-item-name mark {
-    background: rgba(233, 69, 96, 0.3);
+    background: rgb(233 69 96 / 30%);
     color: inherit;
     padding: 0 2px;
     border-radius: 2px;
@@ -1497,7 +1498,7 @@ select:focus {
 }
 
 .search-dropdown-tag {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgb(99 102 241 / 10%);
     border-left: 3px solid var(--accent);
 }
 
@@ -1515,7 +1516,12 @@ select:focus {
     background: var(--bg-secondary);
 }
 
-@media (min-width: 600px) {
+.search-dropdown-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+@media (width >= 600px) {
     .search-dropdown-item {
         padding: 0.625rem 1rem;
     }
@@ -1527,7 +1533,7 @@ select:focus {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .search-dropdown-item-thumb {
         width: 56px;
         height: 56px;
@@ -1567,21 +1573,21 @@ select:focus {
     font-size: 0.875rem;
 }
 
-@media (min-width: 480px) {
+@media (width >= 480px) {
     .search-results-gallery {
         grid-template-columns: repeat(4, 1fr);
         gap: 3px;
     }
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .search-results-gallery {
         grid-template-columns: repeat(5, 1fr);
         gap: 4px;
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .search-results-gallery {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: 1.5rem;
@@ -1626,11 +1632,11 @@ select:focus {
 }
 
 .pagination .btn:disabled {
-    opacity: 0.5;
+    opacity: 50%;
     cursor: not-allowed;
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     #page-info,
     #search-page-info {
         width: auto;
@@ -1649,7 +1655,7 @@ select:focus {
 .lightbox {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.98);
+    background: rgb(0 0 0 / 98%);
     z-index: 1000;
     display: flex;
     align-items: center;
@@ -1671,19 +1677,19 @@ select:focus {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    opacity: 0.3;
+    opacity: 30%;
     transition: opacity var(--transition);
     z-index: 10;
     pointer-events: auto;
     padding: 0.5rem 1rem;
     border-radius: var(--radius);
-    background: rgba(0, 0, 0, 0.3);
+    background: rgb(0 0 0 / 30%);
     backdrop-filter: blur(4px);
     user-select: none;
 }
 
 .viewer-clock:hover {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .viewer-clock.hidden {
@@ -1714,18 +1720,20 @@ select:focus {
 }
 
 /* Lightbox clock responsive sizing for mobile */
-@media (max-width: 768px) {
+@media (width <= 768px) {
     #lightbox-clock {
         font-size: 1.25rem;
         padding: 0.25rem 0.5rem;
         right: 3rem;
+
         /* top: 0.5rem inherited from base for desktop/tablet alignment */
     }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     #lightbox-clock {
         /* Match close button dimensions: 48px icon + 12px padding = 72px height total */
+
         /* Close button is 4px from top with 12px padding to align with other buttons */
         font-size: 1.125rem;
         padding: 0.75rem 0.625rem; /* 12px top/bottom, 10px left/right */
@@ -1744,7 +1752,7 @@ select:focus {
 }
 
 /* Landscape mode alignment for mobile devices */
-@media (orientation: landscape) and (max-height: 600px) {
+@media (orientation: landscape) and (height <= 600px) {
     #lightbox-clock {
         font-size: 1.125rem;
         padding: 0.75rem 0.625rem;
@@ -1787,18 +1795,18 @@ select:focus {
 .lightbox.ui-overlays-hidden .lightbox-loop-toggle,
 .lightbox.ui-overlays-hidden .lightbox-info,
 .lightbox.ui-overlays-hidden .lightbox-tags-overlay {
-    opacity: 0;
+    opacity: 0%;
     pointer-events: none;
 }
 
 /* Keep clock visible when preference is enabled */
 .lightbox.clock-always-visible.ui-overlays-hidden .viewer-clock {
-    opacity: 0.3;
+    opacity: 30%;
     pointer-events: auto;
 }
 
 .lightbox.clock-always-visible.ui-overlays-hidden .viewer-clock:hover {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .lightbox-content {
@@ -1829,7 +1837,7 @@ select:focus {
 
 /* Style video controls for more consistent sizing */
 .lightbox-video::-webkit-media-controls-panel {
-    background-color: rgba(0, 0, 0, 0.8);
+    background-color: rgb(0 0 0 / 80%);
 }
 
 .lightbox-video::-webkit-media-controls-enclosure {
@@ -1846,7 +1854,7 @@ select:focus {
 .lightbox-prev,
 .lightbox-next {
     position: absolute;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
     color: white;
     border: none;
     font-size: 1.5rem;
@@ -1881,7 +1889,7 @@ select:focus {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
     color: var(--text-secondary);
     font-size: 1.25rem;
     cursor: pointer;
@@ -1903,7 +1911,7 @@ select:focus {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
     color: var(--text-secondary);
     font-size: 1.25rem;
     cursor: pointer;
@@ -1928,24 +1936,24 @@ select:focus {
 .lightbox-pin:active,
 .lightbox-tag:active,
 .lightbox-download:active {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
 }
 
 .lightbox-download:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
     color: white;
 }
 
 .lightbox-pin.pinned {
-    color: rgba(241, 196, 15, 0.8);
-    box-shadow: 0 0 0 1px rgba(241, 196, 15, 0.5);
-    background: rgba(241, 196, 15, 0.08);
+    color: rgb(241 196 15 / 80%);
+    box-shadow: 0 0 0 1px rgb(241 196 15 / 50%);
+    background: rgb(241 196 15 / 8%);
 }
 
 .lightbox-tag.has-tags {
-    color: rgba(233, 69, 96, 0.8);
-    box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.5);
-    background: rgba(233, 69, 96, 0.08);
+    color: rgb(233 69 96 / 80%);
+    box-shadow: 0 0 0 1px rgb(233 69 96 / 50%);
+    background: rgb(233 69 96 / 8%);
 }
 
 .lightbox-info {
@@ -1953,7 +1961,7 @@ select:focus {
     bottom: 0.5rem;
     left: 0.5rem;
     right: 0.5rem;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgb(0 0 0 / 70%);
     padding: 0.5rem 0.75rem;
     border-radius: var(--radius);
     display: flex;
@@ -1987,39 +1995,32 @@ select:focus {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.2s ease;
     z-index: 15;
     -webkit-tap-highlight-color: transparent;
-    -webkit-mask-image: linear-gradient(
-        to bottom,
-        transparent 0%,
-        black 15%,
-        black 80%,
-        transparent 100%
-    );
     mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 80%, transparent 100%);
 }
 
 .lightbox-hot-zone:hover,
 .lightbox-hot-zone:active {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .lightbox-hot-zone-left {
     left: 0;
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent);
+    background: linear-gradient(to right, rgb(0 0 0 / 30%), transparent);
 }
 
 .lightbox-hot-zone-right {
     right: 0;
-    background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
+    background: linear-gradient(to left, rgb(0 0 0 / 30%), transparent);
 }
 
 .lightbox-hot-zone-icon {
     font-size: 2rem;
     color: white;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 2px 4px rgb(0 0 0 / 50%);
     pointer-events: none;
 }
 
@@ -2040,8 +2041,8 @@ select:focus {
 .lightbox-spinner {
     width: 50px;
     height: 50px;
-    border: 4px solid rgba(255, 255, 255, 0.2);
-    border-top-color: #ffffff;
+    border: 4px solid rgb(255 255 255 / 20%);
+    border-top-color: #fff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     transform-origin: center;
@@ -2050,7 +2051,7 @@ select:focus {
 
 #lightbox-image.loading,
 #lightbox-video.loading {
-    opacity: 0.3;
+    opacity: 30%;
 }
 
 #lightbox-image,
@@ -2067,7 +2068,7 @@ select:focus {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
     color: var(--text-secondary);
     font-size: 1.25rem;
     cursor: pointer;
@@ -2083,13 +2084,13 @@ select:focus {
 
 .lightbox-autoplay:hover,
 .lightbox-autoplay:active {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
 }
 
 .lightbox-autoplay.enabled {
-    color: rgba(52, 152, 219, 0.8);
-    box-shadow: 0 0 0 1px rgba(52, 152, 219, 0.5);
-    background: rgba(52, 152, 219, 0.08);
+    color: rgb(52 152 219 / 80%);
+    box-shadow: 0 0 0 1px rgb(52 152 219 / 50%);
+    background: rgb(52 152 219 / 8%);
 }
 
 .lightbox-autoplay.hidden {
@@ -2105,7 +2106,7 @@ select:focus {
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
     color: var(--text-secondary);
     font-size: 1.25rem;
     cursor: pointer;
@@ -2121,13 +2122,13 @@ select:focus {
 
 .lightbox-loop-toggle:hover,
 .lightbox-loop-toggle:active {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
 }
 
 .lightbox-loop-toggle.enabled {
-    color: rgba(52, 152, 219, 0.8);
-    box-shadow: 0 0 0 1px rgba(52, 152, 219, 0.5);
-    background: rgba(52, 152, 219, 0.08);
+    color: rgb(52 152 219 / 80%);
+    box-shadow: 0 0 0 1px rgb(52 152 219 / 50%);
+    background: rgb(52 152 219 / 8%);
 }
 
 .lightbox-loop-toggle.hidden {
@@ -2159,7 +2160,7 @@ select:focus {
     align-items: center;
     pointer-events: auto;
     padding: 0.5rem;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgb(0 0 0 / 60%);
     border-radius: var(--radius);
     max-width: calc(100% - 1rem);
     max-height: 3rem; /* One row height */
@@ -2177,14 +2178,14 @@ select:focus {
     left: 0;
     right: 0;
     height: 1rem;
-    background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.6));
+    background: linear-gradient(to bottom, transparent, rgb(0 0 0 / 60%));
     pointer-events: none;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
 }
 
 .lightbox-tags-overlay.has-overflow:not(.expanded) .lightbox-tags-container::after {
-    opacity: 1;
+    opacity: 100%;
 }
 
 /* Expanded state */
@@ -2196,13 +2197,13 @@ select:focus {
 .lightbox-tag-chip {
     display: inline-flex;
     align-items: stretch;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgb(255 255 255 / 15%);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border-radius: calc(var(--radius) - 2px);
     font-size: 0.8125rem;
     color: white;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 50%);
     overflow: hidden;
 }
 
@@ -2212,9 +2213,9 @@ select:focus {
     justify-content: center;
     width: 1.75rem;
     padding: 0.25rem;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgb(0 0 0 / 20%);
     border: none;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(255 255 255 / 70%);
     cursor: pointer;
     transition:
         background var(--transition),
@@ -2236,7 +2237,7 @@ select:focus {
 
 .lightbox-tag-divider {
     width: 1px;
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
     align-self: stretch;
 }
 
@@ -2258,23 +2259,23 @@ select:focus {
 /* Lightbox Touch Devices */
 @media (hover: none) and (pointer: coarse) {
     .lightbox-hot-zone {
-        opacity: 0.5;
+        opacity: 50%;
     }
 
     .lightbox-hot-zone:active {
-        opacity: 1;
-        background: rgba(255, 255, 255, 0.1);
+        opacity: 100%;
+        background: rgb(255 255 255 / 10%);
     }
 }
 
-@media (max-width: 899px) {
+@media (width <= 899px) {
     .lightbox-prev,
     .lightbox-next {
         display: none;
     }
 }
 
-@media (max-width: 599px) {
+@media (width <= 599px) {
     .lightbox-tags-overlay {
         bottom: 3.5rem;
         padding: 0.25rem;
@@ -2305,7 +2306,7 @@ select:focus {
 }
 
 /* Lightbox Desktop */
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .lightbox-hot-zone {
         display: none;
     }
@@ -2415,11 +2416,11 @@ select:focus {
 /* Lightbox Video Mode */
 .lightbox.video-mode .lightbox-hot-zone {
     /* Bottom position is now set dynamically via JavaScript */
+
     /* based on actual video height to end 50px above video bottom */
     width: 15%;
     min-width: 50px;
     max-width: 100px;
-    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
     mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
 }
 
@@ -2427,7 +2428,7 @@ select:focus {
     bottom: 7rem;
 }
 
-@media (max-width: 599px) {
+@media (width <= 599px) {
     .lightbox.video-mode .lightbox-tags-overlay {
         bottom: 6rem;
     }
@@ -2436,7 +2437,6 @@ select:focus {
 @media (hover: none) and (pointer: coarse) {
     .lightbox.video-mode .lightbox-hot-zone {
         /* Bottom position is dynamically set via JavaScript */
-        -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
         mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
     }
 }
@@ -2464,7 +2464,7 @@ select:focus {
     }
 }
 
-@media (orientation: landscape) and (max-height: 500px) {
+@media (orientation: landscape) and (height <= 500px) {
     .lightbox-tags-overlay {
         bottom: 3rem;
         padding: 0.25rem;
@@ -2501,7 +2501,7 @@ select:focus {
 .player-modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.98);
+    background: rgb(0 0 0 / 98%);
     z-index: 1000;
     display: flex;
     align-items: center;
@@ -2600,7 +2600,7 @@ select:focus {
 }
 
 #playlist-video.loading {
-    opacity: 0.3;
+    opacity: 30%;
 }
 
 #playlist-video {
@@ -2658,14 +2658,14 @@ select:focus {
 }
 
 #playlist-items li.active .playlist-tag {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
     color: white;
 }
 
 #playlist-items li.unavailable {
     color: var(--text-secondary);
     cursor: not-allowed;
-    opacity: 0.5;
+    opacity: 50%;
     text-decoration: line-through;
 }
 
@@ -2694,11 +2694,6 @@ select:focus {
 .playlist-tag.more {
     background: var(--bg-tertiary);
     color: var(--accent);
-}
-
-/* Make lightbox content positioned */
-.lightbox-content {
-    position: relative;
 }
 
 /* Lightbox video wrapper for proper control positioning */
@@ -2738,14 +2733,14 @@ select:focus {
     align-items: center;
     justify-content: center;
     gap: 2rem;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
     z-index: 20;
     pointer-events: none;
 }
 
 .video-controls.show {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .video-controls-overlay {
@@ -2753,17 +2748,17 @@ select:focus {
     inset: 0;
     background: linear-gradient(
         to bottom,
-        rgba(0, 0, 0, 0.3) 0%,
+        rgb(0 0 0 / 30%) 0%,
         transparent 20%,
         transparent 80%,
-        rgba(0, 0, 0, 0.5) 100%
+        rgb(0 0 0 / 50%) 100%
     );
     pointer-events: none;
 }
 
 .video-control-btn {
     position: relative;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgb(0 0 0 / 70%);
     border: none;
     color: white;
     width: 60px;
@@ -2779,7 +2774,7 @@ select:focus {
 }
 
 .video-control-btn:hover {
-    background: rgba(0, 0, 0, 0.9);
+    background: rgb(0 0 0 / 90%);
     transform: scale(1.1);
 }
 
@@ -2799,7 +2794,7 @@ select:focus {
 }
 
 /* Mobile portrait - reduce button size and adjust spacing */
-@media (max-width: 767px) and (orientation: portrait) {
+@media (width <= 767px) and (orientation: portrait) {
     .video-control-btn {
         width: 50px;
         height: 50px;
@@ -2843,7 +2838,7 @@ select:focus {
 .video-progress-bar {
     width: 100%;
     height: 5px;
-    background: rgba(255, 255, 255, 0.3);
+    background: rgb(255 255 255 / 30%);
     border-radius: 2.5px;
     position: relative;
     overflow: visible;
@@ -2878,22 +2873,22 @@ select:focus {
     background: white;
     border-radius: 50%;
     transform: translateX(-50%) translateY(-50%) scale(0);
-    opacity: 0;
+    opacity: 0%;
     transition:
         opacity 0.15s ease,
         transform 0.15s ease;
     pointer-events: none;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 2px 4px rgb(0 0 0 / 50%);
     z-index: 2;
 }
 
 .video-controls.show .video-progress-handle {
-    opacity: 1;
+    opacity: 100%;
     transform: translateX(-50%) translateY(-50%) scale(1);
 }
 
 .video-progress-bar:hover .video-progress-handle {
-    opacity: 1;
+    opacity: 100%;
     transform: translateX(-50%) translateY(-50%) scale(1);
 }
 
@@ -2908,23 +2903,21 @@ select:focus {
 .video-time {
     color: white;
     font-size: 0.875rem;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
     white-space: nowrap;
 }
 
 .video-volume-slider {
     width: 80px;
     height: 5px;
-    -webkit-appearance: none;
     appearance: none;
-    background: rgba(255, 255, 255, 0.3);
+    background: rgb(255 255 255 / 30%);
     border-radius: 2.5px;
     outline: none;
     cursor: pointer;
 }
 
 .video-volume-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
     appearance: none;
     width: 15px;
     height: 15px;
@@ -2949,19 +2942,19 @@ select:focus {
     transform: translateX(-50%);
     margin-bottom: 8px;
     padding: 6px 10px;
-    background: rgba(0, 0, 0, 0.9);
+    background: rgb(0 0 0 / 90%);
     color: white;
     font-size: 12px;
     white-space: nowrap;
     border-radius: 4px;
     pointer-events: none;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.2s;
     z-index: 1000;
 }
 
 .volume-tooltip.visible {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .volume-tooltip::after {
@@ -2971,7 +2964,7 @@ select:focus {
     left: 50%;
     transform: translateX(-50%);
     border: 4px solid transparent;
-    border-top-color: rgba(0, 0, 0, 0.9);
+    border-top-color: rgb(0 0 0 / 90%);
 }
 
 .video-controls-spacer {
@@ -2990,7 +2983,7 @@ select:focus {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.2s ease;
     z-index: 10;
     -webkit-tap-highlight-color: transparent;
@@ -2998,23 +2991,23 @@ select:focus {
 
 .player-hot-zone:hover,
 .player-hot-zone:active {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .player-hot-zone-left {
     left: 0;
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.4), transparent);
+    background: linear-gradient(to right, rgb(0 0 0 / 40%), transparent);
 }
 
 .player-hot-zone-right {
     right: 0;
-    background: linear-gradient(to left, rgba(0, 0, 0, 0.4), transparent);
+    background: linear-gradient(to left, rgb(0 0 0 / 40%), transparent);
 }
 
 .player-hot-zone-icon {
     font-size: 1.5rem;
     color: white;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 2px 4px rgb(0 0 0 / 50%);
     pointer-events: none;
 }
 
@@ -3035,8 +3028,8 @@ select:focus {
 .player-spinner {
     width: 50px;
     height: 50px;
-    border: 4px solid rgba(255, 255, 255, 0.2);
-    border-top-color: #ffffff;
+    border: 4px solid rgb(255 255 255 / 20%);
+    border-top-color: #fff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     transform-origin: center;
@@ -3044,7 +3037,7 @@ select:focus {
 }
 
 .player-modal .video-wrapper video.loading {
-    opacity: 0.3;
+    opacity: 30%;
 }
 
 .player-modal .video-wrapper video {
@@ -3054,12 +3047,12 @@ select:focus {
 /* Player Touch Devices */
 @media (hover: none) and (pointer: coarse) {
     .player-hot-zone {
-        opacity: 0.3;
+        opacity: 30%;
         bottom: 50%;
     }
 
     .player-hot-zone:active {
-        opacity: 1;
+        opacity: 100%;
     }
 }
 
@@ -3074,7 +3067,7 @@ select:focus {
 }
 
 /* Player Desktop */
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .player-modal {
         padding: 2rem;
     }
@@ -3119,10 +3112,10 @@ select:focus {
     top: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
+    background: linear-gradient(to bottom, rgb(0 0 0 / 70%), transparent);
     border-bottom: none;
     z-index: 20;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
     padding: 0.5rem 1rem;
 }
@@ -3140,7 +3133,7 @@ select:focus {
 
 .player-modal.theater-mode:hover .player-header,
 .player-modal.theater-mode.controls-visible .player-header {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .player-modal.theater-mode .player-body {
@@ -3177,7 +3170,7 @@ select:focus {
     transition: transform 0.3s ease;
     z-index: 15;
     border-left: 1px solid var(--border-color);
-    background: rgba(22, 33, 62, 0.95);
+    background: rgb(22 33 62 / 95%);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
 }
@@ -3191,9 +3184,9 @@ select:focus {
     bottom: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+    background: linear-gradient(to top, rgb(0 0 0 / 70%), transparent);
     border-top: none;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
     z-index: 20;
     padding: 1rem;
@@ -3201,7 +3194,7 @@ select:focus {
 
 .player-modal.theater-mode:hover .player-controls,
 .player-modal.theater-mode.controls-visible .player-controls {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .player-modal.theater-mode .playlist-toggle {
@@ -3220,7 +3213,7 @@ select:focus {
     right: -22px;
 }
 
-@media (max-width: 1200px) {
+@media (width <= 1200px) {
     .player-modal.theater-mode .player-body:has(.playlist-sidebar.visible) {
         padding-right: 40vw;
     }
@@ -3248,10 +3241,10 @@ select:focus {
     top: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
+    background: linear-gradient(to bottom, rgb(0 0 0 / 70%), transparent);
     border-bottom: none;
     z-index: 20;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
     padding: 0.5rem 1rem;
 }
@@ -3267,7 +3260,7 @@ select:focus {
 
 .player-modal.landscape-mode:hover .player-header,
 .player-modal.landscape-mode.controls-visible .player-header {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .player-modal.landscape-mode .player-body {
@@ -3302,7 +3295,7 @@ select:focus {
     transition: transform 0.3s ease;
     z-index: 15;
     border-left: 1px solid var(--border-color);
-    background: rgba(22, 33, 62, 0.95);
+    background: rgb(22 33 62 / 95%);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
 }
@@ -3316,9 +3309,9 @@ select:focus {
     bottom: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+    background: linear-gradient(to top, rgb(0 0 0 / 70%), transparent);
     border-top: none;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
     z-index: 20;
     padding: 1rem;
@@ -3326,7 +3319,7 @@ select:focus {
 
 .player-modal.landscape-mode:hover .player-controls,
 .player-modal.landscape-mode.controls-visible .player-controls {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .playlist-toggle {
@@ -3339,7 +3332,7 @@ select:focus {
     height: 44px;
     border: none;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgb(0 0 0 / 60%);
     color: white;
     font-size: 1.25rem;
     cursor: pointer;
@@ -3349,7 +3342,7 @@ select:focus {
 
 .playlist-toggle:hover,
 .playlist-toggle:active {
-    background: rgba(0, 0, 0, 0.8);
+    background: rgb(0 0 0 / 80%);
     transform: translateY(-50%) scale(1.1);
 }
 
@@ -3360,7 +3353,7 @@ select:focus {
 }
 
 .player-modal.landscape-mode.controls-visible .playlist-toggle {
-    animation: togglePulse 1s ease-in-out infinite;
+    animation: toggle-pulse 1s ease-in-out infinite;
 }
 
 .player-modal.landscape-mode .playlist-toggle.active {
@@ -3368,13 +3361,14 @@ select:focus {
     background: var(--accent);
 }
 
-@keyframes togglePulse {
+@keyframes toggle-pulse {
     0%,
     100% {
-        box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4);
+        box-shadow: 0 0 0 0 rgb(233 69 96 / 40%);
     }
+
     50% {
-        box-shadow: 0 0 0 10px rgba(233, 69, 96, 0);
+        box-shadow: 0 0 0 10px rgb(233 69 96 / 0%);
     }
 }
 
@@ -3424,7 +3418,7 @@ select:focus {
     height: 32px;
     border: none;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
     color: white;
     font-size: 1.25rem;
     cursor: pointer;
@@ -3434,16 +3428,16 @@ select:focus {
 
 .playlist-close-btn:hover,
 .playlist-close-btn:active {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255 255 255 / 20%);
 }
 
 .playlist-overlay {
     display: none;
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgb(0 0 0 / 50%);
     z-index: 14;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
     pointer-events: none;
 }
@@ -3453,7 +3447,7 @@ select:focus {
 }
 
 .player-modal.landscape-mode .playlist-sidebar.visible ~ .playlist-overlay {
-    opacity: 1;
+    opacity: 100%;
     pointer-events: auto;
 }
 
@@ -3465,11 +3459,11 @@ select:focus {
     transform: translateY(-50%);
     width: 20px;
     height: 80px;
-    background: linear-gradient(to left, rgba(255, 255, 255, 0.3), transparent);
+    background: linear-gradient(to left, rgb(255 255 255 / 30%), transparent);
     border-radius: 10px 0 0 10px;
     z-index: 15;
     pointer-events: none;
-    animation: edgeHintPulse 2s ease-in-out infinite;
+    animation: edge-hint-pulse 2s ease-in-out infinite;
 }
 
 .player-modal.landscape-mode .playlist-edge-hint {
@@ -3478,17 +3472,18 @@ select:focus {
 
 .player-modal.landscape-mode .playlist-sidebar.visible ~ .playlist-edge-hint,
 .player-modal.landscape-mode.controls-visible .playlist-edge-hint {
-    opacity: 0;
+    opacity: 0%;
 }
 
-@keyframes edgeHintPulse {
+@keyframes edge-hint-pulse {
     0%,
     100% {
-        opacity: 0.3;
+        opacity: 30%;
         width: 20px;
     }
+
     50% {
-        opacity: 0.6;
+        opacity: 60%;
         width: 25px;
     }
 }
@@ -3499,14 +3494,14 @@ select:focus {
     right: 30px;
     top: 50%;
     transform: translateY(-50%);
-    background: rgba(0, 0, 0, 0.7);
+    background: rgb(0 0 0 / 70%);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: var(--radius);
     font-size: 0.75rem;
     white-space: nowrap;
     z-index: 15;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity 0.3s ease;
     pointer-events: none;
 }
@@ -3516,14 +3511,10 @@ select:focus {
 }
 
 .player-modal.landscape-mode.show-hint .playlist-hint-text {
-    opacity: 1;
+    opacity: 100%;
 }
 
-.player-modal.landscape-mode .player-body:has(.playlist-sidebar.visible) {
-    padding-right: 280px;
-}
-
-@media (max-width: 600px) {
+@media (width <= 600px) {
     .player-modal.landscape-mode .playlist-sidebar {
         width: 250px;
     }
@@ -3556,7 +3547,7 @@ select:focus {
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgb(0 0 0 / 80%);
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -3626,7 +3617,7 @@ select:focus {
     min-width: 100px;
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .modal {
         align-items: center;
     }
@@ -3673,7 +3664,7 @@ select:focus {
 .tag-input-container input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+    box-shadow: 0 0 0 2px rgb(93 173 226 / 30%);
 }
 
 /* ===========================================
@@ -3715,7 +3706,7 @@ select:focus {
 }
 
 .tag-suggestion mark {
-    background: rgba(233, 69, 96, 0.3);
+    background: rgb(233 69 96 / 30%);
     color: inherit;
     padding: 0 2px;
     border-radius: 2px;
@@ -3754,7 +3745,7 @@ select:focus {
 .tag-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.25rem;
     padding: 0.5rem 0.625rem;
     background: var(--bg-tertiary);
     border-radius: var(--radius);
@@ -3762,7 +3753,10 @@ select:focus {
     cursor: pointer;
     transition:
         background var(--transition),
-        transform var(--transition);
+        transform var(--transition),
+        border-color var(--transition),
+        opacity var(--transition);
+    border: 1px solid transparent;
 }
 
 .tag-chip:hover {
@@ -3774,31 +3768,54 @@ select:focus {
     transform: scale(0.98);
 }
 
-.tag-chip .tag-remove {
+/* Ensure buttons inside tag chips don't interfere with chip click */
+.tag-chip .tag-remove,
+.tag-chip .tag-merge {
     position: relative;
     z-index: 1;
 }
 
 .tag-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 0;
-    font-size: 1.125rem;
-    line-height: 1;
+    padding: 0.125rem;
+    margin-left: 0.25rem;
+    border-radius: 50%;
+    transition: all var(--transition);
+}
+
+.tag-remove:hover {
+    background: var(--error);
+    color: white;
+}
+
+.tag-remove [data-lucide] {
+    width: 0.875rem;
+    height: 0.875rem;
 }
 
 .tag-chip.partial {
-    opacity: 0.7;
+    opacity: 85%;
     border: 1px dashed var(--border-color);
+    background: rgb(255 255 255 / 3%);
+}
+
+.tag-chip.partial:hover {
+    opacity: 100%;
+    border-color: var(--success);
 }
 
 .tag-partial-indicator {
-    color: var(--accent);
+    color: var(--warning);
     font-weight: bold;
-    margin-left: 0.25rem;
+    margin-left: 0.125rem;
     font-size: 0.75rem;
+    cursor: help;
 }
 
 @media (hover: hover) {
@@ -3854,7 +3871,7 @@ select:focus {
 
 .password-toggle:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
 }
 
 .password-toggle:focus {
@@ -3897,7 +3914,7 @@ select:focus {
 #password-form .form-group input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+    box-shadow: 0 0 0 2px rgb(93 173 226 / 30%);
 }
 
 #password-form .form-group input::placeholder {
@@ -3935,7 +3952,7 @@ select:focus {
     display: none;
 }
 
-@media (max-width: 599px) {
+@media (width <= 599px) {
     .modal-small {
         max-width: 100%;
         margin: 1rem;
@@ -4026,7 +4043,7 @@ select:focus {
 }
 
 .settings-tab:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgb(255 255 255 / 5%);
     color: var(--text-primary);
 }
 
@@ -4064,14 +4081,14 @@ select:focus {
 
 .settings-panel h3 {
     font-size: 1.125rem;
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 0.5rem;
     color: var(--text-primary);
 }
 
 .settings-description {
     color: var(--text-secondary);
     font-size: 0.875rem;
-    margin: 0 0 1.5rem 0;
+    margin: 0 0 1.5rem;
     line-height: 1.5;
 }
 
@@ -4146,7 +4163,7 @@ select:focus {
 .passkey-name {
     font-weight: 500;
     color: var(--text-primary);
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 0.25rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -4207,7 +4224,7 @@ select:focus {
 
 .passkeys-empty svg {
     margin-bottom: 1rem;
-    opacity: 0.5;
+    opacity: 50%;
 }
 
 .passkeys-empty p {
@@ -4243,7 +4260,7 @@ select:focus {
 .settings-section h4 {
     font-size: 0.9375rem;
     font-weight: 500;
-    margin: 0 0 1rem 0;
+    margin: 0 0 1rem;
     color: var(--text-primary);
 }
 
@@ -4260,7 +4277,7 @@ select:focus {
 }
 
 .settings-row.disabled {
-    opacity: 0.5;
+    opacity: 50%;
     pointer-events: none;
 }
 
@@ -4316,7 +4333,7 @@ select:focus {
 }
 
 .toggle-switch input {
-    opacity: 0;
+    opacity: 0%;
     width: 0;
     height: 0;
 }
@@ -4334,7 +4351,7 @@ select:focus {
     border-radius: 28px;
 }
 
-.toggle-slider:before {
+.toggle-slider::before {
     position: absolute;
     content: '';
     height: 20px;
@@ -4351,7 +4368,7 @@ select:focus {
     border-color: var(--accent);
 }
 
-.toggle-switch input:checked + .toggle-slider:before {
+.toggle-switch input:checked + .toggle-slider::before {
     background-color: white;
     transform: translateX(20px);
 }
@@ -4367,7 +4384,7 @@ select:focus {
     cursor: not-allowed;
 }
 
-.toggle-switch input:disabled + .toggle-slider:before {
+.toggle-switch input:disabled + .toggle-slider::before {
     background-color: var(--text-tertiary);
 }
 
@@ -4380,16 +4397,18 @@ select:focus {
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
+    flex-wrap: nowrap;
 }
 
 .cache-action-info {
     flex: 1;
+    min-width: 0;
 }
 
 .cache-action-info h4 {
     font-size: 0.9375rem;
     font-weight: 500;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 0.25rem;
     color: var(--text-primary);
 }
 
@@ -4433,17 +4452,8 @@ select:focus {
     height: 1rem;
 }
 
-/* Ensure the cache-action-card doesn't squeeze the button */
-.cache-action-card {
-    flex-wrap: nowrap;
-}
-
-.cache-action-info {
-    min-width: 0;
-}
-
 /* On mobile, stack the card content vertically */
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .cache-action-card {
         flex-direction: column;
         align-items: stretch;
@@ -4602,7 +4612,7 @@ select:focus {
 
 .tag-list-table th.sortable [data-lucide] {
     display: inline-block;
-    opacity: 0.3;
+    opacity: 30%;
     transition:
         opacity var(--transition),
         transform var(--transition);
@@ -4613,12 +4623,12 @@ select:focus {
 }
 
 .tag-list-table th.sortable.sorted-asc [data-lucide] {
-    opacity: 1;
+    opacity: 100%;
     transform: rotate(180deg);
 }
 
 .tag-list-table th.sortable.sorted-desc [data-lucide] {
-    opacity: 1;
+    opacity: 100%;
     transform: rotate(0deg);
 }
 
@@ -4656,10 +4666,6 @@ select:focus {
 .tag-name-text {
     color: var(--text-primary);
     font-weight: 500;
-}
-
-.tag-count {
-    color: var(--text-secondary);
 }
 
 .tag-actions {
@@ -4708,7 +4714,7 @@ select:focus {
 .tag-list-empty i {
     font-size: 2rem;
     margin-bottom: 0.5rem;
-    opacity: 0.5;
+    opacity: 50%;
 }
 
 /* About Panel */
@@ -4738,14 +4744,14 @@ select:focus {
 
 .about-details h4 {
     font-size: 1.25rem;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 0.25rem;
     color: var(--text-primary);
 }
 
 .about-details .version {
     font-size: 0.875rem;
     color: var(--text-secondary);
-    margin: 0 0 1rem 0;
+    margin: 0 0 1rem;
 }
 
 .about-stats {
@@ -4792,7 +4798,7 @@ select:focus {
 }
 
 /* Settings Responsive */
-@media (min-width: 480px) {
+@media (width >= 480px) {
     .settings-tabs {
         justify-content: flex-start;
         padding: 0.625rem 1rem;
@@ -4807,7 +4813,7 @@ select:focus {
     }
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     #settings-modal.modal {
         align-items: center;
         padding: 2rem;
@@ -4837,7 +4843,7 @@ select:focus {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .settings-modal-content {
         max-width: 650px;
         height: 650px;
@@ -4873,7 +4879,7 @@ select:focus {
 }
 
 .paste-description {
-    margin: 0 0 1rem 0;
+    margin: 0 0 1rem;
     color: var(--text-secondary);
     font-size: 0.875rem;
 }
@@ -4900,7 +4906,7 @@ select:focus {
     cursor: pointer;
     transition: all var(--transition);
     border: 2px solid transparent;
-    opacity: 0.5;
+    opacity: 50%;
 }
 
 .paste-tag-chip:hover {
@@ -4910,7 +4916,7 @@ select:focus {
 .paste-tag-chip.selected {
     background: var(--bg-tertiary);
     border-color: var(--accent);
-    opacity: 1;
+    opacity: 100%;
 }
 
 .paste-tag-chip.selected:hover {
@@ -4972,15 +4978,15 @@ select:focus {
     font-size: 0.6875rem;
     color: var(--text-secondary);
     margin-left: 0.25rem;
-    opacity: 0.8;
+    opacity: 80%;
 }
 
 .paste-tag-chip.selected .paste-tag-partial {
     color: var(--accent);
-    opacity: 0.7;
+    opacity: 70%;
 }
 
-@media (max-width: 599px) {
+@media (width <= 599px) {
     .paste-tags-modal-content {
         max-width: 100%;
     }
@@ -5008,7 +5014,7 @@ select:focus {
 .confirm-modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgb(0 0 0 / 80%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -5048,13 +5054,13 @@ select:focus {
 }
 
 .confirm-modal-content h3 {
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 0.75rem;
     font-size: 1.25rem;
     color: var(--text-primary);
 }
 
 .confirm-modal-content p {
-    margin: 0 0 1.5rem 0;
+    margin: 0 0 1.5rem;
     color: var(--text-secondary);
     font-size: 0.875rem;
     line-height: 1.5;
@@ -5103,7 +5109,7 @@ select:focus {
 }
 
 .btn-secondary:disabled {
-    opacity: 0.5;
+    opacity: 50%;
     cursor: not-allowed;
 }
 
@@ -5195,7 +5201,7 @@ select:focus {
 .loading {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgb(0 0 0 / 80%);
     z-index: 2000;
     display: flex;
     align-items: center;
@@ -5219,6 +5225,7 @@ select:focus {
     from {
         transform: rotate(0deg);
     }
+
     to {
         transform: rotate(360deg);
     }
@@ -5240,7 +5247,7 @@ select:focus {
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow);
     z-index: 3000;
-    opacity: 0;
+    opacity: 0%;
     transition:
         transform 0.3s ease,
         opacity 0.3s ease;
@@ -5256,7 +5263,7 @@ select:focus {
 
 .toast.show {
     transform: translateX(-50%) translateY(0);
-    opacity: 1;
+    opacity: 100%;
 }
 
 .toast.success {
@@ -5274,7 +5281,7 @@ select:focus {
 }
 
 .toast.error::before {
-    content: '✕';
+    content: '✗';
     color: var(--error);
     font-weight: bold;
 }
@@ -5297,14 +5304,14 @@ select:focus {
     color: var(--info);
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .toast {
         bottom: 3rem;
         max-width: 600px;
     }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .toast {
         padding: 0.625rem 1rem;
         font-size: 0.8125rem;
@@ -5339,7 +5346,7 @@ select:focus {
     margin: 0 auto;
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .stats-bar-inner {
         padding: 0.5rem 2rem;
         font-size: 0.75rem;
@@ -5379,7 +5386,7 @@ select:focus {
     justify-content: space-between;
     align-items: center;
     z-index: 500;
-    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 -4px 12px rgb(0 0 0 / 30%);
     transform: translateY(0);
     transition: transform 0.2s ease;
 }
@@ -5449,7 +5456,7 @@ select:focus {
 }
 
 .selection-action-btn:disabled {
-    opacity: 0.4;
+    opacity: 40%;
     cursor: not-allowed;
 }
 
@@ -5466,8 +5473,8 @@ select:focus {
     left: 0.375rem;
     width: 24px;
     height: 24px;
-    background: rgba(0, 0, 0, 0.6);
-    border: 2px solid rgba(255, 255, 255, 0.5);
+    background: rgb(0 0 0 / 60%);
+    border: 2px solid rgb(255 255 255 / 50%);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -5488,20 +5495,22 @@ select:focus {
     background: var(--accent);
     border-color: var(--accent);
     box-shadow: 0 0 0 2px white;
-    animation: selectionPulse 0.2s ease;
+    animation: selection-pulse 0.2s ease;
 }
 
 .gallery-item.selected .selection-checkbox .checkbox-icon {
     color: white;
 }
 
-@keyframes selectionPulse {
+@keyframes selection-pulse {
     0% {
         transform: scale(1);
     }
+
     50% {
         transform: scale(1.1);
     }
+
     100% {
         transform: scale(1);
     }
@@ -5509,11 +5518,11 @@ select:focus {
 
 /* Selection mode styling */
 body.selection-mode .gallery-item:not(.selected) {
-    opacity: 0.7;
+    opacity: 70%;
 }
 
 body.selection-mode .gallery-item.selected {
-    opacity: 1;
+    opacity: 100%;
 }
 
 .gallery-item.selected .gallery-item-thumb {
@@ -5523,7 +5532,7 @@ body.selection-mode .gallery-item.selected {
 
 body.selection-mode .pin-button,
 body.selection-mode .tag-button {
-    opacity: 0 !important;
+    opacity: 0% !important;
     pointer-events: none;
 }
 
@@ -5535,7 +5544,7 @@ body.selection-mode .stats-bar {
     display: none;
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .selection-select-all-btn {
         padding: 0.5rem;
     }
@@ -5550,7 +5559,7 @@ body.selection-mode .stats-bar {
     }
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .selection-toolbar {
         padding: 0.875rem 1.5rem;
     }
@@ -5565,7 +5574,7 @@ body.selection-mode .stats-bar {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .selection-toolbar {
         padding: 1rem 2rem;
     }
@@ -5668,12 +5677,7 @@ body.selection-mode .stats-bar {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(
-        90deg,
-        transparent 0%,
-        rgba(255, 255, 255, 0.05) 50%,
-        transparent 100%
-    );
+    background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 5%) 50%, transparent 100%);
     animation: shimmer 1.5s infinite;
 }
 
@@ -5684,12 +5688,7 @@ body.selection-mode .stats-bar {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(
-        90deg,
-        transparent 0%,
-        rgba(255, 255, 255, 0.08) 50%,
-        transparent 100%
-    );
+    background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 8%) 50%, transparent 100%);
     animation: shimmer 1.5s infinite;
 }
 
@@ -5697,6 +5696,7 @@ body.selection-mode .stats-bar {
     0% {
         transform: translateX(-100%);
     }
+
     100% {
         transform: translateX(100%);
     }
@@ -5731,7 +5731,7 @@ body.selection-mode .stats-bar {
     height: 1.125rem;
 }
 
-@media (max-width: 899px) {
+@media (width <= 899px) {
     .gallery-item.skeleton .skeleton-info {
         display: none;
     }
@@ -5743,25 +5743,25 @@ body.selection-mode .stats-bar {
         left: 0;
         right: 0;
         height: 2rem;
-        background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, transparent 100%);
+        background: linear-gradient(to top, rgb(0 0 0 / 50%) 0%, transparent 100%);
     }
 }
 
-@media (min-width: 480px) {
+@media (width >= 480px) {
     .skeleton-container {
         grid-template-columns: repeat(4, 1fr);
         gap: 3px;
     }
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .skeleton-container {
         grid-template-columns: repeat(5, 1fr);
         gap: 4px;
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .skeleton-container {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: 1rem;
@@ -5783,7 +5783,7 @@ body.selection-mode .stats-bar {
     }
 }
 
-@media (min-width: 1200px) {
+@media (width >= 1200px) {
     .skeleton-container {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     }
@@ -5808,9 +5808,9 @@ body.selection-mode .stats-bar {
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 0.75rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 40%);
     max-width: 280px;
-    opacity: 0;
+    opacity: 0%;
     transform: translateY(4px);
     transition:
         opacity 0.15s ease,
@@ -5818,7 +5818,7 @@ body.selection-mode .stats-bar {
 }
 
 .tag-tooltip-zone.visible .tag-tooltip {
-    opacity: 1;
+    opacity: 100%;
     transform: translateY(0);
 }
 
@@ -5833,7 +5833,7 @@ body.selection-mode .stats-bar {
 .tag-tooltip-hint {
     font-size: 0.5625rem;
     font-weight: normal;
-    opacity: 0.7;
+    opacity: 70%;
     text-transform: none;
     letter-spacing: normal;
 }
@@ -5860,7 +5860,7 @@ body.selection-mode .stats-bar {
     justify-content: center;
     width: 1.5rem;
     padding: 0.25rem;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgb(0 0 0 / 20%);
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -6114,7 +6114,7 @@ body.selection-mode .stats-bar {
     flex-shrink: 0;
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .video-indicator [data-lucide] {
         width: 1.25rem;
         height: 1.25rem;
@@ -6127,7 +6127,7 @@ body.selection-mode .stats-bar {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .gallery-item-icon [data-lucide] {
         width: 4rem;
         height: 4rem;
@@ -6192,7 +6192,7 @@ body.selection-mode .stats-bar {
 .form-group input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+    box-shadow: 0 0 0 2px rgb(93 173 226 / 30%);
 }
 
 .form-group input::placeholder {
@@ -6391,7 +6391,7 @@ body.selection-mode .stats-bar {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     @supports (padding: env(safe-area-inset-top)) {
         .header {
             padding-top: 0.75rem;
@@ -6435,14 +6435,12 @@ body.selection-mode .stats-bar {
 .lightbox-info,
 .player-header,
 .player-controls {
-    -webkit-user-select: none;
     user-select: none;
 }
 
 input,
 textarea,
 [contenteditable='true'] {
-    -webkit-user-select: auto;
     user-select: auto;
 }
 
@@ -6481,7 +6479,7 @@ textarea,
     background: var(--border-color);
 }
 
-@media (max-width: 899px) {
+@media (width <= 899px) {
     .favorites-gallery::-webkit-scrollbar,
     .breadcrumb::-webkit-scrollbar {
         display: none;
@@ -6493,11 +6491,6 @@ textarea,
    =========================================== */
 
 ::selection {
-    background: var(--accent);
-    color: white;
-}
-
-::-moz-selection {
     background: var(--accent);
     color: white;
 }
@@ -6526,7 +6519,7 @@ select:focus:not(:focus-visible) {
 
     .lightbox-pin:hover,
     .lightbox-tag:hover {
-        background: rgba(255, 255, 255, 0.2);
+        background: rgb(255 255 255 / 20%);
         color: var(--text-primary);
     }
 
@@ -6658,10 +6651,6 @@ select:focus:not(:focus-visible) {
    PASSKEY NAME MODAL
    =========================================== */
 
-.modal-small {
-    max-width: 400px;
-}
-
 .modal-description {
     color: var(--text-secondary);
     font-size: 0.875rem;
@@ -6703,12 +6692,12 @@ select:focus:not(:focus-visible) {
 #passkey-name-modal input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.25);
+    box-shadow: 0 0 0 3px rgb(93 173 226 / 25%);
 }
 
 #passkey-name-modal input::placeholder {
     color: var(--text-secondary);
-    opacity: 0.7;
+    opacity: 70%;
 }
 
 #passkey-name-modal .hint {
@@ -6837,7 +6826,7 @@ select:focus:not(:focus-visible) {
     align-items: flex-start;
     gap: 0.5rem;
     padding: 0.75rem;
-    background-color: rgba(255, 193, 7, 0.1);
+    background-color: rgb(255 193 7 / 10%);
     border-left: 3px solid #ffc107;
     border-radius: 4px;
     color: var(--text-primary);
@@ -6859,11 +6848,6 @@ select:focus:not(:focus-visible) {
 
 .selection-action-btn .animate-spin {
     animation: spin 1s linear infinite;
-}
-
-.selection-action-btn:disabled {
-    opacity: 0.6;
-    cursor: wait;
 }
 
 /* ===========================================
@@ -6913,7 +6897,7 @@ select:focus:not(:focus-visible) {
 .paste-tag-input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+    box-shadow: 0 0 0 2px rgb(93 173 226 / 30%);
 }
 
 .paste-tag-input::placeholder {
@@ -6968,7 +6952,7 @@ select:focus:not(:focus-visible) {
 }
 
 .paste-tag-suggestion mark {
-    background: rgba(233, 69, 96, 0.3);
+    background: rgb(233 69 96 / 30%);
     color: inherit;
     padding: 0 2px;
     border-radius: 2px;
@@ -6983,11 +6967,11 @@ select:focus:not(:focus-visible) {
 /* New tag indicator */
 .paste-tag-chip.new-tag {
     border: 1px dashed var(--accent);
-    background: rgba(233, 69, 96, 0.1);
+    background: rgb(233 69 96 / 10%);
 }
 
 .paste-tag-chip.new-tag.selected {
-    background: rgba(233, 69, 96, 0.2);
+    background: rgb(233 69 96 / 20%);
     border-style: solid;
 }
 
@@ -6998,7 +6982,7 @@ select:focus:not(:focus-visible) {
     font-weight: 600;
     margin-left: 0.25rem;
     padding: 0.125rem 0.25rem;
-    background: rgba(233, 69, 96, 0.15);
+    background: rgb(233 69 96 / 15%);
     border-radius: 3px;
 }
 
@@ -7028,7 +7012,7 @@ select:focus:not(:focus-visible) {
 
 .paste-include-source-checkbox {
     position: absolute;
-    opacity: 0;
+    opacity: 0%;
     width: 0;
     height: 0;
 }
@@ -7052,7 +7036,7 @@ select:focus:not(:focus-visible) {
     height: 10px;
     background: var(--accent);
     border-radius: 2px;
-    opacity: 0;
+    opacity: 0%;
     transform: scale(0);
     transition: all 0.15s ease;
 }
@@ -7063,7 +7047,7 @@ select:focus:not(:focus-visible) {
 }
 
 .paste-include-source-checkbox:checked + .paste-include-source-checkmark::after {
-    opacity: 1;
+    opacity: 100%;
     transform: scale(1);
 }
 
@@ -7088,7 +7072,7 @@ select:focus:not(:focus-visible) {
 }
 
 /* Responsive adjustments */
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .paste-add-tag-header {
         gap: 0.125rem;
     }
@@ -7111,7 +7095,7 @@ select:focus:not(:focus-visible) {
     }
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .paste-add-tag-header {
         flex-direction: row;
         justify-content: space-between;
@@ -7171,12 +7155,12 @@ select:focus:not(:focus-visible) {
 }
 
 .tag-modal-copy-btn:disabled {
-    opacity: 0.5;
+    opacity: 50%;
     cursor: not-allowed;
 }
 
 /* Responsive adjustments */
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .tag-modal-copy-actions {
         flex-direction: row;
         flex-wrap: wrap;
@@ -7231,26 +7215,6 @@ select:focus:not(:focus-visible) {
     height: 0.875rem;
 }
 
-/* Partial tag styling improvements */
-.tag-chip.partial {
-    opacity: 0.85;
-    border: 1px dashed var(--border-color);
-    background: rgba(255, 255, 255, 0.03);
-}
-
-.tag-chip.partial:hover {
-    opacity: 1;
-    border-color: var(--success);
-}
-
-.tag-partial-indicator {
-    color: var(--warning);
-    font-weight: bold;
-    margin-left: 0.125rem;
-    font-size: 0.75rem;
-    cursor: help;
-}
-
 /* Touch device adjustments for merge button */
 @media (hover: none) and (pointer: coarse) {
     .tag-chip .tag-merge {
@@ -7265,90 +7229,29 @@ select:focus:not(:focus-visible) {
 }
 
 /* ===========================================
-   TAG CHIP LAYOUT ADJUSTMENTS
-   =========================================== */
-
-.tag-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.625rem;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius);
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition:
-        background var(--transition),
-        transform var(--transition),
-        border-color var(--transition),
-        opacity var(--transition);
-    border: 1px solid transparent;
-}
-
-.tag-chip:hover {
-    background: var(--bg-secondary);
-    transform: scale(1.02);
-}
-
-.tag-chip:active {
-    transform: scale(0.98);
-}
-
-/* Ensure buttons inside tag chips don't interfere with chip click */
-.tag-chip .tag-remove,
-.tag-chip .tag-merge {
-    position: relative;
-    z-index: 1;
-}
-
-.tag-remove {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0.125rem;
-    margin-left: 0.25rem;
-    border-radius: 50%;
-    transition: all var(--transition);
-}
-
-.tag-remove:hover {
-    background: var(--error);
-    color: white;
-}
-
-.tag-remove [data-lucide] {
-    width: 0.875rem;
-    height: 0.875rem;
-}
-
-/* ===========================================
    KEYBOARD SHORTCUT HINTS
    =========================================== */
 
 /* Hide hints on mobile/touch devices */
-@media (min-width: 600px) and (hover: hover) {
+@media (width >= 600px) and (hover: hover) {
     .tag-modal-copy-btn[data-shortcut='ctrl-c'] span::after {
         content: ' (Ctrl+C)';
         font-size: 0.75rem;
-        opacity: 0.7;
+        opacity: 70%;
         font-weight: normal;
     }
 
     .tag-modal-copy-btn[data-shortcut='ctrl-shift-c'] span::after {
         content: ' (Ctrl+Shift+C)';
         font-size: 0.75rem;
-        opacity: 0.7;
+        opacity: 70%;
         font-weight: normal;
     }
 }
 
 /* Mac-specific hints (if we want to show Cmd instead of Ctrl) */
 @supports (-webkit-touch-callout: none) {
-    @media (min-width: 600px) and (hover: hover) {
+    @media (width >= 600px) and (hover: hover) {
         .tag-modal-copy-btn[data-shortcut='ctrl-c'] span::after {
             content: ' (⌘C)';
         }
@@ -7364,7 +7267,7 @@ select:focus:not(:focus-visible) {
    =========================================== */
 
 .search-dropdown-tag-exclude {
-    background: rgba(231, 76, 60, 0.1);
+    background: rgb(231 76 60 / 10%);
     border-left: 3px solid var(--error);
 }
 
@@ -7375,7 +7278,7 @@ select:focus:not(:focus-visible) {
 .search-dropdown-tag-exclude:hover,
 .search-dropdown-tag-exclude:active,
 .search-dropdown-tag-exclude.highlighted {
-    background: rgba(231, 76, 60, 0.15);
+    background: rgb(231 76 60 / 15%);
 }
 
 /* ===========================================
@@ -7383,7 +7286,7 @@ select:focus:not(:focus-visible) {
    =========================================== */
 
 .search-query-tag {
-    background: rgba(52, 152, 219, 0.15);
+    background: rgb(52 152 219 / 15%);
     color: var(--info);
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
@@ -7409,11 +7312,11 @@ select:focus:not(:focus-visible) {
     width: 1.125rem;
     height: 1.125rem;
     padding: 0.1875rem;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgb(0 0 0 / 20%);
     border: none;
     border-radius: 50%;
     cursor: pointer;
-    opacity: 0;
+    opacity: 0%;
     transition:
         opacity var(--transition),
         background var(--transition),
@@ -7438,18 +7341,18 @@ select:focus:not(:focus-visible) {
 #search-results-gallery .item-tag:hover .tag-exclude-btn,
 #search-results-gallery .gallery-item-tags:hover .tag-exclude-btn {
     display: flex;
-    opacity: 1;
+    opacity: 100%;
 }
 
 /* Touch devices - always show exclude button */
 @media (hover: none) and (pointer: coarse) {
     #search-results-gallery .tag-exclude-btn {
         display: flex;
-        opacity: 0.7;
+        opacity: 70%;
     }
 
     #search-results-gallery .tag-exclude-btn:active {
-        opacity: 1;
+        opacity: 100%;
     }
 }
 
@@ -7464,16 +7367,17 @@ select:focus:not(:focus-visible) {
     box-shadow: var(--shadow);
     overflow: hidden;
     min-width: 200px;
-    animation: contextMenuFadeIn 0.15s ease-out;
+    animation: context-menu-fade-in 0.15s ease-out;
 }
 
-@keyframes contextMenuFadeIn {
+@keyframes context-menu-fade-in {
     from {
-        opacity: 0;
+        opacity: 0%;
         transform: scale(0.95);
     }
+
     to {
-        opacity: 1;
+        opacity: 100%;
         transform: scale(1);
     }
 }
@@ -7522,15 +7426,6 @@ select:focus:not(:focus-visible) {
     }
 }
 
-/* ===========================================
-   SEARCH DROPDOWN HINT
-   =========================================== */
-
-.search-dropdown-hint {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-}
-
 /* Make query display clickable */
 #search-query {
     cursor: pointer;
@@ -7553,7 +7448,7 @@ select:focus:not(:focus-visible) {
     display: inline-block;
     width: 1rem;
     height: 1rem;
-    opacity: 0;
+    opacity: 0%;
     transition: opacity var(--transition);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23b8b8b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E");
     background-size: contain;
@@ -7561,103 +7456,7 @@ select:focus:not(:focus-visible) {
 }
 
 .search-results-header h2:hover::after {
-    opacity: 0.7;
-}
-
-/* ===========================================
-   SEARCH RESULTS SEARCH BAR
-   =========================================== */
-
-.search-results-search-bar {
-    flex: 1;
-    position: relative;
-    min-width: 0;
-}
-
-.search-results-input-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
-.search-results-input-icon {
-    position: absolute;
-    left: 0.75rem;
-    width: 1rem;
-    height: 1rem;
-    color: var(--text-secondary);
-    pointer-events: none;
-}
-
-.search-results-input {
-    width: 100%;
-    padding: 0.5rem 2.5rem 0.5rem 2.25rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    transition:
-        border-color var(--transition),
-        box-shadow var(--transition);
-}
-
-.search-results-input:focus {
-    outline: none;
-    border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
-}
-
-.search-results-input::placeholder {
-    color: var(--text-secondary);
-}
-
-.search-results-clear {
-    position: absolute;
-    right: 0.5rem;
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    transition:
-        color var(--transition),
-        background var(--transition);
-}
-
-.search-results-clear:hover {
-    color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.search-results-clear.hidden {
-    display: none;
-}
-
-.search-results-clear [data-lucide] {
-    width: 1rem;
-    height: 1rem;
-}
-
-/* ===========================================
-   SEARCH RESULTS COUNT
-   =========================================== */
-
-.search-results-count {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-
-@media (max-width: 599px) {
-    .search-results-count {
-        font-size: 0.75rem;
-    }
+    opacity: 70%;
 }
 
 /* ===========================================
@@ -7723,7 +7522,7 @@ select:focus:not(:focus-visible) {
 .search-results-input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+    box-shadow: 0 0 0 2px rgb(93 173 226 / 30%);
 }
 
 .search-results-input::placeholder {
@@ -7749,7 +7548,7 @@ select:focus:not(:focus-visible) {
 
 .search-results-clear:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
 }
 
 .search-results-clear.hidden {
@@ -7786,14 +7585,8 @@ select:focus:not(:focus-visible) {
     flex-shrink: 0;
 }
 
-/* Search dropdown hint */
-.search-dropdown-hint {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-}
-
 /* Mobile adjustments */
-@media (max-width: 599px) {
+@media (width <= 599px) {
     .search-results-header-inner {
         gap: 0.5rem;
         padding: 0.5rem 0.75rem;
@@ -7813,7 +7606,7 @@ select:focus:not(:focus-visible) {
     }
 }
 
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .search-results-header-inner {
         gap: 1rem;
         padding: 1rem 1.5rem;
@@ -7825,7 +7618,7 @@ select:focus:not(:focus-visible) {
 
     .search-results-input {
         font-size: 1rem;
-        padding: 0.625rem 2.5rem 0.625rem 2.5rem;
+        padding: 0.625rem 2.5rem;
     }
 
     .search-results-input-icon {
@@ -7834,7 +7627,7 @@ select:focus:not(:focus-visible) {
     }
 }
 
-@media (min-width: 900px) {
+@media (width >= 900px) {
     .search-results-header-inner {
         gap: 1.5rem;
         padding: 0.75rem 1.5rem;
@@ -7872,7 +7665,7 @@ select:focus:not(:focus-visible) {
     }
 }
 
-@media (min-width: 1200px) {
+@media (width >= 1200px) {
     .search-results-header-inner {
         gap: 2rem;
         padding: 1rem 2rem;
@@ -7901,7 +7694,7 @@ select:focus:not(:focus-visible) {
 
 #search-results-gallery .item-tag:not(.more):hover,
 #search-results-gallery .item-tag:not(.more):active {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgb(255 255 255 / 25%);
     transform: scale(1.02);
 }
 
@@ -7922,12 +7715,12 @@ select:focus:not(:focus-visible) {
     bottom: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgb(0 0 0 / 80%);
     display: flex;
     align-items: flex-start;
     justify-content: center;
     z-index: 2000;
-    opacity: 0;
+    opacity: 0%;
     visibility: hidden;
     transition:
         opacity 0.2s ease,
@@ -7936,7 +7729,7 @@ select:focus:not(:focus-visible) {
 }
 
 .search-tag-modal.visible {
-    opacity: 1;
+    opacity: 100%;
     visibility: visible;
 }
 
@@ -8161,11 +7954,11 @@ select:focus:not(:focus-visible) {
     width: 3rem;
     height: 3rem;
     margin-bottom: 0.75rem;
-    opacity: 0.5;
+    opacity: 50%;
 }
 
 /* Desktop adjustments */
-@media (min-width: 600px) {
+@media (width >= 600px) {
     .search-tag-modal {
         align-items: center;
         padding: 2rem;

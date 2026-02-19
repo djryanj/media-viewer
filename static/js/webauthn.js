@@ -81,7 +81,7 @@ class WebAuthnManager {
 
         try {
             return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-        } catch (e) {
+        } catch {
             return false;
         }
     }
@@ -394,7 +394,7 @@ class WebAuthnManager {
         if (credential.response.getTransports) {
             try {
                 json.response.transports = credential.response.getTransports();
-            } catch (e) {
+            } catch {
                 // Some browsers don't support this
             }
         }

@@ -682,11 +682,6 @@ class SettingsManager {
     // =========================================
 
     async loadPasskeys() {
-        const listContainer = document.getElementById('passkeys-list');
-        const emptyContainer = document.getElementById('passkeys-empty');
-        const loadingContainer = document.getElementById('passkeys-loading');
-        const notSupportedContainer = document.getElementById('passkeys-not-supported');
-        const insecureContainer = document.getElementById('passkeys-insecure-context');
         const notEnabledContainer = document.getElementById('passkeys-not-enabled');
         const addBtn = document.getElementById('add-passkey-btn');
 
@@ -1539,9 +1534,13 @@ class SettingsManager {
             }
 
             if (this.currentSort.order === 'asc') {
-                return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                if (aVal < bVal) return -1;
+                if (aVal > bVal) return 1;
+                return 0;
             } else {
-                return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+                if (aVal > bVal) return -1;
+                if (aVal < bVal) return 1;
+                return 0;
             }
         });
 

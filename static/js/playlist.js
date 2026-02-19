@@ -1036,9 +1036,9 @@ const Playlist = {
 
     /**
      * Check if video is being transcoded and show progress
-     * @param {string} filePath - The path of the video file
+     * @param {string} _filePath - The path of the video file
      */
-    checkTranscodingStatus(filePath) {
+    checkTranscodingStatus(_filePath) {
         // After 3 seconds, if still loading, show message (likely transcoding)
         this.transcodingCheckTimeout = setTimeout(() => {
             if (!this.isLoading) {

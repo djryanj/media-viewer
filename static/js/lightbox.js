@@ -1312,7 +1312,7 @@ const Lightbox = {
         if (allTagsData) {
             try {
                 return JSON.parse(allTagsData);
-            } catch (e) {
+            } catch {
                 // Fall through to DOM parsing
             }
         }
@@ -1905,7 +1905,7 @@ const Lightbox = {
         }
     },
 
-    preloadImage(file, priority = 'low') {
+    preloadImage(file, _ = 'low') {
         const imageUrl = `/api/file/${file.path}`;
 
         if (this.preloadCache.has(imageUrl)) {
@@ -1949,7 +1949,7 @@ const Lightbox = {
 
                 img.src = blobUrl;
             })
-            .catch((error) => {
+            .catch((_) => {
                 clearTimeout(timeoutId);
                 this.preloadCache.delete(imageUrl);
             });

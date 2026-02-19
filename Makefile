@@ -14,7 +14,7 @@ STATIC_DIR := static
         test-unit test-integration test-all test-coverage-merge pr-check \
         test-package test-failures \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
-        resetpw frontend-install frontend-lint frontend-lint-fix \
+        resetpw frontend-install frontend-lint frontend-lint-fixv frontend-lint-css frontend-lint-css-fix \
         frontend-format frontend-format-check frontend-check frontend-dev \
         frontend-test frontend-test-unit frontend-test-integration frontend-test-integration-auto frontend-test-e2e frontend-test-coverage frontend-test-unit-coverage frontend-test-unit-watch frontend-test-unit-ui \
 		frontend-test-file frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug frontend-test-e2e-coverage frontend-test-e2e-report \
@@ -321,6 +321,10 @@ frontend-lint-js:
 frontend-lint-css:
 	@echo "Linting CSS..."
 	cd $(STATIC_DIR) && npm run lint:css
+
+frontend-lint-css-fix:
+	@echo "Linting CSS with --fix option..."
+	cd $(STATIC_DIR) && npm run lint:css:fix -- --fix
 
 frontend-lint-fix:
 	@echo "Fixing frontend lint issues..."

@@ -3,7 +3,7 @@ name: CI
 on:
     push:
         branches:
-            - '**' # Run on all branches
+            - '**'
     pull_request:
         branches:
             - main
@@ -61,6 +61,10 @@ jobs:
                         - '.dockerignore'
                         - '.github/workflows/*.yml'
 
+    # ──────────────────────────────────────────────
+    # STAGE 1: Linting (runs first, gates everything)
+    # ──────────────────────────────────────────────
+
     lint:
         name: Lint
         runs-on: home-runners
@@ -84,15 +88,54 @@ jobs:
             - name: Run golangci-lint
               uses: golangci/golangci-lint-action@v9
               with:
-                  # renovate: datasource=go depName=github.com/golangci/golangci-lint
                   version: v2.10.1
                   args: --config=.golangci.yml --timeout=5m
+
+    lint-frontend:
+        name: Frontend Lint
+        runs-on: home-runners
+        needs: changes
+        if: needs.changes.outputs.frontend == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '20'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Run ESLint (JavaScript)
+              working-directory: ./static
+              run: npm run lint:js
+
+            - name: Run Stylelint (CSS)
+              working-directory: ./static
+              run: npm run lint:css
+
+            - name: Check formatting (Prettier)
+              working-directory: ./static
+              run: npm run format:check
+
+    # ──────────────────────────────────────────────
+    # STAGE 2: Build + Unit Tests (gated on lint)
+    # ──────────────────────────────────────────────
 
     build:
         name: Build Check
         runs-on: home-runners
-        needs: changes
-        if: needs.changes.outputs.go == 'true'
+        # CHANGED: Now depends on lint — don't build if lint fails
+        needs: [changes, lint]
+        if: |
+            always() &&
+            (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -126,8 +169,12 @@ jobs:
     test-unit:
         name: Unit Tests
         runs-on: home-runners
-        needs: changes
-        if: needs.changes.outputs.go == 'true'
+        # CHANGED: Now depends on lint — don't test if lint fails
+        needs: [changes, lint]
+        if: |
+            always() &&
+            (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -152,9 +199,9 @@ jobs:
               run: |
                   echo "## Unit Test Coverage" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
                   go tool cover -func=coverage-unit.out | tail -20 >> $GITHUB_STEP_SUMMARY
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
 
             - name: Upload test results
               if: always()
@@ -165,88 +212,16 @@ jobs:
                       coverage-unit.out
                       test-unit.json
 
-    test-integration:
-        name: Integration Tests
-        runs-on: home-runners
-        needs: changes
-        if: |
-            github.event_name == 'pull_request' &&
-            needs.changes.outputs.go == 'true'
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v6
-
-            - name: Install system dependencies
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
-
-            - name: Set up Go
-              uses: actions/setup-go@v6
-              with:
-                  go-version-file: go.mod
-                  cache: true
-
-            - name: Run integration tests
-              run: |
-                  make test-integration
-
-            - name: Generate integration coverage summary
-              if: always()
-              run: |
-                  echo "## Integration Test Coverage" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-                  if [ -f coverage-integration.out ]; then
-                      go tool cover -func=coverage-integration.out | tail -20 >> $GITHUB_STEP_SUMMARY
-                  else
-                      echo "No coverage file generated" >> $GITHUB_STEP_SUMMARY
-                  fi
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-            - name: Upload coverage
-              if: always()
-              uses: actions/upload-artifact@v6
-              with:
-                  name: integration-test-results
-                  path: |
-                      coverage-integration.out
-                      test-integration.json
-
-    test-race:
-        name: Race Detector
-        runs-on: home-runners
-        needs: changes
-        if: |
-            github.event_name == 'pull_request' &&
-            needs.changes.outputs.go == 'true'
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v6
-
-            - name: Install libvips and ffmpeg
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
-
-            - name: Set up Go
-              uses: actions/setup-go@v6
-              with:
-                  go-version-file: go.mod
-                  cache: true
-
-            - name: Run tests with race detector
-              run: |
-                  make test-race
-
-    # Frontend unit tests run independently — no backend required
     test-frontend-unit:
         name: Frontend Unit Tests
         runs-on: home-runners
-        needs: changes
+        # CHANGED: Now depends on lint-frontend — don't test if lint fails
+        # CHANGED: Simplified condition (removed redundant clause)
+        needs: [changes, lint-frontend]
         if: |
-            needs.changes.outputs.frontend == 'true' ||
-            (needs.changes.outputs.go == 'true' && needs.changes.outputs.frontend == 'true')
+            always() &&
+            (needs.lint-frontend.result == 'success' || needs.lint-frontend.result == 'skipped') &&
+            needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -272,9 +247,9 @@ jobs:
                   echo "## Frontend Unit Test Coverage" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                   if [ -f static/coverage/coverage-summary.json ]; then
-                    echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+                    echo '```json' >> $GITHUB_STEP_SUMMARY
                     cat static/coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
-                    echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                    echo '```' >> $GITHUB_STEP_SUMMARY
                   else
                     echo "No coverage report generated" >> $GITHUB_STEP_SUMMARY
                   fi
@@ -286,14 +261,103 @@ jobs:
                   name: frontend-unit-test-results
                   path: static/coverage/
 
-    # Frontend integration tests require the backend binary and sample media
+    # ──────────────────────────────────────────────
+    # STAGE 3: Integration / Expensive Tests
+    #          (gated on unit tests passing)
+    # ──────────────────────────────────────────────
+
+    test-integration:
+        name: Integration Tests
+        runs-on: home-runners
+        # CHANGED: Now depends on test-unit — don't run expensive integration
+        # tests if unit tests already failed
+        needs: [changes, test-unit]
+        if: |
+            github.event_name == 'pull_request' &&
+            needs.test-unit.result == 'success' &&
+            needs.changes.outputs.go == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run integration tests
+              run: |
+                  make test-integration
+
+            - name: Generate integration coverage summary
+              if: always()
+              run: |
+                  echo "## Integration Test Coverage" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
+                  if [ -f coverage-integration.out ]; then
+                      go tool cover -func=coverage-integration.out | tail -20 >> $GITHUB_STEP_SUMMARY
+                  else
+                      echo "No coverage file generated" >> $GITHUB_STEP_SUMMARY
+                  fi
+                  echo '```' >> $GITHUB_STEP_SUMMARY
+
+            - name: Upload coverage
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: integration-test-results
+                  path: |
+                      coverage-integration.out
+                      test-integration.json
+
+    test-race:
+        name: Race Detector
+        runs-on: home-runners
+        # CHANGED: Now depends on test-unit — race detection is expensive,
+        # only run if unit tests pass
+        needs: [changes, test-unit]
+        if: |
+            github.event_name == 'pull_request' &&
+            needs.test-unit.result == 'success' &&
+            needs.changes.outputs.go == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Install libvips and ffmpeg
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run tests with race detector
+              run: |
+                  make test-race
+
     test-frontend-integration:
         name: Frontend Integration Tests
         runs-on: home-runners
-        needs: [changes, build]
+        # CHANGED: Now depends on test-frontend-unit — don't run expensive
+        # integration tests if unit tests already failed
+        # CHANGED: Simplified condition
+        needs: [changes, build, test-frontend-unit]
         if: |
-            needs.changes.outputs.frontend == 'true' ||
-            (needs.changes.outputs.go == 'true' && needs.changes.outputs.frontend == 'true')
+            always() &&
+            needs.build.result == 'success' &&
+            (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
+            needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -313,11 +377,6 @@ jobs:
             - name: Install frontend dependencies
               working-directory: ./static
               run: npm ci
-
-            # commenting out for now as not ready for production
-            # - name: Install Playwright browsers
-            #   working-directory: ./static
-            #   run: npx playwright install --with-deps
 
             - name: Download backend binary
               uses: actions/download-artifact@v6
@@ -356,12 +415,10 @@ jobs:
 
             - name: Start backend server
               run: |
-                  # Start backend in background
                   MEDIA_DIR=/tmp/media CACHE_DIR=/tmp/cache DATABASE_DIR=/tmp/database METRICS_ENABLED=false LOG_HEALTH_CHECKS=false ./media-viewer &
                   BACKEND_PID=$!
                   echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
 
-                  # Wait for server to be ready
                   echo "Waiting for backend to start..."
                   for i in {1..30}; do
                     if curl -f http://localhost:8080/health > /dev/null 2>&1; then
@@ -380,13 +437,6 @@ jobs:
                   make frontend-test-integration
               env:
                   TEST_BASE_URL: http://localhost:8080
-
-            # commenting out for now as not ready for production
-            # - name: Run frontend E2E tests
-            #   working-directory: ./static
-            #   run: npm run test:e2e
-            #   env:
-            #       BASE_URL: http://localhost:8080
 
             - name: Stop backend server
               if: always()
@@ -412,12 +462,26 @@ jobs:
                   path: static/e2e/playwright-report/
                   retention-days: 30
 
+    # ──────────────────────────────────────────────
+    # STAGE 4: Docker builds (gated on all tests)
+    # ──────────────────────────────────────────────
+
     build-docker:
         name: Build Docker Image
-        needs: [changes, lint, test-unit, test-frontend-unit, test-frontend-integration, build]
+        needs:
+            [
+                changes,
+                lint,
+                lint-frontend,
+                test-unit,
+                test-frontend-unit,
+                test-frontend-integration,
+                build,
+            ]
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            (needs.lint-frontend.result == 'success' || needs.lint-frontend.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
             (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
             (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
@@ -438,10 +502,20 @@ jobs:
 
     build-docker-nvidia:
         name: Build Docker Image (NVIDIA)
-        needs: [changes, lint, test-unit, test-frontend-unit, test-frontend-integration, build]
+        needs:
+            [
+                changes,
+                lint,
+                lint-frontend,
+                test-unit,
+                test-frontend-unit,
+                test-frontend-integration,
+                build,
+            ]
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            (needs.lint-frontend.result == 'success' || needs.lint-frontend.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
             (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
             (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
@@ -467,6 +541,7 @@ jobs:
         needs:
             [
                 lint,
+                lint-frontend,
                 build,
                 test-unit,
                 test-integration,
@@ -480,61 +555,56 @@ jobs:
         steps:
             - name: Check required jobs passed
               run: |
-                  # Check lint (required if ran)
                   if [[ "${{ needs.lint.result }}" == "failure" ]]; then
                     echo "❌ Lint failed"
                     exit 1
                   fi
 
-                  # Check build (required if ran)
+                  if [[ "${{ needs.lint-frontend.result }}" == "failure" ]]; then
+                    echo "❌ Frontend lint failed"
+                    exit 1
+                  fi
+
                   if [[ "${{ needs.build.result }}" == "failure" ]]; then
                     echo "❌ Build failed"
                     exit 1
                   fi
 
-                  # Check unit tests (required if ran)
                   if [[ "${{ needs.test-unit.result }}" == "failure" ]]; then
                     echo "❌ Unit tests failed"
                     exit 1
                   fi
 
-                  # Check frontend unit tests (required if ran)
                   if [[ "${{ needs.test-frontend-unit.result }}" == "failure" ]]; then
                     echo "❌ Frontend unit tests failed"
                     exit 1
                   fi
 
-                  # Check frontend integration tests (required if ran)
                   if [[ "${{ needs.test-frontend-integration.result }}" == "failure" ]]; then
                     echo "❌ Frontend integration tests failed"
                     exit 1
                   fi
 
-                  # Check integration tests (required on PRs if ran)
                   if [[ "${{ needs.test-integration.result }}" == "failure" ]]; then
                     echo "❌ Integration tests failed"
                     exit 1
                   fi
 
-                  # Check race detector (optional, only fails if it ran and failed)
                   if [[ "${{ needs.test-race.result }}" == "failure" ]]; then
                     echo "❌ Race detector found issues"
                     exit 1
                   fi
 
-                  # Check docker build (required if ran)
                   if [[ "${{ needs.build-docker.result }}" == "failure" ]]; then
                     echo "❌ Docker build failed"
                     exit 1
                   fi
 
-                  # Check docker nvidia build (required if ran)
                   if [[ "${{ needs.build-docker-nvidia.result }}" == "failure" ]]; then
                     echo "❌ Docker NVIDIA build failed"
                     exit 1
                   fi
 
-                  # Determine context
                   if [[ "${{ github.event_name }}" == "pull_request" ]]; then
                     echo "✅ All PR checks passed!"
                   else
