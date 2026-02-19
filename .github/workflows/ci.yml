@@ -15,7 +15,7 @@ concurrency:
 jobs:
     changes:
         name: Detect Changes
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         permissions:
             pull-requests: read
         outputs:
@@ -68,7 +68,7 @@ jobs:
 
     prepare-sample-media:
         name: Prepare Sample Media
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs: changes
         if: |
             needs.changes.outputs.go == 'true' ||
@@ -106,7 +106,7 @@ jobs:
 
     lint:
         name: Backend Lint
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs: changes
         if: needs.changes.outputs.go == 'true'
         steps:
@@ -132,7 +132,7 @@ jobs:
 
     lint-frontend:
         name: Frontend Lint
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs: changes
         if: needs.changes.outputs.frontend == 'true'
         steps:
@@ -168,7 +168,7 @@ jobs:
 
     build:
         name: Backend Build Check
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         # CHANGED: Now depends on lint — don't build if lint fails
         needs: [changes, lint]
         if: |
@@ -207,7 +207,7 @@ jobs:
 
     test-unit:
         name: Backend Unit Tests
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         # CHANGED: Now depends on lint — don't test if lint fails
         needs: [changes, lint]
         if: |
@@ -253,7 +253,7 @@ jobs:
 
     test-frontend-unit:
         name: Frontend Unit Tests
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         # CHANGED: Now depends on lint-frontend — don't test if lint fails
         # CHANGED: Simplified condition (removed redundant clause)
         needs: [changes, lint-frontend]
@@ -307,7 +307,7 @@ jobs:
 
     test-integration:
         name: Backend Integration Tests
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs: [changes, test-unit, prepare-sample-media]
         if: |
             github.event_name == 'pull_request' &&
@@ -369,7 +369,7 @@ jobs:
 
     test-race:
         name: Backend Race Detector
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         # CHANGED: Now depends on test-unit — race detection is expensive,
         # only run if unit tests pass
         needs: [changes, test-unit]
@@ -398,7 +398,7 @@ jobs:
 
     test-frontend-integration:
         name: Frontend Integration Tests
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs: [changes, build, test-frontend-unit, prepare-sample-media]
         if: |
             always() &&
@@ -624,7 +624,7 @@ jobs:
 
     ci-success:
         name: CI Success
-        runs-on: home-runners
+        runs-on: ubuntu-latest
         needs:
             [
                 lint,
