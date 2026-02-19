@@ -454,7 +454,7 @@ jobs:
                   DATABASE_DIR=/tmp/database \
                   METRICS_ENABLED=false \
                   LOG_HEALTH_CHECKS=false \
-                  LOG_LEVEL=debug \
+                  LOG_LEVEL=info \
                   ./media-viewer > /tmp/backend-logs/backend-stdout.log 2>&1 &
 
                   BACKEND_PID=$!
