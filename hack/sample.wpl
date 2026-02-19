@@ -1,0 +1,15 @@
+<?wpl version="1.0"?>
+<smil>
+    <head>
+        <meta name="Generator" content="Microsoft Windows Media Player -- 12.0.26100.5074"/>
+        <meta name="ItemCount" content="153"/>
+        <author/>
+        <title>new better</title>
+    </head>
+    <body>
+        <seq>
+            <media src="sample_video_01.mp4"/>
+            <media src="folder1\sample_video_02.mp4"/>
+        </seq>
+    </body>
+</smil>
