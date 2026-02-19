@@ -66,7 +66,7 @@ jobs:
     # ──────────────────────────────────────────────
 
     lint:
-        name: Lint
+        name: Backend Lint
         runs-on: home-runners
         needs: changes
         if: needs.changes.outputs.go == 'true'
@@ -128,7 +128,7 @@ jobs:
     # ──────────────────────────────────────────────
 
     build:
-        name: Build Check
+        name: Backend Build Check
         runs-on: home-runners
         # CHANGED: Now depends on lint — don't build if lint fails
         needs: [changes, lint]
@@ -167,7 +167,7 @@ jobs:
                   retention-days: 1
 
     test-unit:
-        name: Unit Tests
+        name: Backend Unit Tests
         runs-on: home-runners
         # CHANGED: Now depends on lint — don't test if lint fails
         needs: [changes, lint]
@@ -267,7 +267,7 @@ jobs:
     # ──────────────────────────────────────────────
 
     test-integration:
-        name: Integration Tests
+        name: Backend Integration Tests
         runs-on: home-runners
         # CHANGED: Now depends on test-unit — don't run expensive integration
         # tests if unit tests already failed
@@ -280,10 +280,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            - name: Install system dependencies
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+            # - name: Install system dependencies
+            #   run: |
+            #       sudo apt-get update
+            #       sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Go
               uses: actions/setup-go@v6
@@ -318,7 +318,7 @@ jobs:
                       test-integration.json
 
     test-race:
-        name: Race Detector
+        name: Backend Race Detector
         runs-on: home-runners
         # CHANGED: Now depends on test-unit — race detection is expensive,
         # only run if unit tests pass
