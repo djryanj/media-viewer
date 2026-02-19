@@ -43,6 +43,7 @@
       "matchStrings": [
         "# renovate: datasource=go depName=github\\.com/golangci/golangci-lint\\s+version:\\s+(?<currentValue>v[\\d\\.]+)"
       ],
+      "depNameTemplate": "github.com/golangci/golangci-lint",
       "datasourceTemplate": "go",
       "versioningTemplate": "semver"
     },
