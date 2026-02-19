@@ -447,22 +447,38 @@ jobs:
 
             - name: Start backend server
               run: |
-                  MEDIA_DIR=/tmp/media CACHE_DIR=/tmp/cache DATABASE_DIR=/tmp/database METRICS_ENABLED=false LOG_HEALTH_CHECKS=false ./media-viewer &
+                  mkdir -p /tmp/backend-logs
+
+                  MEDIA_DIR=/tmp/media \
+                  CACHE_DIR=/tmp/cache \
+                  DATABASE_DIR=/tmp/database \
+                  METRICS_ENABLED=false \
+                  LOG_HEALTH_CHECKS=false \
+                  LOG_LEVEL=debug \
+                  ./media-viewer > /tmp/backend-logs/backend-stdout.log 2>&1 &
+
                   BACKEND_PID=$!
                   echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
 
-                  echo "Waiting for backend to start..."
+                  echo "Waiting for backend to be ready..."
                   for i in {1..30}; do
                     if curl -f http://localhost:8080/readyz > /dev/null 2>&1; then
                       echo "Backend is ready!"
                       break
                     fi
                     if [ $i -eq 30 ]; then
-                      echo "Backend failed to start"
+                      echo "Backend failed to become ready within 30 seconds"
+                      echo "--- Backend logs ---"
+                      cat /tmp/backend-logs/backend-stdout.log
                       exit 1
                     fi
                     sleep 1
                   done
+                  sleep 5 # just because
+
+                  echo "--- Backend startup logs ---"
+                  cat /tmp/backend-logs/backend-stdout.log
+                  echo "--- End startup logs ---"
 
             - name: Run frontend integration tests
               run: |
@@ -470,12 +486,34 @@ jobs:
               env:
                   TEST_BASE_URL: http://localhost:8080
 
+            - name: Dump backend logs on failure
+              if: failure()
+              run: |
+                  echo "## Backend Server Logs" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
+                  tail -200 /tmp/backend-logs/backend-stdout.log >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No logs found"
+                  echo '```' >> $GITHUB_STEP_SUMMARY
+
+                  echo "--- Last 100 lines of backend logs ---"
+                  tail -100 /tmp/backend-logs/backend-stdout.log 2>/dev/null || echo "No logs found"
+
             - name: Stop backend server
               if: always()
               run: |
                   if [ -n "$BACKEND_PID" ]; then
                     kill $BACKEND_PID || true
+                    # Give it a moment to flush logs
+                    sleep 2
                   fi
+
+            - name: Upload backend logs
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: backend-server-logs
+                  path: /tmp/backend-logs/
+                  retention-days: 7
 
             - name: Upload frontend integration results
               if: always()
