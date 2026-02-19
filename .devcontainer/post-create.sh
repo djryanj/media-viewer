@@ -11,6 +11,26 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Pin exact Node.js version to match CI workflow
+# renovate: datasource=node depName=node
+REQUIRED_NODE_VERSION="24.13.1"
+
+CURRENT_NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//')
+if [ "$CURRENT_NODE_VERSION" != "$REQUIRED_NODE_VERSION" ]; then
+    echo -e "${BLUE}[INFO] Installing Node.js ${REQUIRED_NODE_VERSION} (current: ${CURRENT_NODE_VERSION:-none})...${NC}"
+    # nvm is pre-installed in Microsoft devcontainer Node images
+    # Source nvm in case it's not loaded in this shell context
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+    nvm install "$REQUIRED_NODE_VERSION"
+    nvm alias default "$REQUIRED_NODE_VERSION"
+    nvm use "$REQUIRED_NODE_VERSION"
+    echo -e "${GREEN}[SUCCESS] Node.js $(node --version) installed and set as default${NC}"
+else
+    echo -e "${GREEN}[OK] Node.js v${CURRENT_NODE_VERSION} already matches required version${NC}"
+fi
+
 # Install ffmpeg and sqlite
 echo -e "${BLUE}[INFO] Installing ffmpeg and sqlite and other dependencies...${NC}"
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
@@ -151,6 +171,7 @@ echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Post-create setup complete!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
+echo -e "  Node.js:         ${BLUE}$(node --version)${NC}"
 echo -e "  Run the app:     ${BLUE}go run -tags 'fts5' .${NC}"
 echo -e "  With hot reload: ${BLUE}air${NC}"
 echo -e "  Build:           ${BLUE}go build -tags 'fts5' -o media-viewer .${NC}"
