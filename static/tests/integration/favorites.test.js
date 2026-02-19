@@ -140,6 +140,13 @@ describe('Favorites Integration', () => {
             const favorites = await listResponse.json();
 
             const count = favorites.filter((f) => f.path === testFile.path).length;
+            if (count !== 1) {
+                // Log favorites for debugging
+                console.error('Favorites list:', favorites);
+                throw new Error(
+                    `Favorite for path ${testFile.path} not found after add. Count: ${count}`
+                );
+            }
             expect(count).toBe(1);
         });
 

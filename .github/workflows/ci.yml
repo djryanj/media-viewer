@@ -377,7 +377,7 @@ jobs:
 
             - name: Run frontend integration tests
               working-directory: ./static
-              run: npm run test:integration
+              run: make frontend-test-integration
               env:
                   TEST_BASE_URL: http://localhost:8080
 

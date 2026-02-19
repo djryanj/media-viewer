@@ -1,4 +1,5 @@
 /**
+ * global loadModuleForTesting
  * Unit tests for Lightbox module
  *
  * Tests navigation logic, index management, and state operations
@@ -9,6 +10,24 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 
 describe('Lightbox Module', () => {
     let Lightbox;
+
+    // Ensure Preferences and HistoryManager are available in all test scopes
+    beforeAll(() => {
+        globalThis.Preferences = {
+            isClockAlwaysVisible: vi.fn(() => false),
+            getVideoAutoplay: vi.fn(() => true),
+            getMediaLoopEnabled: vi.fn(() => true),
+            toggleVideoAutoplay: vi.fn(() => true),
+            isVideoAutoplayEnabled: vi.fn(() => true),
+            toggleMediaLoop: vi.fn(() => true),
+            isMediaLoopEnabled: vi.fn(() => true),
+        };
+        globalThis.HistoryManager = {
+            pushState: vi.fn(),
+            removeState: vi.fn(),
+            hasState: vi.fn(() => false),
+        };
+    });
 
     beforeEach(async () => {
         // Reset all modules to ensure fresh imports

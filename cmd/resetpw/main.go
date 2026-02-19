@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -71,10 +72,28 @@ func main() {
 	case "status":
 		showStatus(ctx, db)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+		// Sanitize command input using allowlist to break taint chain
+		sanitized := sanitizeCommand(command)
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", sanitized) //nolint:gosec // G705 - input is sanitized via allowlist in sanitizeCommand; only [a-zA-Z0-9_-] characters pass through
 		printUsage()
 		os.Exit(1)
 	}
+}
+
+// sanitizeCommand returns a safe representation of a command string for display.
+// It uses an allowlist approach, replacing any character that is not alphanumeric,
+// a hyphen, or an underscore with '_'.
+func sanitizeCommand(cmd string) string {
+	var b strings.Builder
+	b.Grow(len(cmd))
+	for _, r := range cmd {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }
 
 func printUsage() {
