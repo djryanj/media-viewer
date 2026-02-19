@@ -84,7 +84,8 @@ jobs:
             - name: Run golangci-lint
               uses: golangci/golangci-lint-action@v9
               with:
-                  version: latest
+                  # renovate: datasource=go depName=github.com/golangci/golangci-lint
+                  version: v2.10.1
                   args: --config=.golangci.yml --timeout=5m
 
     build:
@@ -327,11 +328,11 @@ jobs:
             - name: Make binary executable
               run: chmod +x ./media-viewer
 
-            - name: Cache sample media
+            - name: Restore sample media cache
               id: cache-media
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
-                  path: /tmp/media
+                  path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
             - name: Download sample media
@@ -340,7 +341,18 @@ jobs:
                   chmod +x ./hack/download-sample-media.sh
                   ./hack/download-sample-media.sh
               env:
-                  MEDIA_DIR: /tmp/media
+                  MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
+
+            - name: Save sample media cache
+              if: steps.cache-media.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Copy sample media to runtime location
+              run: |
+                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
 
             - name: Start backend server
               run: |
