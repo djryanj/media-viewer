@@ -6,7 +6,7 @@ set +e
 # Uses multiple sources to get a diverse collection
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MEDIA_DIR="${SCRIPT_DIR}/../sample-media"
+MEDIA_DIR="${MEDIA_DIR:-${SCRIPT_DIR}/../sample-media}"
 
 # Configuration
 NUM_IMAGES=${NUM_IMAGES:-250}

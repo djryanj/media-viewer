@@ -65,7 +65,6 @@ jobs:
         name: Lint
         runs-on: home-runners
         needs: changes
-        # Skip if only static files changed (no Go changes)
         if: needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -92,7 +91,6 @@ jobs:
         name: Build Check
         runs-on: home-runners
         needs: changes
-        # Skip if only static files changed (no Go changes)
         if: needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -117,11 +115,17 @@ jobs:
               run: |
                   make resetpw
 
+            - name: Upload binary artifact
+              uses: actions/upload-artifact@v6
+              with:
+                  name: media-viewer-binary
+                  path: media-viewer
+                  retention-days: 1
+
     test-unit:
         name: Unit Tests
         runs-on: home-runners
         needs: changes
-        # Skip if only static files changed (no Go changes)
         if: needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -140,7 +144,6 @@ jobs:
 
             - name: Run unit tests
               run: |
-                  # Run tests excluding integration tests
                   make test-unit
 
             - name: Generate coverage report
@@ -151,88 +154,6 @@ jobs:
                   echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
                   go tool cover -func=coverage-unit.out | tail -20 >> $GITHUB_STEP_SUMMARY
                   echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-            # - name: Comment PR with coverage
-            #   if: github.event_name == 'pull_request'
-            #   uses: actions/github-script@v7
-            #   with:
-            #       script: |
-            #           const fs = require('fs');
-            #           const { execSync } = require('child_process');
-
-            #           // Get coverage summary
-            #           const coverage = execSync('go tool cover -func=coverage-unit.out').toString();
-            #           const lines = coverage.split('\n');
-            #           const totalLine = lines[lines.length - 2] || lines[lines.length - 1];
-            #           const totalMatch = totalLine.match(/total:.*?(\d+\.\d+)%/);
-            #           const totalCoverage = totalMatch ? totalMatch[1] : 'N/A';
-
-            #           // Get top 10 and bottom 10 files by coverage
-            #           const fileLines = lines.slice(0, -1).filter(line => line.includes('%'));
-            #           const files = fileLines.map(line => {
-            #               const match = line.match(/(.*?)\s+(\d+\.\d+)%/);
-            #               return match ? { file: match[1].trim(), coverage: parseFloat(match[2]) } : null;
-            #           }).filter(Boolean);
-
-            #           files.sort((a, b) => a.coverage - b.coverage);
-            #           const lowest = files.slice(0, 10);
-            #           const highest = files.slice(-10).reverse();
-
-            #           const comment = `## 📊 Unit Test Coverage Report
-
-            #           **Total Coverage: ${totalCoverage}%**
-
-            #           <details>
-            #           <summary>🔴 Lowest Coverage (Top 10)</summary>
-
-            #           | File | Coverage |
-            #           |------|----------|
-            #           ${lowest.map(f => `| \`${f.file.split('/').pop()}\` | ${f.coverage}% |`).join('\n')}
-            #           </details>
-
-            #           <details>
-            #           <summary>🟢 Highest Coverage (Top 10)</summary>
-
-            #           | File | Coverage |
-            #           |------|----------|
-            #           ${highest.map(f => `| \`${f.file.split('/').pop()}\` | ${f.coverage}% |`).join('\n')}
-            #           </details>
-
-            #           <details>
-            #           <summary>📄 Full Coverage Report</summary>
-
-            #           \`\`\`
-            #           ${coverage}
-            #           \`\`\`
-            #           </details>`;
-
-            #           // Find existing coverage comment
-            #           const { data: comments } = await github.rest.issues.listComments({
-            #               owner: context.repo.owner,
-            #               repo: context.repo.repo,
-            #               issue_number: context.issue.number,
-            #           });
-
-            #           const botComment = comments.find(comment =>
-            #               comment.user.type === 'Bot' &&
-            #               comment.body.includes('Unit Test Coverage Report')
-            #           );
-
-            #           if (botComment) {
-            #               await github.rest.issues.updateComment({
-            #                   owner: context.repo.owner,
-            #                   repo: context.repo.repo,
-            #                   comment_id: botComment.id,
-            #                   body: comment
-            #               });
-            #           } else {
-            #               await github.rest.issues.createComment({
-            #                   owner: context.repo.owner,
-            #                   repo: context.repo.repo,
-            #                   issue_number: context.issue.number,
-            #                   body: comment
-            #               });
-            #           }
 
             - name: Upload test results
               if: always()
@@ -247,7 +168,6 @@ jobs:
         name: Integration Tests
         runs-on: home-runners
         needs: changes
-        # Only run on PRs (not on regular branch pushes)
         if: |
             github.event_name == 'pull_request' &&
             needs.changes.outputs.go == 'true'
@@ -318,11 +238,58 @@ jobs:
               run: |
                   make test-race
 
-    test-frontend:
-        name: Frontend Tests
+    # Frontend unit tests run independently — no backend required
+    test-frontend-unit:
+        name: Frontend Unit Tests
         runs-on: home-runners
         needs: changes
-        # Run if frontend files changed, or if both Go and frontend changed
+        if: |
+            needs.changes.outputs.frontend == 'true' ||
+            (needs.changes.outputs.go == 'true' && needs.changes.outputs.frontend == 'true')
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '20'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Run frontend unit tests
+              working-directory: ./static
+              run: npm run test:unit:only
+
+            - name: Generate frontend unit coverage summary
+              if: always()
+              run: |
+                  echo "## Frontend Unit Test Coverage" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  if [ -f static/coverage/coverage-summary.json ]; then
+                    echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+                    cat static/coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
+                    echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "No coverage report generated" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+            - name: Upload frontend unit coverage
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: frontend-unit-test-results
+                  path: static/coverage/
+
+    # Frontend integration tests require the backend binary and sample media
+    test-frontend-integration:
+        name: Frontend Integration Tests
+        runs-on: home-runners
+        needs: [changes, build]
         if: |
             needs.changes.outputs.frontend == 'true' ||
             (needs.changes.outputs.go == 'true' && needs.changes.outputs.frontend == 'true')
@@ -334,12 +301,6 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg
-
-            - name: Set up Go
-              uses: actions/setup-go@v6
-              with:
-                  go-version-file: go.mod
-                  cache: true
 
             - name: Set up Node.js
               uses: actions/setup-node@v4
@@ -357,15 +318,29 @@ jobs:
             #   working-directory: ./static
             #   run: npx playwright install --with-deps
 
-            - name: Run frontend unit tests (no backend required)
-              working-directory: ./static
-              run: npm run test:unit:only
+            - name: Download backend binary
+              uses: actions/download-artifact@v6
+              with:
+                  name: media-viewer-binary
+                  path: .
 
-            - name: Build backend
-              run: make build
+            - name: Make binary executable
+              run: chmod +x ./media-viewer
+
+            - name: Cache sample media
+              id: cache-media
+              uses: actions/cache@v4
+              with:
+                  path: /tmp/media
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
             - name: Download sample media
-              run: make download-sample-media
+              if: steps.cache-media.outputs.cache-hit != 'true'
+              run: |
+                  chmod +x ./hack/download-sample-media.sh
+                  ./hack/download-sample-media.sh
+              env:
+                  MEDIA_DIR: /tmp/media
 
             - name: Start backend server
               run: |
@@ -408,26 +383,12 @@ jobs:
                     kill $BACKEND_PID || true
                   fi
 
-            - name: Generate frontend coverage summary
-              if: always()
-              run: |
-                  echo "## Frontend Test Coverage" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  if [ -f static/coverage/coverage-summary.json ]; then
-                    echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
-                    cat static/coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
-                    echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-                  else
-                    echo "No coverage report generated" >> $GITHUB_STEP_SUMMARY
-                  fi
-
-            - name: Upload frontend coverage
+            - name: Upload frontend integration results
               if: always()
               uses: actions/upload-artifact@v6
               with:
-                  name: frontend-test-results
+                  name: frontend-integration-test-results
                   path: |
-                      static/coverage/
                       static/e2e/playwright-report/
                       static/e2e/test-results/
 
@@ -441,14 +402,13 @@ jobs:
 
     build-docker:
         name: Build Docker Image
-        needs: [changes, lint, test-unit, test-frontend, build]
-        # On branch pushes: only if Dockerfile or GHA files changed
-        # On PRs: always build and push (after tests pass)
+        needs: [changes, lint, test-unit, test-frontend-unit, test-frontend-integration, build]
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
-            (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
+            (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
+            (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
             (needs.build.result == 'success' || needs.build.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
@@ -466,14 +426,13 @@ jobs:
 
     build-docker-nvidia:
         name: Build Docker Image (NVIDIA)
-        needs: [changes, lint, test-unit, test-frontend, build]
-        # On branch pushes: only if Dockerfile or GHA files changed
-        # On PRs: always build and push (after tests pass)
+        needs: [changes, lint, test-unit, test-frontend-unit, test-frontend-integration, build]
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
-            (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
+            (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
+            (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
             (needs.build.result == 'success' || needs.build.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
@@ -490,32 +449,6 @@ jobs:
             contents: read
             packages: write
 
-            # - name: Comment PR with image info
-            #   if: github.event_name == 'pull_request'
-            #   uses: actions/github-script@v7
-            #   with:
-            #       script: |
-            #           const prNumber = context.issue.number;
-            #           const imageTag = `ghcr.io/${{ github.repository }}:pr-${prNumber}`;
-            #           const comment = `## Docker Image Built
-
-            #           A Docker image has been built and pushed for this PR:
-
-            #           \`\`\`bash
-            #           docker pull ${imageTag}
-            #           \`\`\`
-
-            #           You can use this image to test changes in your infrastructure before merging.
-
-            #           **Note:** This image is AMD64 only. Multi-arch images are built on release.`;
-
-            #           github.rest.issues.createComment({
-            #               issue_number: prNumber,
-            #               owner: context.repo.owner,
-            #               repo: context.repo.repo,
-            #               body: comment
-            #           });
-
     ci-success:
         name: CI Success
         runs-on: home-runners
@@ -526,7 +459,8 @@ jobs:
                 test-unit,
                 test-integration,
                 test-race,
-                test-frontend,
+                test-frontend-unit,
+                test-frontend-integration,
                 build-docker,
                 build-docker-nvidia,
             ]
@@ -552,9 +486,15 @@ jobs:
                     exit 1
                   fi
 
-                  # Check frontend tests (required if ran)
-                  if [[ "${{ needs.test-frontend.result }}" == "failure" ]]; then
-                    echo "❌ Frontend tests failed"
+                  # Check frontend unit tests (required if ran)
+                  if [[ "${{ needs.test-frontend-unit.result }}" == "failure" ]]; then
+                    echo "❌ Frontend unit tests failed"
+                    exit 1
+                  fi
+
+                  # Check frontend integration tests (required if ran)
+                  if [[ "${{ needs.test-frontend-integration.result }}" == "failure" ]]; then
+                    echo "❌ Frontend integration tests failed"
                     exit 1
                   fi
 
