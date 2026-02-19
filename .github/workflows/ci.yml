@@ -62,6 +62,44 @@ jobs:
                         - '.github/workflows/*.yml'
 
     # ──────────────────────────────────────────────
+    # STAGE 0: Prepare sample media (runs early,
+    #          can take ~10 min on cold cache)
+    # ──────────────────────────────────────────────
+
+    prepare-sample-media:
+        name: Prepare Sample Media
+        runs-on: home-runners
+        needs: changes
+        if: |
+            needs.changes.outputs.go == 'true' ||
+            needs.changes.outputs.frontend == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Restore sample media cache
+              id: cache-media
+              uses: actions/cache/restore@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Download sample media
+              if: steps.cache-media.outputs.cache-hit != 'true'
+              run: |
+                  chmod +x ./hack/download-sample-media.sh
+                  ./hack/download-sample-media.sh
+              env:
+                  MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
+
+            - name: Save sample media cache
+              if: steps.cache-media.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+    # ──────────────────────────────────────────────
     # STAGE 1: Linting (runs first, gates everything)
     # ──────────────────────────────────────────────
 
@@ -269,12 +307,11 @@ jobs:
     test-integration:
         name: Backend Integration Tests
         runs-on: home-runners
-        # CHANGED: Now depends on test-unit — don't run expensive integration
-        # tests if unit tests already failed
-        needs: [changes, test-unit]
+        needs: [changes, test-unit, prepare-sample-media]
         if: |
             github.event_name == 'pull_request' &&
             needs.test-unit.result == 'success' &&
+            (needs.prepare-sample-media.result == 'success' || needs.prepare-sample-media.result == 'skipped') &&
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -291,9 +328,21 @@ jobs:
                   go-version-file: go.mod
                   cache: true
 
+            - name: Restore sample media cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Copy sample media to runtime location
+              run: |
+                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
+
             - name: Run integration tests
               run: |
                   make test-integration
+              env:
+                  MEDIA_DIR: /tmp/media
 
             - name: Generate integration coverage summary
               if: always()
@@ -349,14 +398,12 @@ jobs:
     test-frontend-integration:
         name: Frontend Integration Tests
         runs-on: home-runners
-        # CHANGED: Now depends on test-frontend-unit — don't run expensive
-        # integration tests if unit tests already failed
-        # CHANGED: Simplified condition
-        needs: [changes, build, test-frontend-unit]
+        needs: [changes, build, test-frontend-unit, prepare-sample-media]
         if: |
             always() &&
             needs.build.result == 'success' &&
             (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
+            (needs.prepare-sample-media.result == 'success' || needs.prepare-sample-media.result == 'skipped') &&
             needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
@@ -388,23 +435,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              id: cache-media
               uses: actions/cache/restore@v4
-              with:
-                  path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
-
-            - name: Download sample media
-              if: steps.cache-media.outputs.cache-hit != 'true'
-              run: |
-                  chmod +x ./hack/download-sample-media.sh
-                  ./hack/download-sample-media.sh
-              env:
-                  MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
-
-            - name: Save sample media cache
-              if: steps.cache-media.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v4
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -421,7 +452,7 @@ jobs:
 
                   echo "Waiting for backend to start..."
                   for i in {1..30}; do
-                    if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+                    if curl -f http://localhost:8080/readyz > /dev/null 2>&1; then
                       echo "Backend is ready!"
                       break
                     fi
@@ -548,6 +579,7 @@ jobs:
                 test-race,
                 test-frontend-unit,
                 test-frontend-integration,
+                prepare-sample-media,
                 build-docker,
                 build-docker-nvidia,
             ]
@@ -556,57 +588,62 @@ jobs:
             - name: Check required jobs passed
               run: |
                   if [[ "${{ needs.lint.result }}" == "failure" ]]; then
-                    echo "❌ Lint failed"
+                    echo "Lint failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.lint-frontend.result }}" == "failure" ]]; then
-                    echo "❌ Frontend lint failed"
+                    echo "Frontend lint failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.build.result }}" == "failure" ]]; then
-                    echo "❌ Build failed"
+                    echo "Build failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.test-unit.result }}" == "failure" ]]; then
-                    echo "❌ Unit tests failed"
+                    echo "Unit tests failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.test-frontend-unit.result }}" == "failure" ]]; then
-                    echo "❌ Frontend unit tests failed"
+                    echo "Frontend unit tests failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.test-frontend-integration.result }}" == "failure" ]]; then
-                    echo "❌ Frontend integration tests failed"
+                    echo "Frontend integration tests failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.test-integration.result }}" == "failure" ]]; then
-                    echo "❌ Integration tests failed"
+                    echo "Integration tests failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.test-race.result }}" == "failure" ]]; then
-                    echo "❌ Race detector found issues"
+                    echo "Race detector found issues"
+                    exit 1
+                  fi
+
+                  if [[ "${{ needs.prepare-sample-media.result }}" == "failure" ]]; then
+                    echo "Sample media preparation failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.build-docker.result }}" == "failure" ]]; then
-                    echo "❌ Docker build failed"
+                    echo "Docker build failed"
                     exit 1
                   fi
 
                   if [[ "${{ needs.build-docker-nvidia.result }}" == "failure" ]]; then
-                    echo "❌ Docker NVIDIA build failed"
+                    echo "Docker NVIDIA build failed"
                     exit 1
                   fi
 
                   if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-                    echo "✅ All PR checks passed!"
+                    echo "All PR checks passed!"
                   else
-                    echo "✅ All branch push checks passed!"
+                    echo "All branch push checks passed!"
                   fi
