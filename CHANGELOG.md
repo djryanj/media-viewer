@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.13.4] - Unreleased
+
+### Added
+
+- Extensive frontend test suite added along with CI and other requirements. [#49](https://github.com/djryanj/media-viewer/issues/49))
+- Extended renovate config to address golangci (see below in fixed section)
+
+### Fixed
+
+- (Frontend) various bugs discovered through the CI process. [#49](https://github.com/djryanj/media-viewer/issues/49))
+- (Backend) during CI update, a new version of golangci was being used which uncovered some additional lint errors. These were also fixed. [#49](https://github.com/djryanj/media-viewer/issues/49))
+
 ## [0.13.3] - 2026-02-13
 
 ### Added

@@ -31,7 +31,7 @@ const TagClipboard = {
         } else {
             try {
                 sessionStorage.removeItem('tagClipboard');
-            } catch (e) {
+            } catch {
                 // Ignore
             }
         }
@@ -683,7 +683,7 @@ const TagClipboard = {
         }
     },
 
-    async executePaste(destinationPaths, existingTags, newTags, includeSourceForNewTags, mode) {
+    async executePaste(destinationPaths, existingTags, newTags, includeSourceForNewTags, _mode) {
         let successCount = 0;
         let errorCount = 0;
         const allAffectedPaths = new Set(destinationPaths);

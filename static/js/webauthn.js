@@ -81,7 +81,7 @@ class WebAuthnManager {
 
         try {
             return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-        } catch (e) {
+        } catch {
             return false;
         }
     }
@@ -394,7 +394,7 @@ class WebAuthnManager {
         if (credential.response.getTransports) {
             try {
                 json.response.transports = credential.response.getTransports();
-            } catch (e) {
+            } catch {
                 // Some browsers don't support this
             }
         }
@@ -472,6 +472,9 @@ class WebAuthnManager {
         return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
     }
 }
+
+// Export class for testing
+window.WebAuthnManager = WebAuthnManager;
 
 // Create and export singleton instance
 window.webAuthnManager = new WebAuthnManager();

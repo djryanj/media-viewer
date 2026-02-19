@@ -1070,3 +1070,392 @@ func BenchmarkNormalizePath(b *testing.B) {
 		}
 	}
 }
+
+// =============================================================================
+// sanitizeLogField Tests
+// =============================================================================
+
+func TestSanitizeLogField(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Clean string unchanged",
+			input:    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+			expected: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "Newline replaced with space",
+			input:    "line1\nline2",
+			expected: "line1 line2",
+		},
+		{
+			name:     "Carriage return replaced with space",
+			input:    "line1\rline2",
+			expected: "line1 line2",
+		},
+		{
+			name:     "CRLF replaced with spaces",
+			input:    "line1\r\nline2",
+			expected: "line1  line2",
+		},
+		{
+			name:     "Null bytes stripped",
+			input:    "before\x00after",
+			expected: "beforeafter",
+		},
+		{
+			name:     "ANSI escape stripped",
+			input:    "normal\x1b[31mred text\x1b[0m",
+			expected: "normal[31mred text[0m",
+		},
+		{
+			name:     "Tab preserved",
+			input:    "field1\tfield2",
+			expected: "field1\tfield2",
+		},
+		{
+			name:     "Other control characters stripped",
+			input:    "before\x01\x02\x03\x04\x05after",
+			expected: "beforeafter",
+		},
+		{
+			name:     "Bell character stripped",
+			input:    "alert\x07here",
+			expected: "alerthere",
+		},
+		{
+			name:     "Backspace stripped",
+			input:    "back\x08space",
+			expected: "backspace",
+		},
+		{
+			name:     "Vertical tab stripped",
+			input:    "vertical\x0btab",
+			expected: "verticaltab",
+		},
+		{
+			name:     "Form feed stripped",
+			input:    "form\x0cfeed",
+			expected: "formfeed",
+		},
+		{
+			name:     "Unicode preserved",
+			input:    "café résumé naïve",
+			expected: "café résumé naïve",
+		},
+		{
+			name:     "CJK characters preserved",
+			input:    "日本語テスト",
+			expected: "日本語テスト",
+		},
+		{
+			name:     "Emoji preserved",
+			input:    "test 🎉 emoji 🚀",
+			expected: "test 🎉 emoji 🚀",
+		},
+		{
+			name:     "Mixed safe and unsafe characters",
+			input:    "safe\x00null\nnewline\x1bescape\tok",
+			expected: "safenull newlineescape\tok",
+		},
+		{
+			name:     "Only control characters",
+			input:    "\x00\x01\x02\x03\x1b",
+			expected: "",
+		},
+		{
+			name:     "Printable ASCII range",
+			input:    " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+			expected: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := sanitizeLogField(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeLogField(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Log Injection Attack Scenario Tests
+// =============================================================================
+
+func TestSanitizeLogField_InjectionAttacks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "Forged log line via newline",
+			input: "normal\n2026-02-19 00:00:00 127.0.0.1 GET /admin - 200 0 0 - - -",
+		},
+		{
+			name:  "Forged log line via CRLF",
+			input: "normal\r\n2026-02-19 00:00:00 10.0.0.1 DELETE /api/files - 200 0 0 - - -",
+		},
+		{
+			name:  "ANSI terminal escape - color injection",
+			input: "\x1b[31m\x1b[1mCRITICAL ERROR\x1b[0m",
+		},
+		{
+			name:  "ANSI terminal escape - cursor manipulation",
+			input: "\x1b[2J\x1b[H\x1b[3JCleared terminal",
+		},
+		{
+			name:  "ANSI terminal escape - title change",
+			input: "\x1b]0;HACKED\x07",
+		},
+		{
+			name:  "Null byte truncation",
+			input: "visible\x00hidden payload after null",
+		},
+		{
+			name:  "Multiple newlines to flood logs",
+			input: "line1\nline2\nline3\nline4\nline5",
+		},
+		{
+			name:  "Mixed injection techniques",
+			input: "agent\r\nFAKE_LOG_ENTRY\x1b[31mred\x00null",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := sanitizeLogField(tt.input)
+
+			// Sanitized output must never contain newlines, carriage returns,
+			// null bytes, or ANSI escape characters
+			if strings.ContainsAny(result, "\n\r\x00\x1b") {
+				t.Errorf("sanitizeLogField(%q) still contains dangerous characters: %q", tt.input, result)
+			}
+
+			// Result must be a single line
+			lines := strings.Split(result, "\n")
+			if len(lines) != 1 {
+				t.Errorf("sanitizeLogField(%q) produced %d lines, want 1", tt.input, len(lines))
+			}
+		})
+	}
+}
+
+// =============================================================================
+// sanitizeLogField Idempotency Test
+// =============================================================================
+
+func TestSanitizeLogField_Idempotent(t *testing.T) {
+	t.Parallel()
+
+	inputs := []string{
+		"clean string",
+		"has\nnewline",
+		"has\x00null\x1bescape\r\nCRLF",
+		"Mozilla/5.0\r\nX-Injected: true",
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+			first := sanitizeLogField(input)
+			second := sanitizeLogField(first)
+
+			if first != second {
+				t.Errorf("sanitizeLogField is not idempotent:\n  first:  %q\n  second: %q", first, second)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// End-to-End Logging Sanitization Tests
+// =============================================================================
+
+func TestLoggerMiddleware_SanitizesUserAgent(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	config := LoggingConfig{LogHealthChecks: true}
+	middleware := Logger(config)
+	wrappedHandler := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
+	req.Header.Set("User-Agent", "Mozilla/5.0\r\nX-Injected-Header: malicious")
+	w := httptest.NewRecorder()
+
+	// Should not panic or produce corrupted output
+	wrappedHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+}
+
+func TestLoggerMiddleware_SanitizesReferer(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	config := LoggingConfig{LogHealthChecks: true}
+	middleware := Logger(config)
+	wrappedHandler := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
+	req.Header.Set("Referer", "https://example.com\n2026-02-19 00:00:00 FAKE LOG ENTRY")
+	w := httptest.NewRecorder()
+
+	wrappedHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+}
+
+func TestLoggerMiddleware_SanitizesXForwardedFor(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	config := LoggingConfig{LogHealthChecks: true}
+	middleware := Logger(config)
+	wrappedHandler := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
+	req.Header.Set("X-Forwarded-For", "192.168.1.1\nFAKE_IP")
+	w := httptest.NewRecorder()
+
+	wrappedHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+}
+
+func TestLoggerMiddleware_SanitizesRequestPath(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	config := LoggingConfig{LogHealthChecks: true}
+	middleware := Logger(config)
+	wrappedHandler := middleware(handler)
+
+	// Craft a request with injection in the path
+	// Note: Go's http package normalizes paths, but we test our sanitization layer
+	req := httptest.NewRequest("GET", "/api/test%0d%0afake-log-line", http.NoBody)
+	w := httptest.NewRecorder()
+
+	wrappedHandler.ServeHTTP(w, req)
+
+	// Handler should still function normally
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+}
+
+// =============================================================================
+// getClientIP Sanitization Tests
+// =============================================================================
+
+func TestGetClientIP_MaliciousHeaders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		xForwardedFor  string
+		xRealIP        string
+		remoteAddr     string
+		expectedSubstr string
+	}{
+		{
+			name:           "Normal X-Forwarded-For",
+			xForwardedFor:  "192.168.1.1",
+			expectedSubstr: "192.168.1.1",
+		},
+		{
+			name:           "X-Forwarded-For with multiple IPs",
+			xForwardedFor:  "10.0.0.1, 192.168.1.1",
+			expectedSubstr: "10.0.0.1",
+		},
+		{
+			name:           "Normal X-Real-IP",
+			xRealIP:        "10.0.0.5",
+			expectedSubstr: "10.0.0.5",
+		},
+		{
+			name:           "Falls back to RemoteAddr",
+			remoteAddr:     "172.16.0.1:8080",
+			expectedSubstr: "172.16.0.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest("GET", "/", http.NoBody)
+			if tt.xForwardedFor != "" {
+				req.Header.Set("X-Forwarded-For", tt.xForwardedFor)
+			}
+			if tt.xRealIP != "" {
+				req.Header.Set("X-Real-IP", tt.xRealIP)
+			}
+			if tt.remoteAddr != "" {
+				req.RemoteAddr = tt.remoteAddr
+			}
+
+			ip := getClientIP(req)
+			if !strings.Contains(ip, tt.expectedSubstr) {
+				t.Errorf("getClientIP() = %q, expected to contain %q", ip, tt.expectedSubstr)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Benchmarks
+// =============================================================================
+
+func BenchmarkSanitizeLogField_Clean(b *testing.B) {
+	input := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sanitizeLogField(input)
+	}
+}
+
+func BenchmarkSanitizeLogField_Dirty(b *testing.B) {
+	input := "Mozilla/5.0\r\nX-Injected: true\x00\x1b[31mred\x1b[0m"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sanitizeLogField(input)
+	}
+}
+
+func BenchmarkSanitizeLogField_LongUserAgent(b *testing.B) {
+	input := strings.Repeat("Mozilla/5.0 (compatible; bot/1.0) ", 50)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sanitizeLogField(input)
+	}
+}

@@ -3,7 +3,7 @@ name: CI
 on:
     push:
         branches:
-            - '**' # Run on all branches
+            - '**'
     pull_request:
         branches:
             - main
@@ -20,6 +20,7 @@ jobs:
             pull-requests: read
         outputs:
             go: ${{ steps.filter.outputs.go }}
+            frontend: ${{ steps.filter.outputs.frontend }}
             static-only: ${{ steps.filter.outputs.static-only }}
             docker: ${{ steps.filter.outputs.docker }}
             docker-related: ${{ steps.filter.outputs.docker-related }}
@@ -39,6 +40,15 @@ jobs:
                         - 'go.mod'
                         - 'go.sum'
                         - 'Makefile'
+                      frontend:
+                        - 'static/**/*.js'
+                        - 'static/**/*.css'
+                        - 'static/**/*.html'
+                        - 'static/package.json'
+                        - 'static/package-lock.json'
+                        - 'static/vitest.config.js'
+                        - 'static/playwright.config.js'
+                        - 'static/eslint.config.js'
                       static-only:
                         - 'static/**'
                       docker:
@@ -51,11 +61,52 @@ jobs:
                         - '.dockerignore'
                         - '.github/workflows/*.yml'
 
-    lint:
-        name: Lint
+    # ──────────────────────────────────────────────
+    # STAGE 0: Prepare sample media (runs early,
+    #          can take ~10 min on cold cache)
+    # ──────────────────────────────────────────────
+
+    prepare-sample-media:
+        name: Prepare Sample Media
         runs-on: ubuntu-latest
         needs: changes
-        # Skip if only static files changed (no Go changes)
+        if: |
+            needs.changes.outputs.frontend == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Check if sample media cache exists
+              id: cache-check
+              uses: actions/cache/restore@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  lookup-only: true
+
+            - name: Download sample media
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              run: |
+                  chmod +x ./hack/download-sample-media.sh
+                  ./hack/download-sample-media.sh
+              env:
+                  MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
+
+            - name: Save sample media cache
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+    # ──────────────────────────────────────────────
+    # STAGE 1: Linting (runs first, gates everything)
+    # ──────────────────────────────────────────────
+
+    lint:
+        name: Backend Lint
+        runs-on: ubuntu-latest
+        needs: changes
         if: needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -75,15 +126,53 @@ jobs:
             - name: Run golangci-lint
               uses: golangci/golangci-lint-action@v9
               with:
-                  version: latest
+                  version: v2.10.1
                   args: --config=.golangci.yml --timeout=5m
 
-    build:
-        name: Build Check
+    lint-frontend:
+        name: Frontend Lint
         runs-on: ubuntu-latest
         needs: changes
-        # Skip if only static files changed (no Go changes)
-        if: needs.changes.outputs.go == 'true'
+        if: needs.changes.outputs.frontend == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '24.13.1'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Run ESLint (JavaScript)
+              working-directory: ./static
+              run: npm run lint:js
+
+            - name: Run Stylelint (CSS)
+              working-directory: ./static
+              run: npm run lint:css
+
+            - name: Check formatting (Prettier)
+              working-directory: ./static
+              run: npm run format:check
+
+    # ──────────────────────────────────────────────
+    # STAGE 2: Build + Unit Tests (gated on lint)
+    # ──────────────────────────────────────────────
+
+    build:
+        name: Backend Build Check
+        runs-on: ubuntu-latest
+        needs: [changes, lint]
+        if: |
+            always() &&
+            (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -107,12 +196,21 @@ jobs:
               run: |
                   make resetpw
 
+            - name: Upload binary artifact
+              uses: actions/upload-artifact@v6
+              with:
+                  name: media-viewer-binary
+                  path: media-viewer
+                  retention-days: 1
+
     test-unit:
-        name: Unit Tests
+        name: Backend Unit Tests
         runs-on: ubuntu-latest
-        needs: changes
-        # Skip if only static files changed (no Go changes)
-        if: needs.changes.outputs.go == 'true'
+        needs: [changes, lint]
+        if: |
+            always() &&
+            (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -130,7 +228,6 @@ jobs:
 
             - name: Run unit tests
               run: |
-                  # Run tests excluding integration tests
                   make test-unit
 
             - name: Generate coverage report
@@ -138,91 +235,9 @@ jobs:
               run: |
                   echo "## Unit Test Coverage" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
                   go tool cover -func=coverage-unit.out | tail -20 >> $GITHUB_STEP_SUMMARY
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-            # - name: Comment PR with coverage
-            #   if: github.event_name == 'pull_request'
-            #   uses: actions/github-script@v7
-            #   with:
-            #       script: |
-            #           const fs = require('fs');
-            #           const { execSync } = require('child_process');
-
-            #           // Get coverage summary
-            #           const coverage = execSync('go tool cover -func=coverage-unit.out').toString();
-            #           const lines = coverage.split('\n');
-            #           const totalLine = lines[lines.length - 2] || lines[lines.length - 1];
-            #           const totalMatch = totalLine.match(/total:.*?(\d+\.\d+)%/);
-            #           const totalCoverage = totalMatch ? totalMatch[1] : 'N/A';
-
-            #           // Get top 10 and bottom 10 files by coverage
-            #           const fileLines = lines.slice(0, -1).filter(line => line.includes('%'));
-            #           const files = fileLines.map(line => {
-            #               const match = line.match(/(.*?)\s+(\d+\.\d+)%/);
-            #               return match ? { file: match[1].trim(), coverage: parseFloat(match[2]) } : null;
-            #           }).filter(Boolean);
-
-            #           files.sort((a, b) => a.coverage - b.coverage);
-            #           const lowest = files.slice(0, 10);
-            #           const highest = files.slice(-10).reverse();
-
-            #           const comment = `## 📊 Unit Test Coverage Report
-
-            #           **Total Coverage: ${totalCoverage}%**
-
-            #           <details>
-            #           <summary>🔴 Lowest Coverage (Top 10)</summary>
-
-            #           | File | Coverage |
-            #           |------|----------|
-            #           ${lowest.map(f => `| \`${f.file.split('/').pop()}\` | ${f.coverage}% |`).join('\n')}
-            #           </details>
-
-            #           <details>
-            #           <summary>🟢 Highest Coverage (Top 10)</summary>
-
-            #           | File | Coverage |
-            #           |------|----------|
-            #           ${highest.map(f => `| \`${f.file.split('/').pop()}\` | ${f.coverage}% |`).join('\n')}
-            #           </details>
-
-            #           <details>
-            #           <summary>📄 Full Coverage Report</summary>
-
-            #           \`\`\`
-            #           ${coverage}
-            #           \`\`\`
-            #           </details>`;
-
-            #           // Find existing coverage comment
-            #           const { data: comments } = await github.rest.issues.listComments({
-            #               owner: context.repo.owner,
-            #               repo: context.repo.repo,
-            #               issue_number: context.issue.number,
-            #           });
-
-            #           const botComment = comments.find(comment =>
-            #               comment.user.type === 'Bot' &&
-            #               comment.body.includes('Unit Test Coverage Report')
-            #           );
-
-            #           if (botComment) {
-            #               await github.rest.issues.updateComment({
-            #                   owner: context.repo.owner,
-            #                   repo: context.repo.repo,
-            #                   comment_id: botComment.id,
-            #                   body: comment
-            #               });
-            #           } else {
-            #               await github.rest.issues.createComment({
-            #                   owner: context.repo.owner,
-            #                   repo: context.repo.repo,
-            #                   issue_number: context.issue.number,
-            #                   body: comment
-            #               });
-            #           }
+                  echo '```' >> $GITHUB_STEP_SUMMARY
 
             - name: Upload test results
               if: always()
@@ -233,13 +248,67 @@ jobs:
                       coverage-unit.out
                       test-unit.json
 
-    test-integration:
-        name: Integration Tests
+    test-frontend-unit:
+        name: Frontend Unit Tests
         runs-on: ubuntu-latest
-        needs: changes
-        # Only run on PRs (not on regular branch pushes)
+        # CHANGED: Now depends on lint-frontend — don't test if lint fails
+        # CHANGED: Simplified condition (removed redundant clause)
+        needs: [changes, lint-frontend]
+        if: |
+            always() &&
+            (needs.lint-frontend.result == 'success' || needs.lint-frontend.result == 'skipped') &&
+            needs.changes.outputs.frontend == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '24.13.1'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Run frontend unit tests
+              working-directory: ./static
+              run: npm run test:unit:only
+
+            - name: Generate frontend unit coverage summary
+              if: always()
+              run: |
+                  echo "## Frontend Unit Test Coverage" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  if [ -f static/coverage/coverage-summary.json ]; then
+                    echo '```json' >> $GITHUB_STEP_SUMMARY
+                    cat static/coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
+                    echo '```' >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "No coverage report generated" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+            - name: Upload frontend unit coverage
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: frontend-unit-test-results
+                  path: static/coverage/
+
+    # ──────────────────────────────────────────────
+    # STAGE 3: Integration / Expensive Tests
+    #          (gated on unit tests passing)
+    # ──────────────────────────────────────────────
+
+    test-integration:
+        name: Backend Integration Tests
+        runs-on: ubuntu-latest
+        needs: [changes, test-unit]
         if: |
             github.event_name == 'pull_request' &&
+            needs.test-unit.result == 'success' &&
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -256,22 +325,34 @@ jobs:
                   go-version-file: go.mod
                   cache: true
 
+            - name: Restore sample media cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Copy sample media to runtime location
+              run: |
+                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
+
             - name: Run integration tests
               run: |
                   make test-integration
+              env:
+                  MEDIA_DIR: /tmp/media
 
             - name: Generate integration coverage summary
               if: always()
               run: |
                   echo "## Integration Test Coverage" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
                   if [ -f coverage-integration.out ]; then
                       go tool cover -func=coverage-integration.out | tail -20 >> $GITHUB_STEP_SUMMARY
                   else
                       echo "No coverage file generated" >> $GITHUB_STEP_SUMMARY
                   fi
-                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
 
             - name: Upload coverage
               if: always()
@@ -283,11 +364,12 @@ jobs:
                       test-integration.json
 
     test-race:
-        name: Race Detector
+        name: Backend Race Detector
         runs-on: ubuntu-latest
-        needs: changes
+        needs: [changes, test-unit]
         if: |
             github.event_name == 'pull_request' &&
+            needs.test-unit.result == 'success' &&
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -308,15 +390,170 @@ jobs:
               run: |
                   make test-race
 
+    test-frontend-integration:
+        name: Frontend Integration Tests
+        runs-on: ubuntu-latest
+        needs: [changes, build, test-frontend-unit, prepare-sample-media]
+        if: |
+            github.event_name == 'pull_request' &&
+            needs.build.result == 'success' &&
+            (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
+            (needs.prepare-sample-media.result == 'success' || needs.prepare-sample-media.result == 'skipped') &&
+            needs.changes.outputs.frontend == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '24.13.1'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Download backend binary
+              uses: actions/download-artifact@v6
+              with:
+                  name: media-viewer-binary
+                  path: .
+
+            - name: Make binary executable
+              run: chmod +x ./media-viewer
+
+            - name: Restore sample media cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Copy sample media to runtime location
+              run: |
+                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
+
+            - name: Start backend server
+              run: |
+                  mkdir -p /tmp/backend-logs
+
+                  MEDIA_DIR=/tmp/media \
+                  CACHE_DIR=/tmp/cache \
+                  DATABASE_DIR=/tmp/database \
+                  METRICS_ENABLED=false \
+                  LOG_HEALTH_CHECKS=false \
+                  LOG_LEVEL=info \
+                  ./media-viewer > /tmp/backend-logs/backend-stdout.log 2>&1 &
+
+                  BACKEND_PID=$!
+                  echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
+
+                  echo "Waiting for backend to be ready..."
+                  for i in {1..30}; do
+                    if curl -f http://localhost:8080/readyz > /dev/null 2>&1; then
+                      echo "Backend is ready!"
+                      break
+                    fi
+                    if [ $i -eq 30 ]; then
+                      echo "Backend failed to become ready within 30 seconds"
+                      echo "--- Backend logs ---"
+                      cat /tmp/backend-logs/backend-stdout.log
+                      exit 1
+                    fi
+                    sleep 1
+                  done
+                  sleep 5 # just because
+
+                  # Also verify the auth endpoint is responding (database is initialized)
+                  echo "Verifying auth endpoint is ready..."
+                  for i in {1..15}; do
+                    AUTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/auth/check 2>/dev/null)
+                    if [ "$AUTH_RESPONSE" != "000" ] && [ "$AUTH_RESPONSE" != "502" ] && [ "$AUTH_RESPONSE" != "503" ]; then
+                      echo "Auth endpoint is ready (HTTP $AUTH_RESPONSE)"
+                      break
+                    fi
+                    if [ $i -eq 15 ]; then
+                      echo "Auth endpoint not ready after 15 seconds"
+                      exit 1
+                    fi
+                    sleep 1
+                  done
+
+                  echo "Backend is fully ready!"
+
+                  echo "--- Backend startup logs ---"
+                  cat /tmp/backend-logs/backend-stdout.log
+                  echo "--- End startup logs ---"
+
+            - name: Run frontend integration tests
+              run: |
+                  make frontend-test-integration
+              env:
+                  TEST_BASE_URL: http://localhost:8080
+
+            - name: Stop backend server
+              if: always()
+              run: |
+                  if [ -n "$BACKEND_PID" ]; then
+                    kill $BACKEND_PID || true
+                    # Give it a moment to flush logs
+                    sleep 2
+                  fi
+
+            - name: Upload backend logs on failure
+              if: failure()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: backend-server-logs
+                  path: /tmp/backend-logs/
+                  retention-days: 7
+
+            - name: Upload frontend integration results
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: frontend-integration-test-results
+                  path: |
+                      static/e2e/playwright-report/
+                      static/e2e/test-results/
+
+            - name: Upload Playwright report
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: playwright-report
+                  path: static/e2e/playwright-report/
+                  retention-days: 30
+
+    # ──────────────────────────────────────────────
+    # STAGE 4: Docker builds (gated on all tests)
+    # ──────────────────────────────────────────────
+
     build-docker:
         name: Build Docker Image
-        needs: [changes, lint, test-unit, build]
-        # On branch pushes: only if Dockerfile or GHA files changed
-        # On PRs: always build and push (after tests pass)
+        needs:
+            [
+                changes,
+                lint,
+                lint-frontend,
+                test-unit,
+                test-frontend-unit,
+                test-frontend-integration,
+                build,
+            ]
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            (needs.lint-frontend.result == 'success' || needs.lint-frontend.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
+            (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
+            (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
             (needs.build.result == 'success' || needs.build.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
@@ -334,13 +571,23 @@ jobs:
 
     build-docker-nvidia:
         name: Build Docker Image (NVIDIA)
-        needs: [changes, lint, test-unit, build]
-        # On branch pushes: only if Dockerfile or GHA files changed
-        # On PRs: always build and push (after tests pass)
+        needs:
+            [
+                changes,
+                lint,
+                lint-frontend,
+                test-unit,
+                test-frontend-unit,
+                test-frontend-integration,
+                build,
+            ]
         if: |
             always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            (needs.lint-frontend.result == 'success' || needs.lint-frontend.result == 'skipped') &&
             (needs.test-unit.result == 'success' || needs.test-unit.result == 'skipped') &&
+            (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
+            (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
             (needs.build.result == 'success' || needs.build.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
@@ -357,86 +604,84 @@ jobs:
             contents: read
             packages: write
 
-            # - name: Comment PR with image info
-            #   if: github.event_name == 'pull_request'
-            #   uses: actions/github-script@v7
-            #   with:
-            #       script: |
-            #           const prNumber = context.issue.number;
-            #           const imageTag = `ghcr.io/${{ github.repository }}:pr-${prNumber}`;
-            #           const comment = `## Docker Image Built
-
-            #           A Docker image has been built and pushed for this PR:
-
-            #           \`\`\`bash
-            #           docker pull ${imageTag}
-            #           \`\`\`
-
-            #           You can use this image to test changes in your infrastructure before merging.
-
-            #           **Note:** This image is AMD64 only. Multi-arch images are built on release.`;
-
-            #           github.rest.issues.createComment({
-            #               issue_number: prNumber,
-            #               owner: context.repo.owner,
-            #               repo: context.repo.repo,
-            #               body: comment
-            #           });
-
     ci-success:
         name: CI Success
         runs-on: ubuntu-latest
         needs:
-            [lint, build, test-unit, test-integration, test-race, build-docker, build-docker-nvidia]
+            [
+                lint,
+                lint-frontend,
+                build,
+                test-unit,
+                test-integration,
+                test-race,
+                test-frontend-unit,
+                test-frontend-integration,
+                prepare-sample-media,
+                build-docker,
+                build-docker-nvidia,
+            ]
         if: always()
         steps:
             - name: Check required jobs passed
               run: |
-                  # Check lint (required if ran)
                   if [[ "${{ needs.lint.result }}" == "failure" ]]; then
-                    echo "❌ Lint failed"
+                    echo "Lint failed"
                     exit 1
                   fi
 
-                  # Check build (required if ran)
+                  if [[ "${{ needs.lint-frontend.result }}" == "failure" ]]; then
+                    echo "Frontend lint failed"
+                    exit 1
+                  fi
+
                   if [[ "${{ needs.build.result }}" == "failure" ]]; then
-                    echo "❌ Build failed"
+                    echo "Build failed"
                     exit 1
                   fi
 
-                  # Check unit tests (required if ran)
                   if [[ "${{ needs.test-unit.result }}" == "failure" ]]; then
-                    echo "❌ Unit tests failed"
+                    echo "Unit tests failed"
                     exit 1
                   fi
 
-                  # Check integration tests (required on PRs if ran)
+                  if [[ "${{ needs.test-frontend-unit.result }}" == "failure" ]]; then
+                    echo "Frontend unit tests failed"
+                    exit 1
+                  fi
+
+                  if [[ "${{ needs.test-frontend-integration.result }}" == "failure" ]]; then
+                    echo "Frontend integration tests failed"
+                    exit 1
+                  fi
+
                   if [[ "${{ needs.test-integration.result }}" == "failure" ]]; then
-                    echo "❌ Integration tests failed"
+                    echo "Integration tests failed"
                     exit 1
                   fi
 
-                  # Check race detector (optional, only fails if it ran and failed)
                   if [[ "${{ needs.test-race.result }}" == "failure" ]]; then
-                    echo "❌ Race detector found issues"
+                    echo "Race detector found issues"
                     exit 1
                   fi
 
-                  # Check docker build (required if ran)
+                  if [[ "${{ needs.prepare-sample-media.result }}" == "failure" ]]; then
+                    echo "Sample media preparation failed"
+                    exit 1
+                  fi
+
                   if [[ "${{ needs.build-docker.result }}" == "failure" ]]; then
-                    echo "❌ Docker build failed"
+                    echo "Docker build failed"
                     exit 1
                   fi
 
-                  # Check docker nvidia build (required if ran)
                   if [[ "${{ needs.build-docker-nvidia.result }}" == "failure" ]]; then
-                    echo "❌ Docker NVIDIA build failed"
+                    echo "Docker NVIDIA build failed"
                     exit 1
                   fi
 
-                  # Determine context
                   if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-                    echo "✅ All PR checks passed!"
+                    echo "All PR checks passed!"
                   else
-                    echo "✅ All branch push checks passed!"
+                    echo "All branch push checks passed!"
                   fi

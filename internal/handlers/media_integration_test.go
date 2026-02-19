@@ -1286,6 +1286,7 @@ func TestListFilesFilterWithFoldersIntegration(t *testing.T) {
 }
 
 // TestGetMediaFilesSortingIntegration tests sorting of media files
+// TestGetMediaFilesSortingIntegration tests sorting of media files
 func TestGetMediaFilesSortingIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -1298,26 +1299,53 @@ func TestGetMediaFilesSortingIntegration(t *testing.T) {
 	addTestMediaFile(t, h, "a_image.jpg", database.FileTypeImage, "a")
 	addTestMediaFile(t, h, "b_video.mp4", database.FileTypeVideo, "b")
 
-	// Get media files sorted by name descending
-	req := httptest.NewRequest(http.MethodGet, "/api/media?sort=name&order=desc", http.NoBody)
-	w := httptest.NewRecorder()
-	h.GetMediaFiles(w, req)
+	// Test ascending sort by name
+	reqAsc := httptest.NewRequest(http.MethodGet, "/api/media?sort=name&order=asc", http.NoBody)
+	wAsc := httptest.NewRecorder()
+	h.GetMediaFiles(wAsc, reqAsc)
 
-	var files []database.MediaFile
-	if err := json.NewDecoder(w.Body).Decode(&files); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
+	var filesAsc []database.MediaFile
+	if err := json.NewDecoder(wAsc.Body).Decode(&filesAsc); err != nil {
+		t.Fatalf("failed to decode ascending response: %v", err)
 	}
 
-	if len(files) != 3 {
-		t.Fatalf("expected 3 files, got %d", len(files))
+	if len(filesAsc) != 3 {
+		t.Fatalf("expected 3 files, got %d", len(filesAsc))
 	}
 
-	// Verify descending order
-	if !strings.HasPrefix(files[0].Path, "c_") {
-		t.Errorf("expected first file to start with 'c_', got %s", files[0].Path)
+	// Verify ascending order: a_ < b_ < c_
+	if !strings.HasPrefix(filesAsc[0].Path, "a_") {
+		t.Errorf("ascending: expected first file to start with 'a_', got %s", filesAsc[0].Path)
 	}
-	if !strings.HasPrefix(files[2].Path, "a_") {
-		t.Errorf("expected last file to start with 'a_', got %s", files[2].Path)
+	if !strings.HasPrefix(filesAsc[1].Path, "b_") {
+		t.Errorf("ascending: expected second file to start with 'b_', got %s", filesAsc[1].Path)
+	}
+	if !strings.HasPrefix(filesAsc[2].Path, "c_") {
+		t.Errorf("ascending: expected third file to start with 'c_', got %s", filesAsc[2].Path)
+	}
+
+	// Test descending sort by name
+	reqDesc := httptest.NewRequest(http.MethodGet, "/api/media?sort=name&order=desc", http.NoBody)
+	wDesc := httptest.NewRecorder()
+	h.GetMediaFiles(wDesc, reqDesc)
+
+	var filesDesc []database.MediaFile
+	if err := json.NewDecoder(wDesc.Body).Decode(&filesDesc); err != nil {
+		t.Fatalf("failed to decode descending response: %v", err)
+	}
+
+	if len(filesDesc) != 3 {
+		t.Fatalf("expected 3 files, got %d", len(filesDesc))
+	}
+
+	// Verify descending is the reverse of ascending
+	if filesAsc[0].Path != filesDesc[2].Path {
+		t.Errorf("descending: expected last file %s to match ascending first file %s",
+			filesDesc[2].Path, filesAsc[0].Path)
+	}
+	if filesAsc[2].Path != filesDesc[0].Path {
+		t.Errorf("descending: expected first file %s to match ascending last file %s",
+			filesDesc[0].Path, filesAsc[2].Path)
 	}
 }
 

@@ -1,3 +1,5 @@
+/* global InfiniteScrollSearch */
+
 const Search = {
     elements: {},
     debounceTimer: null,
@@ -1062,50 +1064,6 @@ const Search = {
     },
 
     /**
-     * Create a search result item with exclude buttons on tags
-     */
-    createSearchResultItem(item) {
-        const element = Gallery.createGalleryItem(item);
-        this.addExcludeButtonsToTags(element);
-        return element;
-    },
-
-    /**
-     * Add exclude buttons to tags within a gallery item (for search results)
-     */
-    addExcludeButtonsToTags(element) {
-        const tagContainers = element.querySelectorAll('.gallery-item-tags');
-
-        tagContainers.forEach((container) => {
-            const tags = container.querySelectorAll('.item-tag:not(.more)');
-
-            tags.forEach((tagEl) => {
-                const tagName =
-                    tagEl.dataset.tag || tagEl.querySelector('.item-tag-text')?.textContent?.trim();
-                if (!tagName) return;
-
-                if (tagEl.querySelector('.tag-exclude-btn')) return;
-
-                const excludeBtn = document.createElement('button');
-                excludeBtn.className = 'tag-exclude-btn';
-                excludeBtn.title = `Exclude "${tagName}" from search`;
-                excludeBtn.dataset.tag = tagName;
-                excludeBtn.innerHTML =
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>';
-
-                const divider = tagEl.querySelector('.item-tag-divider');
-                if (divider) {
-                    divider.after(excludeBtn);
-                    const newDivider = document.createElement('span');
-                    newDivider.className = 'item-tag-divider';
-                    excludeBtn.after(newDivider);
-                } else {
-                    tagEl.insertBefore(excludeBtn, tagEl.firstChild);
-                }
-            });
-        });
-    },
-    /**
      * Create a search result item with search-focused tag UI
      */
     createSearchResultItem(item) {
@@ -1117,7 +1075,7 @@ const Search = {
     /**
      * Convert tags in a gallery item to search-focused UI
      */
-    convertTagsToSearchUI(element, item) {
+    convertTagsToSearchUI(element, _item) {
         const tagContainers = element.querySelectorAll('.gallery-item-tags');
 
         tagContainers.forEach((container) => {

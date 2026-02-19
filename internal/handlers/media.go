@@ -4,6 +4,7 @@ import (
 	"crypto/md5" //nolint:gosec // MD5 used for cache key generation, not security
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -193,42 +194,166 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, fullPath)
 }
 
-// GetThumbnail returns a thumbnail image for a media file
-func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+// validateThumbnailPath validates and resolves the thumbnail file path from the request.
+// Returns the relative filePath and absolute fullPath, or writes an HTTP error and returns empty strings.
+func (h *Handlers) validateThumbnailPath(w http.ResponseWriter, r *http.Request) (filePath, fullPath string, ok bool) {
 	vars := mux.Vars(r)
-	filePath := vars["path"]
+	filePath = vars["path"]
 
-	logging.Debug("Thumbnail requested: %s", filePath)
+	// Decode URL-encoded path to catch encoded traversal attempts
+	decodedPath, err := url.QueryUnescape(filePath)
+	if err == nil {
+		filePath = decodedPath
+	}
 
 	if filePath == "" {
 		logging.Error("Thumbnail: empty path")
 		http.Error(w, "Path is required", http.StatusBadRequest)
-		return
+		return "", "", false
 	}
 
-	// Reject absolute paths before joining
 	if filepath.IsAbs(filePath) {
 		logging.Error("Thumbnail: absolute path not allowed: %s", filePath)
 		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
+		return "", "", false
 	}
 
-	fullPath := filepath.Join(h.mediaDir, filePath)
+	fullPath = filepath.Join(h.mediaDir, filePath)
 
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil {
 		logging.Error("Thumbnail: failed to resolve path %s: %v", filePath, err)
 		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
+		return "", "", false
 	}
 
 	absMediaDir, _ := filepath.Abs(h.mediaDir)
 	if !strings.HasPrefix(absPath, absMediaDir) {
 		logging.Error("Thumbnail: path outside media dir: %s", filePath)
 		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return "", "", false
+	}
+
+	return filePath, fullPath, true
+}
+
+// validateThumbnailFileOnDisk checks that a non-folder file exists on disk and is not a directory.
+// Returns true if valid, or writes an HTTP error and returns false.
+func (h *Handlers) validateThumbnailFileOnDisk(w http.ResponseWriter, _, fullPath string) bool {
+	retryConfig := DefaultNFSRetryConfig()
+	fileInfo, err := StatWithRetry(fullPath, retryConfig)
+	if err != nil {
+		if os.IsNotExist(err) {
+			logging.Warn("Thumbnail: file not found: %s", fullPath)
+			http.Error(w, "File not found", http.StatusNotFound)
+		} else {
+			logging.Error("Thumbnail: failed to stat file %s: %v", fullPath, err)
+			http.Error(w, "Failed to access file", http.StatusInternalServerError)
+		}
+		return false
+	}
+
+	if fileInfo.IsDir() {
+		logging.Warn("Thumbnail: path is a directory but not marked as folder in DB: %s", fullPath)
+		http.Error(w, "Invalid file type", http.StatusBadRequest)
+		return false
+	}
+
+	return true
+}
+
+// isThumbnailSupported checks whether the given file type supports thumbnail generation.
+// Returns true if supported, or writes an HTTP error and returns false.
+func isThumbnailSupported(w http.ResponseWriter, filePath string, fileType database.FileType) bool {
+	switch fileType {
+	case database.FileTypeImage, database.FileTypeVideo, database.FileTypeFolder:
+		return true
+	default:
+		logging.Warn("Thumbnail: unsupported file type %s for %s", fileType, filePath)
+		http.Error(w, "Unsupported file type", http.StatusBadRequest)
+		return false
+	}
+}
+
+// writeThumbnailResponse sets caching headers, handles conditional requests, validates
+// the thumbnail data, and writes it to the response.
+func writeThumbnailResponse(w http.ResponseWriter, r *http.Request, filePath string, fileType database.FileType, thumb []byte) {
+	etag := fmt.Sprintf(`"%x"`, md5.Sum(thumb)) //nolint:gosec // MD5 used for cache key generation, not security
+
+	// Set content type based on file type
+	if fileType == database.FileTypeFolder {
+		w.Header().Set("Content-Type", "image/png")
+	} else {
+		w.Header().Set("Content-Type", "image/jpeg")
+	}
+
+	// Prevent browsers from MIME-sniffing the response into an executable type (XSS mitigation)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'")
+
+	// Cache headers - shorter cache for folders since they can change
+	if fileType == database.FileTypeFolder {
+		w.Header().Set("Cache-Control", "public, max-age=300, must-revalidate")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+	}
+
+	w.Header().Set("ETag", etag)
+
+	// Check If-None-Match header for 304 Not Modified
+	if clientETag := r.Header.Get("If-None-Match"); clientETag != "" {
+		if clientETag == etag {
+			logging.Debug("Thumbnail: 304 Not Modified for %s (ETag match: %s)", filePath, etag)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		logging.Debug("Thumbnail: ETag mismatch for %s (client: %s, server: %s)", filePath, clientETag, etag)
+	} else {
+		logging.Debug("Thumbnail: serving %s (%d bytes, ETag: %s, no If-None-Match from client)", filePath, len(thumb), etag)
+	}
+
+	// Validate thumbnail data
+	if len(thumb) == 0 {
+		logging.Error("Thumbnail: empty thumbnail, not writing response")
 		return
 	}
+
+	if !isValidImageHeader(thumb) {
+		logging.Error("Thumbnail: invalid image format, not writing response")
+		return
+	}
+
+	//nolint:gosec // G705: thumb is validated above — isValidImageHeader confirms JPEG/PNG magic bytes,
+	// Content-Type is explicitly set to image/jpeg or image/png, and X-Content-Type-Options: nosniff
+	// prevents browser MIME-sniffing. This is safe binary image data, not user-controlled text.
+	if _, err := w.Write(thumb); err != nil {
+		logging.Error("failed to write thumbnail response: %v", err)
+	}
+}
+
+// isValidImageHeader checks if the byte slice starts with a known image format header (JPEG or PNG).
+func isValidImageHeader(data []byte) bool {
+	// PNG: 8-byte header
+	if len(data) >= 8 && string(data[:8]) == "\x89PNG\r\n\x1a\n" {
+		return true
+	}
+	// JPEG: starts with FF D8
+	if len(data) >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
+		return true
+	}
+	return false
+}
+
+// GetThumbnail returns a thumbnail image for a media file
+func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	filePath, fullPath, ok := h.validateThumbnailPath(w, r)
+	if !ok {
+		return
+	}
+
+	logging.Debug("Thumbnail requested: %s", filePath)
 
 	if !h.thumbGen.IsEnabled() {
 		logging.Warn("Thumbnail: thumbnails disabled, returning 503")
@@ -244,35 +369,14 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate file/folder exists on disk (skip for folders as they're handled differently)
+	// Validate file exists on disk (skip for folders as they're handled differently)
 	if file.Type != database.FileTypeFolder {
-		retryConfig := DefaultNFSRetryConfig()
-		fileInfo, err := StatWithRetry(fullPath, retryConfig)
-		if err != nil {
-			if os.IsNotExist(err) {
-				logging.Warn("Thumbnail: file not found: %s", fullPath)
-				http.Error(w, "File not found", http.StatusNotFound)
-			} else {
-				logging.Error("Thumbnail: failed to stat file %s: %v", fullPath, err)
-				http.Error(w, "Failed to access file", http.StatusInternalServerError)
-			}
-			return
-		}
-
-		if fileInfo.IsDir() {
-			logging.Warn("Thumbnail: path is a directory but not marked as folder in DB: %s", fullPath)
-			http.Error(w, "Invalid file type", http.StatusBadRequest)
+		if !h.validateThumbnailFileOnDisk(w, filePath, fullPath) {
 			return
 		}
 	}
 
-	// Check if this file type supports thumbnails
-	switch file.Type {
-	case database.FileTypeImage, database.FileTypeVideo, database.FileTypeFolder:
-		// Supported
-	case database.FileTypePlaylist, database.FileTypeOther:
-		logging.Warn("Thumbnail: unsupported file type %s for %s", file.Type, filePath)
-		http.Error(w, "Unsupported file type", http.StatusBadRequest)
+	if !isThumbnailSupported(w, filePath, file.Type) {
 		return
 	}
 
@@ -284,47 +388,7 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calculate ETag first (needed for conditional request check)
-	etag := fmt.Sprintf(`"%x"`, md5.Sum(thumb)) //nolint:gosec // MD5 used for cache key generation, not security
-
-	// Set headers that apply to both 200 and 304 responses
-	// These must be set before writing status code
-
-	// Content type
-	if file.Type == database.FileTypeFolder {
-		w.Header().Set("Content-Type", "image/png")
-	} else {
-		w.Header().Set("Content-Type", "image/jpeg")
-	}
-
-	// Cache headers - shorter cache for folders since they can change
-	if file.Type == database.FileTypeFolder {
-		// Folders: cache for 5 minutes, must revalidate
-		w.Header().Set("Cache-Control", "public, max-age=300, must-revalidate")
-	} else {
-		// Files: cache for 24 hours
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-	}
-
-	// ETag for conditional requests
-	w.Header().Set("ETag", etag)
-
-	// Check If-None-Match header for 304 Not Modified
-	clientETag := r.Header.Get("If-None-Match")
-	if clientETag != "" {
-		if clientETag == etag {
-			logging.Debug("Thumbnail: 304 Not Modified for %s (ETag match: %s)", filePath, etag)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		logging.Debug("Thumbnail: ETag mismatch for %s (client: %s, server: %s)", filePath, clientETag, etag)
-	} else {
-		logging.Debug("Thumbnail: serving %s (%d bytes, ETag: %s, no If-None-Match from client)", filePath, len(thumb), etag)
-	}
-
-	if _, err := w.Write(thumb); err != nil {
-		logging.Error("failed to write thumbnail response: %v", err)
-	}
+	writeThumbnailResponse(w, r, filePath, file.Type, thumb)
 }
 
 // StreamVideo streams a video file, transcoding if necessary for browser compatibility

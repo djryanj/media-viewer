@@ -1271,3 +1271,180 @@ func BenchmarkGetThumbnailConcurrent(b *testing.B) {
 		}
 	})
 }
+
+// =============================================================================
+// validateFilePath Tests
+// =============================================================================
+
+func TestValidateFilePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		filePath  string
+		expectErr bool
+	}{
+		{
+			name:      "Valid simple path",
+			filePath:  "/media/photos/image.jpg",
+			expectErr: false,
+		},
+		{
+			name:      "Valid path with spaces",
+			filePath:  "/media/my photos/vacation pic.jpg",
+			expectErr: false,
+		},
+		{
+			name:      "Valid path with dashes and underscores",
+			filePath:  "/media/my-photos/vacation_pic-2024.jpg",
+			expectErr: false,
+		},
+		{
+			name:      "Valid path with unicode",
+			filePath:  "/media/фото/изображение.jpg",
+			expectErr: false,
+		},
+		{
+			name:      "Valid path with dots",
+			filePath:  "/media/photos/../other/image.jpg",
+			expectErr: false,
+		},
+		{
+			name:      "Valid path with equals sign",
+			filePath:  "/media/photos/name=value.jpg",
+			expectErr: false,
+		},
+		{
+			name:      "Empty path",
+			filePath:  "",
+			expectErr: true,
+		},
+		{
+			name:      "Semicolon injection",
+			filePath:  "/media/photos/image.jpg; rm -rf /",
+			expectErr: true,
+		},
+		{
+			name:      "Ampersand injection",
+			filePath:  "/media/photos/image.jpg & echo pwned",
+			expectErr: true,
+		},
+		{
+			name:      "Pipe injection",
+			filePath:  "/media/photos/image.jpg | cat /etc/passwd",
+			expectErr: true,
+		},
+		{
+			name:      "Dollar sign variable expansion",
+			filePath:  "/media/photos/$HOME/image.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Greater than redirect",
+			filePath:  "/media/photos/image.jpg > /tmp/out",
+			expectErr: true,
+		},
+		{
+			name:      "Less than redirect",
+			filePath:  "/media/photos/image.jpg < /dev/null",
+			expectErr: true,
+		},
+		{
+			name:      "Backtick command substitution",
+			filePath:  "/media/photos/`whoami`.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Exclamation mark",
+			filePath:  "/media/photos/image!.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Parentheses subshell",
+			filePath:  "/media/photos/(subshell).jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Curly braces",
+			filePath:  "/media/photos/{a,b}.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Square brackets glob",
+			filePath:  "/media/photos/[abc].jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Backslash escape",
+			filePath:  "/media/photos/image\\.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Asterisk glob",
+			filePath:  "/media/photos/*.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Question mark glob",
+			filePath:  "/media/photos/image?.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Hash comment",
+			filePath:  "/media/photos/image.jpg #comment",
+			expectErr: true,
+		},
+		{
+			name:      "Tilde expansion",
+			filePath:  "~/photos/image.jpg",
+			expectErr: true,
+		},
+		{
+			name:      "Newline injection",
+			filePath:  "/media/photos/image.jpg\nrm -rf /",
+			expectErr: true,
+		},
+		{
+			name:      "Carriage return injection",
+			filePath:  "/media/photos/image.jpg\rmalicious",
+			expectErr: true,
+		},
+		{
+			name:      "Null byte injection",
+			filePath:  "/media/photos/image.jpg\x00.png",
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateFilePath(tt.filePath)
+			if tt.expectErr && err == nil {
+				t.Errorf("validateFilePath(%q) = nil, want error", tt.filePath)
+			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("validateFilePath(%q) = %v, want nil", tt.filePath, err)
+			}
+		})
+	}
+}
+
+func TestValidateFilePathDangerousCharsCompleteness(t *testing.T) {
+	// Verify every character in our dangerous set is actually rejected
+	dangerousChars := ";&|$><`!(){}[]\\*?#~\n\r\x00"
+
+	for _, ch := range dangerousChars {
+		path := fmt.Sprintf("/media/test%cfile.jpg", ch)
+		err := validateFilePath(path)
+		if err == nil {
+			t.Errorf("validateFilePath should reject path containing %q (0x%02x)", string(ch), ch)
+		}
+	}
+}
+
+func BenchmarkValidateFilePath(b *testing.B) {
+	validPath := "/media/photos/2024/vacation/IMG_1234.jpg"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = validateFilePath(validPath)
+	}
+}

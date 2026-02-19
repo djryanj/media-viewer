@@ -3,9 +3,16 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"media-viewer/internal/database"
+
+	"github.com/gorilla/mux"
 )
 
 // =============================================================================
@@ -699,4 +706,879 @@ func BenchmarkOpenWithRetry(b *testing.B) {
 func writeFile(path string, data []byte) error {
 	// Import os at top of file if not already present
 	return os.WriteFile(path, data, 0o644)
+}
+
+// =============================================================================
+// isValidImageHeader Tests
+// =============================================================================
+
+func TestIsValidImageHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		data     []byte
+		expected bool
+	}{
+		{
+			name: "Valid PNG header",
+			data: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+				0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52},
+			expected: true,
+		},
+		{
+			name:     "Valid PNG header - exactly 8 bytes",
+			data:     []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+			expected: true,
+		},
+		{
+			name:     "Valid JPEG header",
+			data:     []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46},
+			expected: true,
+		},
+		{
+			name:     "Valid JPEG header - exactly 2 bytes",
+			data:     []byte{0xFF, 0xD8},
+			expected: true,
+		},
+		{
+			name:     "Valid JPEG with EXIF marker",
+			data:     []byte{0xFF, 0xD8, 0xFF, 0xE1},
+			expected: true,
+		},
+		{
+			name:     "Empty data",
+			data:     []byte{},
+			expected: false,
+		},
+		{
+			name:     "Nil data",
+			data:     nil,
+			expected: false,
+		},
+		{
+			name:     "Single byte",
+			data:     []byte{0xFF},
+			expected: false,
+		},
+		{
+			name:     "Truncated PNG header - 7 bytes",
+			data:     []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A},
+			expected: false,
+		},
+		{
+			name:     "GIF header - unsupported",
+			data:     []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61},
+			expected: false,
+		},
+		{
+			name:     "BMP header - unsupported",
+			data:     []byte{0x42, 0x4D, 0x00, 0x00, 0x00, 0x00},
+			expected: false,
+		},
+		{
+			name:     "WebP header - unsupported",
+			data:     []byte{0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00},
+			expected: false,
+		},
+		{
+			name:     "Random bytes",
+			data:     []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
+			expected: false,
+		},
+		{
+			name:     "Almost PNG - wrong first byte",
+			data:     []byte{0x88, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+			expected: false,
+		},
+		{
+			name:     "Almost JPEG - wrong second byte",
+			data:     []byte{0xFF, 0xD9, 0xFF, 0xE0},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := isValidImageHeader(tt.data)
+			if result != tt.expected {
+				t.Errorf("isValidImageHeader(%v) = %v, want %v", tt.data, result, tt.expected)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// isThumbnailSupported Tests
+// =============================================================================
+
+func TestIsThumbnailSupported(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		fileType       database.FileType
+		expectedOK     bool
+		expectedStatus int // only checked when expectedOK is false
+	}{
+		{
+			name:       "Image type supported",
+			fileType:   database.FileTypeImage,
+			expectedOK: true,
+		},
+		{
+			name:       "Video type supported",
+			fileType:   database.FileTypeVideo,
+			expectedOK: true,
+		},
+		{
+			name:       "Folder type supported",
+			fileType:   database.FileTypeFolder,
+			expectedOK: true,
+		},
+		{
+			name:           "Playlist type unsupported",
+			fileType:       database.FileTypePlaylist,
+			expectedOK:     false,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Other type unsupported",
+			fileType:       database.FileTypeOther,
+			expectedOK:     false,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			w := httptest.NewRecorder()
+			result := isThumbnailSupported(w, "test/file.ext", tt.fileType)
+
+			if result != tt.expectedOK {
+				t.Errorf("isThumbnailSupported(_, _, %s) = %v, want %v", tt.fileType, result, tt.expectedOK)
+			}
+
+			if !tt.expectedOK && w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// validateThumbnailPath Tests
+// =============================================================================
+
+func newHandlersWithMediaDir(mediaDir string) *Handlers {
+	return &Handlers{mediaDir: mediaDir}
+}
+
+func TestValidateThumbnailPath(t *testing.T) {
+	t.Parallel()
+
+	// Use a real temp dir so filepath.Abs resolves correctly
+	tempMediaDir := t.TempDir()
+
+	tests := []struct {
+		name           string
+		pathVar        string
+		expectedOK     bool
+		expectedStatus int
+	}{
+		{
+			name:           "Empty path",
+			pathVar:        "",
+			expectedOK:     false,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Absolute path",
+			pathVar:        "/etc/passwd",
+			expectedOK:     false,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Path traversal",
+			pathVar:        "../../../etc/passwd",
+			expectedOK:     false,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Path traversal via nested components",
+			pathVar:        "photos/../../etc/passwd",
+			expectedOK:     false,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Valid simple path",
+			pathVar:    "image.jpg",
+			expectedOK: true,
+		},
+		{
+			name:       "Valid nested path",
+			pathVar:    "photos/vacation/image.jpg",
+			expectedOK: true,
+		},
+		{
+			name:       "Valid path with dot components",
+			pathVar:    "photos/./image.jpg",
+			expectedOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHandlersWithMediaDir(tempMediaDir)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/"+tt.pathVar, http.NoBody)
+			req = mux.SetURLVars(req, map[string]string{"path": tt.pathVar})
+			w := httptest.NewRecorder()
+
+			filePath, fullPath, ok := h.validateThumbnailPath(w, req)
+
+			if ok != tt.expectedOK {
+				t.Errorf("validateThumbnailPath() ok = %v, want %v", ok, tt.expectedOK)
+			}
+
+			if !tt.expectedOK {
+				if w.Code != tt.expectedStatus {
+					t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+				}
+				if filePath != "" || fullPath != "" {
+					t.Errorf("expected empty return values on failure, got filePath=%q, fullPath=%q", filePath, fullPath)
+				}
+			} else {
+				if filePath == "" {
+					t.Error("expected non-empty filePath on success")
+				}
+				if fullPath == "" {
+					t.Error("expected non-empty fullPath on success")
+				}
+				// fullPath should be under mediaDir
+				if !strings.HasPrefix(fullPath, tempMediaDir) {
+					t.Errorf("expected fullPath under media dir, got %q", fullPath)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateThumbnailPath_ReturnValues(t *testing.T) {
+	t.Parallel()
+
+	tempMediaDir := t.TempDir()
+	h := newHandlersWithMediaDir(tempMediaDir)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photos/image.jpg", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": "photos/image.jpg"})
+	w := httptest.NewRecorder()
+
+	filePath, fullPath, ok := h.validateThumbnailPath(w, req)
+
+	if !ok {
+		t.Fatal("expected validation to pass")
+	}
+
+	if filePath != "photos/image.jpg" {
+		t.Errorf("expected filePath %q, got %q", "photos/image.jpg", filePath)
+	}
+
+	expectedFullPath := filepath.Join(tempMediaDir, "photos", "image.jpg")
+	if fullPath != expectedFullPath {
+		t.Errorf("expected fullPath %q, got %q", expectedFullPath, fullPath)
+	}
+}
+
+// =============================================================================
+// validateThumbnailFileOnDisk Tests
+// =============================================================================
+
+func TestValidateThumbnailFileOnDisk(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	h := newHandlersWithMediaDir(tempDir)
+
+	// Create a real file
+	testFilePath := filepath.Join(tempDir, "image.jpg")
+	if err := os.WriteFile(testFilePath, []byte("image data"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Create a directory
+	testDirPath := filepath.Join(tempDir, "somedir")
+	if err := os.MkdirAll(testDirPath, 0o755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		filePath       string
+		fullPath       string
+		expectedOK     bool
+		expectedStatus int
+	}{
+		{
+			name:       "Existing file",
+			filePath:   "image.jpg",
+			fullPath:   testFilePath,
+			expectedOK: true,
+		},
+		{
+			name:           "Non-existent file",
+			filePath:       "missing.jpg",
+			fullPath:       filepath.Join(tempDir, "missing.jpg"),
+			expectedOK:     false,
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "Path is a directory",
+			filePath:       "somedir",
+			fullPath:       testDirPath,
+			expectedOK:     false,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			w := httptest.NewRecorder()
+			result := h.validateThumbnailFileOnDisk(w, tt.filePath, tt.fullPath)
+
+			if result != tt.expectedOK {
+				t.Errorf("validateThumbnailFileOnDisk() = %v, want %v", result, tt.expectedOK)
+			}
+
+			if !tt.expectedOK && w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+			}
+		})
+	}
+}
+
+func TestValidateThumbnailFileOnDisk_PermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission test when running as root")
+	}
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	h := newHandlersWithMediaDir(tempDir)
+
+	// Create a file then make the directory unreadable
+	restrictedDir := filepath.Join(tempDir, "restricted")
+	if err := os.MkdirAll(restrictedDir, 0o755); err != nil {
+		t.Fatalf("failed to create restricted dir: %v", err)
+	}
+	restrictedFile := filepath.Join(restrictedDir, "secret.jpg")
+	if err := os.WriteFile(restrictedFile, []byte("secret"), 0o644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	if err := os.Chmod(restrictedDir, 0o000); err != nil {
+		t.Fatalf("failed to chmod: %v", err)
+	}
+	t.Cleanup(func() {
+		// Restore permissions so TempDir cleanup succeeds
+		_ = os.Chmod(restrictedDir, 0o755)
+	})
+
+	w := httptest.NewRecorder()
+	result := h.validateThumbnailFileOnDisk(w, "restricted/secret.jpg", restrictedFile)
+
+	if result {
+		t.Error("expected validation to fail for inaccessible file")
+	}
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 500 for permission error, got %d", w.Code)
+	}
+}
+
+// =============================================================================
+// writeThumbnailResponse Tests
+// =============================================================================
+
+// validPNG returns a minimal valid PNG byte slice for testing
+func validPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+		0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+		0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+		0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+		0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+		0x44, 0xAE, 0x42, 0x60, 0x82,
+	}
+}
+
+// validJPEG returns a minimal valid JPEG byte slice for testing
+func validJPEG() []byte {
+	return []byte{
+		0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46,
+		0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
+		0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+	}
+}
+
+func TestWriteThumbnailResponse_ImageFile(t *testing.T) {
+	t.Parallel()
+
+	thumb := validJPEG()
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, thumb)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	// Check content type for image files
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/jpeg" {
+		t.Errorf("expected Content-Type image/jpeg, got %q", contentType)
+	}
+
+	// Check cache header for files (24 hours)
+	cacheControl := w.Header().Get("Cache-Control")
+	if cacheControl != "public, max-age=86400" {
+		t.Errorf("expected Cache-Control for files, got %q", cacheControl)
+	}
+
+	// Check ETag is present and quoted
+	etag := w.Header().Get("ETag")
+	if etag == "" {
+		t.Error("expected ETag header")
+	}
+	if !strings.HasPrefix(etag, `"`) || !strings.HasSuffix(etag, `"`) {
+		t.Errorf("expected quoted ETag, got %q", etag)
+	}
+
+	// Verify XSS-mitigation security headers
+	assertSecurityHeaders(t, w)
+
+	// Check body contains the thumbnail data
+	if w.Body.Len() != len(thumb) {
+		t.Errorf("expected body length %d, got %d", len(thumb), w.Body.Len())
+	}
+}
+
+func TestWriteThumbnailResponse_VideoFile(t *testing.T) {
+	t.Parallel()
+
+	thumb := validJPEG()
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/clip.mp4", http.NoBody)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "clip.mp4", database.FileTypeVideo, thumb)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/jpeg" {
+		t.Errorf("expected Content-Type image/jpeg for video thumbnail, got %q", contentType)
+	}
+
+	cacheControl := w.Header().Get("Cache-Control")
+	if cacheControl != "public, max-age=86400" {
+		t.Errorf("expected 24-hour cache for video thumbnail, got %q", cacheControl)
+	}
+
+	// Verify XSS-mitigation security headers
+	assertSecurityHeaders(t, w)
+}
+
+func TestWriteThumbnailResponse_Folder(t *testing.T) {
+	t.Parallel()
+
+	thumb := validPNG()
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photos", http.NoBody)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "photos", database.FileTypeFolder, thumb)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	// Check content type for folders (PNG)
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/png" {
+		t.Errorf("expected Content-Type image/png for folder, got %q", contentType)
+	}
+
+	// Check cache header for folders (5 minutes)
+	cacheControl := w.Header().Get("Cache-Control")
+	if cacheControl != "public, max-age=300, must-revalidate" {
+		t.Errorf("expected shorter cache for folder, got %q", cacheControl)
+	}
+
+	// Verify XSS-mitigation security headers
+	assertSecurityHeaders(t, w)
+}
+
+func TestWriteThumbnailResponse_ConditionalRequest304(t *testing.T) {
+	t.Parallel()
+
+	thumb := validJPEG()
+
+	// First request to get the ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w1 := httptest.NewRecorder()
+	writeThumbnailResponse(w1, req1, "photo.jpg", database.FileTypeImage, thumb)
+
+	etag := w1.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag from first request")
+	}
+
+	// Second request with matching If-None-Match
+	req2 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	req2.Header.Set("If-None-Match", etag)
+	w2 := httptest.NewRecorder()
+	writeThumbnailResponse(w2, req2, "photo.jpg", database.FileTypeImage, thumb)
+
+	if w2.Code != http.StatusNotModified {
+		t.Errorf("expected status 304, got %d", w2.Code)
+	}
+
+	if w2.Body.Len() != 0 {
+		t.Errorf("expected empty body for 304, got %d bytes", w2.Body.Len())
+	}
+
+	// ETag should still be present
+	if w2.Header().Get("ETag") != etag {
+		t.Errorf("expected ETag %q in 304 response, got %q", etag, w2.Header().Get("ETag"))
+	}
+}
+
+func TestWriteThumbnailResponse_ConditionalRequestStaleETag(t *testing.T) {
+	t.Parallel()
+
+	thumb := validJPEG()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	req.Header.Set("If-None-Match", `"stale-etag-value"`)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, thumb)
+
+	// Should return 200 with full body since ETag doesn't match
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200 for stale ETag, got %d", w.Code)
+	}
+
+	if w.Body.Len() == 0 {
+		t.Error("expected body for stale ETag request")
+	}
+}
+
+func TestWriteThumbnailResponse_EmptyThumbnail(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, []byte{})
+
+	// Should not write any body for empty thumbnail
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body for empty thumbnail, got %d bytes", w.Body.Len())
+	}
+}
+
+func TestWriteThumbnailResponse_InvalidFormat(t *testing.T) {
+	t.Parallel()
+
+	invalidData := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, invalidData)
+
+	// Should not write body for invalid image format
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body for invalid format, got %d bytes", w.Body.Len())
+	}
+}
+
+func TestWriteThumbnailResponse_ETagStability(t *testing.T) {
+	t.Parallel()
+
+	thumb := validJPEG()
+
+	// Same thumbnail data should produce same ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w1 := httptest.NewRecorder()
+	writeThumbnailResponse(w1, req1, "photo.jpg", database.FileTypeImage, thumb)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w2 := httptest.NewRecorder()
+	writeThumbnailResponse(w2, req2, "photo.jpg", database.FileTypeImage, thumb)
+
+	etag1 := w1.Header().Get("ETag")
+	etag2 := w2.Header().Get("ETag")
+
+	if etag1 != etag2 {
+		t.Errorf("expected stable ETag for same data, got %q and %q", etag1, etag2)
+	}
+}
+
+func TestWriteThumbnailResponse_ETagDiffersForDifferentData(t *testing.T) {
+	t.Parallel()
+
+	thumb1 := validJPEG()
+	thumb2 := validPNG()
+
+	req1 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w1 := httptest.NewRecorder()
+	writeThumbnailResponse(w1, req1, "photo.jpg", database.FileTypeImage, thumb1)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w2 := httptest.NewRecorder()
+	writeThumbnailResponse(w2, req2, "photo.jpg", database.FileTypeFolder, thumb2)
+
+	etag1 := w1.Header().Get("ETag")
+	etag2 := w2.Header().Get("ETag")
+
+	if etag1 == etag2 {
+		t.Errorf("expected different ETags for different data, got same: %q", etag1)
+	}
+}
+
+// =============================================================================
+// Integration-style Tests for Refactored GetThumbnail
+// =============================================================================
+
+func TestGetThumbnail_EmptyPath(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlersWithMediaDir(t.TempDir())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": ""})
+	w := httptest.NewRecorder()
+
+	h.validateThumbnailPath(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for empty path, got %d", w.Code)
+	}
+}
+
+func TestGetThumbnail_AbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlersWithMediaDir(t.TempDir())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail//etc/passwd", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": "/etc/passwd"})
+	w := httptest.NewRecorder()
+
+	h.validateThumbnailPath(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for absolute path, got %d", w.Code)
+	}
+}
+
+func TestGetThumbnail_PathTraversal(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlersWithMediaDir(t.TempDir())
+
+	traversalPaths := []string{
+		"../../../etc/passwd",
+		"photos/../../etc/shadow",
+		"..%2F..%2Fetc%2Fpasswd",
+	}
+
+	for _, path := range traversalPaths {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/"+path, http.NoBody)
+			req = mux.SetURLVars(req, map[string]string{"path": path})
+			w := httptest.NewRecorder()
+
+			_, _, ok := h.validateThumbnailPath(w, req)
+
+			if ok {
+				t.Errorf("expected path traversal %q to be rejected", path)
+			}
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected status 400 for path traversal %q, got %d", path, w.Code)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Benchmarks
+// =============================================================================
+
+func BenchmarkIsValidImageHeader_PNG(b *testing.B) {
+	data := validPNG()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		isValidImageHeader(data)
+	}
+}
+
+func BenchmarkIsValidImageHeader_JPEG(b *testing.B) {
+	data := validJPEG()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		isValidImageHeader(data)
+	}
+}
+
+func BenchmarkIsValidImageHeader_Invalid(b *testing.B) {
+	data := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		isValidImageHeader(data)
+	}
+}
+
+func BenchmarkWriteThumbnailResponse(b *testing.B) {
+	thumb := validJPEG()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+		w := httptest.NewRecorder()
+		writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, thumb)
+	}
+}
+
+func BenchmarkWriteThumbnailResponse_304(b *testing.B) {
+	thumb := validJPEG()
+
+	// Get the ETag first
+	req0 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w0 := httptest.NewRecorder()
+	writeThumbnailResponse(w0, req0, "photo.jpg", database.FileTypeImage, thumb)
+	etag := w0.Header().Get("ETag")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+		req.Header.Set("If-None-Match", etag)
+		w := httptest.NewRecorder()
+		writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, thumb)
+	}
+}
+
+func TestWriteThumbnailResponse_SecurityHeaders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		fileType database.FileType
+		thumb    []byte
+	}{
+		{
+			name:     "Image file",
+			fileType: database.FileTypeImage,
+			thumb:    validJPEG(),
+		},
+		{
+			name:     "Video file",
+			fileType: database.FileTypeVideo,
+			thumb:    validJPEG(),
+		},
+		{
+			name:     "Folder",
+			fileType: database.FileTypeFolder,
+			thumb:    validPNG(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/test", http.NoBody)
+			w := httptest.NewRecorder()
+
+			writeThumbnailResponse(w, req, "test", tt.fileType, tt.thumb)
+
+			assertSecurityHeaders(t, w)
+		})
+	}
+}
+
+func TestWriteThumbnailResponse_SecurityHeadersOn304(t *testing.T) {
+	t.Parallel()
+
+	thumb := validJPEG()
+
+	// First request to get ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w1 := httptest.NewRecorder()
+	writeThumbnailResponse(w1, req1, "photo.jpg", database.FileTypeImage, thumb)
+	etag := w1.Header().Get("ETag")
+
+	// Second request with matching ETag
+	req2 := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	req2.Header.Set("If-None-Match", etag)
+	w2 := httptest.NewRecorder()
+	writeThumbnailResponse(w2, req2, "photo.jpg", database.FileTypeImage, thumb)
+
+	if w2.Code != http.StatusNotModified {
+		t.Fatalf("expected 304, got %d", w2.Code)
+	}
+
+	// Security headers must be present even on 304 responses
+	assertSecurityHeaders(t, w2)
+}
+
+func TestWriteThumbnailResponse_SecurityHeadersOnEmptyThumbnail(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, []byte{})
+
+	// Security headers must be present even when thumbnail is empty
+	assertSecurityHeaders(t, w)
+}
+
+func TestWriteThumbnailResponse_SecurityHeadersOnInvalidFormat(t *testing.T) {
+	t.Parallel()
+
+	invalidData := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/photo.jpg", http.NoBody)
+	w := httptest.NewRecorder()
+
+	writeThumbnailResponse(w, req, "photo.jpg", database.FileTypeImage, invalidData)
+
+	// Security headers must be present even when format is invalid
+	assertSecurityHeaders(t, w)
+}
+
+// assertSecurityHeaders verifies that XSS-mitigation headers are present on thumbnail responses
+func assertSecurityHeaders(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+
+	nosniff := w.Header().Get("X-Content-Type-Options")
+	if nosniff != "nosniff" {
+		t.Errorf("expected X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
+
+	csp := w.Header().Get("Content-Security-Policy")
+	if csp != "default-src 'none'" {
+		t.Errorf("expected Content-Security-Policy: default-src 'none', got %q", csp)
+	}
 }

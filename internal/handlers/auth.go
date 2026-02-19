@@ -13,12 +13,12 @@ import (
 
 // LoginRequest represents a login request with password only
 type LoginRequest struct {
-	Password string `json:"password"`
+	Password string `json:"password" sensitive:"true"` //nolint:gosec // G117: Input-only DTO for authentication, never serialized to logs or responses
 }
 
 // SetupRequest represents an initial setup request to create the password
 type SetupRequest struct {
-	Password string `json:"password"`
+	Password string `json:"password" sensitive:"true"` //nolint:gosec // G117: Input-only DTO for authentication, never serialized to logs or responses
 }
 
 // PasswordChangeRequest represents a request to change the password

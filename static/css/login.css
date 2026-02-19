@@ -18,13 +18,13 @@
 
     /* Semantic colors */
     --success: #2ecc71;
-    --success-bg: rgba(46, 204, 113, 0.15);
+    --success-bg: rgb(46 204 113 / 15%);
     --error: #e74c3c;
-    --error-bg: rgba(231, 76, 60, 0.15);
+    --error-bg: rgb(231 76 60 / 15%);
     --warning: #f39c12;
-    --warning-bg: rgba(243, 156, 18, 0.15);
+    --warning-bg: rgb(243 156 18 / 15%);
     --info: #3498db;
-    --info-bg: rgba(52, 152, 219, 0.15);
+    --info-bg: rgb(52 152 219 / 15%);
 
     /* Borders */
     --border-color: #2a2a4a;
@@ -71,7 +71,7 @@ body {
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 2rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 20px rgb(0 0 0 / 30%);
 }
 
 .login-box h1 {
@@ -131,12 +131,12 @@ body {
 .form-group input:focus {
     outline: none;
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.25);
+    box-shadow: 0 0 0 3px rgb(93 173 226 / 25%);
 }
 
 .form-group input::placeholder {
     color: var(--text-secondary);
-    opacity: 0.7;
+    opacity: 70%;
 }
 
 .form-group input.error {
@@ -189,7 +189,7 @@ body {
 
 .password-toggle:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255 255 255 / 10%);
 }
 
 .password-toggle:focus {
@@ -280,7 +280,7 @@ body {
 }
 
 .btn-passkey:disabled {
-    opacity: 0.7;
+    opacity: 70%;
     cursor: not-allowed;
 }
 
@@ -479,7 +479,7 @@ body {
    RESPONSIVE
    =========================================== */
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .login-box {
         padding: 1.5rem;
     }

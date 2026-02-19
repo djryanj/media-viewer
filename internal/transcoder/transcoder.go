@@ -505,8 +505,18 @@ func (t *Transcoder) transcodeDirectToCache(ctx context.Context, filePath, cache
 
 // transcodeDirectToCacheWithOptions performs the actual transcoding to cache with optional CPU-only mode
 func (t *Transcoder) transcodeDirectToCacheWithOptions(ctx context.Context, filePath, cachePath string, targetWidth int, info *VideoInfo, needsReencode, forceCPU bool) error {
+	// Validate paths
+	cleanInput, err := sanitizeFilePath(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid input file: %w", err)
+	}
+	cleanCache, err := sanitizeOutputPath(cachePath)
+	if err != nil {
+		return fmt.Errorf("invalid cache path: %w", err)
+	}
+
 	// Create temporary file path for atomic write
-	tmpPath := cachePath + ".tmp"
+	tmpPath := cleanCache + ".tmp"
 
 	// Ensure temp file is cleaned up on error
 	success := false
@@ -518,8 +528,20 @@ func (t *Transcoder) transcodeDirectToCacheWithOptions(ctx context.Context, file
 
 	// Run FFmpeg to transcode directly to file (not stdout)
 	// This allows +faststart to work since it needs a seekable output
-	args := t.buildFFmpegArgsWithOptions(filePath, tmpPath, targetWidth, info, needsReencode, forceCPU)
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	args := t.buildFFmpegArgsWithOptions(cleanInput, tmpPath, targetWidth, info, needsReencode, forceCPU)
+	// Sanitize args to prevent command injection
+	for _, arg := range args {
+		if strings.ContainsAny(arg, ";&|$><") {
+			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
+		}
+	}
+	// Sanitize args to prevent command injection
+	for _, arg := range args {
+		if strings.ContainsAny(arg, ";&|$><") {
+			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
+		}
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) // #nosec G702 -- args are constructed internally, paths are validated above
 
 	// Setup stderr capture and optional logging
 	var stderr bytes.Buffer
@@ -770,7 +792,12 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 	// Build ffmpeg command - output to stdout for streaming
 	args := t.buildFFmpegArgs(filePath, "-", targetWidth, info, needsReencode)
 	logging.Debug("FFmpeg command: ffmpeg %v", args)
-
+	// Sanitize args to prevent command injection
+	for _, arg := range args {
+		if strings.ContainsAny(arg, ";&|$><") {
+			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
+		}
+	}
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	// Create a pipe for ffmpeg output
@@ -788,7 +815,6 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 				logging.Warn("Failed to close transcoder log file: %v", err)
 			}
 		}()
-		// Write to both buffer and log file
 		cmd.Stderr = io.MultiWriter(&stderr, logFile)
 	} else {
 		cmd.Stderr = &stderr
@@ -980,11 +1006,17 @@ func (t *Transcoder) finalizeCache(tempPath, cachePath string) {
 
 // transcodeStream transcodes and streams directly without caching
 func (t *Transcoder) transcodeStream(ctx context.Context, filePath string, w io.Writer, targetWidth int, info *VideoInfo, needsReencode bool) error {
+	// Validate input path
+	cleanInput, err := sanitizeFilePath(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid input file: %w", err)
+	}
+
 	// Build ffmpeg command - output to stdout for streaming
-	args := t.buildFFmpegArgs(filePath, "-", targetWidth, info, needsReencode)
+	args := t.buildFFmpegArgs(cleanInput, "-", targetWidth, info, needsReencode)
 	logging.Debug("FFmpeg command: ffmpeg %v", args)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) // #nosec G702 -- args are constructed internally, input path is validated above
 
 	// Create a pipe for ffmpeg output
 	stdout, err := cmd.StdoutPipe()
@@ -1204,18 +1236,28 @@ func (t *Transcoder) isGPUError(stderrOutput string) bool {
 
 // retryTranscodeWithCPU retries transcoding with CPU encoder after GPU failure
 func (t *Transcoder) retryTranscodeWithCPU(ctx context.Context, filePath string, w io.Writer, cachePath string, targetWidth int, info *VideoInfo, needsReencode bool) error {
+	// Validate paths
+	cleanInput, err := sanitizeFilePath(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid input file: %w", err)
+	}
+	cleanCache, err := sanitizeOutputPath(cachePath)
+	if err != nil {
+		return fmt.Errorf("invalid cache path: %w", err)
+	}
+
 	// Create cache directory if needed
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cleanCache), 0o750); err != nil {
 		logging.Warn("Failed to create cache directory: %v (continuing without cache)", err)
-		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+		return t.transcodeStream(ctx, cleanInput, w, targetWidth, info, needsReencode)
 	}
 
 	// Create temporary file for atomic write
-	tempPath := cachePath + ".tmp"
+	tempPath := cleanCache + ".tmp"
 	cacheFile, err := os.Create(tempPath)
 	if err != nil {
 		logging.Warn("Failed to create cache file: %v (continuing without cache)", err)
-		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+		return t.transcodeStream(ctx, cleanInput, w, targetWidth, info, needsReencode)
 	}
 	defer func() {
 		if closeErr := cacheFile.Close(); closeErr != nil {
@@ -1226,10 +1268,10 @@ func (t *Transcoder) retryTranscodeWithCPU(ctx context.Context, filePath string,
 	}()
 
 	// Build ffmpeg command with CPU encoding forced
-	args := t.buildFFmpegArgsWithOptions(filePath, "-", targetWidth, info, needsReencode, true)
+	args := t.buildFFmpegArgsWithOptions(cleanInput, "-", targetWidth, info, needsReencode, true)
 	logging.Debug("FFmpeg command (CPU retry): ffmpeg %v", args)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) // #nosec G702 -- args are constructed internally, paths are validated above
 
 	// Create a pipe for ffmpeg output
 	stdout, err := cmd.StdoutPipe()
@@ -1480,13 +1522,29 @@ func (t *Transcoder) createTranscoderLog(filePath string, targetWidth int) *os.F
 
 	// Create log filename with timestamp and video info
 	timestamp := time.Now().Format("20060102-150405")
-	videoBaseName := filepath.Base(filePath)
+	videoBaseName := sanitizeLogFileName(filepath.Base(filePath))
 	logFileName := fmt.Sprintf("%s-%s-w%d.log", timestamp, videoBaseName, targetWidth)
 	logPath := filepath.Join(t.logDir, logFileName)
 
-	logFile, err := os.Create(logPath)
+	// Verify the resolved path is still within the log directory
+	absLogPath, err := filepath.Abs(logPath)
 	if err != nil {
-		logging.Warn("Failed to create transcoder log file %s: %v", logPath, err)
+		logging.Warn("Failed to resolve log path %s: %v", logPath, err)
+		return nil
+	}
+	absLogDir, err := filepath.Abs(t.logDir)
+	if err != nil {
+		logging.Warn("Failed to resolve log directory %s: %v", t.logDir, err)
+		return nil
+	}
+	if !strings.HasPrefix(absLogPath, absLogDir+string(filepath.Separator)) {
+		logging.Warn("Log path escapes log directory: %s", absLogPath)
+		return nil
+	}
+
+	logFile, err := os.Create(absLogPath) // #nosec G703 -- path is validated to be within logDir above
+	if err != nil {
+		logging.Warn("Failed to create transcoder log file %s: %v", absLogPath, err)
 		return nil
 	}
 
@@ -1497,7 +1555,7 @@ func (t *Transcoder) createTranscoderLog(filePath string, targetWidth int) *os.F
 		logging.Warn("Failed to write header to transcoder log: %v", err)
 	}
 
-	logging.Debug("Created transcoder log: %s", logPath)
+	logging.Debug("Created transcoder log: %s", absLogPath)
 	return logFile
 }
 
@@ -1873,4 +1931,86 @@ func (t *Transcoder) addCPUEncoderArgs(args []string, targetWidth int, info *Vid
 	}
 
 	return args
+}
+
+// sanitizeFilePath validates and cleans a file path to prevent path traversal.
+// Returns the cleaned absolute path or an error if the path is invalid.
+func sanitizeFilePath(path string) (string, error) {
+	// Resolve to absolute path to eliminate relative traversal
+	cleaned := filepath.Clean(path)
+
+	// Reject paths with null bytes
+	if strings.ContainsRune(cleaned, 0) {
+		return "", fmt.Errorf("invalid file path: contains null byte")
+	}
+
+	// Resolve to absolute path
+	absPath, err := filepath.Abs(cleaned)
+	if err != nil {
+		return "", fmt.Errorf("invalid file path: %w", err)
+	}
+
+	// Resolve symlinks to get the real path on disk, preventing symlink-based traversal
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid file path: %w", err)
+	}
+
+	// Verify the file exists and is not a directory
+	info, err := os.Stat(realPath) // #nosec G703 -- path is fully resolved via Abs + EvalSymlinks above
+	if err != nil {
+		return "", fmt.Errorf("invalid file path: %w", err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("invalid file path: is a directory")
+	}
+
+	return realPath, nil
+}
+
+// sanitizeOutputPath validates and cleans an output file path.
+// Returns the cleaned path or an error if the path is invalid.
+func sanitizeOutputPath(path string) (string, error) {
+	// Allow "-" for stdout
+	if path == "-" {
+		return path, nil
+	}
+
+	cleaned := filepath.Clean(path)
+
+	// Reject paths with null bytes
+	if strings.ContainsRune(cleaned, 0) {
+		return "", fmt.Errorf("invalid output path: contains null byte")
+	}
+
+	// Ensure parent directory exists
+	dir := filepath.Dir(cleaned)
+	if _, err := os.Stat(dir); err != nil {
+		return "", fmt.Errorf("invalid output path: parent directory does not exist: %w", err)
+	}
+
+	return cleaned, nil
+}
+
+// sanitizeLogFileName creates a safe log file name from potentially untrusted input.
+func sanitizeLogFileName(baseName string) string {
+	// Replace backslashes with forward slashes to handle Windows paths
+	input := strings.ReplaceAll(baseName, "\\", "/")
+	// First, strip any directory components
+	base := filepath.Base(input)
+	// Then, sanitize the base name
+	var sanitized strings.Builder
+	for _, r := range base {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' {
+			sanitized.WriteRune(r)
+		} else {
+			sanitized.WriteRune('_')
+		}
+	}
+	result := sanitized.String()
+	if result == "" || result == "." || result == ".." {
+		return "unknown"
+	}
+	return result
 }

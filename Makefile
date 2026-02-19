@@ -14,8 +14,10 @@ STATIC_DIR := static
         test-unit test-integration test-all test-coverage-merge pr-check \
         test-package test-failures \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
-        resetpw frontend-install frontend-lint frontend-lint-fix \
+        resetpw frontend-install frontend-lint frontend-lint-fixv frontend-lint-css frontend-lint-css-fix \
         frontend-format frontend-format-check frontend-check frontend-dev \
+        frontend-test frontend-test-unit frontend-test-integration frontend-test-integration-auto frontend-test-e2e frontend-test-coverage frontend-test-unit-coverage frontend-test-unit-watch frontend-test-unit-ui \
+		frontend-test-file frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug frontend-test-e2e-coverage frontend-test-e2e-report \
 		icons docs-serve docs-build docs-deploy \
 		download-sample-media
 
@@ -269,12 +271,18 @@ test-coverage-merge:
 # This target runs all checks typically needed before submitting a pull request
 pr-check:
 	@echo "Running PR checks..."
-	@echo "Step 1/3: Running Go linter (will auto-fix some lint issues)..."
+	@echo "Step 1/6: Running Go linter (will auto-fix some lint issues)..."
 	@$(MAKE) lint-fix
-	@echo "\nStep 2/3: Running tests..."
+	@echo "\nStep 2/6: Running tests..."
 	@$(MAKE) test
-	@echo "\nStep 3/3: Running race detector..."
+	@echo "\nStep 3/6: Running race detector..."
 	@$(MAKE) test-race
+	@echo "\nStep 4/6: Running frontend checks..."
+	@$(MAKE) frontend-check
+	@echo "\nStep 5/6: Running frontend unit tests..."
+	@$(MAKE) frontend-test-unit
+	@echo "\nStep 6/6: Running frontend integration tests..."
+	@$(MAKE) frontend-test-integration-auto
 	@echo "\nAll PR checks completed successfully!"
 
 test-clean:
@@ -288,11 +296,11 @@ test-clean:
 
 lint:
 	@echo "Linting Go code..."
-	golangci-lint run
+	golangci-lint run  --config=.golangci.yml
 
 lint-fix:
 	@echo "Fixing Go lint issues..."
-	golangci-lint run --fix
+	golangci-lint run --fix --config=.golangci.yml
 
 # =============================================================================
 # Frontend Targets
@@ -314,6 +322,10 @@ frontend-lint-css:
 	@echo "Linting CSS..."
 	cd $(STATIC_DIR) && npm run lint:css
 
+frontend-lint-css-fix:
+	@echo "Linting CSS with --fix option..."
+	cd $(STATIC_DIR) && npm run lint:css:fix -- --fix
+
 frontend-lint-fix:
 	@echo "Fixing frontend lint issues..."
 	cd $(STATIC_DIR) && npm run lint:fix
@@ -333,6 +345,245 @@ frontend-check:
 frontend-dev:
 	@echo "Starting frontend dev server (standalone)..."
 	cd $(STATIC_DIR) && npm run dev
+
+# Frontend test targets
+frontend-test:
+	@echo "Running all frontend tests (requires backend for integration/e2e tests)..."
+	@echo "Note: Start backend with 'make dev' in another terminal first"
+	cd $(STATIC_DIR) && npm test
+
+frontend-test-integration-auto:
+	@echo "Starting backend (dev-info) in background..."
+	@trap 'kill $$BACK_PID' EXIT; \
+	$(MAKE) dev-info & \
+	BACK_PID=$$!; \
+	sleep 3; \
+	$(MAKE) frontend-test-integration
+
+frontend-test-unit:
+	@echo "Running frontend unit tests (no backend required)..."
+	cd $(STATIC_DIR) && npm run test:unit:only
+
+frontend-test-integration:
+	@echo "Running frontend integration tests..."
+	@echo "Note: Requires backend running at http://localhost:8080"
+	cd $(STATIC_DIR) && npm run test:integration
+
+frontend-test-e2e:
+	@echo "Running frontend E2E tests..."
+	@echo "Note: Requires backend running at http://localhost:8080"
+	cd $(STATIC_DIR) && npm run test:e2e
+
+# Run frontend tests with coverage
+# Can target specific test files or run all tests
+# Examples:
+#   make frontend-test-coverage (all tests)
+#   make frontend-test-coverage favorites
+#   make frontend-test-coverage favorites gallery
+#   make frontend-test-coverage tests/unit/favorites.test.js (full path also works)
+#   make frontend-test-coverage FILE=favorites (legacy syntax still supported)
+frontend-test-coverage:
+	@goals="$(filter-out frontend-test-coverage,$(MAKECMDGOALS))"; \
+	files="$${goals:-$(FILE)}"; \
+	if [ -z "$$files" ]; then \
+		echo "Running all frontend tests with coverage..."; \
+		echo "Note: Requires backend running at http://localhost:8080"; \
+		cd $(STATIC_DIR) && npm run test:coverage; \
+	else \
+		cd $(STATIC_DIR) && \
+		for file in $$files; do \
+			if echo "$$file" | grep -q "\.test\.js$$"; then \
+				file_path="$$file"; \
+				file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.test\.js$$||'); \
+			else \
+				file_path="$$file"; \
+				file_name="$$file"; \
+			fi; \
+			echo "Running coverage for $$file_path... (logging to ../coverage-$$file_name.log)"; \
+			npm run test:file -- "$$file_path" --coverage 2>&1 | tee "../coverage-$$file_name.log"; \
+		done; \
+	fi
+
+frontend-test-unit-coverage:
+	@echo "Running frontend unit tests only with coverage..."
+	cd $(STATIC_DIR) && npm run test:unit:coverage
+
+frontend-test-unit-watch:
+	@echo "Running frontend unit tests in watch mode..."
+	@echo "Note: Requires backend running at http://localhost:8080"
+	cd $(STATIC_DIR) && npm run test:unit:watch
+
+frontend-test-unit-ui:
+	@echo "Running frontend unit tests with UI..."
+	@echo "Note: Requires backend running at http://localhost:8080"
+	cd $(STATIC_DIR) && npm run test:unit:ui
+
+# Test specific frontend test files
+# Automatically resolves test file names with partial matches
+# Examples:
+#   make frontend-test-file favorites
+#   make frontend-test-file favorites gallery
+#   make frontend-test-file tests/unit/favorites.test.js (full path also works)
+#   make frontend-test-file FILE=favorites (legacy syntax still supported)
+frontend-test-file:
+	@goals="$(filter-out frontend-test-file,$(MAKECMDGOALS))"; \
+	files="$${goals:-$(FILE)}"; \
+	if [ -z "$$files" ]; then \
+		echo "Error: Please specify a test file"; \
+		echo "Usage: make frontend-test-file <filename>"; \
+		echo "Examples:"; \
+		echo "  make frontend-test-file favorites"; \
+		echo "  make frontend-test-file favorites gallery"; \
+		echo "  make frontend-test-file tests/unit/favorites.test.js"; \
+		exit 1; \
+	fi; \
+	cd $(STATIC_DIR) && \
+	for file in $$files; do \
+		if echo "$$file" | grep -q "\.test\.js$$"; then \
+			file_path="$$file"; \
+			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.test\.js$$||'); \
+		else \
+			file_path="$$file"; \
+			file_name="$$file"; \
+		fi; \
+		echo "Running tests for $$file_path... (logging to ../$$file_name.test.log)"; \
+		npm run test:file -- "$$file_path" 2>&1 | tee "../$$file_name.test.log"; \
+	done
+
+# E2E test targets
+# Run E2E tests by module/tag
+# Automatically filters tests using Playwright's --grep option
+# Examples:
+#   make frontend-test-e2e-module search
+#   make frontend-test-e2e-module gallery settings
+#   make frontend-test-e2e-module @search (with @ prefix also works)
+#   make frontend-test-e2e-module MODULE=playlist (legacy syntax still supported)
+frontend-test-e2e-module:
+	@goals="$(filter-out frontend-test-e2e-module,$(MAKECMDGOALS))"; \
+	modules="$${goals:-$(MODULE)}"; \
+	if [ -z "$$modules" ]; then \
+		echo "Error: Please specify a module/tag"; \
+		echo "Usage: make frontend-test-e2e-module <module>"; \
+		echo "Examples:"; \
+		echo "  make frontend-test-e2e-module search"; \
+		echo "  make frontend-test-e2e-module gallery settings"; \
+		echo "  make frontend-test-e2e-module @video (with @ prefix)"; \
+		echo ""; \
+		echo "Available module tags:"; \
+		echo "  Core: @auth @core @session"; \
+		echo "  UI: @gallery @lightbox @video @navigation"; \
+		echo "  Features: @search @settings @playlist @tags @favorites"; \
+		echo "  Interaction: @keyboard @mobile @touch"; \
+		exit 1; \
+	fi; \
+	cd $(STATIC_DIR) && \
+	for module in $$modules; do \
+		tag=$$(echo "$$module" | sed 's/^@//'); \
+		echo "Running E2E tests for @$$tag... (logging to ../e2e-$$tag.log)"; \
+		npm run test:e2e -- --grep "@$$tag" 2>&1 | tee "../e2e-$$tag.log"; \
+	done
+
+# Run E2E tests by category (directory)
+# Tests are organized in: core/, features/, ui/, workflows/
+# Examples:
+#   make frontend-test-e2e-category core
+#   make frontend-test-e2e-category features ui
+#   make frontend-test-e2e-category CATEGORY=workflows (legacy syntax still supported)
+frontend-test-e2e-category:
+	@goals="$(filter-out frontend-test-e2e-category,$(MAKECMDGOALS))"; \
+	categories="$${goals:-$(CATEGORY)}"; \
+	if [ -z "$$categories" ]; then \
+		echo "Error: Please specify a category"; \
+		echo "Usage: make frontend-test-e2e-category <category>"; \
+		echo "Examples:"; \
+		echo "  make frontend-test-e2e-category core"; \
+		echo "  make frontend-test-e2e-category features ui"; \
+		echo ""; \
+		echo "Available categories:"; \
+		echo "  core      - Authentication, session, core functionality"; \
+		echo "  features  - Feature modules (search, tags, settings, playlist)"; \
+		echo "  ui        - UI components (gallery, lightbox, video player)"; \
+		echo "  workflows - Full user journeys (coming soon)"; \
+		exit 1; \
+	fi; \
+	cd $(STATIC_DIR) && \
+	for category in $$categories; do \
+		echo "Running E2E tests for category: $$category... (logging to ../e2e-category-$$category.log)"; \
+		npm run test:e2e -- e2e/specs/$$category/ 2>&1 | tee "../e2e-category-$$category.log"; \
+	done
+
+# Run specific E2E spec files
+# Automatically resolves spec file names
+# Examples:
+#   make frontend-test-e2e-file auth
+#   make frontend-test-e2e-file gallery search
+#   make frontend-test-e2e-file e2e/specs/core/auth.spec.js (full path also works)
+#   make frontend-test-e2e-file FILE=settings (legacy syntax still supported)
+frontend-test-e2e-file:
+	@goals="$(filter-out frontend-test-e2e-file,$(MAKECMDGOALS))"; \
+	files="$${goals:-$(FILE)}"; \
+	if [ -z "$$files" ]; then \
+		echo "Error: Please specify a spec file"; \
+		echo "Usage: make frontend-test-e2e-file <spec>"; \
+		echo "Examples:"; \
+		echo "  make frontend-test-e2e-file auth"; \
+		echo "  make frontend-test-e2e-file gallery search"; \
+		echo "  make frontend-test-e2e-file e2e/specs/core/auth.spec.js"; \
+		echo ""; \
+		echo "Available spec files:"; \
+		echo "  Core: auth"; \
+		echo "  Features: search, settings, playlist, tags-favorites"; \
+		echo "  UI: gallery, lightbox-video"; \
+		exit 1; \
+	fi; \
+	cd $(STATIC_DIR) && \
+	for file in $$files; do \
+		if echo "$$file" | grep -q "\.spec\.js$$"; then \
+			file_path="$$file"; \
+			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.spec\.js$$||'); \
+		elif echo "$$file" | grep -q "e2e/specs/"; then \
+			file_path="$$file"; \
+			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.spec\.js$$||'); \
+		else \
+			file_path="e2e/specs/**/*$$file*.spec.js"; \
+			file_name="$$file"; \
+		fi; \
+		echo "Running E2E tests for $$file_path... (logging to ../e2e-$$file_name.log)"; \
+		npm run test:e2e -- "$$file_path" 2>&1 | tee "../e2e-$$file_name.log"; \
+	done
+
+# Run E2E tests in headed mode (visible browser)
+frontend-test-e2e-headed:
+	@echo "Running E2E tests in headed mode..."
+	@echo "Note: Requires backend running at http://localhost:8080"
+	cd $(STATIC_DIR) && npm run test:e2e:headed
+
+# Run E2E tests with interactive UI
+frontend-test-e2e-ui:
+	@echo "Running E2E tests with interactive UI..."
+	@echo "Note: Requires backend running at http://localhost:8080"
+	cd $(STATIC_DIR) && npm run test:e2e:ui
+
+# Run E2E tests in debug mode
+frontend-test-e2e-debug:
+	@echo "Running E2E tests in debug mode..."
+	@echo "Note: Requires backend running at http://localhost:8080"
+	cd $(STATIC_DIR) && npm run test:e2e:debug
+
+# Generate E2E test coverage report
+frontend-test-e2e-coverage:
+	@echo "Generating E2E test coverage report..."
+	cd $(STATIC_DIR) && npm run test:e2e:coverage
+	@echo ""
+	@echo "Coverage reports generated:"
+	@echo "  HTML: $(STATIC_DIR)/e2e/coverage-reports/e2e-coverage.html"
+	@echo "  Markdown: $(STATIC_DIR)/e2e/coverage-reports/e2e-coverage.md"
+	@echo "  JSON: $(STATIC_DIR)/e2e/coverage-reports/e2e-coverage.json"
+
+# View E2E test HTML report
+frontend-test-e2e-report:
+	@echo "Opening E2E test report..."
+	cd $(STATIC_DIR) && npm run test:e2e:report
 
 # =============================================================================
 # Combined Lint/Format Targets
@@ -488,6 +739,45 @@ help:
 	@echo "  frontend-format-check Check frontend formatting"
 	@echo "  frontend-check        Run all frontend checks"
 	@echo "  frontend-dev          Run standalone frontend dev server"
+	@echo "  frontend-test         Run all frontend tests (requires backend)"
+	@echo "  frontend-test-unit    Run frontend unit/integration tests"
+	@echo "  frontend-test-e2e     Run frontend E2E tests"
+	@echo "  frontend-test-coverage Run frontend tests with coverage"
+	@echo "  frontend-test-watch   Run frontend tests in watch mode"
+	@echo "  frontend-test-ui      Run frontend tests with interactive UI"
+	@echo "  frontend-test-file    Run specific frontend test file(s)"
+	@echo "                        Usage: make frontend-test-file <filename>"
+	@echo "                        Examples:"
+	@echo "                          make frontend-test-file favorites"
+	@echo "                          make frontend-test-file favorites gallery"
+	@echo "                          make frontend-test-file tests/unit/favorites.test.js"
+	@echo ""
+	@echo "E2E test targets:"
+	@echo "  frontend-test-e2e-module     Run E2E tests by module/tag"
+	@echo "                               Usage: make frontend-test-e2e-module <module>"
+	@echo "                               Examples:"
+	@echo "                                 make frontend-test-e2e-module search"
+	@echo "                                 make frontend-test-e2e-module gallery settings"
+	@echo "                                 make frontend-test-e2e-module @video"
+	@echo "                               Available tags: @auth @gallery @lightbox @video"
+	@echo "                                               @search @settings @playlist @tags"
+	@echo "                                               @keyboard @mobile @touch"
+	@echo "  frontend-test-e2e-category   Run E2E tests by category"
+	@echo "                               Usage: make frontend-test-e2e-category <category>"
+	@echo "                               Examples:"
+	@echo "                                 make frontend-test-e2e-category core"
+	@echo "                                 make frontend-test-e2e-category features ui"
+	@echo "                               Available categories: core, features, ui, workflows"
+	@echo "  frontend-test-e2e-file       Run specific E2E spec file(s)"
+	@echo "                               Usage: make frontend-test-e2e-file <spec>"
+	@echo "                               Examples:"
+	@echo "                                 make frontend-test-e2e-file auth"
+	@echo "                                 make frontend-test-e2e-file gallery search"
+	@echo "  frontend-test-e2e-headed     Run E2E tests with visible browser"
+	@echo "  frontend-test-e2e-ui         Run E2E tests with interactive UI"
+	@echo "  frontend-test-e2e-debug      Run E2E tests in debug mode"
+	@echo "  frontend-test-e2e-coverage   Generate E2E test coverage report"
+	@echo "  frontend-test-e2e-report     View E2E test HTML report"
 	@echo ""
 	@echo "Combined targets:"
 	@echo "  lint-all         Lint Go and frontend code"
@@ -519,3 +809,11 @@ help:
 	@echo ""
 	@echo "Other:"
 	@echo "  help             Show this help message"
+
+# =============================================================================
+# Catch-all target for positional arguments
+# =============================================================================
+# This allows targets like test-package, frontend-test-file, frontend-test-e2e-module
+# to accept positional arguments (e.g., make test-package database handlers)
+%:
+	@:

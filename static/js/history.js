@@ -4,6 +4,7 @@ const HistoryManager = {
     states: [],
     isHandlingPopState: false,
     initialized: false,
+    stateIdCounter: 0,
 
     init() {
         if (this.initialized) return;
@@ -46,9 +47,11 @@ const HistoryManager = {
 
     getParentPath(currentPath) {
         if (!currentPath) return '';
-        const lastSlash = currentPath.lastIndexOf('/');
+        // Strip trailing slashes first
+        const trimmedPath = currentPath.replace(/\/+$/, '');
+        const lastSlash = trimmedPath.lastIndexOf('/');
         if (lastSlash === -1) return '';
-        return currentPath.substring(0, lastSlash);
+        return trimmedPath.substring(0, lastSlash);
     },
 
     closeApp() {
@@ -69,7 +72,7 @@ const HistoryManager = {
         const state = {
             type,
             data,
-            id: Date.now(),
+            id: ++this.stateIdCounter,
             path: typeof MediaApp !== 'undefined' ? MediaApp.state?.currentPath || '' : '',
             isOverlay: true,
         };
@@ -180,4 +183,12 @@ const HistoryManager = {
     },
 };
 
-HistoryManager.init();
+// Export for testing
+window.HistoryManager = HistoryManager;
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => HistoryManager.init());
+} else {
+    HistoryManager.init();
+}

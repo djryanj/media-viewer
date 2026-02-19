@@ -1,8 +1,285 @@
 # Testing Guide
 
-This guide covers testing practices, tools, and procedures for the Media Viewer backend (Go code).
+This guide covers testing practices, tools, and procedures for the Media Viewer project.
 
-## Quick Start
+## Overview
+
+The project has two test suites:
+
+- **Backend Tests** - Go tests for the backend server
+- **Frontend Tests** - JavaScript tests for the web frontend (unit, integration, and E2E)
+
+## Frontend Testing
+
+The frontend has three types of tests:
+
+- **Unit Tests** - Test isolated code without external dependencies (no backend required)
+- **Integration Tests** - Test frontend integration with backend APIs (backend required)
+- **E2E Tests** - Browser-based tests with Playwright (backend required)
+
+### Quick Start (Frontend)
+
+```bash
+# Unit tests only (no backend required)
+make frontend-test-unit
+
+# Integration tests (requires backend)
+make dev  # Terminal 1: Start backend
+make frontend-test-integration  # Terminal 2
+
+# E2E tests (requires backend)
+make frontend-test-e2e
+
+# All frontend tests
+make frontend-test
+```
+
+### Running Frontend Tests
+
+#### Unit Tests (No Backend Required)
+
+Unit tests run in isolation without any external dependencies:
+
+```bash
+# Run all unit tests
+make frontend-test-unit
+cd static && npm run test:unit:only
+
+# Watch mode (reruns on file changes)
+make frontend-test-unit-watch
+cd static && npm run test:unit:watch
+
+# Interactive UI
+make frontend-test-unit-ui
+cd static && npm run test:unit:ui
+
+# With coverage
+make frontend-test-unit-coverage
+cd static && npm run test:unit:coverage
+```
+
+**Unit test coverage** includes 15 test files with 533+ test cases covering:
+
+- **Core Features**: History management, preferences, session tracking, selection mode, settings utilities
+- **Media Components**: Lightbox navigation, video player controls, playlist navigation
+- **UI Utilities**: Clock display, tag clipboard/tooltips, wake lock management
+- **Pagination**: Infinite scroll for gallery and search results
+
+See [Frontend Test Structure](#frontend-test-structure) for complete file listing.
+
+#### Integration Tests (Backend Required)
+
+Integration tests verify frontend integration with the real backend APIs.
+
+**Prerequisites:**
+
+1. Start the backend server first:
+
+```bash
+make dev
+```
+
+2. Run integration tests:
+
+```bash
+# Run all integration tests
+make frontend-test-integration
+cd static && npm run test:integration
+
+# Run a specific test file
+cd static && npx vitest run tests/integration/session.test.js
+```
+
+**Integration test coverage** includes 5 test files with 80+ test cases covering:
+
+- **Authentication**: Login, logout, session expiration handling
+- **Core APIs**: Stats, health checks, version info
+- **Gallery**: File listing, pagination, sorting, filtering
+- **Favorites**: Add/remove/query favorite items with idempotency
+- **Search & Tags**: Full-text search, tag management, tag filtering
+
+See [Frontend Test Structure](#frontend-test-structure) for complete file listing.
+
+#### E2E Tests (Backend Required)
+
+End-to-end browser tests using Playwright.
+
+**Prerequisites:**
+
+1. Start the backend server:
+
+```bash
+make dev
+```
+
+2. Run E2E tests:
+
+```bash
+# Run all E2E tests
+make frontend-test-e2e
+cd static && npm run test:e2e
+
+# Run with browser visible
+cd static && npm run test:e2e:headed
+
+# Interactive mode
+cd static && npm run test:e2e:ui
+
+# Debug mode
+cd static && npm run test:e2e:debug
+
+# View test report
+cd static && npm run test:e2e:report
+```
+
+#### All Frontend Tests
+
+Run the complete frontend test suite (unit + integration + E2E):
+
+```bash
+make frontend-test
+cd static && npm test
+```
+
+This requires the backend to be running for integration and E2E tests.
+
+### Frontend Test Configuration
+
+#### Environment Variables
+
+Override default settings:
+
+```bash
+# Use a different backend URL
+TEST_BASE_URL=http://localhost:3000 npm run test:integration
+
+# For E2E tests
+BASE_URL=http://localhost:3000 npm run test:e2e
+```
+
+#### Test Configuration File
+
+Core configuration in `static/tests/test.config.js`:
+
+- `BASE_URL` - Backend server URL (default: http://localhost:8080)
+- `TEST_USER` - Test credentials
+- `TIMEOUTS` - Various timeout settings
+- API endpoint paths
+
+#### API Helpers
+
+Helper functions for integration tests in `static/tests/helpers/api-helpers.js`:
+
+- `ensureAuthenticated()` - Ensure logged in before tests
+- `login(password)` - Authenticate user
+- `logout()` - End session
+- `checkAuth()` - Check authentication status
+- `listFiles(path)` - Get file listing
+- `getAllTags()` - Get all tags
+- `addTagToFile()`, `removeTagFromFile()` - Tag management
+- `getFavorites()`, `addFavorite()`, `removeFavorite()` - Favorites
+- `search(query)` - Search functionality
+
+### Frontend CI/CD
+
+Frontend tests run automatically in GitHub Actions:
+
+1. **Unit tests** - Run first without backend (fast, ~60s)
+2. **Integration tests** - Run after starting backend (~45s)
+3. **E2E tests** - Run with backend and browser automation (~2min)
+4. **Coverage upload** - Coverage reports uploaded as artifacts
+
+**Test Statistics (February 2026):**
+
+- **Total test files**: 20 (15 unit + 5 integration)
+- **Total test cases**: 613+ tests
+- **Coverage**: ~80% of frontend modules
+- **CI execution time**: ~4 minutes total
+
+See [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) for workflow details.
+
+### Frontend Test Structure
+
+```
+static/tests/
+├── unit/              # Unit tests (no backend)
+│   ├── clock.test.js                    # Clock display and time formatting
+│   ├── history.test.js                  # Navigation history management
+│   ├── infinite-scroll.test.js          # Gallery pagination logic
+│   ├── infinite-scroll-search.test.js   # Search result pagination
+│   ├── lightbox.test.js                 # Lightbox navigation and zoom
+│   ├── playlist.test.js                 # Playlist navigation and state
+│   ├── preferences.test.js              # localStorage operations
+│   ├── selection.test.js                # Item selection state
+│   ├── session.test.js                  # Session manager (mocked)
+│   ├── settings.test.js                 # Settings manager utilities
+│   ├── tag-clipboard.test.js            # Tag clipboard operations
+│   ├── tag-tooltip.test.js              # Tag tooltip utilities
+│   ├── video-controls.test.js           # Video control utilities
+│   ├── video-player.test.js             # VideoPlayer class
+│   └── wake-lock.test.js                # Wake Lock API management
+├── integration/       # Integration tests (backend required)
+│   ├── app.test.js                      # Core application APIs
+│   ├── favorites.test.js                # Favorites API operations
+│   ├── gallery.test.js                  # File listing and favorites
+│   ├── search-tags.test.js              # Search and tag management
+│   └── session.test.js                  # Authentication API
+├── e2e/               # End-to-end browser tests (Playwright)
+│   └── [playwright test files]
+├── helpers/
+│   ├── api-helpers.js    # Real API call helpers
+│   ├── setup.js          # Test environment setup
+│   └── test-utils.js     # Mock utilities
+├── test.config.js        # Central configuration
+└── README.md             # Detailed frontend test docs
+```
+
+### Troubleshooting Frontend Tests
+
+#### Backend Connection Issues
+
+```bash
+# Verify backend is running
+curl http://localhost:8080/health
+
+# Check backend logs for errors
+make dev
+```
+
+#### Test Timeouts
+
+If tests timeout, increase the timeout in vitest.config.js or the specific test:
+
+```javascript
+it('slow test', async () => {
+    // test code
+}, 20000); // 20 second timeout
+```
+
+#### E2E Test Failures
+
+```bash
+# Run with visible browser to see what's happening
+cd static && npm run test:e2e:headed
+
+# Generate test code interactively
+cd static && npm run test:e2e:codegen
+```
+
+#### Clear Test State
+
+```bash
+# Reset authentication by restarting backend
+# Cookies are reset between test files automatically
+```
+
+---
+
+## Backend Testing
+
+This section covers testing for the backend Go code.
+
+### Quick Start (Backend)
 
 ```bash
 # Run all tests
@@ -15,7 +292,7 @@ make test-coverage
 make test-package PKG=handlers
 ```
 
-## Running Tests
+### Running Backend Tests
 
 ### All Tests
 
@@ -378,6 +655,96 @@ func TestDatabaseIntegration(t *testing.T) {
 }
 ```
 
+### Frontend Testing Patterns
+
+#### Unit Test Pattern (JSDOM with eval)
+
+Frontend unit tests use JSDOM for DOM simulation and load modules via `eval()`:
+
+```javascript
+import { describe, test, expect, beforeEach, vi } from 'vitest';
+import fs from 'fs';
+import { JSDOM } from 'jsdom';
+
+describe('Module Name', () => {
+    let dom, ModuleName;
+
+    beforeEach(() => {
+        // Create DOM environment
+        dom = new JSDOM(`<!DOCTYPE html><html><body></body></html>`, {
+            url: 'http://localhost',
+            pretendToBeVisual: true,
+        });
+
+        globalThis.document = dom.window.document;
+        globalThis.window = dom.window;
+
+        // Mock dependencies
+        globalThis.lucide = { createIcons: vi.fn() };
+        globalThis.MediaApp = { showLoading: vi.fn() };
+
+        // Load module
+        const code = fs.readFileSync('./static/js/module.js', 'utf-8');
+        eval(code);
+        ModuleName = globalThis.ModuleName;
+    });
+
+    test('tests pure logic', () => {
+        const result = ModuleName.formatName('/path/file.txt');
+        expect(result).toBe('file');
+    });
+});
+```
+
+#### Key Testing Principles
+
+1. **Test Pure Functions First**
+    - Utility functions (formatTime, escapeHtml, getDisplayName)
+    - State calculations (navigation indices, URL parsing)
+    - Data transformations (tag rendering, name extraction)
+
+2. **Mock External Dependencies**
+    - `lucide.createIcons()` - Icon library
+    - `MediaApp`, `Gallery`, `Search` - Global modules
+    - `fetch` and API calls - Use `vi.fn()` mocks
+    - localStorage - Implement mock object
+
+3. **Avoid Heavy DOM Manipulation**
+    - Focus on testable logic over rendering
+    - Test state changes rather than visual output
+    - Use simple assertions on DOM properties when needed
+
+4. **Clean Up State**
+    - Reset module state in `beforeEach`
+    - Clear timers in `afterEach`
+    - Use `vi.clearAllMocks()` for Vitest spies
+
+5. **Test Edge Cases**
+    - Null/undefined inputs
+    - Empty strings and arrays
+    - Boundary conditions (wraparound indices)
+    - Error handling paths
+
+#### Integration Test Pattern
+
+Integration tests call real backend APIs with proper authentication:
+
+```javascript
+import { describe, test, expect, beforeAll } from 'vitest';
+import { ensureAuthenticated, listFiles } from '../helpers/api-helpers.js';
+
+describe('API Integration', () => {
+    beforeAll(async () => {
+        await ensureAuthenticated();
+    });
+
+    test('fetches data from backend', async () => {
+        const files = await listFiles('/');
+        expect(files).toBeInstanceOf(Array);
+    });
+});
+```
+
 ### Benchmarking
 
 Write benchmarks for performance-critical code:
@@ -503,12 +870,17 @@ Tests use the same build tags as the main application:
 
 ## Coverage Goals
 
-- Current: ~40-65% (varies by package)
-- Target: >80% overall coverage
+- **Backend**: ~40-65% (varies by package), target >80%
+- **Frontend**: ~80% of modules covered (as of February 2026)
 
 ### Recent Improvements
 
-**February 2026**: Added comprehensive integration tests for database package, increasing coverage from ~5% to ~40%
+**February 2026**:
+
+- Added comprehensive integration tests for database package, increasing backend coverage from ~5% to ~40%
+- Added 14 frontend unit test files covering core features, media components, and UI utilities
+- Total frontend test count increased to 547+ tests across 19 test files
+- Frontend coverage improved from ~25% to ~80% of modules
 
 ## Common Issues
 
@@ -757,9 +1129,19 @@ Times vary based on system performance and video complexity.
 - [Monitoring Stack](monitoring.md) - Performance testing and metrics monitoring
 - [Architecture](architecture.md) - System architecture overview
 - [Memory & GC Tuning](../admin/memory-tuning.md) - Performance optimization guide
+- [Frontend Testing README](../../static/tests/README.md) - Detailed frontend test documentation
 
 ## Resources
+
+### Backend Testing (Go)
 
 - [Go Testing Package](https://pkg.go.dev/testing)
 - [Go Blog: Table Driven Tests](https://go.dev/blog/subtests)
 - [Effective Go: Testing](https://go.dev/doc/effective_go#testing)
+
+### Frontend Testing (JavaScript)
+
+- [Vitest Documentation](https://vitest.dev/) - Unit and integration test framework
+- [Playwright Documentation](https://playwright.dev/) - E2E browser testing
+- [Testing Library](https://testing-library.com/) - DOM testing utilities
+- [Happy DOM](https://github.com/capricorn86/happy-dom) - Fast DOM implementation for Node.js
