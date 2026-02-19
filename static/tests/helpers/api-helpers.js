@@ -11,6 +11,74 @@ import { TEST_CONFIG } from '../test.config.js';
 export { TEST_CONFIG };
 
 /**
+ * Simple cookie jar for maintaining session across requests.
+ * Node.js fetch does not automatically handle cookies like a browser,
+ * so we manually capture Set-Cookie headers and send them back.
+ */
+let cookieJar = [];
+
+/**
+ * Parse Set-Cookie headers from a response and store them in the jar.
+ * @param {Response} response - Fetch response
+ */
+function captureCookies(response) {
+    // Guard against responses without headers (e.g., network errors, aborted requests)
+    if (!response || !response.headers) {
+        return;
+    }
+
+    // response.headers.getSetCookie() is the standard API (Node 20+)
+    // Falls back to parsing the raw 'set-cookie' header
+    let setCookieHeaders = [];
+
+    if (typeof response.headers.getSetCookie === 'function') {
+        setCookieHeaders = response.headers.getSetCookie();
+    } else if (typeof response.headers.get === 'function') {
+        // Fallback: get raw header (may be comma-joined, which is problematic
+        // for cookies, but better than nothing)
+        const raw = response.headers.get('set-cookie');
+        if (raw) {
+            setCookieHeaders = [raw];
+        }
+    }
+
+    for (const header of setCookieHeaders) {
+        // Extract the cookie name=value pair (everything before the first ';')
+        const nameValue = header.split(';')[0].trim();
+        if (!nameValue || !nameValue.includes('=')) continue;
+
+        const cookieName = nameValue.split('=')[0].trim();
+
+        // Check if this is a deletion (Max-Age=0 or Expires in the past)
+        const lowerHeader = header.toLowerCase();
+        if (lowerHeader.includes('max-age=0') || lowerHeader.includes('max-age=-')) {
+            // Remove this cookie from the jar
+            cookieJar = cookieJar.filter((c) => c.split('=')[0].trim() !== cookieName);
+            continue;
+        }
+
+        // Replace existing cookie with same name, or add new one
+        cookieJar = cookieJar.filter((c) => c.split('=')[0].trim() !== cookieName);
+        cookieJar.push(nameValue);
+    }
+}
+
+/**
+ * Get the Cookie header value from the jar.
+ * @returns {string} Cookie header value
+ */
+function getCookieHeader() {
+    return cookieJar.join('; ');
+}
+
+/**
+ * Clear all cookies from the jar.
+ */
+export function clearCookies() {
+    cookieJar = [];
+}
+
+/**
  * Make an authenticated API request
  * @param {string} path - API path (e.g., '/api/files')
  * @param {RequestInit} options - Fetch options
@@ -18,14 +86,27 @@ export { TEST_CONFIG };
  */
 export async function apiRequest(path, options = {}) {
     const url = TEST_CONFIG.buildUrl(path);
+
+    // Build headers, injecting cookies from the jar
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+    };
+
+    const cookieHeader = getCookieHeader();
+    if (cookieHeader) {
+        headers['Cookie'] = cookieHeader;
+    }
+
     const response = await fetch(url, {
         ...options,
-        credentials: 'include', // Important: include cookies for session auth
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers,
-        },
+        credentials: 'include',
+        headers,
     });
+
+    // Capture any Set-Cookie headers from the response
+    captureCookies(response);
+
     return response;
 }
 
@@ -56,6 +137,9 @@ export async function logout() {
     const response = await apiRequest(TEST_CONFIG.API.AUTH.LOGOUT, {
         method: 'POST',
     });
+
+    // Clear the cookie jar on logout
+    clearCookies();
 
     return {
         success: response.ok,
@@ -305,11 +389,24 @@ export async function waitForCondition(condition, timeout = 5000, interval = 100
 }
 
 /**
- * Setup authenticated session for tests
- * Ensures user is logged in before running tests
+ * Setup authenticated session for tests.
+ * Ensures user is logged in before running tests.
+ *
+ * Handles concurrent test suites racing to set up the initial password:
+ * - Multiple test files run in parallel (Vitest default behavior)
+ * - All may call ensureAuthenticated() simultaneously
+ * - Only the first setupPassword() call succeeds (200), others get 403
+ * - A 403 on setup means another suite already configured the password
+ *
+ * Throws on failure so that beforeAll() blocks fail loudly
+ * rather than silently proceeding without authentication.
+ *
  * @returns {Promise<{success: boolean, setupRequired: boolean}>}
  */
 export async function ensureAuthenticated() {
+    // Clear any stale cookies from previous test runs
+    clearCookies();
+
     // Check if already authenticated
     const authStatus = await checkAuth();
 
@@ -321,14 +418,34 @@ export async function ensureAuthenticated() {
     if (authStatus.setupRequired) {
         const setupResult = await setupPassword();
         if (!setupResult.success) {
-            return { success: false, setupRequired: true, error: 'Setup failed' };
+            // 403 means another concurrent test suite already set up the password.
+            // This is expected when Vitest runs multiple test files in parallel.
+            if (setupResult.status === 403) {
+                // Password already configured by another test suite — proceed to login
+            } else {
+                throw new Error(
+                    `ensureAuthenticated: password setup failed with status ${setupResult.status}`
+                );
+            }
         }
     }
 
     // Login
     const loginResult = await login();
     if (!loginResult.success) {
-        return { success: false, setupRequired: false, error: 'Login failed' };
+        throw new Error(
+            `ensureAuthenticated: login failed with status ${loginResult.status} - ` +
+                `data: ${JSON.stringify(loginResult.data)}`
+        );
+    }
+
+    // Verify we're now authenticated (confirms cookie jar is working)
+    const verifyStatus = await checkAuth();
+    if (!verifyStatus.authenticated) {
+        throw new Error(
+            'ensureAuthenticated: login succeeded but subsequent auth check failed. ' +
+                'This usually means the session cookie was not captured from the login response.'
+        );
     }
 
     return { success: true, setupRequired: authStatus.setupRequired };

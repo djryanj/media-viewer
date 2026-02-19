@@ -476,6 +476,23 @@ jobs:
                   done
                   sleep 5 # just because
 
+                  # Also verify the auth endpoint is responding (database is initialized)
+                  echo "Verifying auth endpoint is ready..."
+                  for i in {1..15}; do
+                    AUTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/auth/check 2>/dev/null)
+                    if [ "$AUTH_RESPONSE" != "000" ] && [ "$AUTH_RESPONSE" != "502" ] && [ "$AUTH_RESPONSE" != "503" ]; then
+                      echo "Auth endpoint is ready (HTTP $AUTH_RESPONSE)"
+                      break
+                    fi
+                    if [ $i -eq 15 ]; then
+                      echo "Auth endpoint not ready after 15 seconds"
+                      exit 1
+                    fi
+                    sleep 1
+                  done
+
+                  echo "Backend is fully ready!"
+
                   echo "--- Backend startup logs ---"
                   cat /tmp/backend-logs/backend-stdout.log
                   echo "--- End startup logs ---"
