@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump renovatebot/github-action from 46.0.2 to 46.1.1 ([#282](https://github.com/djryanj/media-viewer/pull/282))
 - build(deps): bump actions/github-script from 7 to 8 ([#283](https://github.com/djryanj/media-viewer/pull/283))
 ### Added
 
