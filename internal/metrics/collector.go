@@ -15,6 +15,12 @@ type StatsProvider interface {
 	GetStats() Stats
 }
 
+// StorageHealthChecker interface for database storage health checks
+type StorageHealthChecker interface {
+	CheckStorageHealth()
+	UpdateDBMetrics()
+}
+
 // Stats holds the current statistics
 type Stats struct {
 	TotalFiles     int
@@ -28,12 +34,13 @@ type Stats struct {
 
 // Collector periodically collects and updates metrics
 type Collector struct {
-	statsProvider      StatsProvider
-	dbPath             string
-	transcoderCacheDir string
-	interval           time.Duration
-	stopChan           chan struct{}
-	lastGCCount        uint32
+	statsProvider        StatsProvider
+	storageHealthChecker StorageHealthChecker
+	dbPath               string
+	transcoderCacheDir   string
+	interval             time.Duration
+	stopChan             chan struct{}
+	lastGCCount          uint32
 }
 
 // NewCollector creates a new metrics collector
@@ -45,6 +52,13 @@ func NewCollector(provider StatsProvider, dbPath string, interval time.Duration)
 		interval:           interval,
 		stopChan:           make(chan struct{}),
 	}
+}
+
+// SetStorageHealthChecker sets the database instance for storage health monitoring.
+// This enables periodic checks that detect conditions which would have caused
+// SIGBUS crashes when mmap was enabled.
+func (c *Collector) SetStorageHealthChecker(checker StorageHealthChecker) {
+	c.storageHealthChecker = checker
 }
 
 // Start begins the metrics collection loop
@@ -89,6 +103,12 @@ func (c *Collector) collect() {
 	// Collect transcoder cache size
 	c.collectTranscoderCacheSize()
 
+	// Run database storage health check (detects conditions that cause SIGBUS with mmap)
+	if c.storageHealthChecker != nil {
+		c.storageHealthChecker.CheckStorageHealth()
+		c.storageHealthChecker.UpdateDBMetrics()
+	}
+
 	// Collect stats from provider
 	if c.statsProvider == nil {
 		return
@@ -113,24 +133,19 @@ func (c *Collector) collectMemoryMetrics() {
 	GoMemAllocBytes.Set(float64(memStats.Alloc))
 	GoMemSysBytes.Set(float64(memStats.Sys))
 
-	// Track GC runs (as a counter, we need to track the delta)
 	if memStats.NumGC > c.lastGCCount {
 		GoGCRuns.Add(float64(memStats.NumGC - c.lastGCCount))
 		c.lastGCCount = memStats.NumGC
 	}
 
-	// Track GC pause times
 	GoGCPauseTotalSeconds.Add(float64(memStats.PauseTotalNs) / 1e9)
 	if memStats.NumGC > 0 {
-		// Get the most recent pause time (ring buffer)
 		idx := (memStats.NumGC + 255) % 256
 		GoGCPauseLastSeconds.Set(float64(memStats.PauseNs[idx]) / 1e9)
 	}
 
-	// Track GC CPU overhead (fraction of time spent in GC)
 	GoGCCPUFraction.Set(memStats.GCCPUFraction)
 
-	// Report GOMEMLIMIT
 	if limit := debug.SetMemoryLimit(-1); limit > 0 && limit < 1<<62 {
 		GoMemLimit.Set(float64(limit))
 	}
@@ -141,21 +156,18 @@ func (c *Collector) collectDBSize() {
 		return
 	}
 
-	// Main database file
 	if fileInfo, err := os.Stat(c.dbPath); err == nil {
 		DBSizeBytes.WithLabelValues("main").Set(float64(fileInfo.Size()))
 	} else {
 		logging.Debug("Failed to get database file size: %v", err)
 	}
 
-	// WAL file (Write-Ahead Log)
 	if walInfo, err := os.Stat(c.dbPath + "-wal"); err == nil {
 		DBSizeBytes.WithLabelValues("wal").Set(float64(walInfo.Size()))
 	} else {
 		DBSizeBytes.WithLabelValues("wal").Set(0)
 	}
 
-	// SHM file (Shared Memory)
 	if shmInfo, err := os.Stat(c.dbPath + "-shm"); err == nil {
 		DBSizeBytes.WithLabelValues("shm").Set(float64(shmInfo.Size()))
 	} else {

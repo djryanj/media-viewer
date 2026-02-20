@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"context"
 	"crypto/md5"
 	"errors"
 	"fmt"
@@ -461,6 +462,8 @@ func (idx *Indexer) parallelWalkAndIndex(startTime time.Time) (indexResult, erro
 	metrics.IndexerParallelWorkers.Set(float64(idx.parallelConfig.NumWorkers))
 	walker := NewParallelWalker(idx.mediaDir, idx.parallelConfig)
 
+	defer walker.Stop()
+
 	go func() {
 		select {
 		case <-idx.stopChan:
@@ -737,14 +740,16 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 		return nil
 	}
 
+	ctx := context.Background()
+
 	start := time.Now()
-	tx, err := idx.db.BeginBatch()
+	tx, err := idx.db.BeginBatch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin batch transaction: %w", err)
 	}
 
 	for i := range files {
-		if err := idx.db.UpsertFile(tx, &files[i]); err != nil {
+		if err := idx.db.UpsertFile(ctx, tx, &files[i]); err != nil {
 			logging.Warn("Error upserting file %s: %v", files[i].Path, err)
 		}
 	}
@@ -759,7 +764,8 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 
 // cleanupMissingFiles removes files from the database that no longer exist on disk.
 func (idx *Indexer) cleanupMissingFiles(indexTime time.Time) error {
-	tx, err := idx.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := idx.db.BeginBatch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin cleanup transaction: %w", err)
 	}

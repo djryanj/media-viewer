@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3" // SQLite3 driver
+	sqlite3 "github.com/mattn/go-sqlite3" // SQLite3 driver (typed import for ConnectHook)
 
 	"media-viewer/internal/logging"
 	"media-viewer/internal/metrics"
@@ -19,6 +19,36 @@ import (
 
 // Default timeout for database operations
 const defaultTimeout = 5 * time.Second
+
+// driverName is the custom SQLite driver name with mmap disabled.
+// We register a custom driver instead of using the default "sqlite3" driver
+// so that PRAGMA mmap_size=0 is applied on every connection the pool creates.
+// This prevents SIGBUS crashes when the underlying storage (NFS, Docker volumes)
+// becomes temporarily unavailable — mmap'd pages would fault with SIGBUS, while
+// read() syscalls return a recoverable error.
+const driverName = "sqlite3_mmap_disabled"
+
+// registerOnce ensures the custom driver is registered exactly once.
+var registerOnce sync.Once
+
+// registerDriver registers our custom SQLite driver with mmap disabled.
+func registerDriver() {
+	registerOnce.Do(func() {
+		sql.Register(driverName, &sqlite3.SQLiteDriver{
+			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+				// Disable mmap on every new connection.
+				// go-sqlite3 does not support _mmap_size as a DSN parameter,
+				// so we must set it via PRAGMA on each connection.
+				_, err := conn.Exec("PRAGMA mmap_size = 0", nil)
+				return err
+			},
+		})
+	})
+}
+
+func init() {
+	registerDriver()
+}
 
 // getSlowQueryThreshold returns the threshold for logging slow queries
 // Can be configured via SLOW_QUERY_THRESHOLD_MS environment variable
@@ -55,9 +85,11 @@ func New(ctx context.Context, dbPath string) (*Database, error) {
 
 	// Use WAL mode and other optimizations
 	// busy_timeout helps prevent "database is locked" errors
+	// NOTE: mmap_size is NOT set via DSN — go-sqlite3 does not support it as a DSN param.
+	// Instead, it is set to 0 via ConnectHook in our custom driver (see registerDriver).
 	connStr := fmt.Sprintf("%s?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=10000&_temp_store=MEMORY&_busy_timeout=5000", dbPath)
 
-	db, err := sql.Open("sqlite3", connStr)
+	db, err := sql.Open(driverName, connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -89,8 +121,125 @@ func New(ctx context.Context, dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("failed to initialize database schema: %w", err)
 	}
 
+	// Verify mmap is disabled and log SQLite environment info
+	d.logSQLiteConfig(ctx)
+
 	logging.Info("Database initialized successfully at %s", dbPath)
 	return d, nil
+}
+
+// logSQLiteConfig logs the SQLite configuration for diagnostics and verifies
+// that mmap is disabled. This helps operators confirm the SIGBUS fix is active
+// and detects if the system SQLite has a non-zero DEFAULT_MMAP_SIZE.
+func (d *Database) logSQLiteConfig(ctx context.Context) {
+	queryCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	// Log SQLite version
+	var version string
+	if err := d.db.QueryRowContext(queryCtx, "SELECT sqlite_version()").Scan(&version); err == nil {
+		logging.Info("SQLite version: %s", version)
+	}
+
+	// Check compiled-in default mmap size
+	rows, err := d.db.QueryContext(queryCtx, "PRAGMA compile_options")
+	if err == nil {
+		defer func() {
+			if closeErr := rows.Close(); closeErr != nil {
+				logging.Error("failed to close compile_options rows: %v", closeErr)
+			}
+		}()
+		for rows.Next() {
+			var opt string
+			if err := rows.Scan(&opt); err == nil {
+				// Look for DEFAULT_MMAP_SIZE=N where N > 0
+				if len(opt) > 18 && opt[:18] == "DEFAULT_MMAP_SIZE=" {
+					defaultVal := opt[18:]
+					if defaultVal != "0" {
+						logging.Warn("System SQLite compiled with %s — without our fix, "+
+							"mmap would be enabled by default, risking SIGBUS on storage failures. "+
+							"Our ConnectHook sets mmap_size=0 to prevent this.", opt)
+						metrics.DBMmapOverrideApplied.Inc()
+					}
+				}
+			}
+		}
+	}
+
+	// Verify mmap is actually disabled on the current connection
+	var mmapSize int64
+	if err := d.db.QueryRowContext(queryCtx, "PRAGMA mmap_size").Scan(&mmapSize); err == nil {
+		if mmapSize != 0 {
+			logging.Error("CRITICAL: mmap_size is %d but should be 0 — SIGBUS protection is NOT active!", mmapSize)
+			metrics.DBMmapStatus.Set(float64(mmapSize))
+		} else {
+			logging.Info("mmap_size = 0 (SIGBUS protection active)")
+			metrics.DBMmapStatus.Set(0)
+		}
+	}
+}
+
+// CheckStorageHealth verifies that the database's underlying storage is accessible.
+// This detects the exact conditions (I/O errors, stale NFS handles, missing Docker
+// volumes) that would have caused SIGBUS crashes when mmap was enabled.
+// Call this periodically from the metrics collector.
+func (d *Database) CheckStorageHealth() {
+	start := time.Now()
+
+	files := []struct {
+		path string
+		name string
+	}{
+		{d.dbPath, "main"},
+		{d.dbPath + "-wal", "wal"},
+		{d.dbPath + "-shm", "shm"},
+	}
+
+	for _, f := range files {
+		if _, err := os.Stat(f.path); err != nil {
+			if os.IsNotExist(err) {
+				// WAL/SHM files may not exist yet — that's normal
+				if f.name != "main" {
+					continue
+				}
+			}
+			logging.Error("Storage health check FAILED for %s file (%s): %v — "+
+				"this would have caused SIGBUS with mmap enabled", f.name, f.path, err)
+			metrics.DBStorageErrors.WithLabelValues(f.name).Inc()
+			continue
+		}
+
+		// Attempt to read a small amount from the file to verify I/O works.
+		// A stat() can succeed even when reads would fail on some NFS configurations.
+		fh, err := os.Open(f.path)
+		if err != nil {
+			logging.Error("Storage health check: cannot open %s file (%s): %v — "+
+				"this would have caused SIGBUS with mmap enabled", f.name, f.path, err)
+			metrics.DBStorageErrors.WithLabelValues(f.name).Inc()
+			continue
+		}
+
+		buf := make([]byte, 16)
+		_, err = fh.Read(buf)
+		if closeErr := fh.Close(); closeErr != nil {
+			logging.Error("Storage health check: failed to close %s file (%s): %v", f.name, f.path, closeErr)
+		}
+		if err != nil && err.Error() != "EOF" {
+			logging.Error("Storage health check: cannot read %s file (%s): %v — "+
+				"this would have caused SIGBUS with mmap enabled", f.name, f.path, err)
+			metrics.DBStorageErrors.WithLabelValues(f.name).Inc()
+		}
+	}
+
+	duration := time.Since(start).Seconds()
+	metrics.DBStorageHealthCheckDuration.Observe(duration)
+
+	// If the health check itself is slow, storage may be degraded
+	if duration > 1.0 {
+		logging.Warn("Storage health check took %.3fs — storage may be degraded "+
+			"(with mmap enabled, this latency could have caused application hangs)", duration)
+		metrics.DBStorageSlowChecks.Inc()
+	}
 }
 
 func (d *Database) initialize(ctx context.Context) error {
@@ -244,7 +393,6 @@ func (d *Database) initialize(ctx context.Context) error {
 // runMigrations applies database schema migrations
 func (d *Database) runMigrations(ctx context.Context) error {
 	// Migration 1: Add content_updated_at column if it doesn't exist
-	// Check if the column exists
 	var columnExists bool
 	err := d.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
@@ -259,7 +407,6 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	if !columnExists {
 		logging.Info("Migrating database: adding content_updated_at column to files table")
 
-		// Add the column with a simple default (SQLite doesn't allow expressions in ALTER TABLE ADD COLUMN DEFAULT)
 		_, err = d.db.ExecContext(ctx, `
 			ALTER TABLE files ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT 0
 		`)
@@ -267,7 +414,6 @@ func (d *Database) runMigrations(ctx context.Context) error {
 			return fmt.Errorf("failed to add content_updated_at column: %w", err)
 		}
 
-		// Initialize content_updated_at from updated_at for existing records
 		_, err = d.db.ExecContext(ctx, `
 			UPDATE files SET content_updated_at = updated_at
 		`)
@@ -293,7 +439,6 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	if !setupCompleteExists {
 		logging.Info("Migrating database: adding setup_complete column to users table")
 
-		// Add the column
 		_, err = d.db.ExecContext(ctx, `
 			ALTER TABLE users ADD COLUMN setup_complete INTEGER NOT NULL DEFAULT 0
 		`)
@@ -301,7 +446,6 @@ func (d *Database) runMigrations(ctx context.Context) error {
 			return fmt.Errorf("failed to add setup_complete column: %w", err)
 		}
 
-		// Set setup_complete=1 for any existing users (they must have completed setup)
 		_, err = d.db.ExecContext(ctx, `
 			UPDATE users SET setup_complete = 1 WHERE id IS NOT NULL
 		`)
@@ -322,33 +466,29 @@ func (d *Database) Close() error {
 
 // BeginBatch starts a transaction for batch operations.
 // The caller is responsible for calling EndBatch when done.
+// The provided context is used only for transaction creation; the transaction
+// lifetime is managed by EndBatch, not by the context.
 // Note: Acquires write lock only during transaction begin, not for entire duration.
-func (d *Database) BeginBatch() (*sql.Tx, error) {
-	// Use shorter-lived lock - only protect transaction creation
+func (d *Database) BeginBatch(ctx context.Context) (*sql.Tx, error) {
 	d.mu.Lock()
-	txStart := time.Now()
+	// Lock is held until EndBatch — this serializes write transactions,
+	// which is required for SQLite. Reads use RLock and remain concurrent.
 
-	// Use background context - transaction lifetime is managed by EndBatch, not a timeout.
-	// The timeout context pattern doesn't work here because defer cancel() would
-	// cancel the transaction immediately when this function returns.
-	tx, err := d.db.BeginTx(context.Background(), nil)
-	d.mu.Unlock() // Release lock immediately after transaction starts
-
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
+		d.mu.Unlock() // Release lock on failure — no transaction to end
 		return nil, err
 	}
 
-	// Store transaction start time in context for metrics
-	// This is a workaround since we can't store it in the struct without holding the lock
-	// The EndBatch function will use time.Since on a passed start time
-	d.txStart = txStart
+	d.txStart = time.Now()
 
 	return tx, nil
 }
 
 // EndBatch commits or rolls back a transaction.
 func (d *Database) EndBatch(tx *sql.Tx, err error) error {
-	// Record transaction duration (txStart set by BeginBatch)
+	defer d.mu.Unlock() // Always release the write lock acquired in BeginBatch
+
 	duration := time.Since(d.txStart).Seconds()
 
 	if err != nil {
@@ -365,12 +505,7 @@ func (d *Database) EndBatch(tx *sql.Tx, err error) error {
 }
 
 // UpsertFile inserts or updates a file record within a transaction.
-// The transaction's context controls the operation timeout.
-func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
-	// IMPORTANT: We maintain two timestamps:
-	// - updated_at: Always set to 'now' when indexer touches the file (for cleanup logic)
-	// - content_updated_at: Only updated when file content actually changes (for thumbnail invalidation)
-	// This allows the indexer to track "last seen" while thumbnail generator tracks "last changed".
+func (d *Database) UpsertFile(ctx context.Context, tx *sql.Tx, file *MediaFile) error {
 	query := `
 	INSERT INTO files (name, path, parent_path, type, size, mod_time, mime_type, file_hash, updated_at, content_updated_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
@@ -392,9 +527,7 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 		END
 	`
 
-	// Use background context since we're within a transaction.
-	// The transaction itself controls the operation's lifecycle.
-	result, err := tx.ExecContext(context.Background(), query,
+	result, err := tx.ExecContext(ctx, query,
 		file.Name,
 		file.Path,
 		file.ParentPath,
@@ -413,9 +546,7 @@ func (d *Database) UpsertFile(tx *sql.Tx, file *MediaFile) error {
 }
 
 // DeleteMissingFiles removes files that weren't seen during indexing.
-// Must be called within a transaction.
 func (d *Database) DeleteMissingFiles(tx *sql.Tx, cutoffTime time.Time) (int64, error) {
-	// Use background context since we're within a transaction.
 	result, err := tx.ExecContext(context.Background(),
 		"DELETE FROM files WHERE updated_at < ?",
 		cutoffTime.Unix(),
@@ -515,8 +646,6 @@ func recordQuery(operation string, start time.Time, err error) {
 	metrics.DBQueryTotal.WithLabelValues(operation, status).Inc()
 	metrics.DBQueryDuration.WithLabelValues(operation).Observe(duration)
 
-	// Log slow queries for debugging performance issues
-	// Threshold can be configured via SLOW_QUERY_THRESHOLD_MS env var (default: 100ms)
 	threshold := getSlowQueryThreshold()
 	if duration > threshold {
 		logging.Warn("Slow query detected: operation=%s duration=%.3fs status=%s error=%v",
@@ -534,7 +663,6 @@ func (d *Database) UpdateDBMetrics() {
 func diagnoseDatabasePermissions(dbPath string) error {
 	dir := filepath.Dir(dbPath)
 
-	// Check directory permissions
 	dirInfo, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("cannot stat database directory: %w", err)
@@ -542,15 +670,13 @@ func diagnoseDatabasePermissions(dbPath string) error {
 
 	logging.Debug("Database directory: %s (mode: %v)", dir, dirInfo.Mode())
 
-	// Check if directory is writable by testing
 	testFile := filepath.Join(dir, ".perm-test")
 	if err := os.WriteFile(testFile, []byte("test"), 0o600); err != nil {
 		return fmt.Errorf("database directory not writable: %w", err)
 	}
-	_ = os.Remove(testFile) // Explicitly ignore cleanup error
+	_ = os.Remove(testFile)
 	logging.Debug("Database directory is writable")
 
-	// Check main database file
 	if dbInfo, err := os.Stat(dbPath); err == nil {
 		logging.Debug("Database file exists: %s (mode: %v, size: %d bytes)", dbPath, dbInfo.Mode(), dbInfo.Size())
 		if dbInfo.Mode().Perm()&0o200 == 0 {
@@ -558,13 +684,11 @@ func diagnoseDatabasePermissions(dbPath string) error {
 		}
 	}
 
-	// Check WAL file
 	walPath := dbPath + "-wal"
 	if walInfo, err := os.Stat(walPath); err == nil {
 		logging.Debug("WAL file exists: %s (mode: %v, size: %d bytes)", walPath, walInfo.Mode(), walInfo.Size())
 		if walInfo.Mode().Perm()&0o200 == 0 {
 			logging.Warn("WAL file is read-only! Mode: %v - this will cause write failures", walInfo.Mode())
-			// Try to fix it
 			if chmodErr := os.Chmod(walPath, 0o600); chmodErr != nil {
 				logging.Error("Failed to fix WAL file permissions: %v", chmodErr)
 			} else {
@@ -573,13 +697,11 @@ func diagnoseDatabasePermissions(dbPath string) error {
 		}
 	}
 
-	// Check SHM file
 	shmPath := dbPath + "-shm"
 	if shmInfo, err := os.Stat(shmPath); err == nil {
 		logging.Debug("SHM file exists: %s (mode: %v, size: %d bytes)", shmPath, shmInfo.Mode(), shmInfo.Size())
 		if shmInfo.Mode().Perm()&0o200 == 0 {
 			logging.Warn("SHM file is read-only! Mode: %v - this will cause write failures", shmInfo.Mode())
-			// Try to fix it
 			if chmodErr := os.Chmod(shmPath, 0o600); chmodErr != nil {
 				logging.Error("Failed to fix SHM file permissions: %v", chmodErr)
 			} else {

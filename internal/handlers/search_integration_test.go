@@ -90,9 +90,9 @@ func addSearchTestFile(t *testing.T, db *database.Database, mediaDir, relPath st
 	if err != nil {
 		t.Fatalf("failed to stat file: %v", err)
 	}
-
+	ctx := context.Background()
 	// Insert into database
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -105,7 +105,7 @@ func addSearchTestFile(t *testing.T, db *database.Database, mediaDir, relPath st
 		Type:    fileType,
 	}
 
-	if err := db.UpsertFile(tx, mediaFile); err != nil {
+	if err := db.UpsertFile(ctx, tx, mediaFile); err != nil {
 		t.Fatalf("failed to insert file: %v", err)
 	}
 

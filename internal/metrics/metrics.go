@@ -67,6 +67,46 @@ var (
 	)
 )
 
+// Database mmap and storage health metrics
+var (
+	DBMmapOverrideApplied = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_db_mmap_override_applied_total",
+			Help: "Number of times mmap was overridden to 0 (indicates system SQLite had non-zero DEFAULT_MMAP_SIZE)",
+		},
+	)
+
+	DBMmapStatus = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_db_mmap_size_bytes",
+			Help: "Current mmap_size setting in bytes (should be 0 for SIGBUS protection)",
+		},
+	)
+
+	DBStorageErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_db_storage_errors_total",
+			Help: "Storage I/O errors detected during health checks — these would have caused SIGBUS with mmap enabled",
+		},
+		[]string{"file"}, // "main", "wal", "shm"
+	)
+
+	DBStorageHealthCheckDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_db_storage_health_check_duration_seconds",
+			Help:    "Duration of database storage health checks",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+	)
+
+	DBStorageSlowChecks = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_db_storage_slow_checks_total",
+			Help: "Number of storage health checks that took longer than 1 second — indicates degraded storage",
+		},
+	)
+)
+
 // Indexer metrics
 var (
 	IndexerRunsTotal = promauto.NewCounter(

@@ -112,7 +112,7 @@ func TestGetFavoritesIntegration(t *testing.T) {
 	}
 
 	// Insert files first
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for _, fav := range favorites {
 		file := &MediaFile{
 			Name:       fav.name,
@@ -122,7 +122,7 @@ func TestGetFavoritesIntegration(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(tx, file)
+		_ = db.UpsertFile(ctx, tx, file)
 	}
 	_ = db.EndBatch(tx, nil)
 

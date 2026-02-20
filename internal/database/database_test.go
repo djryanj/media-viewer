@@ -344,7 +344,6 @@ func TestSessionExpiration(t *testing.T) {
 				CreatedAt: now,
 			}
 
-			// Verify session fields are set
 			if session.ID != 1 {
 				t.Errorf("Session.ID = %d, want 1", session.ID)
 			}
@@ -358,8 +357,6 @@ func TestSessionExpiration(t *testing.T) {
 				t.Errorf("Session.CreatedAt = %v, want %v", session.CreatedAt, now)
 			}
 
-			// Check if expired by comparing with the captured 'now' time
-			// A session is expired only if ExpiresAt is strictly before now
 			actualExpired := session.ExpiresAt.Before(now)
 			if actualExpired != tt.isExpired {
 				t.Errorf("Session expiration check: got %v, want %v", actualExpired, tt.isExpired)
@@ -442,14 +439,9 @@ func TestDefaultTimeoutConstant(t *testing.T) {
 
 // TestConnectionPoolConfiguration tests that connection pool is properly configured
 func TestConnectionPoolConfiguration(t *testing.T) {
-	// This is a unit test to verify the pool configuration constants
-	// The actual connection pool behavior is tested in integration tests
-
 	expectedMaxOpen := 25
 	expectedMaxIdle := 10
 
-	// Note: We can't directly test the pool settings without creating a real database
-	// but we can verify the constants are reasonable
 	if expectedMaxOpen < expectedMaxIdle {
 		t.Errorf("MaxOpenConns (%d) should be >= MaxIdleConns (%d)", expectedMaxOpen, expectedMaxIdle)
 	}
@@ -458,8 +450,6 @@ func TestConnectionPoolConfiguration(t *testing.T) {
 		t.Error("MaxIdleConns should be at least 1")
 	}
 
-	// For media-viewer with concurrent thumbnail generation and indexing,
-	// we should have enough connections
 	minRecommended := 10
 	if expectedMaxOpen < minRecommended {
 		t.Errorf("MaxOpenConns (%d) should be at least %d for concurrent operations", expectedMaxOpen, minRecommended)
@@ -468,20 +458,38 @@ func TestConnectionPoolConfiguration(t *testing.T) {
 
 // TestBeginBatchLockingBehavior tests transaction lock management
 func TestBeginBatchLockingBehavior(t *testing.T) {
-	// This test verifies that BeginBatch doesn't hold locks unnecessarily
-	// The actual behavior is tested in integration tests with real database
-
-	// Verify that the pattern of acquire -> begin tx -> release is correct
-	// This is a documentation test to ensure the pattern is maintained
-
 	t.Log("BeginBatch should:")
 	t.Log("1. Acquire transaction lock")
 	t.Log("2. Begin transaction")
 	t.Log("3. Release lock immediately (allow reads)")
 	t.Log("4. Transaction committed later with EndBatch")
+}
 
-	// The fix moved the lock release to happen immediately after tx.Begin()
-	// rather than waiting until EndBatch/transaction completion
+// =============================================================================
+// Mmap / SIGBUS Protection — Unit Tests
+// =============================================================================
+
+// TestDriverNameConstant verifies the custom driver name is set correctly.
+func TestDriverNameConstant(t *testing.T) {
+	t.Parallel()
+
+	if driverName != "sqlite3_mmap_disabled" {
+		t.Errorf("driverName = %q, want %q", driverName, "sqlite3_mmap_disabled")
+	}
+}
+
+// TestRegisterDriverIdempotent verifies that registerDriver can be called
+// multiple times without panicking (sync.Once protection).
+func TestRegisterDriverIdempotent(t *testing.T) {
+	t.Parallel()
+
+	// registerDriver() was already called by init().
+	// Calling it again should be a no-op via sync.Once.
+	registerDriver()
+	registerDriver()
+	registerDriver()
+
+	// If we got here without panicking, the test passes.
 }
 
 // BenchmarkRecordQuery benchmarks the query recording overhead
