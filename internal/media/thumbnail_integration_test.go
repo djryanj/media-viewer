@@ -1207,7 +1207,7 @@ func TestConcurrentRunGeneration(t *testing.T) {
 
 	// Set up database
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}

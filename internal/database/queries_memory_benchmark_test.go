@@ -84,7 +84,7 @@ func setupGetAllFilesBenchmark(b *testing.B, fileCount int) (db *Database, clean
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}

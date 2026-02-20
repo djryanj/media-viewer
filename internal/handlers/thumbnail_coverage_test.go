@@ -44,7 +44,7 @@ func setupThumbnailCoverageTest(t *testing.T) (h *Handlers, mediaDir string, cle
 		t.Fatalf("failed to create cache directory: %v", err)
 	}
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

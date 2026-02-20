@@ -16,7 +16,7 @@ func setupBenchmarkDatabase(b *testing.B, fileCount int, favoriteRatio float64, 
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -252,7 +252,7 @@ func BenchmarkGetMediaInDirectory_Empty(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -362,7 +362,7 @@ func setupBenchmarkDatabaseWithDirs(b *testing.B, filesPerDir, numDirs int, favo
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}

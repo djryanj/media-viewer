@@ -31,7 +31,7 @@ func setupMetricsIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	cacheDir := tempDir + "/cache"
 
 	// Initialize database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

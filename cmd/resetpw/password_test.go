@@ -173,7 +173,7 @@ func TestPasswordUpdateFlowIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestPasswordUpdateInvalidatesSessionsIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestResetPasswordWithNoExistingUserIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestPasswordUpdateWithDatabaseErrorIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestMultiplePasswordUpdatesIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestPasswordWithSpecialCharactersIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestPasswordWithSpecialCharactersIntegration(t *testing.T) {
 			// Create new database for each test
 			testDir := t.TempDir()
 			testPath := filepath.Join(testDir, "test.db")
-			testDB, err := database.New(ctx, testPath)
+			testDB, _, err := database.New(ctx, testPath)
 			if err != nil {
 				t.Fatalf("failed to create database: %v", err)
 			}
@@ -448,7 +448,7 @@ func TestShowStatusDatabaseStatesIntegration(t *testing.T) {
 			tempDir := t.TempDir()
 			dbPath := filepath.Join(tempDir, "test.db")
 
-			db, err := database.New(context.Background(), dbPath)
+			db, _, err := database.New(context.Background(), dbPath)
 			if err != nil {
 				t.Fatalf("failed to create database: %v", err)
 			}
@@ -483,7 +483,7 @@ func TestStdinReadErrorsIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

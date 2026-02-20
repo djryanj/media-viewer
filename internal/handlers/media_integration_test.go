@@ -43,7 +43,7 @@ func setupMediaIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	}
 
 	// Create real database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -91,7 +91,7 @@ func setupMediaIntegrationTestWithThumbnails(t *testing.T) (h *Handlers, cleanup
 	}
 
 	// Create real database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -2750,7 +2750,7 @@ exit 187
 	_ = os.Setenv("PATH", tempDir+":"+oldPath)
 
 	// Create real database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -2896,7 +2896,7 @@ exit 187
 	_ = os.Setenv("PATH", tempDir+":"+oldPath)
 
 	// Create dependencies
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

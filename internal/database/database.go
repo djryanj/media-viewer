@@ -71,40 +71,45 @@ type Database struct {
 	txStart time.Time // Track transaction start time for metrics
 }
 
-// New creates a new Database instance.
+// Info holds diagnostic info about the database initialization
+type Info struct {
+	Path              string
+	PermissionWarning string
+	SQLiteVersion     string
+	MmapStatus        string
+	MmapWarning       string
+}
+
+// New creates a new Database instance and returns diagnostic info for logging.
 // IMPORTANT: dbPath should be the full path to the database FILE (e.g., "/database/media.db"),
 // and the parent directory must already exist and be writable.
 // Use startup.LoadConfig() to ensure proper directory validation before calling this.
-func New(ctx context.Context, dbPath string) (*Database, error) {
-	logging.Info("Database path: %s", dbPath)
+func New(ctx context.Context, dbPath string) (*Database, *Info, error) {
+	info := &Info{Path: dbPath}
 
 	// Diagnose potential permission issues
 	if err := diagnoseDatabasePermissions(dbPath); err != nil {
-		logging.Warn("Database permission diagnostics: %v", err)
+		info.PermissionWarning = err.Error()
 	}
 
 	// Use WAL mode and other optimizations
-	// busy_timeout helps prevent "database is locked" errors
-	// NOTE: mmap_size is NOT set via DSN — go-sqlite3 does not support it as a DSN param.
-	// Instead, it is set to 0 via ConnectHook in our custom driver (see registerDriver).
 	connStr := fmt.Sprintf("%s?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=10000&_temp_store=MEMORY&_busy_timeout=5000", dbPath)
 
 	db, err := sql.Open(driverName, connStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, info, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	if err := db.PingContext(pingCtx); err != nil {
-		if closeErr := db.Close(); closeErr != nil {
-			logging.Error("failed to close database after ping failure: %v", closeErr)
+		if cerr := db.Close(); cerr != nil {
+			logging.Warn("failed to close db after ping failure: %v", cerr)
 		}
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, info, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Allow multiple readers - increased for better concurrency under load
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(time.Hour)
@@ -115,50 +120,46 @@ func New(ctx context.Context, dbPath string) (*Database, error) {
 	}
 
 	if err := d.initialize(ctx); err != nil {
-		if closeErr := db.Close(); closeErr != nil {
-			logging.Error("failed to close database after initialization failure: %v", closeErr)
+		if cerr := db.Close(); cerr != nil {
+			logging.Warn("failed to close db after initialize failure: %v", cerr)
 		}
-		return nil, fmt.Errorf("failed to initialize database schema: %w", err)
+		return nil, info, fmt.Errorf("failed to initialize database schema: %w", err)
 	}
 
-	// Verify mmap is disabled and log SQLite environment info
-	d.logSQLiteConfig(ctx)
+	// Gather SQLite version and mmap status for logging
+	version, mmapStatus, mmapWarning := d.getSQLiteDiagnostics(ctx)
+	info.SQLiteVersion = version
+	info.MmapStatus = mmapStatus
+	info.MmapWarning = mmapWarning
 
-	logging.Info("Database initialized successfully at %s", dbPath)
-	return d, nil
+	return d, info, nil
 }
 
-// logSQLiteConfig logs the SQLite configuration for diagnostics and verifies
-// that mmap is disabled. This helps operators confirm the SIGBUS fix is active
-// and detects if the system SQLite has a non-zero DEFAULT_MMAP_SIZE.
-func (d *Database) logSQLiteConfig(ctx context.Context) {
+// getSQLiteDiagnostics returns SQLite version, mmap status, and any mmap warnings for logging in main.go
+func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatus, mmapWarning string) {
 	queryCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Log SQLite version
-	var version string
-	if err := d.db.QueryRowContext(queryCtx, "SELECT sqlite_version()").Scan(&version); err == nil {
-		logging.Info("SQLite version: %s", version)
+	// Get SQLite version
+	if err := d.db.QueryRowContext(queryCtx, "SELECT sqlite_version()").Scan(&version); err != nil {
+		version = "unknown"
 	}
 
 	// Check compiled-in default mmap size
 	rows, err := d.db.QueryContext(queryCtx, "PRAGMA compile_options")
 	if err == nil {
 		defer func() {
-			if closeErr := rows.Close(); closeErr != nil {
-				logging.Error("failed to close compile_options rows: %v", closeErr)
+			if cerr := rows.Close(); cerr != nil {
+				logging.Warn("failed to close rows: %v", cerr)
 			}
 		}()
 		for rows.Next() {
 			var opt string
 			if err := rows.Scan(&opt); err == nil {
-				// Look for DEFAULT_MMAP_SIZE=N where N > 0
 				if len(opt) > 18 && opt[:18] == "DEFAULT_MMAP_SIZE=" {
 					defaultVal := opt[18:]
 					if defaultVal != "0" {
-						logging.Warn("System SQLite compiled with %s — without our fix, "+
-							"mmap would be enabled by default, risking SIGBUS on storage failures. "+
-							"Our ConnectHook sets mmap_size=0 to prevent this.", opt)
+						mmapWarning = fmt.Sprintf("System SQLite compiled with %s — without our fix, mmap would be enabled by default, risking SIGBUS on storage failures. Our ConnectHook sets mmap_size=0 to prevent this.", opt)
 						metrics.DBMmapOverrideApplied.Inc()
 					}
 				}
@@ -170,13 +171,16 @@ func (d *Database) logSQLiteConfig(ctx context.Context) {
 	var mmapSize int64
 	if err := d.db.QueryRowContext(queryCtx, "PRAGMA mmap_size").Scan(&mmapSize); err == nil {
 		if mmapSize != 0 {
-			logging.Error("CRITICAL: mmap_size is %d but should be 0 — SIGBUS protection is NOT active!", mmapSize)
+			mmapStatus = fmt.Sprintf("CRITICAL: mmap_size is %d but should be 0 — SIGBUS protection is NOT active!", mmapSize)
 			metrics.DBMmapStatus.Set(float64(mmapSize))
 		} else {
-			logging.Info("mmap_size = 0 (SIGBUS protection active)")
+			mmapStatus = "mmap_size = 0 (SIGBUS protection active)"
 			metrics.DBMmapStatus.Set(0)
 		}
+	} else {
+		mmapStatus = "unknown"
 	}
+	return
 }
 
 // CheckStorageHealth verifies that the database's underlying storage is accessible.

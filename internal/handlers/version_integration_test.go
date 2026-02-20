@@ -39,7 +39,7 @@ func setupVersionIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	}
 
 	// Initialize database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

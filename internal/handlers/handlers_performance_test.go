@@ -20,7 +20,7 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -81,7 +81,7 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -149,7 +149,7 @@ func BenchmarkGetMediaFilesEndpoint(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -218,7 +218,7 @@ func BenchmarkGetMediaFilesEndpoint_LargeDirectory(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}

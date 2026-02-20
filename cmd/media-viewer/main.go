@@ -80,11 +80,11 @@ func main() {
 
 	// Initialize database
 	dbStart := time.Now()
-	db, err := database.New(bgCtx, config.DatabasePath)
+	db, dbInfo, err := database.New(bgCtx, config.DatabasePath)
 	if err != nil {
 		startup.LogFatal("Failed to initialize database: %v", err)
 	}
-	startup.LogDatabaseInit(time.Since(dbStart))
+	startup.LogDatabaseInit(time.Since(dbStart), dbInfo)
 
 	// Clean up expired sessions periodically (use configured interval)
 	go func() {

@@ -18,7 +18,7 @@ func TestListDirectory_FolderCountPerformanceIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestGetMediaInDirectory_PerformanceIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestPerformanceOptimizations_EndToEnd(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestSlowQueryLogging_Integration(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}

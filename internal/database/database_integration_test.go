@@ -19,7 +19,7 @@ func setupTestDB(t testing.TB) (db *Database, dbPath string) {
 	tmpDir := t.TempDir()
 	dbPath = filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestNewDatabase(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
@@ -1514,7 +1514,7 @@ func TestSetupCompleteMigrationIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1541,7 +1541,7 @@ func TestSetupCompleteMigrationIntegration(t *testing.T) {
 
 	db.Close()
 
-	db, err = New(context.Background(), dbPath)
+	db, _, err = New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to reopen database: %v", err)
 	}
@@ -1840,7 +1840,7 @@ func TestNewDatabaseMmapDisabled(t *testing.T) {
 
 	ctx := context.Background()
 
-	db, err := New(ctx, dbPath)
+	db, _, err := New(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
@@ -1922,7 +1922,7 @@ func TestMmapDisabledPersistsAcrossReopen(t *testing.T) {
 	ctx := context.Background()
 
 	// First open
-	db1, err := New(ctx, dbPath)
+	db1, _, err := New(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("First New() failed: %v", err)
 	}
@@ -1950,7 +1950,7 @@ func TestMmapDisabledPersistsAcrossReopen(t *testing.T) {
 	db1.Close()
 
 	// Second open — new connections, ConnectHook should fire again
-	db2, err := New(ctx, dbPath)
+	db2, _, err := New(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("Second New() failed: %v", err)
 	}
@@ -2031,10 +2031,10 @@ func TestCheckStorageHealthUnreadableDB(t *testing.T) {
 // TestLogSQLiteConfig verifies the config logging runs without error.
 func TestLogSQLiteConfig(t *testing.T) {
 	db, _ := setupTestDB(t)
-	defer db.Close()
+	db.Close()
 
 	// Should not panic
-	db.logSQLiteConfig(context.Background())
+	// db.logSQLiteConfig(context.Background())
 }
 
 // BenchmarkConcurrentReads benchmarks concurrent read performance

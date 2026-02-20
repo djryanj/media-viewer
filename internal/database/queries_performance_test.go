@@ -32,7 +32,7 @@ func TestSlowQueryLogging(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -143,7 +143,7 @@ func BenchmarkListDirectory_WithFolderCounts(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -221,7 +221,7 @@ func BenchmarkListDirectory_LargeFolderCounts(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -323,7 +323,7 @@ func BenchmarkGetMediaInDirectory_WithManyTags(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestListDirectory_FolderCountAccuracy(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
