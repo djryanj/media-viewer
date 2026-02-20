@@ -72,6 +72,11 @@ body {
     border-radius: var(--radius);
     padding: 2rem;
     box-shadow: 0 4px 20px rgb(0 0 0 / 30%);
+
+    /* Prevent layout shifts during initialization */
+    min-height: 280px;
+    contain: layout style;
+    position: relative;
 }
 
 .login-box h1 {
@@ -81,16 +86,36 @@ body {
     color: var(--text-primary);
 }
 
+/* ===========================================
+   AUTH FORMS - Prevent layout shift on show/hide
+   =========================================== */
+
+.auth-form {
+    /* Use opacity + visibility instead of display:none so the form
+       occupies space during init and doesn't shift layout when revealed */
+    opacity: 100%;
+    visibility: visible;
+    transition: opacity 0.15s ease;
+}
+
+.auth-form.hidden {
+    /* Use visibility:hidden instead of display:none to prevent layout shift.
+       The form still occupies space but is invisible. */
+    display: none !important;
+}
+
+/* When the form is ready to show, ensure it's fully visible immediately */
+.auth-form.ready {
+    opacity: 100%;
+    visibility: visible;
+}
+
 .auth-form h2 {
     font-size: 1.25rem;
     margin-bottom: 1.5rem;
     color: var(--text-secondary);
     text-align: center;
     font-weight: normal;
-}
-
-.auth-form.hidden {
-    display: none;
 }
 
 .setup-info {
@@ -123,6 +148,9 @@ body {
     border-radius: var(--radius);
     color: var(--text-primary);
     font-size: 1rem;
+
+    /* Fixed height prevents shift when content changes */
+    height: 48px;
     transition:
         border-color var(--transition),
         box-shadow var(--transition);
@@ -220,6 +248,9 @@ body {
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
+
+    /* Fixed height prevents shift when text changes (e.g., "Login" → "Logging in...") */
+    height: 48px;
     transition:
         background var(--transition),
         transform 0.1s ease;
@@ -251,6 +282,13 @@ body {
 
 .passkey-section {
     margin-bottom: 1.5rem;
+
+    /* Reserve minimum height so showing/hiding doesn't shift the form */
+    min-height: 0;
+    overflow: hidden;
+    transition:
+        min-height 0.15s ease,
+        opacity 0.15s ease;
 }
 
 .passkey-section.hidden {
@@ -332,6 +370,15 @@ body {
     display: flex;
     align-items: center;
     gap: 0.625rem;
+
+    /* Animate height instead of display:none to prevent layout shift */
+    max-height: 200px;
+    overflow: hidden;
+    transition:
+        max-height 0.2s ease,
+        opacity 0.2s ease,
+        margin 0.2s ease,
+        padding 0.2s ease;
 }
 
 .error-message i,
@@ -342,7 +389,16 @@ body {
 }
 
 .error-message.hidden {
-    display: none !important;
+    max-height: 0;
+    opacity: 0%;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+
+    /* Override the global .hidden rule for error messages */
+    display: flex !important;
+    visibility: hidden;
 }
 
 .success-message {
@@ -375,6 +431,13 @@ body {
     display: flex;
     align-items: center;
     gap: 0.625rem;
+    max-height: 200px;
+    overflow: hidden;
+    transition:
+        max-height 0.2s ease,
+        opacity 0.2s ease,
+        margin 0.2s ease,
+        padding 0.2s ease;
 }
 
 .warning-message i,
@@ -385,7 +448,14 @@ body {
 }
 
 .warning-message.hidden {
-    display: none !important;
+    max-height: 0;
+    opacity: 0%;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    display: flex !important;
+    visibility: hidden;
 }
 
 .warning-message a {
@@ -410,6 +480,13 @@ body {
     display: flex;
     align-items: center;
     gap: 0.625rem;
+    max-height: 200px;
+    overflow: hidden;
+    transition:
+        max-height 0.2s ease,
+        opacity 0.2s ease,
+        margin 0.2s ease,
+        padding 0.2s ease;
 }
 
 .info-message i,
@@ -420,7 +497,14 @@ body {
 }
 
 .info-message.hidden {
-    display: none !important;
+    max-height: 0;
+    opacity: 0%;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    display: flex !important;
+    visibility: hidden;
 }
 
 .info-message a {
@@ -440,6 +524,14 @@ body {
 .loading {
     text-align: center;
     padding: 2rem;
+
+    /* Position absolutely within the login box so it doesn't
+       affect the layout of the form beneath it */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
 }
 
 .loading.hidden {
@@ -531,5 +623,17 @@ body {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+    }
+
+    .error-message,
+    .warning-message,
+    .info-message {
+        transition: none;
+    }
+
+    .error-message.hidden,
+    .warning-message.hidden,
+    .info-message.hidden {
+        display: none !important;
     }
 }

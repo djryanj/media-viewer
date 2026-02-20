@@ -418,7 +418,7 @@ frontend-lint-js:
 	@echo "Linting JavaScript..."
 	cd $(STATIC_DIR) && npm run lint:js
 
-frontend-lint-css:
+css-lint:
 	@echo "Linting CSS..."
 	cd $(STATIC_DIR) && npm run lint:css
 
@@ -652,12 +652,18 @@ frontend-test-e2e-file:
 			file_path="$$file"; \
 			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.spec\.js$$||'); \
 		else \
-			file_path="e2e/specs/**/*$$file*.spec.js"; \
+			file_path=$$(find e2e/specs -name "*$$file*.spec.js" -type f | head -1); \
 			file_name="$$file"; \
+			if [ -z "$$file_path" ]; then \
+				echo "Error: No spec file found matching '$$file'"; \
+				echo "Searched: e2e/specs/**/*$$file*.spec.js"; \
+				exit 1; \
+			fi; \
 		fi; \
 		echo "Running E2E tests for $$file_path... (logging to ../e2e-$$file_name.log)"; \
-		npm run test:e2e -- "$$file_path" 2>&1 | tee "../e2e-$$file_name.log"; \
+		npx playwright test "$$file_path" 2>&1 | tee "../e2e-$$file_name.log"; \
 	done
+
 
 # Run E2E tests in headed mode (visible browser)
 frontend-test-e2e-headed:
@@ -719,6 +725,8 @@ clean:
 	rm -f resetpw
 	rm -f coverage.out coverage.html
 	rm -f *.log
+	rm -rf $(STATIC_DIR)/e2e/test-results/
+	rm -rf $(STATIC_DIR)/coverage/
 
 clean-all: clean
 	@echo "Cleaning all artifacts including node_modules..."
