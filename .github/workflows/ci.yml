@@ -71,8 +71,7 @@ jobs:
         runs-on: ubuntu-latest
         needs: changes
         if: |
-            github.event_name == 'pull_request' &&
-            (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true')
+            needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -325,16 +324,6 @@ jobs:
               with:
                   go-version-file: go.mod
                   cache: true
-
-            - name: Restore sample media cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
-
-            - name: Copy sample media to runtime location
-              run: |
-                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
 
             - name: Run integration tests
               run: |
