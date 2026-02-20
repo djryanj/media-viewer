@@ -7,12 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.13.4] - Unreleased
+
+### Added
+
+- Extensive frontend test suite added along with CI and other requirements. [#49](https://github.com/djryanj/media-viewer/issues/49))
+- Extended renovate config to address golangci (see below in fixed section)
+
+### Fixed
+
+- (Frontend) various bugs discovered through the CI process. [#49](https://github.com/djryanj/media-viewer/issues/49))
+- (Backend) during CI update, a new version of golangci was being used which uncovered some additional lint errors. These were also fixed. [#49](https://github.com/djryanj/media-viewer/issues/49))
+
 ## [0.13.3] - 2026-02-13
 
 
 ### Changed
 
 - build(deps): bump renovatebot/github-action from 46.0.2 to 46.1.1 ([#282](https://github.com/djryanj/media-viewer/pull/282))
+- build(deps): bump actions/github-script from 7 to 8 ([#283](https://github.com/djryanj/media-viewer/pull/283))
 ### Added
 
 - build(docs): Added a github action to automatically create changelog entries for bot-submitted PRs ([#276](https://github.com/djryanj/media-viewer/issues/276))

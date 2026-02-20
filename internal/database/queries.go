@@ -31,17 +31,16 @@ const (
 	SortAsc SortOrder = "asc"
 	// SortDesc sorts in descending order.
 	SortDesc SortOrder = "desc"
-
 	// NameCollation is the SQL collation for case-insensitive name sorting.
 	NameCollation = "name COLLATE NOCASE"
-	// FilterTypeClause is the SQL filter clause for file type matching.
-	FilterTypeClause = " AND f.type = ?"
-	// TagPrefix is the prefix used for tag search queries.
-	TagPrefix = "tag:"
 	// TagSuggestionType is the type identifier for tag suggestions.
 	TagSuggestionType = "tag"
 	// TagExcludeSuggestionType is the type identifier for tag exclusion suggestions.
 	TagExcludeSuggestionType = "tag-exclude"
+	// FilterTypeClause is the SQL filter clause for file type matching.
+	FilterTypeClause = " AND f.type = ?"
+	// TagPrefix is the prefix used for tag search queries.
+	TagPrefix = "tag:"
 )
 
 // ListOptions specifies options for listing directory contents.
@@ -124,6 +123,13 @@ func normalizeListOptions(opts ListOptions) ListOptions {
 }
 
 // countDirectoryItemsUnlocked returns the total count of items in a directory.
+// Constants for query values
+const (
+	SortAscStr       = "ASC"
+	SortDescStr      = "DESC"
+	NameCollationStr = "f.name COLLATE NOCASE"
+)
+
 // Caller must hold at least a read lock.
 func (d *Database) countDirectoryItemsUnlocked(ctx context.Context, opts ListOptions) (int, error) {
 	logging.Debug("ListDirectory: getting count...")
@@ -152,7 +158,7 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 	logging.Debug("ListDirectory: executing select query...")
 
 	sortColumn := getSortColumn(opts.SortField)
-	sortDir := "ASC"
+	sortDir := SortAscStr
 	if opts.SortOrder == SortDesc {
 		sortDir = "DESC"
 	}
@@ -190,12 +196,30 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 	// Add table prefix to sort column for JOIN query
 	var orderColumn string
 	if sortColumn == NameCollation {
-		orderColumn = "f.name COLLATE NOCASE"
+		orderColumn = NameCollationStr
 	} else {
 		orderColumn = "f." + sortColumn
 	}
 
-	selectQuery += fmt.Sprintf(` ORDER BY (CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END), %s %s`, orderColumn, sortDir)
+	// Validate orderColumn and sortDir to prevent SQL injection
+	allowedColumns := map[string]bool{
+		"f.name COLLATE NOCASE": true,
+		"f.mod_time":            true,
+		"f.size":                true,
+		"f.type":                true,
+	}
+	allowedSortDirs := map[string]bool{
+		SortAscStr:  true,
+		SortDescStr: true,
+	}
+	if !allowedColumns[orderColumn] {
+		orderColumn = NameCollationStr
+	}
+	if !allowedSortDirs[sortDir] {
+		sortDir = SortAscStr
+	}
+	// Values are validated against static allowlists above; column names cannot be parameterized in SQL
+	selectQuery += fmt.Sprintf(` ORDER BY (CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END), %s %s`, orderColumn, sortDir) //nolint:gosec // G202 - orderColumn and sortDir are validated against static allowlists; SQL column names cannot be parameterized
 	selectQuery += ` LIMIT ? OFFSET ?`
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
@@ -738,7 +762,7 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 	offset := (opts.Page - 1) * opts.PageSize
 
 	// Add pagination
-	paginatedQuery := combinedQuery + " LIMIT ? OFFSET ?"
+	paginatedQuery := combinedQuery + " LIMIT ? OFFSET ?" //nolint:gosec // G202 false positive - LIMIT and OFFSET use parameterized placeholders (?), values are bound via selectArgs
 
 	// Build select args
 	selectArgs := make([]interface{}, 0, len(ftsArgs)+len(tagArgs)+2)

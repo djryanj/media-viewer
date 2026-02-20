@@ -311,6 +311,7 @@ const InfiniteScroll = {
         this.state.currentPage = 1;
         this.state.totalItems = 0;
         this.state.loadedItems = [];
+        this.state.loadFailed = false;
         this.stopObserving();
         this.hideSkeletons();
         this.hideLoadMoreButton();

@@ -6,12 +6,15 @@ set +e
 # Uses multiple sources to get a diverse collection
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MEDIA_DIR="${SCRIPT_DIR}/../sample-media"
+MEDIA_DIR="${MEDIA_DIR:-${SCRIPT_DIR}/../sample-media}"
 
 # Configuration
 NUM_IMAGES=${NUM_IMAGES:-250}
 NUM_VIDEOS=${NUM_VIDEOS:-15}
 PEXELS_API_KEY="${PEXELS_API_KEY:-}"
+
+# Path to the sample.wpl file (same directory as this script)
+SAMPLE_WPL="${SCRIPT_DIR}/sample.wpl"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -31,18 +34,18 @@ echo ""
 
 # Check if sample-media directory exists, create if not
 if [ ! -d "$MEDIA_DIR" ]; then
-    echo -e "${YELLOW}Creating sample-media directory...${NC}"
+    echo -e "${YELLOW}[INFO] Creating sample-media directory...${NC}"
     mkdir -p "$MEDIA_DIR"
     if [ $? -ne 0 ]; then
-        echo -e "${RED}❌ Failed to create sample-media directory${NC}"
+        echo -e "${RED}[ERROR] Failed to create sample-media directory${NC}"
         exit 1
     fi
-    echo -e "${GREEN}✅ Created: $MEDIA_DIR${NC}"
+    echo -e "${GREEN}[OK] Created: $MEDIA_DIR${NC}"
     echo ""
 fi
 
 # Count existing files
-existing_count=$(find "$MEDIA_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" \) | wc -l)
+existing_count=$(find "$MEDIA_DIR" -type f $ -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" $ | wc -l)
 echo -e "${GREEN}Existing files in sample-media: $existing_count (will be preserved)${NC}"
 echo ""
 
@@ -55,7 +58,7 @@ validate_image() {
     if command -v file &> /dev/null; then
         file_type=$(file -b --mime-type "$filepath" 2>/dev/null)
         if $verbose; then
-            echo "  🔍 File type detected: $file_type" >&2
+            echo "  [DEBUG] File type detected: $file_type" >&2
         fi
         if [[ "$file_type" =~ ^image/ ]]; then
             return 0
@@ -64,7 +67,7 @@ validate_image() {
     # Fallback: check file size (images should be at least a few KB)
     local size=$(stat -f%z "$filepath" 2>/dev/null || stat -c%s "$filepath" 2>/dev/null)
     if $verbose; then
-        echo "  🔍 File size: $size bytes" >&2
+        echo "  [DEBUG] File size: $size bytes" >&2
     fi
     if [ -f "$filepath" ] && [ $size -gt 5000 ]; then
         return 0
@@ -83,7 +86,7 @@ validate_video() {
             return 0
         fi
         if $verbose; then
-            echo "  🔍 ffprobe validation failed" >&2
+            echo "  [DEBUG] ffprobe validation failed" >&2
         fi
         return 1
     fi
@@ -91,7 +94,7 @@ validate_video() {
     if command -v file &> /dev/null; then
         file_type=$(file -b --mime-type "$filepath" 2>/dev/null)
         if $verbose; then
-            echo "  🔍 File type detected: $file_type" >&2
+            echo "  [DEBUG] File type detected: $file_type" >&2
         fi
         if [[ "$file_type" =~ ^video/ ]]; then
             return 0
@@ -100,7 +103,7 @@ validate_video() {
     # Fallback: check file size (videos should be at least 100 KB)
     local size=$(stat -f%z "$filepath" 2>/dev/null || stat -c%s "$filepath" 2>/dev/null)
     if $verbose; then
-        echo "  🔍 File size: $size bytes" >&2
+        echo "  [DEBUG] File size: $size bytes" >&2
     fi
     if [ -f "$filepath" ] && [ $size -gt 100000 ]; then
         return 0
@@ -111,7 +114,7 @@ validate_video() {
 # Function to download images from Picsum (Lorem Ipsum for photos)
 download_picsum_images() {
     local count=$1
-    echo -e "${YELLOW}📷 Downloading $count images from Picsum...${NC}"
+    echo -e "${YELLOW}[INFO] Downloading $count images from Picsum...${NC}"
 
     local downloaded=0
     local attempt=0
@@ -125,11 +128,11 @@ download_picsum_images() {
         # Check if file exists and is valid
         if [ -f "$filepath" ]; then
             if validate_image "$filepath"; then
-                echo "  ⏭️  Skipping $filename (already exists and valid)"
+                echo "  [SKIP] $filename (already exists and valid)"
                 ((downloaded++))
                 continue
             else
-                echo "  🔄 Re-downloading $filename (invalid file detected)"
+                echo "  [RETRY] Re-downloading $filename (invalid file detected)"
                 rm -f "$filepath"
             fi
         fi
@@ -145,7 +148,7 @@ download_picsum_images() {
 
         while [ $retry -lt 3 ] && [ "$success" = false ]; do
             if [ $retry -gt 0 ]; then
-                echo "  🔄 Retry $retry/3 for $filename..."
+                echo "  [RETRY] Attempt $retry/3 for $filename..."
             fi
 
             curl -L -s "https://picsum.photos/id/$image_id/${width}/${height}" -o "$filepath" 2>/dev/null
@@ -153,17 +156,17 @@ download_picsum_images() {
             if [ $? -eq 0 ] && [ -s "$filepath" ]; then
                 # Validate downloaded file
                 if validate_image "$filepath"; then
-                    echo "  ✅ Downloaded: $filename (${width}x${height})"
+                    echo "  [OK] Downloaded: $filename (${width}x${height})"
                     ((downloaded++))
                     success=true
                 else
-                    echo "  ⚠️  Invalid image on attempt $((retry + 1))"
+                    echo "  [WARN] Invalid image on attempt $((retry + 1))"
                     rm -f "$filepath"
                     # Try a different image ID on retry
                     image_id=$((1 + RANDOM % 1000))
                 fi
             else
-                echo "  ⚠️  Download failed on attempt $((retry + 1))"
+                echo "  [WARN] Download failed on attempt $((retry + 1))"
                 rm -f "$filepath"
             fi
 
@@ -174,23 +177,23 @@ download_picsum_images() {
         done
 
         if [ "$success" = false ]; then
-            echo "  ❌ Failed after 3 attempts: $filename"
+            echo "  [ERROR] Failed after 3 attempts: $filename"
         fi
 
         sleep 0.3
     done
 
     if [ $downloaded -lt $count ]; then
-        echo "  ⚠️  Only downloaded $downloaded/$count images after $attempt attempts"
+        echo "  [WARN] Only downloaded $downloaded/$count images after $attempt attempts"
     else
-        echo "  ✅ Successfully downloaded $downloaded images"
+        echo "  [OK] Successfully downloaded $downloaded images"
     fi
 }
 
-# Function to download sample videos from sample-videos.com
+# Function to download sample videos
 download_sample_videos() {
     local count=$1
-    echo -e "${YELLOW}🎥 Downloading $count sample videos...${NC}"
+    echo -e "${YELLOW}[INFO] Downloading $count sample videos...${NC}"
 
     # Sample video URLs (creative commons / free to use)
     local video_urls=(
@@ -222,60 +225,60 @@ download_sample_videos() {
         # Check if file exists and is valid
         if [ -f "$filepath" ]; then
             if validate_video "$filepath"; then
-                echo "  ⏭️  Skipping $filename (already exists and valid)"
+                echo "  [SKIP] $filename (already exists and valid)"
                 ((downloaded++))
                 continue
             else
-                echo "  🔄 Re-downloading $filename (invalid file detected)"
+                echo "  [RETRY] Re-downloading $filename (invalid file detected)"
                 rm -f "$filepath"
             fi
         fi
 
-        echo "  ⏬ Downloading: $filename..."
-        echo "  🔍 URL: $url" >&2
+        echo "  [DOWNLOAD] Downloading: $filename..."
+        echo "  [DEBUG] URL: $url" >&2
         curl_output=$(curl -L -w "\n%{http_code}" --max-time 60 "$url" -o "$filepath" 2>&1)
         curl_exit=$?
         http_code=$(echo "$curl_output" | tail -n1)
 
-        echo "  🔍 Curl exit code: $curl_exit, HTTP: $http_code" >&2
+        echo "  [DEBUG] Curl exit code: $curl_exit, HTTP: $http_code" >&2
 
         if [ $curl_exit -eq 0 ] && [ -s "$filepath" ]; then
             # Validate downloaded file
-            echo "  🔍 Validating downloaded file..." >&2
+            echo "  [DEBUG] Validating downloaded file..." >&2
             if validate_video "$filepath" true; then
                 size=$(du -h "$filepath" | cut -f1)
-                echo "  ✅ Downloaded: $filename ($size, HTTP $http_code)"
+                echo "  [OK] Downloaded: $filename ($size, HTTP $http_code)"
                 ((downloaded++))
             else
-                echo "  ❌ Failed: $filename (invalid video, HTTP $http_code)"
+                echo "  [ERROR] Failed: $filename (invalid video, HTTP $http_code)"
                 rm -f "$filepath"
             fi
         else
-            echo "  ❌ Failed: $filename (curl exit code: $curl_exit)"
+            echo "  [ERROR] Failed: $filename (curl exit code: $curl_exit)"
             if [ $curl_exit -eq 7 ]; then
-                echo "  🔍 Error 7: Failed to connect to host. Check network/firewall." >&2
+                echo "  [DEBUG] Error 7: Failed to connect to host. Check network/firewall." >&2
             fi
-            echo "  🔍 URL: $url" >&2
+            echo "  [DEBUG] URL: $url" >&2
             rm -f "$filepath"
         fi
 
         sleep 0.5
     done
 
-    echo "  Downloaded $downloaded videos"
+    echo "  [INFO] Downloaded $downloaded videos"
 }
 
 # Function to download from Pexels API (requires API key)
 download_pexels_videos() {
     if [ -z "$PEXELS_API_KEY" ]; then
-        echo -e "${YELLOW}⚠️  Skipping Pexels videos (no API key set)${NC}"
+        echo -e "${YELLOW}[WARN] Skipping Pexels videos (no API key set)${NC}"
         echo "   To enable: export PEXELS_API_KEY='your-api-key'"
         echo "   Get free API key at: https://www.pexels.com/api/"
         return
     fi
 
     local count=$1
-    echo -e "${YELLOW}🎥 Downloading $count videos from Pexels...${NC}"
+    echo -e "${YELLOW}[INFO] Downloading $count videos from Pexels...${NC}"
 
     # Search for various topics to get diverse content
     local topics=("nature" "city" "ocean" "sunset" "people" "technology" "food" "animals")
@@ -287,10 +290,10 @@ download_pexels_videos() {
         # Check if file exists and is valid
         if [ -f "$filepath" ]; then
             if validate_video "$filepath"; then
-                echo "  ⏭️  Skipping $filename (already exists and valid)"
+                echo "  [SKIP] $filename (already exists and valid)"
                 continue
             else
-                echo "  🔄 Re-downloading $filename (invalid file detected)"
+                echo "  [RETRY] Re-downloading $filename (invalid file detected)"
                 rm -f "$filepath"
             fi
         fi
@@ -310,25 +313,90 @@ download_pexels_videos() {
                 # Validate downloaded file
                 if validate_video "$filepath"; then
                     size=$(du -h "$filepath" | cut -f1)
-                    echo "  ✅ Downloaded: $filename ($topic, $size)"
+                    echo "  [OK] Downloaded: $filename ($topic, $size)"
                 else
-                    echo "  ❌ Failed: $filename (invalid video)"
+                    echo "  [ERROR] Failed: $filename (invalid video)"
                     rm -f "$filepath"
                 fi
             else
-                echo "  ❌ Failed: $filename"
+                echo "  [ERROR] Failed: $filename"
                 rm -f "$filepath"
             fi
         else
-            echo "  ❌ Failed to get video URL for $filename"
+            echo "  [ERROR] Failed to get video URL for $filename"
         fi
 
         sleep 1
     done
 }
 
+# ============================================================
+# Function to create subfolders and populate them with copies
+# of downloaded media and the sample.wpl playlist file.
+# ============================================================
+create_subfolders_and_copy() {
+    echo -e "${YELLOW}[INFO] Creating subfolders and copying sample files...${NC}"
+
+    local folder1="$MEDIA_DIR/folder1"
+    local folder2="$MEDIA_DIR/folder2"
+
+    # Create subdirectories
+    mkdir -p "$folder1" "$folder2"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}  [ERROR] Failed to create subfolders${NC}"
+        return 1
+    fi
+    echo "  [OK] Created: folder1/ and folder2/"
+
+    # --- Copy images into each folder ---
+    # folder1 gets the first 5 picsum images
+    local copied_f1=0
+    for i in $(seq 1 5); do
+        src="$MEDIA_DIR/picsum_$(printf "%03d" $i).jpg"
+        if [ -f "$src" ]; then
+            cp -n "$src" "$folder1/"
+            echo "  [COPY] picsum_$(printf "%03d" $i).jpg -> folder1/"
+            ((copied_f1++))
+        fi
+    done
+
+    # folder2 gets the next 5 picsum images (006-010)
+    local copied_f2=0
+    for i in $(seq 6 10); do
+        src="$MEDIA_DIR/picsum_$(printf "%03d" $i).jpg"
+        if [ -f "$src" ]; then
+            cp -n "$src" "$folder2/"
+            echo "  [COPY] picsum_$(printf "%03d" $i).jpg -> folder2/"
+            ((copied_f2++))
+        fi
+    done
+
+    echo "  [OK] Copied $copied_f1 images into folder1/, $copied_f2 images into folder2/"
+
+    # --- Copy sample_video_02.mp4 into folder1 ---
+    local video_src="$MEDIA_DIR/sample_video_02.mp4"
+    if [ -f "$video_src" ]; then
+        cp -n "$video_src" "$folder1/"
+        echo "  [COPY] sample_video_02.mp4 -> folder1/"
+    else
+        echo -e "${RED}  [WARN] sample_video_02.mp4 not found -- skipping video copy to folder1${NC}"
+    fi
+
+    # --- Copy sample.wpl into both subfolders ---
+    if [ -f "$SAMPLE_WPL" ]; then
+        cp -n "$SAMPLE_WPL" "$folder1/"
+        cp -n "$SAMPLE_WPL" "$folder2/"
+        echo "  [COPY] sample.wpl -> folder1/ and folder2/"
+    else
+        echo -e "${RED}  [WARN] sample.wpl not found at: $SAMPLE_WPL${NC}"
+        echo "         Expected location: ${SCRIPT_DIR}/sample.wpl"
+    fi
+
+    echo "  [OK] Subfolder setup complete"
+}
+
 # Main download process
-echo -e "${BLUE}Starting downloads...${NC}"
+echo -e "${BLUE}[INFO] Starting downloads...${NC}"
 echo ""
 
 # Download all images from Picsum (reliable source)
@@ -349,21 +417,26 @@ if [ $NUM_VIDEOS -gt 0 ]; then
     fi
 fi
 
+# Create subfolders and copy files into them
+create_subfolders_and_copy
+echo ""
+
 # Summary
 echo -e "${BLUE}========================================${NC}"
 echo -e "${GREEN}Download Complete!${NC}"
 echo -e "${BLUE}========================================${NC}"
 
-new_files=$(find "$MEDIA_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" \) | wc -l)
+new_files=$(find "$MEDIA_DIR" -type f $ -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" $ | wc -l)
 total_size=$(du -sh "$MEDIA_DIR" 2>/dev/null | cut -f1)
 
 echo ""
 echo "Summary:"
-echo "  Total files: $new_files"
+echo "  Total files: $new_files (including subfolder copies)"
 echo "  Total size: $total_size"
 echo "  Location: $MEDIA_DIR"
+echo "  Subfolders: folder1/, folder2/"
 echo ""
-echo -e "${GREEN}✅ Sample media ready for testing!${NC}"
+echo -e "${GREEN}[OK] Sample media ready for testing!${NC}"
 echo ""
 echo "Note: Existing files were preserved (skipped if already present)."
 echo "To re-download, delete specific files or the entire folder."

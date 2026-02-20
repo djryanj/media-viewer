@@ -384,23 +384,19 @@ const SessionManager = {
         const self = this;
 
         window.fetch = async function (...args) {
-            try {
-                const response = await originalFetch.apply(this, args);
+            const response = await originalFetch.apply(this, args);
 
-                if (response.status === 401) {
-                    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+            if (response.status === 401) {
+                const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
 
-                    // Don't intercept auth endpoints
-                    if (!url.includes('/api/auth/')) {
-                        self.log('401 response detected for:', url);
-                        self.handleSessionExpired();
-                    }
+                // Don't intercept auth endpoints
+                if (!url.includes('/api/auth/')) {
+                    self.log('401 response detected for:', url);
+                    self.handleSessionExpired();
                 }
-
-                return response;
-            } catch (error) {
-                throw error;
             }
+
+            return response;
         };
 
         this.log('Global fetch interceptor installed');

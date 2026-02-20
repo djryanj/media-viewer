@@ -85,6 +85,32 @@ var healthCheckPaths = map[string]bool{
 	"/readyz":  true,
 }
 
+// sanitizeLogField removes control characters that could be used for log injection.
+// This includes newlines, carriage returns, tabs, null bytes, and ANSI escape sequences.
+func sanitizeLogField(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\r':
+			// Replace newlines/carriage returns with spaces to prevent log line forging
+			b.WriteRune(' ')
+		case r == '\x00':
+			// Strip null bytes entirely
+			continue
+		case r == '\x1b':
+			// Strip ANSI escape character to prevent terminal escape injection
+			continue
+		case r < 0x20 && r != '\t':
+			// Strip other control characters (except tab which is benign in logs)
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // Logger returns HTTP logging middleware using W3C Extended Log Format
 func Logger(config LoggingConfig) func(http.Handler) http.Handler {
 	logger := NewW3CLogger(config, "MediaViewer/1.0")
@@ -111,14 +137,17 @@ func Logger(config LoggingConfig) func(http.Handler) http.Handler {
 func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration time.Duration) {
 	now := time.Now().UTC()
 
-	// Extract fields
-	clientIP := getClientIP(r)
-	method := r.Method
-	uriStem := r.URL.Path
-	uriQuery := r.URL.RawQuery
+	// Extract and sanitize all user-controlled fields individually
+	// to prevent log injection via newlines, ANSI escapes, or other control characters
+	clientIP := sanitizeLogField(getClientIP(r))
+	method := sanitizeLogField(r.Method)
+	uriStem := sanitizeLogField(r.URL.Path)
+
+	uriQuery := sanitizeLogField(r.URL.RawQuery)
 	if uriQuery == "" {
 		uriQuery = "-"
 	}
+
 	status := rw.statusCode
 	bytesWritten := rw.bytesWritten
 	timeTaken := duration.Milliseconds() // W3C uses milliseconds
@@ -129,7 +158,7 @@ func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration tim
 		contentEncoding = "-"
 	}
 
-	userAgent := r.Header.Get("User-Agent")
+	userAgent := sanitizeLogField(r.Header.Get("User-Agent"))
 	if userAgent == "" {
 		userAgent = "-"
 	} else {
@@ -137,7 +166,7 @@ func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration tim
 		userAgent = escapeW3CField(userAgent)
 	}
 
-	referer := r.Header.Get("Referer")
+	referer := sanitizeLogField(r.Header.Get("Referer"))
 	if referer == "" {
 		referer = "-"
 	}
@@ -159,7 +188,9 @@ func (l *W3CLogger) logRequest(r *http.Request, rw *responseWriter, duration tim
 		referer,
 	)
 
-	// Use standard log to include timestamp prefix if configured, or raw output
+	//nolint:gosec // G706: All user-controlled fields (clientIP, method, uriStem, uriQuery,
+	// userAgent, referer) are sanitized via sanitizeLogField() which strips newlines, carriage
+	// returns, null bytes, ANSI escapes, and other control characters before interpolation.
 	log.Println(logLine)
 }
 

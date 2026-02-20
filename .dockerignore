@@ -41,6 +41,8 @@ jsconfig.json
 .prettierignore
 .stylelintrc.json
 **/node_modules
+package.json
+package-lock.json
 
 # Linting and code quality
 .golangci.yml
@@ -49,18 +51,29 @@ jsconfig.json
 **/sample-media
 sample-media/
 
-# Ignore test files
+# Backend test files
 *_test.go
 **/*_test.go
-
-# Ignore test data files
-internal/handlers/testdata/*
-internal/handlers/testdata/.*.gitattributes
 **/testdata
 
-# Ignore coverage reports
+# Frontend test files and directories
+static/tests/
+static/e2e/
+vitest.config.js
+playwright.config.js
+*.test.js
+*.spec.js
+
+# Test results and reports
 coverage.out
 coverage.html
+static/coverage/
+static/e2e/playwright-report/
+static/e2e/test-results/
+static/e2e/test-results.json
+.nyc_output/
+test-results/
+playwright-report/
 
 # Ignore log files
 *.log

@@ -1,102 +1,178 @@
 {
-    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "extends": [
-        "config:recommended",
-        "docker:enableMajor",
-        ":dependencyDashboard",
-        ":semanticCommits",
-        ":automergeMinor",
-        ":automergeDigest",
-        "group:allNonMajor",
-        "helpers:pinGitHubActionDigests"
-    ],
-    "labels": [
-        "dependencies"
-    ],
-    "platformAutomerge": true,
-    "automergeType": "pr",
-    "prHourlyLimit": 5,
-    "prConcurrentLimit": 10,
-    "ignorePaths": [
-        "**/vendor/**"
-    ],
-    "packageRules": [
-        {
-            "description": "Auto-merge patch updates",
-            "matchUpdateTypes": [
-                "patch",
-                "pin",
-                "digest"
-            ],
-            "automerge": true
-        },
-        {
-            "description": "Auto-merge minor updates for trusted packages",
-            "matchUpdateTypes": [
-                "minor"
-            ],
-            "matchPackageNames": [
-                "/^golang/",
-                "/^alpine/"
-            ],
-            "automerge": true
-        },
-        {
-            "description": "Group Go module updates",
-            "matchManagers": [
-                "gomod"
-            ],
-            "groupName": "Go modules",
-            "groupSlug": "go-modules"
-        },
-        {
-            "description": "Group GitHub Actions updates",
-            "matchManagers": [
-                "github-actions"
-            ],
-            "groupName": "GitHub Actions",
-            "groupSlug": "github-actions"
-        },
-        {
-            "description": "Group Docker updates",
-            "matchManagers": [
-                "dockerfile"
-            ],
-            "groupName": "Docker",
-            "groupSlug": "docker"
-        },
-        {
-            "description": "Require approval for major updates",
-            "matchUpdateTypes": [
-                "major"
-            ],
-            "automerge": false,
-            "labels": [
-                "dependencies",
-                "major"
-            ]
-        }
-    ],
-    "gomod": {
-        "enabled": true,
-        "postUpdateOptions": [
-            "gomodTidy",
-            "gomodUpdateImportPaths"
-        ]
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:enableMajor",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":automergeMinor",
+    ":automergeDigest",
+    "group:allNonMajor",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "platformAutomerge": true,
+  "automergeType": "pr",
+  "prHourlyLimit": 5,
+  "prConcurrentLimit": 10,
+  "ignorePaths": [
+    "**/vendor/**"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "golangci-lint in devcontainer post-create script",
+      "fileMatch": [
+        "^\\.devcontainer/post-create\\.sh$"
+      ],
+      "matchStrings": [
+        "go install github\\.com/golangci/golangci-lint/v2/cmd/golangci-lint@(?<currentValue>v[\\d\\.]+)"
+      ],
+      "depNameTemplate": "github.com/golangci/golangci-lint",
+      "datasourceTemplate": "go",
+      "versioningTemplate": "semver"
     },
-    "dockerfile": {
-        "enabled": true
+    {
+      "customType": "regex",
+      "description": "golangci-lint version in CI workflow",
+      "fileMatch": [
+        "^\\.github/workflows/ci\\.yml$"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=go depName=github\\.com/golangci/golangci-lint\\s+version:\\s+(?<currentValue>v[\\d\\.]+)"
+      ],
+      "depNameTemplate": "github.com/golangci/golangci-lint",
+      "datasourceTemplate": "go",
+      "versioningTemplate": "semver"
     },
-    "github-actions": {
-        "enabled": true
+    {
+      "customType": "regex",
+      "description": "Node.js version in CI workflow",
+      "fileMatch": [
+        "^\\.github/workflows/ci\\.yml$"
+      ],
+      "matchStrings": [
+        "node-version:\\s*'(?<currentValue>\\d+\\.\\d+\\.\\d+)'"
+      ],
+      "depNameTemplate": "node",
+      "datasourceTemplate": "node-version",
+      "versioningTemplate": "node"
     },
-    "vulnerabilityAlerts": {
-        "enabled": true,
-        "labels": [
-            "security"
-        ]
+    {
+      "customType": "regex",
+      "description": "Node.js version pinned in devcontainer post-create script",
+      "fileMatch": [
+        "^\\.devcontainer/post-create\\.sh$"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=node depName=node\\nREQUIRED_NODE_VERSION=\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "node",
+      "datasourceTemplate": "node-version",
+      "versioningTemplate": "node"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group golangci-lint updates across CI and devcontainer",
+      "groupName": "golangci-lint",
+      "groupSlug": "golangci-lint",
+      "matchPackageNames": [
+        "github.com/golangci/golangci-lint"
+      ],
+      "matchManagers": [
+        "custom.regex"
+      ]
     },
-    "schedule": [
-        "before 6am on monday"
+    {
+      "description": "Group Node.js version updates across CI and devcontainer",
+      "groupName": "Node.js",
+      "groupSlug": "nodejs",
+      "matchPackageNames": [
+        "node"
+      ],
+      "matchManagers": [
+        "custom.regex"
+      ]
+    },
+    {
+      "description": "Auto-merge patch updates",
+      "matchUpdateTypes": [
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge minor updates for trusted packages",
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchPackageNames": [
+        "/^golang/",
+        "/^alpine/"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Group Go module updates",
+      "matchManagers": [
+        "gomod"
+      ],
+      "groupName": "Go modules",
+      "groupSlug": "go-modules"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "Group Docker updates",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "groupName": "Docker",
+      "groupSlug": "docker"
+    },
+    {
+      "description": "Require approval for major updates",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "major"
+      ]
+    }
+  ],
+  "gomod": {
+    "enabled": true,
+    "postUpdateOptions": [
+      "gomodTidy",
+      "gomodUpdateImportPaths"
     ]
+  },
+  "dockerfile": {
+    "enabled": true
+  },
+  "github-actions": {
+    "enabled": true
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security"
+    ]
+  },
+  "schedule": [
+    "before 6am on monday"
+  ]
 }

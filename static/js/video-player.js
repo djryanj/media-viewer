@@ -400,7 +400,7 @@ class VideoPlayer {
         this.progressHandle.style.left = `${percent * 100}%`;
     }
 
-    showControls(caller = 'unknown') {
+    showControls(_caller = 'unknown') {
         const wasVisible = this.controls.classList.contains('show');
         this.controls.classList.add('show');
 
@@ -515,3 +515,6 @@ class VideoPlayer {
         }
     }
 }
+
+// Export class for testing
+window.VideoPlayer = VideoPlayer;

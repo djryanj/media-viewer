@@ -873,3 +873,323 @@ func TestDatabaseCreationWithVariousPathsIntegration(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// Sanitize Command Tests
+// =============================================================================
+
+// TestSanitizeCommand tests the sanitizeCommand function with various inputs
+func TestSanitizeCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Passthrough cases — valid characters should be unchanged
+		{
+			name:     "lowercase letters",
+			input:    "reset",
+			expected: "reset",
+		},
+		{
+			name:     "uppercase letters",
+			input:    "RESET",
+			expected: "RESET",
+		},
+		{
+			name:     "mixed case letters",
+			input:    "ReSeT",
+			expected: "ReSeT",
+		},
+		{
+			name:     "digits",
+			input:    "command123",
+			expected: "command123",
+		},
+		{
+			name:     "hyphens",
+			input:    "my-command",
+			expected: "my-command",
+		},
+		{
+			name:     "underscores",
+			input:    "my_command",
+			expected: "my_command",
+		},
+		{
+			name:     "all allowed characters combined",
+			input:    "My_Command-v2",
+			expected: "My_Command-v2",
+		},
+
+		// Replacement cases — disallowed characters become underscores
+		{
+			name:     "spaces replaced",
+			input:    "my command",
+			expected: "my_command",
+		},
+		{
+			name:     "angle brackets replaced",
+			input:    "<script>",
+			expected: "_script_",
+		},
+		{
+			name:     "single quotes replaced",
+			input:    "it's",
+			expected: "it_s",
+		},
+		{
+			name:     "double quotes replaced",
+			input:    `say "hello"`,
+			expected: "say__hello_",
+		},
+		{
+			name:     "semicolons replaced",
+			input:    "cmd;evil",
+			expected: "cmd_evil",
+		},
+		{
+			name:     "pipes replaced",
+			input:    "cmd|evil",
+			expected: "cmd_evil",
+		},
+		{
+			name:     "ampersands replaced",
+			input:    "cmd&evil",
+			expected: "cmd_evil",
+		},
+		{
+			name:     "backticks replaced",
+			input:    "cmd`evil`",
+			expected: "cmd_evil_",
+		},
+		{
+			name:     "dollar signs replaced",
+			input:    "$PATH",
+			expected: "_PATH",
+		},
+		{
+			name:     "newlines replaced",
+			input:    "cmd\nevil",
+			expected: "cmd_evil",
+		},
+		{
+			name:     "carriage returns replaced",
+			input:    "cmd\revil",
+			expected: "cmd_evil",
+		},
+		{
+			name:     "tabs replaced",
+			input:    "cmd\tevil",
+			expected: "cmd_evil",
+		},
+		{
+			name:     "null bytes replaced",
+			input:    "cmd\x00evil",
+			expected: "cmd_evil",
+		},
+		{
+			name:     "slashes replaced",
+			input:    "../../etc/passwd",
+			expected: "______etc_passwd",
+		},
+		{
+			name:     "backslashes replaced",
+			input:    `cmd\evil`,
+			expected: "cmd_evil",
+		},
+		{
+			name:     "dots replaced",
+			input:    "cmd.exe",
+			expected: "cmd_exe",
+		},
+		{
+			name:     "equals replaced",
+			input:    "key=value",
+			expected: "key_value",
+		},
+		{
+			name:     "parentheses replaced",
+			input:    "func()",
+			expected: "func__",
+		},
+
+		// Unicode and multi-byte characters
+		{
+			name:     "unicode letters replaced",
+			input:    "café",
+			expected: "caf_",
+		},
+		{
+			name:     "CJK characters replaced",
+			input:    "コマンド",
+			expected: "____",
+		},
+		{
+			name:     "emoji replaced",
+			input:    "cmd🚀",
+			expected: "cmd_",
+		},
+
+		// Edge cases
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "single valid character",
+			input:    "a",
+			expected: "a",
+		},
+		{
+			name:     "single invalid character",
+			input:    "!",
+			expected: "_",
+		},
+		{
+			name:     "all invalid characters",
+			input:    "!@#$%^&*()",
+			expected: "__________",
+		},
+		{
+			name:     "only digits",
+			input:    "12345",
+			expected: "12345",
+		},
+		{
+			name:     "only hyphens",
+			input:    "---",
+			expected: "---",
+		},
+		{
+			name:     "only underscores",
+			input:    "___",
+			expected: "___",
+		},
+
+		// Injection attempt patterns
+		{
+			name:     "shell injection attempt",
+			input:    "reset; rm -rf /",
+			expected: "reset__rm_-rf__",
+		},
+		{
+			name:     "command substitution attempt",
+			input:    "$(whoami)",
+			expected: "__whoami_",
+		},
+		{
+			name:     "HTML script injection",
+			input:    "<script>alert('xss')</script>",
+			expected: "_script_alert__xss____script_",
+		},
+		{
+			name:     "path traversal attempt",
+			input:    "../../../etc/shadow",
+			expected: "_________etc_shadow",
+		},
+		{
+			name:     "ANSI escape sequence",
+			input:    "\x1b[31mred\x1b[0m",
+			expected: "__31mred__0m",
+		},
+		{
+			name:     "HTTP header injection",
+			input:    "cmd\r\nX-Injected: true",
+			expected: "cmd__X-Injected__true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeCommand(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeCommand(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestSanitizeCommandIdempotent verifies that sanitizing an already-sanitized
+// string produces the same result (the function is idempotent).
+func TestSanitizeCommandIdempotent(t *testing.T) {
+	inputs := []string{
+		"reset",
+		"<script>alert('xss')</script>",
+		"cmd; rm -rf /",
+		"hello world!",
+		"",
+		"already-clean_input",
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			first := sanitizeCommand(input)
+			second := sanitizeCommand(first)
+			if first != second {
+				t.Errorf("sanitizeCommand is not idempotent for %q: first=%q, second=%q",
+					input, first, second)
+			}
+		})
+	}
+}
+
+// TestSanitizeCommandOutputLength verifies the output length matches the input
+// rune count (each rune maps to exactly one output rune).
+func TestSanitizeCommandOutputLength(t *testing.T) {
+	inputs := []string{
+		"",
+		"a",
+		"hello",
+		"<script>",
+		"café",
+		"cmd\nevil",
+		"!@#$%",
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			result := sanitizeCommand(input)
+			inputRunes := len([]rune(input))
+			resultRunes := len([]rune(result))
+			if resultRunes != inputRunes {
+				t.Errorf("sanitizeCommand(%q): input rune count %d != output rune count %d",
+					input, inputRunes, resultRunes)
+			}
+		})
+	}
+}
+
+// TestSanitizeCommandOnlyContainsAllowedChars verifies the output never contains
+// characters outside the allowlist.
+func TestSanitizeCommandOnlyContainsAllowedChars(t *testing.T) {
+	// Test with a variety of adversarial inputs
+	inputs := []string{
+		"normal",
+		"<script>alert(1)</script>",
+		"'; DROP TABLE users; --",
+		"cmd\x00\x01\x02\x03",
+		"hello\nworld\r\n",
+		string([]byte{0xff, 0xfe, 0xfd}),
+		"$(cat /etc/passwd)",
+		"`id`",
+		"a=b&c=d",
+	}
+
+	isAllowed := func(r rune) bool {
+		return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_'
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			result := sanitizeCommand(input)
+			for i, r := range result {
+				if !isAllowed(r) {
+					t.Errorf("sanitizeCommand(%q) contains disallowed rune %q at index %d in result %q",
+						input, r, i, result)
+				}
+			}
+		})
+	}
+}

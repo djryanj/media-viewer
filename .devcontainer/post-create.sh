@@ -11,14 +11,37 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Pin exact Node.js version to match CI workflow
+# renovate: datasource=node depName=node
+REQUIRED_NODE_VERSION="24.13.1"
+
+CURRENT_NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//')
+if [ "$CURRENT_NODE_VERSION" != "$REQUIRED_NODE_VERSION" ]; then
+    echo -e "${BLUE}[INFO] Installing Node.js ${REQUIRED_NODE_VERSION} (current: ${CURRENT_NODE_VERSION:-none})...${NC}"
+    # nvm is pre-installed in Microsoft devcontainer Node images
+    # Source nvm in case it's not loaded in this shell context
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+    nvm install "$REQUIRED_NODE_VERSION"
+    nvm alias default "$REQUIRED_NODE_VERSION"
+    nvm use "$REQUIRED_NODE_VERSION"
+    echo -e "${GREEN}[SUCCESS] Node.js $(node --version) installed and set as default${NC}"
+else
+    echo -e "${GREEN}[OK] Node.js v${CURRENT_NODE_VERSION} already matches required version${NC}"
+fi
+
 # Install ffmpeg and sqlite
-echo -e "${BLUE}[INFO] Installing ffmpeg and sqlite...${NC}"
+echo -e "${BLUE}[INFO] Installing ffmpeg and sqlite and other dependencies...${NC}"
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     ffmpeg \
     sqlite3 \
     libvips-dev \
     gcc \
-    && sudo rm -rf /var/lib/apt/lists/*
+    libxcomposite1 \
+    libxdamage1 \
+    libgtk-3-0t64 \
+    libatk1.0-0t64
 echo -e "${GREEN}[SUCCESS] ffmpeg and sqlite installed${NC}"
 
 # Setup directories with correct permissions
@@ -81,6 +104,7 @@ echo -e "${GREEN}[SUCCESS] Go dependencies installed${NC}"
 echo -e "${BLUE}[INFO] Installing additional Go tools...${NC}"
 go install github.com/air-verse/air@latest
 go install github.com/swaggo/swag/cmd/swag@latest
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
 echo -e "${GREEN}[SUCCESS] Go tools installed${NC}"
 
 # Create sample-media directory if it doesn't exist
@@ -103,7 +127,7 @@ tmp_dir = "tmp"
   cmd = "go build -tags 'fts5' -o ./tmp/main ./cmd/media-viewer"
   bin = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
-  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules", "site", "docs"]
+  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules", "static/tests", "static/e2e", "site", "docs"]
   delay = 1000
 
 [misc]
@@ -118,6 +142,21 @@ if [ -f "static/package.json" ]; then
     cd static
     npm install
     echo -e "${GREEN}[SUCCESS] npm dependencies installed${NC}"
+    cd ..
+fi
+
+# Install Playwright system dependencies and browsers
+if [ -f "static/playwright.config.js" ]; then
+    echo -e "${BLUE}[INFO] Installing Playwright system dependencies...${NC}"
+    cd static
+    # Install system dependencies (requires sudo)
+    sudo npx playwright install-deps
+    echo -e "${GREEN}[SUCCESS] Playwright system dependencies installed${NC}"
+
+    echo -e "${BLUE}[INFO] Installing Playwright browsers...${NC}"
+    npx playwright install
+    echo -e "${GREEN}[SUCCESS] Playwright browsers installed${NC}"
+    cd ..
 fi
 
 # Install mkdocs requirements (if applicable)
@@ -132,6 +171,7 @@ echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Post-create setup complete!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
+echo -e "  Node.js:         ${BLUE}$(node --version)${NC}"
 echo -e "  Run the app:     ${BLUE}go run -tags 'fts5' .${NC}"
 echo -e "  With hot reload: ${BLUE}air${NC}"
 echo -e "  Build:           ${BLUE}go build -tags 'fts5' -o media-viewer .${NC}"

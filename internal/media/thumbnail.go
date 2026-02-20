@@ -458,8 +458,14 @@ func (t *ThumbnailGenerator) generateImageWithFFmpeg(ctx context.Context, filePa
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	// Validate file path before passing to external process
+	if err := validateFilePath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path for ffmpeg: %w", err)
+	}
+
 	ffmpegStart := time.Now()
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	// #nosec G204 -- filePath is from the indexed media library, validated above
+	cmd := exec.CommandContext(ctx, ffmpegPath,
 		"-i", filePath,
 		"-vframes", "1",
 		"-f", "image2pipe",
@@ -509,13 +515,19 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	}
 	logging.Debug("Using ffmpeg: %s", ffmpegPath)
 
+	// Validate file path before passing to external process
+	if err := validateFilePath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path for ffmpeg: %w", err)
+	}
+
 	// Create a timeout context derived from the parent
 	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// First attempt: Use 1 second seek (fast, works for most videos)
 	ffmpegStart := time.Now()
-	cmd := exec.CommandContext(timeoutCtx, "ffmpeg",
+	// #nosec G204 -- filePath is from the indexed media library, validated above
+	cmd := exec.CommandContext(timeoutCtx, ffmpegPath,
 		"-i", filePath,
 		"-ss", "00:00:01",
 		"-vframes", "1",
@@ -534,7 +546,6 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 
 	// Check if first attempt produced output
 	if err == nil && stdout.Len() > 0 {
-		// Success on first attempt
 		img, _, err := image.Decode(&stdout)
 		if err != nil {
 			logging.Error("FFmpeg video thumbnail failed for %s: failed to decode PNG output: %v", filePath, err)
@@ -546,7 +557,6 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	// First attempt failed or produced no output - likely a short video
 	logging.Debug("FFmpeg first attempt failed or produced no output for %s: %v, stderr: %s", filePath, err, stderr.String())
 
-	// Check if context is canceled before retrying
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context canceled: %w", err)
 	}
@@ -554,21 +564,19 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	// Second attempt: Probe duration and use intelligent seek time
 	duration, probeErr := t.getVideoDuration(ctx, filePath)
 	if probeErr == nil && duration > 0 {
-		// Calculate seek time: 10% into video, minimum 0.1s, no maximum
 		seekTime := duration * 0.1
 		if seekTime < 0.1 {
-			seekTime = 0.1 // Minimum 0.1s to skip potential black frames
+			seekTime = 0.1
 		}
 
 		seekTimeStr := formatSeekTime(seekTime)
 		logging.Debug("Video duration: %.2fs, retrying with intelligent seek time: %s for %s", duration, seekTimeStr, filePath)
 
-		// Create a new timeout context for intelligent retry
 		retryCtx, retryCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer retryCancel()
 
-		// #nosec G204 -- filePath is from validated media library, not user input
-		cmd = exec.CommandContext(retryCtx, "ffmpeg",
+		// #nosec G204 -- filePath is from the indexed media library, validated above
+		cmd = exec.CommandContext(retryCtx, ffmpegPath,
 			"-i", filePath,
 			"-ss", seekTimeStr,
 			"-vframes", "1",
@@ -582,7 +590,6 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 		cmd.Stderr = &stderr
 
 		if err := cmd.Run(); err == nil && stdout.Len() > 0 {
-			// Success on intelligent retry
 			img, _, err := image.Decode(&stdout)
 			if err != nil {
 				logging.Error("FFmpeg video thumbnail failed for %s: failed to decode PNG output: %v", filePath, err)
@@ -595,7 +602,6 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 		logging.Debug("Could not probe video duration for %s: %v, skipping intelligent retry", filePath, probeErr)
 	}
 
-	// Check if context is canceled before final fallback
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context canceled: %w", err)
 	}
@@ -606,7 +612,8 @@ func (t *ThumbnailGenerator) generateVideoThumbnail(ctx context.Context, filePat
 	fallbackCtx, fallbackCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer fallbackCancel()
 
-	cmd = exec.CommandContext(fallbackCtx, "ffmpeg",
+	// #nosec G204 -- filePath is from the indexed media library, validated above
+	cmd = exec.CommandContext(fallbackCtx, ffmpegPath,
 		"-i", filePath,
 		"-vframes", "1",
 		"-f", "image2pipe",
@@ -1878,4 +1885,20 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// validateFilePath checks that a file path is safe to pass to external commands.
+// It rejects paths containing shell metacharacters or control characters that could
+// enable command injection. Returns an error if the path is unsafe.
+func validateFilePath(filePath string) error {
+	// Reject shell metacharacters and control characters
+	const dangerousChars = ";&|$><`!(){}[]\\*?#~\n\r\x00"
+	if strings.ContainsAny(filePath, dangerousChars) {
+		return fmt.Errorf("file path contains unsafe characters: %s", filePath)
+	}
+	// Reject empty paths
+	if filePath == "" {
+		return fmt.Errorf("empty file path")
+	}
+	return nil
 }

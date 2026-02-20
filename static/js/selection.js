@@ -734,11 +734,13 @@ const ItemSelection = {
         // Copy tags: only enabled when exactly 1 non-folder item is selected
         const canCopy = count === 1 && hasTaggableItems;
         this.elements.copyTagsBtn.disabled = !canCopy;
-        this.elements.copyTagsBtn.title = canCopy
-            ? 'Copy tags from selected item (Ctrl+C)'
-            : count > 1
-              ? 'Select only one item to copy tags'
-              : 'Select an item to copy tags';
+        if (canCopy) {
+            this.elements.copyTagsBtn.title = 'Copy tags from selected item (Ctrl+C)';
+        } else if (count > 1) {
+            this.elements.copyTagsBtn.title = 'Select only one item to copy tags';
+        } else {
+            this.elements.copyTagsBtn.title = 'Select an item to copy tags';
+        }
 
         // Paste tags
         const sourcePath = TagClipboard.sourcePath;
@@ -748,11 +750,13 @@ const ItemSelection = {
         const canPaste = destinationCount > 0 && hasTaggableItems && TagClipboard.hasTags();
 
         this.elements.pasteTagsBtn.disabled = !canPaste;
-        this.elements.pasteTagsBtn.title = canPaste
-            ? `Paste ${TagClipboard.copiedTags.length} tag${TagClipboard.copiedTags.length !== 1 ? 's' : ''} to ${destinationCount} item${destinationCount !== 1 ? 's' : ''} (Ctrl+V)`
-            : !TagClipboard.hasTags()
-              ? 'No tags copied'
-              : 'Select destination items';
+        if (canPaste) {
+            this.elements.pasteTagsBtn.title = `Paste ${TagClipboard.copiedTags.length} tag${TagClipboard.copiedTags.length !== 1 ? 's' : ''} to ${destinationCount} item${destinationCount !== 1 ? 's' : ''} (Ctrl+V)`;
+        } else if (!TagClipboard.hasTags()) {
+            this.elements.pasteTagsBtn.title = 'No tags copied';
+        } else {
+            this.elements.pasteTagsBtn.title = 'Select destination items';
+        }
 
         // Merge tags
         const canMerge = taggableCount >= 2;
