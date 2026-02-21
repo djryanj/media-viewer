@@ -172,8 +172,10 @@ func TestPasswordMinimumLength(t *testing.T) {
 func TestPasswordUpdateFlowIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
-
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -214,7 +216,10 @@ func TestPasswordUpdateInvalidatesSessionsIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -259,7 +264,10 @@ func TestResetPasswordWithNoExistingUserIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -299,7 +307,10 @@ func TestPasswordUpdateWithDatabaseErrorIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -326,7 +337,10 @@ func TestMultiplePasswordUpdatesIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -363,7 +377,10 @@ func TestPasswordWithSpecialCharactersIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -392,7 +409,10 @@ func TestPasswordWithSpecialCharactersIntegration(t *testing.T) {
 			// Create new database for each test
 			testDir := t.TempDir()
 			testPath := filepath.Join(testDir, "test.db")
-			testDB, _, err := database.New(ctx, testPath)
+			dbOpts := &database.Options{
+				MmapDisabled: false, // Set to true if you want to disable mmap
+			}
+			testDB, _, err := database.New(ctx, testPath, dbOpts)
 			if err != nil {
 				t.Fatalf("failed to create database: %v", err)
 			}
@@ -448,7 +468,10 @@ func TestShowStatusDatabaseStatesIntegration(t *testing.T) {
 			tempDir := t.TempDir()
 			dbPath := filepath.Join(tempDir, "test.db")
 
-			db, _, err := database.New(context.Background(), dbPath)
+			dbOpts := &database.Options{
+				MmapDisabled: false, // Set to true if you want to disable mmap
+			}
+			db, _, err := database.New(context.Background(), dbPath, dbOpts)
 			if err != nil {
 				t.Fatalf("failed to create database: %v", err)
 			}
@@ -483,7 +506,10 @@ func TestStdinReadErrorsIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

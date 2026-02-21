@@ -17,8 +17,10 @@ func TestListDirectory_FolderCountPerformanceIntegration(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -149,8 +151,10 @@ func TestGetMediaInDirectory_PerformanceIntegration(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -271,8 +275,10 @@ func TestPerformanceOptimizations_EndToEnd(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -437,8 +443,10 @@ func TestSlowQueryLogging_Integration(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}

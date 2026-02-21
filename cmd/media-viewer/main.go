@@ -93,7 +93,10 @@ func main() {
 
 	// Initialize database
 	dbStart := time.Now()
-	db, dbInfo, err := database.New(bgCtx, config.DatabasePath)
+	dbOpts := &database.Options{
+		MmapDisabled: config.DBMmapDisabled,
+	}
+	db, dbInfo, err := database.New(bgCtx, config.DatabasePath, dbOpts)
 	if err != nil {
 		startup.LogFatal("Failed to initialize database: %v", err)
 	}

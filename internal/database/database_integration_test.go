@@ -1,4 +1,3 @@
-// database_integration_test.go
 package database
 
 import (
@@ -7,19 +6,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 // Integration tests for database operations with real SQLite database
 
-func setupTestDB(t testing.TB) (db *Database, dbPath string) {
+// setupTestDB creates a test database. An optional Options value can be passed
+// to control database behavior (e.g. mmap). When omitted, nil is used
+// (standard defaults — mmap enabled).
+func setupTestDB(t testing.TB, opts ...*Options) (db *Database, dbPath string) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
 	dbPath = filepath.Join(tmpDir, "test.db")
 
-	db, _, err := New(context.Background(), dbPath)
+	var dbOpts *Options
+	if len(opts) > 0 {
+		dbOpts = opts[0]
+	}
+
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -32,11 +40,15 @@ func setupTestDB(t testing.TB) (db *Database, dbPath string) {
 	return db, dbPath
 }
 
+// ---------------------------------------------------------------------------
+// New() signature & Options integration tests
+// ---------------------------------------------------------------------------
+
 func TestNewDatabase(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, _, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath, nil)
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
@@ -51,6 +63,235 @@ func TestNewDatabase(t *testing.T) {
 	ctx := context.Background()
 	if err := db.db.PingContext(ctx); err != nil {
 		t.Errorf("Database ping failed: %v", err)
+	}
+}
+
+func TestNewDatabaseWithNilOptions(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "nil_opts.db")
+
+	db, info, err := New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("New(nil) failed: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	if info.MmapStatus == "" {
+		t.Error("MmapStatus should not be empty")
+	}
+
+	// With nil options we should be in standard mode, never SIGBUS protection mode
+	if strings.Contains(info.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("With nil options, should not report SIGBUS protection active, got: %s", info.MmapStatus)
+	}
+
+	// The status must mention "standard mode"
+	if !strings.Contains(info.MmapStatus, "standard mode") {
+		t.Errorf("With nil options, expected 'standard mode' in status, got: %s", info.MmapStatus)
+	}
+
+	// Verify database is functional
+	if err := db.db.PingContext(ctx); err != nil {
+		t.Errorf("Database ping failed: %v", err)
+	}
+}
+
+func TestNewDatabaseWithMmapEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "mmap_enabled.db")
+
+	opts := &Options{MmapDisabled: false}
+	db, info, err := New(context.Background(), dbPath, opts)
+	if err != nil {
+		t.Fatalf("New(MmapDisabled=false) failed: %v", err)
+	}
+	defer db.Close()
+
+	// Should behave identically to nil options — standard driver
+	if info.MmapStatus == "" {
+		t.Error("MmapStatus should not be empty")
+	}
+
+	if strings.Contains(info.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("With MmapDisabled=false, should not report SIGBUS protection, got: %s", info.MmapStatus)
+	}
+
+	if !strings.Contains(info.MmapStatus, "standard mode") {
+		t.Errorf("With MmapDisabled=false, expected 'standard mode' in status, got: %s", info.MmapStatus)
+	}
+
+	// Verify read/write works
+	ctx := context.Background()
+	tx, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	file := &MediaFile{
+		Name:       "test.jpg",
+		Path:       "mmap_enabled/test.jpg",
+		ParentPath: "mmap_enabled",
+		Type:       FileTypeImage,
+		Size:       1024,
+		ModTime:    time.Now(),
+	}
+	if err := db.UpsertFile(ctx, tx, file); err != nil {
+		t.Fatalf("UpsertFile failed: %v", err)
+	}
+	if err := db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch failed: %v", err)
+	}
+
+	retrieved, err := db.GetFileByPath(ctx, "mmap_enabled/test.jpg")
+	if err != nil {
+		t.Fatalf("GetFileByPath failed: %v", err)
+	}
+	if retrieved.Name != "test.jpg" {
+		t.Errorf("Name = %q, want %q", retrieved.Name, "test.jpg")
+	}
+}
+
+func TestNewDatabaseWithMmapDisabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "mmap_disabled.db")
+
+	opts := &Options{MmapDisabled: true}
+	db, info, err := New(context.Background(), dbPath, opts)
+	if err != nil {
+		t.Fatalf("New(MmapDisabled=true) failed: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Verify mmap is actually disabled
+	var mmapSize int64
+	if err := db.db.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
+		t.Fatalf("Failed to read mmap_size: %v", err)
+	}
+	if mmapSize != 0 {
+		t.Errorf("mmap_size = %d, want 0 when MmapDisabled=true", mmapSize)
+	}
+
+	// Info should report SIGBUS protection active
+	if !strings.Contains(info.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("With MmapDisabled=true, expected 'SIGBUS protection active', got: %s", info.MmapStatus)
+	}
+
+	// Should NOT mention standard mode
+	if strings.Contains(info.MmapStatus, "standard mode") {
+		t.Errorf("With MmapDisabled=true, should not mention 'standard mode', got: %s", info.MmapStatus)
+	}
+
+	// Verify full read/write cycle works with mmap disabled
+	tx, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	file := &MediaFile{
+		Name:       "test.jpg",
+		Path:       "mmap_disabled/test.jpg",
+		ParentPath: "mmap_disabled",
+		Type:       FileTypeImage,
+		Size:       1024,
+		ModTime:    time.Now(),
+		MimeType:   "image/jpeg",
+	}
+	if err := db.UpsertFile(ctx, tx, file); err != nil {
+		t.Fatalf("UpsertFile failed with mmap disabled: %v", err)
+	}
+	if err := db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch failed with mmap disabled: %v", err)
+	}
+
+	retrieved, err := db.GetFileByPath(ctx, "mmap_disabled/test.jpg")
+	if err != nil {
+		t.Fatalf("GetFileByPath failed with mmap disabled: %v", err)
+	}
+	if retrieved.Name != "test.jpg" {
+		t.Errorf("Name = %q, want %q", retrieved.Name, "test.jpg")
+	}
+
+	// Verify search works with mmap disabled
+	results, err := db.Search(ctx, SearchOptions{
+		Query:    "test",
+		Page:     1,
+		PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed with mmap disabled: %v", err)
+	}
+	if len(results.Items) < 1 {
+		t.Error("Search should return at least 1 result with mmap disabled")
+	}
+
+	// Verify stats work with mmap disabled
+	if _, err := db.CalculateStats(); err != nil {
+		t.Fatalf("CalculateStats failed with mmap disabled: %v", err)
+	}
+
+	t.Log("All database operations verified working with mmap disabled")
+}
+
+func TestNewDatabaseInfoDiagnostics(t *testing.T) {
+	tests := []struct {
+		name               string
+		opts               *Options
+		expectSIGBUS       bool
+		expectStandardMode bool
+	}{
+		{
+			name:               "nil options — standard mode",
+			opts:               nil,
+			expectSIGBUS:       false,
+			expectStandardMode: true,
+		},
+		{
+			name:               "mmap enabled — standard mode",
+			opts:               &Options{MmapDisabled: false},
+			expectSIGBUS:       false,
+			expectStandardMode: true,
+		},
+		{
+			name:               "mmap disabled — SIGBUS protection",
+			opts:               &Options{MmapDisabled: true},
+			expectSIGBUS:       true,
+			expectStandardMode: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			dbPath := filepath.Join(tmpDir, "diag.db")
+
+			db, info, err := New(context.Background(), dbPath, tt.opts)
+			if err != nil {
+				t.Fatalf("New() failed: %v", err)
+			}
+			defer db.Close()
+
+			if info.SQLiteVersion == "" || info.SQLiteVersion == "unknown" {
+				t.Error("SQLiteVersion should be populated")
+			}
+
+			if info.MmapStatus == "" {
+				t.Fatal("MmapStatus should not be empty")
+			}
+
+			hasSIGBUS := strings.Contains(info.MmapStatus, "SIGBUS protection active")
+			if hasSIGBUS != tt.expectSIGBUS {
+				t.Errorf("SIGBUS protection in status: got %v, want %v\n  status: %s",
+					hasSIGBUS, tt.expectSIGBUS, info.MmapStatus)
+			}
+
+			hasStandard := strings.Contains(info.MmapStatus, "standard mode")
+			if hasStandard != tt.expectStandardMode {
+				t.Errorf("Standard mode in status: got %v, want %v\n  status: %s",
+					hasStandard, tt.expectStandardMode, info.MmapStatus)
+			}
+		})
 	}
 }
 
@@ -408,16 +649,11 @@ func TestGetFilesUpdatedSinceIntegration(t *testing.T) {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
-	// Wait longer than the 10-second buffer used by GetFilesUpdatedSince
-	// Plus add extra time to ensure clear separation
 	t.Logf("Waiting 12 seconds for timestamp separation...")
 	time.Sleep(12 * time.Second)
 
-	// Mark the cutoff time - only files inserted AFTER this should be returned
-	// Add 1 more second of buffer to be safe
 	cutoffTime := time.Now().Add(1 * time.Second)
 
-	// Wait another second to ensure we're past the cutoff
 	time.Sleep(2 * time.Second)
 
 	// Insert new file
@@ -443,14 +679,11 @@ func TestGetFilesUpdatedSinceIntegration(t *testing.T) {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
-	// Get files updated since the cutoff time
-	// Note: GetFilesUpdatedSince subtracts 10 seconds from this time internally
 	updated, err := db.GetFilesUpdatedSince(ctx, cutoffTime)
 	if err != nil {
 		t.Fatalf("GetFilesUpdatedSince failed: %v", err)
 	}
 
-	// Should only get new.jpg (old.jpg was inserted >12 seconds before cutoff)
 	if len(updated) != 1 {
 		t.Errorf("Got %d files, want 1", len(updated))
 		for i, f := range updated {
@@ -472,7 +705,6 @@ func TestGetSubfoldersIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create folder structure
 	folders := []MediaFile{
 		{Name: "parent", Path: "parent", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
 		{Name: "child1", Path: "parent/child1", ParentPath: "parent", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
@@ -495,7 +727,6 @@ func TestGetSubfoldersIntegration(t *testing.T) {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
-	// Get subfolders of parent
 	subfolders, err := db.GetSubfolders(ctx, "parent")
 	if err != nil {
 		t.Fatalf("GetSubfolders failed: %v", err)
@@ -505,7 +736,6 @@ func TestGetSubfoldersIntegration(t *testing.T) {
 		t.Errorf("Got %d subfolders, want 2", len(subfolders))
 	}
 
-	// Verify subfolder names
 	names := make(map[string]bool)
 	for _, folder := range subfolders {
 		names[folder.Name] = true
@@ -525,7 +755,6 @@ func TestGetMediaFilesInFolderIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create files in folder
 	files := []MediaFile{
 		{Name: "image1.jpg", Path: "folder/image1.jpg", ParentPath: "folder", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "image2.jpg", Path: "folder/image2.jpg", ParentPath: "folder", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
@@ -547,7 +776,6 @@ func TestGetMediaFilesInFolderIntegration(t *testing.T) {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
-	// Get media files
 	mediaFiles, err := db.GetMediaFilesInFolder(ctx, "folder", 10)
 	if err != nil {
 		t.Fatalf("GetMediaFilesInFolder failed: %v", err)
@@ -567,7 +795,6 @@ func TestGetLastThumbnailRunIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Initially should be zero
 	lastRun, err := db.GetLastThumbnailRun(ctx)
 	if err != nil {
 		t.Fatalf("GetLastThumbnailRun failed: %v", err)
@@ -577,20 +804,17 @@ func TestGetLastThumbnailRunIntegration(t *testing.T) {
 		t.Error("Initial last run should be zero")
 	}
 
-	// Set last thumbnail run
 	now := time.Now()
 	err = db.SetLastThumbnailRun(ctx, now)
 	if err != nil {
 		t.Fatalf("SetLastThumbnailRun failed: %v", err)
 	}
 
-	// Retrieve it
 	lastRun, err = db.GetLastThumbnailRun(ctx)
 	if err != nil {
 		t.Fatalf("GetLastThumbnailRun failed: %v", err)
 	}
 
-	// Should be within a second of what we set
 	diff := lastRun.Sub(now)
 	if diff < 0 {
 		diff = -diff
@@ -610,7 +834,6 @@ func TestCalculateStatsIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert some files
 	files := []MediaFile{
 		{Name: "image.jpg", Path: "image.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "video.mp4", Path: "video.mp4", ParentPath: "", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
@@ -632,23 +855,19 @@ func TestCalculateStatsIntegration(t *testing.T) {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
-	// Calculate stats
 	stats, err := db.CalculateStats()
 	if err != nil {
 		t.Fatalf("CalculateStats failed: %v", err)
 	}
 
-	// TotalFiles counts media files (images + videos), not folders
 	if stats.TotalFiles < 2 {
 		t.Errorf("TotalFiles = %d, want at least 2", stats.TotalFiles)
 	}
 
-	// Should have exactly 1 folder
 	if stats.TotalFolders != 1 {
 		t.Errorf("TotalFolders = %d, want 1", stats.TotalFolders)
 	}
 
-	// Should have at least 1 image and 1 video
 	if stats.TotalImages < 1 {
 		t.Errorf("TotalImages = %d, want at least 1", stats.TotalImages)
 	}
@@ -660,7 +879,6 @@ func TestCalculateStatsIntegration(t *testing.T) {
 	t.Logf("Stats: %+v", stats)
 }
 
-// TestDatabaseConcurrency tests that batch transactions work correctly with sequential inserts
 func TestDatabaseConcurrency(t *testing.T) {
 	db, _ := setupTestDB(t)
 	defer db.Close()
@@ -738,7 +956,6 @@ func BenchmarkListDirectory(b *testing.B) {
 
 	ctx := context.Background()
 
-	// Insert some files
 	tx, _ := db.BeginBatch(ctx)
 	for i := 0; i < 100; i++ {
 		file := MediaFile{
@@ -775,7 +992,6 @@ func TestListDirectorySorting(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert files with different attributes
 	files := []MediaFile{
 		{Name: "zebra.jpg", Path: "zebra.jpg", ParentPath: "", Type: FileTypeImage, Size: 3000, ModTime: time.Now().Add(-3 * time.Hour)},
 		{Name: "alpha.jpg", Path: "alpha.jpg", ParentPath: "", Type: FileTypeImage, Size: 1000, ModTime: time.Now().Add(-1 * time.Hour)},
@@ -794,42 +1010,12 @@ func TestListDirectorySorting(t *testing.T) {
 		sortOrder     SortOrder
 		expectedFirst string
 	}{
-		{
-			name:          "Sort by name ascending",
-			sortField:     SortByName,
-			sortOrder:     SortAsc,
-			expectedFirst: "alpha.jpg",
-		},
-		{
-			name:          "Sort by name descending",
-			sortField:     SortByName,
-			sortOrder:     SortDesc,
-			expectedFirst: "zebra.jpg",
-		},
-		{
-			name:          "Sort by size ascending",
-			sortField:     SortBySize,
-			sortOrder:     SortAsc,
-			expectedFirst: "alpha.jpg",
-		},
-		{
-			name:          "Sort by size descending",
-			sortField:     SortBySize,
-			sortOrder:     SortDesc,
-			expectedFirst: "zebra.jpg",
-		},
-		{
-			name:          "Sort by date ascending",
-			sortField:     SortByDate,
-			sortOrder:     SortAsc,
-			expectedFirst: "zebra.jpg",
-		},
-		{
-			name:          "Sort by date descending",
-			sortField:     SortByDate,
-			sortOrder:     SortDesc,
-			expectedFirst: "alpha.jpg",
-		},
+		{"Sort by name ascending", SortByName, SortAsc, "alpha.jpg"},
+		{"Sort by name descending", SortByName, SortDesc, "zebra.jpg"},
+		{"Sort by size ascending", SortBySize, SortAsc, "alpha.jpg"},
+		{"Sort by size descending", SortBySize, SortDesc, "zebra.jpg"},
+		{"Sort by date ascending", SortByDate, SortAsc, "zebra.jpg"},
+		{"Sort by date descending", SortByDate, SortDesc, "alpha.jpg"},
 	}
 
 	for _, tt := range tests {
@@ -860,7 +1046,6 @@ func TestListDirectoryPagination(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert 25 files
 	tx, _ := db.BeginBatch(ctx)
 	for i := 0; i < 25; i++ {
 		file := MediaFile{
@@ -883,38 +1068,10 @@ func TestListDirectoryPagination(t *testing.T) {
 		expectTotal int
 		expectPages int
 	}{
-		{
-			name:        "Page 1 of 10",
-			page:        1,
-			pageSize:    10,
-			expectItems: 10,
-			expectTotal: 25,
-			expectPages: 3,
-		},
-		{
-			name:        "Page 2 of 10",
-			page:        2,
-			pageSize:    10,
-			expectItems: 10,
-			expectTotal: 25,
-			expectPages: 3,
-		},
-		{
-			name:        "Page 3 of 10 (partial)",
-			page:        3,
-			pageSize:    10,
-			expectItems: 5,
-			expectTotal: 25,
-			expectPages: 3,
-		},
-		{
-			name:        "Large page size",
-			page:        1,
-			pageSize:    100,
-			expectItems: 25,
-			expectTotal: 25,
-			expectPages: 1,
-		},
+		{"Page 1 of 10", 1, 10, 10, 25, 3},
+		{"Page 2 of 10", 2, 10, 10, 25, 3},
+		{"Page 3 of 10 (partial)", 3, 10, 5, 25, 3},
+		{"Large page size", 1, 100, 25, 25, 1},
 	}
 
 	for _, tt := range tests {
@@ -933,11 +1090,9 @@ func TestListDirectoryPagination(t *testing.T) {
 			if len(listing.Items) != tt.expectItems {
 				t.Errorf("Got %d items, want %d", len(listing.Items), tt.expectItems)
 			}
-
 			if listing.TotalItems != tt.expectTotal {
 				t.Errorf("TotalItems = %d, want %d", listing.TotalItems, tt.expectTotal)
 			}
-
 			if listing.TotalPages != tt.expectPages {
 				t.Errorf("TotalPages = %d, want %d", listing.TotalPages, tt.expectPages)
 			}
@@ -951,11 +1106,7 @@ func TestListDirectoryEmpty(t *testing.T) {
 
 	ctx := context.Background()
 
-	opts := ListOptions{
-		Path:     "nonexistent",
-		Page:     1,
-		PageSize: 100,
-	}
+	opts := ListOptions{Path: "nonexistent", Page: 1, PageSize: 100}
 
 	listing, err := db.ListDirectory(ctx, opts)
 	if err != nil {
@@ -965,7 +1116,6 @@ func TestListDirectoryEmpty(t *testing.T) {
 	if len(listing.Items) != 0 {
 		t.Errorf("Got %d items, want 0", len(listing.Items))
 	}
-
 	if listing.TotalItems != 0 {
 		t.Errorf("TotalItems = %d, want 0", listing.TotalItems)
 	}
@@ -977,7 +1127,6 @@ func TestSearchSuggestions(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert files
 	files := []MediaFile{
 		{Name: "sunset.jpg", Path: "sunset.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "sunrise.jpg", Path: "sunrise.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
@@ -1008,7 +1157,6 @@ func TestGetAllPlaylists(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert a playlist file
 	playlist := MediaFile{
 		Name:       "myplaylist.wpl",
 		Path:       "myplaylist.wpl",
@@ -1043,7 +1191,6 @@ func TestGetMediaInDirectory(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert files in a directory
 	files := []MediaFile{
 		{Name: "zebra.jpg", Path: "media/zebra.jpg", ParentPath: "media", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "alpha.jpg", Path: "media/alpha.jpg", ParentPath: "media", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
@@ -1065,7 +1212,6 @@ func TestGetMediaInDirectory(t *testing.T) {
 		t.Errorf("Got %d files, want 3", len(mediaFiles))
 	}
 
-	// Verify sorted by name ascending
 	if len(mediaFiles) >= 2 && mediaFiles[0].Name != "alpha.jpg" {
 		t.Errorf("First file = %s, want alpha.jpg", mediaFiles[0].Name)
 	}
@@ -1077,7 +1223,6 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Verify that the covering indexes exist
 	var indexCount int
 	query := `
 		SELECT COUNT(*)
@@ -1092,10 +1237,8 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 
 	if indexCount != 3 {
 		t.Errorf("Expected 3 covering indexes, got %d", indexCount)
-		t.Log("Missing one or more of: idx_files_media_directory_name, idx_files_media_directory_date, idx_files_path")
 	}
 
-	// Insert a larger set of files to test index performance
 	tx, _ := db.BeginBatch(ctx)
 	baseTime := time.Now().Add(-24 * time.Hour)
 	for i := 0; i < 500; i++ {
@@ -1112,7 +1255,6 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 	}
 	_ = db.EndBatch(tx, nil)
 
-	// Test sorting by name (should use idx_files_media_directory_name)
 	files, err := db.GetMediaInDirectory(ctx, "testdir", SortByName, SortAsc)
 	if err != nil {
 		t.Fatalf("GetMediaInDirectory with name sort failed: %v", err)
@@ -1124,7 +1266,6 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 		t.Errorf("First file should be file_0000.jpg, got %s", files[0].Name)
 	}
 
-	// Test sorting by date (should use idx_files_media_directory_date)
 	files, err = db.GetMediaInDirectory(ctx, "testdir", SortByDate, SortDesc)
 	if err != nil {
 		t.Fatalf("GetMediaInDirectory with date sort failed: %v", err)
@@ -1136,7 +1277,6 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 		t.Errorf("First file should be file_0499.jpg (newest), got %s", files[0].Name)
 	}
 
-	// Verify that the query returns all expected columns
 	for _, file := range files[:10] {
 		if file.ID == 0 {
 			t.Error("File ID should not be 0")
@@ -1162,7 +1302,6 @@ func TestGetMediaInDirectory_WithFavoritesAndTags(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert files
 	insertFiles := []MediaFile{
 		{Name: "file1.jpg", Path: "test/file1.jpg", ParentPath: "test", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "file2.jpg", Path: "test/file2.jpg", ParentPath: "test", Type: FileTypeImage, Size: 2048, ModTime: time.Now()},
@@ -1174,12 +1313,10 @@ func TestGetMediaInDirectory_WithFavoritesAndTags(t *testing.T) {
 	}
 	_ = db.EndBatch(tx, nil)
 
-	// Add favorites
 	if err := db.AddFavorite(ctx, "test/file1.jpg", "file1.jpg", FileTypeImage); err != nil {
 		t.Fatalf("Failed to add favorite: %v", err)
 	}
 
-	// Add tags
 	if err := db.AddTagToFile(ctx, "test/file1.jpg", "test-tag"); err != nil {
 		t.Fatalf("Failed to add tag: %v", err)
 	}
@@ -1196,7 +1333,6 @@ func TestGetMediaInDirectory_WithFavoritesAndTags(t *testing.T) {
 		t.Fatalf("Expected 2 files, got %d", len(files))
 	}
 
-	// Verify favorites are included correctly
 	if !files[0].IsFavorite {
 		t.Error("file1.jpg should be marked as favorite")
 	}
@@ -1204,7 +1340,6 @@ func TestGetMediaInDirectory_WithFavoritesAndTags(t *testing.T) {
 		t.Error("file2.jpg should not be marked as favorite")
 	}
 
-	// Verify tags are included correctly
 	if len(files[0].Tags) != 1 || files[0].Tags[0] != "test-tag" {
 		t.Errorf("file1.jpg should have tag 'test-tag', got %v", files[0].Tags)
 	}
@@ -1219,7 +1354,6 @@ func TestGetAllMediaFiles(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert various files
 	files := []MediaFile{
 		{Name: "image.jpg", Path: "image.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "video.mp4", Path: "video.mp4", ParentPath: "", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
@@ -1248,7 +1382,6 @@ func TestGetAllMediaFilesForThumbnails(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert various files
 	files := []MediaFile{
 		{Name: "image.jpg", Path: "image.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "video.mp4", Path: "video.mp4", ParentPath: "", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
@@ -1277,48 +1410,23 @@ func TestGetFoldersWithUpdatedContents(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Insert a folder
-	folder := MediaFile{
-		Name:       "photos",
-		Path:       "photos",
-		ParentPath: "",
-		Type:       FileTypeFolder,
-		Size:       0,
-		ModTime:    time.Now(),
-	}
+	folder := MediaFile{Name: "photos", Path: "photos", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()}
 
 	tx, _ := db.BeginBatch(ctx)
 	_ = db.UpsertFile(ctx, tx, &folder)
 	_ = db.EndBatch(tx, nil)
 
-	// Insert an old file in the folder
-	oldFile := MediaFile{
-		Name:       "old.jpg",
-		Path:       "photos/old.jpg",
-		ParentPath: "photos",
-		Type:       FileTypeImage,
-		Size:       1024,
-		ModTime:    time.Now(),
-	}
+	oldFile := MediaFile{Name: "old.jpg", Path: "photos/old.jpg", ParentPath: "photos", Type: FileTypeImage, Size: 1024, ModTime: time.Now()}
 
 	tx, _ = db.BeginBatch(ctx)
 	_ = db.UpsertFile(ctx, tx, &oldFile)
 	_ = db.EndBatch(tx, nil)
 
-	// Wait longer than the 10-second buffer
 	t.Logf("Waiting 11 seconds for timestamp separation...")
 	time.Sleep(11 * time.Second)
 	beforeUpdate := time.Now()
 
-	// Insert a new file in the folder
-	newFile := MediaFile{
-		Name:       "new.jpg",
-		Path:       "photos/new.jpg",
-		ParentPath: "photos",
-		Type:       FileTypeImage,
-		Size:       1024,
-		ModTime:    time.Now(),
-	}
+	newFile := MediaFile{Name: "new.jpg", Path: "photos/new.jpg", ParentPath: "photos", Type: FileTypeImage, Size: 1024, ModTime: time.Now()}
 
 	tx, _ = db.BeginBatch(ctx)
 	_ = db.UpsertFile(ctx, tx, &newFile)
@@ -1347,6 +1455,7 @@ func TestGetAllIndexedPaths(t *testing.T) {
 	files := []MediaFile{
 		{Name: "image1.jpg", Path: "path/image1.jpg", ParentPath: "path", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 		{Name: "image2.jpg", Path: "path/image2.jpg", ParentPath: "path", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
+
 		{Name: "video1.mp4", Path: "path/video1.mp4", ParentPath: "path", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
 		{Name: "subfolder", Path: "path/subfolder", ParentPath: "path", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
 		{Name: "playlist.m3u", Path: "path/playlist.m3u", ParentPath: "path", Type: FileTypePlaylist, Size: 512, ModTime: time.Now()},
@@ -1440,11 +1549,7 @@ func TestSearchWithEmptyQuery(t *testing.T) {
 
 	ctx := context.Background()
 
-	opts := SearchOptions{
-		Query:    "",
-		Page:     1,
-		PageSize: 100,
-	}
+	opts := SearchOptions{Query: "", Page: 1, PageSize: 100}
 
 	results, err := db.Search(ctx, opts)
 	if err != nil {
@@ -1468,11 +1573,9 @@ func TestStatsWithNoData(t *testing.T) {
 	if stats.TotalFiles != 0 {
 		t.Errorf("TotalFiles = %d, want 0 for empty database", stats.TotalFiles)
 	}
-
 	if stats.TotalFolders != 0 {
 		t.Errorf("TotalFolders = %d, want 0 for empty database", stats.TotalFolders)
 	}
-
 	if stats.TotalTags != 0 {
 		t.Errorf("TotalTags = %d, want 0 for empty database", stats.TotalTags)
 	}
@@ -1514,7 +1617,7 @@ func TestSetupCompleteMigrationIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, _, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath, nil)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1541,7 +1644,7 @@ func TestSetupCompleteMigrationIntegration(t *testing.T) {
 
 	db.Close()
 
-	db, _, err = New(context.Background(), dbPath)
+	db, _, err = New(context.Background(), dbPath, nil)
 	if err != nil {
 		t.Fatalf("Failed to reopen database: %v", err)
 	}
@@ -1575,12 +1678,8 @@ func TestDatabaseConnectionPoolConcurrency(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		file := MediaFile{
-			Name:       "test.jpg",
-			Path:       "test/test.jpg",
-			ParentPath: "test",
-			Type:       FileTypeImage,
-			Size:       1024,
-			ModTime:    now,
+			Name: "test.jpg", Path: "test/test.jpg", ParentPath: "test",
+			Type: FileTypeImage, Size: 1024, ModTime: now,
 		}
 		if err := db.UpsertFile(ctx, tx, &file); err != nil {
 			t.Fatalf("UpsertFile failed: %v", err)
@@ -1667,12 +1766,8 @@ func TestConnectionPoolUnderLoad(t *testing.T) {
 	}
 	for i := 0; i < 100; i++ {
 		file := MediaFile{
-			Name:       "test.jpg",
-			Path:       "test/test.jpg",
-			ParentPath: "test",
-			Type:       FileTypeImage,
-			Size:       1024,
-			ModTime:    now,
+			Name: "test.jpg", Path: "test/test.jpg", ParentPath: "test",
+			Type: FileTypeImage, Size: 1024, ModTime: now,
 		}
 		if err := db.UpsertFile(ctx, tx, &file); err != nil {
 			t.Fatalf("UpsertFile failed: %v", err)
@@ -1698,9 +1793,9 @@ func TestConnectionPoolUnderLoad(t *testing.T) {
 
 	for i := 0; i < numWrites; i++ {
 		go func(idx int) {
-			tx, err := db.BeginBatch(ctx)
-			if err != nil {
-				done <- err
+			wtx, werr := db.BeginBatch(ctx)
+			if werr != nil {
+				done <- werr
 				return
 			}
 			for j := 0; j < 10; j++ {
@@ -1710,48 +1805,51 @@ func TestConnectionPoolUnderLoad(t *testing.T) {
 					ParentPath: "concurrent",
 					Type:       FileTypeImage,
 					Size:       1024,
-					ModTime:    now}
-				if err := db.UpsertFile(ctx, tx, &file); err != nil {
-					done <- err
+					ModTime:    now,
+				}
+				if uerr := db.UpsertFile(ctx, wtx, &file); uerr != nil {
+					done <- uerr
 					return
 				}
 			}
-			done <- db.EndBatch(tx, nil)
+			done <- db.EndBatch(wtx, nil)
 		}(i)
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	errors := 0
+	errCount := 0
 	for i := 0; i < totalOps; i++ {
 		if err := <-done; err != nil {
 			t.Errorf("Operation failed: %v", err)
-			errors++
+			errCount++
 		}
 	}
 	elapsed := time.Since(start)
 
-	if errors > 0 {
-		t.Fatalf("%d/%d operations failed", errors, totalOps)
+	if errCount > 0 {
+		t.Fatalf("%d/%d operations failed", errCount, totalOps)
 	}
 
 	if elapsed > 2*time.Second {
 		t.Logf("Warning: Operations took %v, may indicate connection pool issues", elapsed)
 	}
 
-	t.Logf("%d mixed operations (%d reads, %d writes) completed in %v with no errors", totalOps, numReads, numWrites, elapsed)
+	t.Logf("%d mixed operations (%d reads, %d writes) completed in %v with no errors",
+		totalOps, numReads, numWrites, elapsed)
 }
 
+// =============================================================================
+// Mmap / SIGBUS Protection — Integration Tests
+// =============================================================================
+
 // TestMmapDisabledOnAllConnections verifies that every connection in the pool
-// has mmap_size=0, regardless of the system SQLite's compiled-in default.
-// This is the core safety test for the SIGBUS fix.
+// has mmap_size=0 when MmapDisabled is true.
 func TestMmapDisabledOnAllConnections(t *testing.T) {
-	db, _ := setupTestDB(t)
+	db, _ := setupTestDB(t, &Options{MmapDisabled: true})
 	defer db.Close()
 
 	ctx := context.Background()
 
-	// Force the pool to create multiple connections by holding them open
-	// simultaneously, then verify each one has mmap_size=0.
 	const numConns = 10
 	conns := make([]*sql.Conn, 0, numConns)
 
@@ -1781,10 +1879,54 @@ func TestMmapDisabledOnAllConnections(t *testing.T) {
 	t.Logf("Verified mmap_size=0 on all %d pooled connections", numConns)
 }
 
+// TestMmapEnabledByDefault verifies that when no options are passed (nil),
+// the standard SQLite driver is used.
+func TestMmapEnabledByDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "default_mmap.db")
+
+	db, info, err := New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("New(nil) failed: %v", err)
+	}
+	defer db.Close()
+
+	if strings.Contains(info.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("Default (nil opts) should NOT report SIGBUS protection, got: %s", info.MmapStatus)
+	}
+
+	if !strings.Contains(info.MmapStatus, "standard mode") {
+		t.Errorf("Default (nil opts) should report standard mode, got: %s", info.MmapStatus)
+	}
+
+	t.Logf("Default mmap status: %s", info.MmapStatus)
+}
+
+// TestMmapEnabledExplicit verifies that MmapDisabled=false behaves the same
+// as nil options.
+func TestMmapEnabledExplicit(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "explicit_enabled.db")
+
+	db, info, err := New(context.Background(), dbPath, &Options{MmapDisabled: false})
+	if err != nil {
+		t.Fatalf("New(MmapDisabled=false) failed: %v", err)
+	}
+	defer db.Close()
+
+	if strings.Contains(info.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("MmapDisabled=false should NOT report SIGBUS protection, got: %s", info.MmapStatus)
+	}
+
+	if !strings.Contains(info.MmapStatus, "standard mode") {
+		t.Errorf("MmapDisabled=false should report standard mode, got: %s", info.MmapStatus)
+	}
+}
+
 // TestMmapDisabledAfterInitialize verifies that database initialization
-// (schema creation, migrations) does not re-enable mmap.
+// does not re-enable mmap when disabled.
 func TestMmapDisabledAfterInitialize(t *testing.T) {
-	db, _ := setupTestDB(t)
+	db, _ := setupTestDB(t, &Options{MmapDisabled: true})
 	defer db.Close()
 
 	ctx := context.Background()
@@ -1800,8 +1942,7 @@ func TestMmapDisabledAfterInitialize(t *testing.T) {
 	}
 }
 
-// TestMmapDisabledWithCustomDriver verifies that our custom driver is registered
-// and applies mmap_size=0 independently of the default "sqlite3" driver.
+// TestMmapDisabledWithCustomDriver verifies that our custom driver applies mmap_size=0.
 func TestMmapDisabledWithCustomDriver(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "driver_test.db")
@@ -1809,7 +1950,6 @@ func TestMmapDisabledWithCustomDriver(t *testing.T) {
 	ctx := context.Background()
 	connStr := fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=5000", dbPath)
 
-	// Open with our custom driver
 	customDB, err := sql.Open(driverName, connStr)
 	if err != nil {
 		t.Fatalf("Failed to open with custom driver: %v", err)
@@ -1832,21 +1972,19 @@ func TestMmapDisabledWithCustomDriver(t *testing.T) {
 	t.Logf("Custom driver %q correctly sets mmap_size=0", driverName)
 }
 
-// TestNewDatabaseMmapDisabled verifies that New() creates a database with mmap
-// disabled and that all operations work correctly without mmap.
+// TestNewDatabaseMmapDisabled verifies New() with MmapDisabled=true.
 func TestNewDatabaseMmapDisabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "mmap_test.db")
 
 	ctx := context.Background()
 
-	db, _, err := New(ctx, dbPath)
+	db, _, err := New(ctx, dbPath, &Options{MmapDisabled: true})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
 	defer db.Close()
 
-	// Verify mmap is disabled
 	var mmapSize int64
 	if err := db.db.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
 		t.Fatalf("Failed to read mmap_size: %v", err)
@@ -1856,89 +1994,66 @@ func TestNewDatabaseMmapDisabled(t *testing.T) {
 		t.Errorf("New() database has mmap_size=%d, want 0", mmapSize)
 	}
 
-	// Verify write operations work with mmap disabled
 	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
 	file := &MediaFile{
-		Name:       "test.jpg",
-		Path:       "mmap_test/test.jpg",
-		ParentPath: "mmap_test",
-		Type:       FileTypeImage,
-		Size:       1024,
-		ModTime:    time.Now(),
-		MimeType:   "image/jpeg",
+		Name: "test.jpg", Path: "mmap_test/test.jpg", ParentPath: "mmap_test",
+		Type: FileTypeImage, Size: 1024, ModTime: time.Now(), MimeType: "image/jpeg",
 	}
 
 	if err := db.UpsertFile(ctx, tx, file); err != nil {
 		t.Fatalf("UpsertFile failed with mmap disabled: %v", err)
 	}
-
 	if err := db.EndBatch(tx, nil); err != nil {
 		t.Fatalf("EndBatch failed with mmap disabled: %v", err)
 	}
 
-	// Verify read operations work with mmap disabled
 	retrieved, err := db.GetFileByPath(ctx, "mmap_test/test.jpg")
 	if err != nil {
 		t.Fatalf("GetFileByPath failed with mmap disabled: %v", err)
 	}
-
 	if retrieved.Name != "test.jpg" {
 		t.Errorf("Retrieved file name = %q, want %q", retrieved.Name, "test.jpg")
 	}
 
-	// Verify search works with mmap disabled
-	results, err := db.Search(ctx, SearchOptions{
-		Query:    "test",
-		Page:     1,
-		PageSize: 10,
-	})
+	results, err := db.Search(ctx, SearchOptions{Query: "test", Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatalf("Search failed with mmap disabled: %v", err)
 	}
-
 	if len(results.Items) < 1 {
 		t.Error("Search should return at least 1 result with mmap disabled")
 	}
 
-	// Verify stats work with mmap disabled
-	_, err = db.CalculateStats()
-	if err != nil {
+	if _, err := db.CalculateStats(); err != nil {
 		t.Fatalf("CalculateStats failed with mmap disabled: %v", err)
 	}
 
 	t.Log("All database operations verified working with mmap disabled")
 }
 
-// TestMmapDisabledPersistsAcrossReopen verifies that mmap stays disabled
-// when the database is closed and reopened (the ConnectHook fires on new connections).
+// TestMmapDisabledPersistsAcrossReopen verifies mmap stays disabled on reopen.
 func TestMmapDisabledPersistsAcrossReopen(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "reopen_test.db")
 
 	ctx := context.Background()
+	opts := &Options{MmapDisabled: true}
 
-	// First open
-	db1, _, err := New(ctx, dbPath)
+	db1, _, err := New(ctx, dbPath, opts)
 	if err != nil {
 		t.Fatalf("First New() failed: %v", err)
 	}
 
-	// Insert data
 	tx, err := db1.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 	file := &MediaFile{
-		Name:       "persist.jpg",
-		Path:       "persist/persist.jpg",
-		ParentPath: "persist",
-		Type:       FileTypeImage,
-		Size:       1024,
-		ModTime:    time.Now(),
+		Name: "persist.jpg", Path: "persist/persist.jpg", ParentPath: "persist",
+		Type: FileTypeImage, Size: 1024, ModTime: time.Now(),
 	}
 	if err := db1.UpsertFile(ctx, tx, file); err != nil {
 		t.Fatalf("UpsertFile failed: %v", err)
@@ -1949,14 +2064,12 @@ func TestMmapDisabledPersistsAcrossReopen(t *testing.T) {
 
 	db1.Close()
 
-	// Second open — new connections, ConnectHook should fire again
-	db2, _, err := New(ctx, dbPath)
+	db2, _, err := New(ctx, dbPath, opts)
 	if err != nil {
 		t.Fatalf("Second New() failed: %v", err)
 	}
 	defer db2.Close()
 
-	// Verify mmap is still disabled
 	var mmapSize int64
 	if err := db2.db.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
 		t.Fatalf("Failed to read mmap_size after reopen: %v", err)
@@ -1966,49 +2079,135 @@ func TestMmapDisabledPersistsAcrossReopen(t *testing.T) {
 		t.Errorf("mmap_size=%d after reopen, want 0", mmapSize)
 	}
 
-	// Verify data persisted
 	retrieved, err := db2.GetFileByPath(ctx, "persist/persist.jpg")
 	if err != nil {
 		t.Fatalf("GetFileByPath failed after reopen: %v", err)
 	}
-
 	if retrieved.Name != "persist.jpg" {
 		t.Errorf("Retrieved file name = %q after reopen, want %q", retrieved.Name, "persist.jpg")
 	}
 }
 
-// TestCheckStorageHealthNormal verifies health check passes on a healthy database.
+// TestMmapModeSwitch verifies switching between mmap modes across reopens.
+func TestMmapModeSwitch(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "switch_test.db")
+	ctx := context.Background()
+
+	// Create with mmap disabled
+	db1, info1, err := New(ctx, dbPath, &Options{MmapDisabled: true})
+	if err != nil {
+		t.Fatalf("New(disabled) failed: %v", err)
+	}
+
+	if !strings.Contains(info1.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("First open should have SIGBUS protection, got: %s", info1.MmapStatus)
+	}
+
+	tx, err := db1.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	file := &MediaFile{
+		Name: "switch.jpg", Path: "switch/switch.jpg", ParentPath: "switch",
+		Type: FileTypeImage, Size: 1024, ModTime: time.Now(),
+	}
+	if err := db1.UpsertFile(ctx, tx, file); err != nil {
+		t.Fatalf("UpsertFile failed: %v", err)
+	}
+	if err := db1.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch failed: %v", err)
+	}
+	db1.Close()
+
+	// Reopen with mmap enabled (standard mode)
+	db2, info2, err := New(ctx, dbPath, nil)
+	if err != nil {
+		t.Fatalf("New(nil) after disabled failed: %v", err)
+	}
+	defer db2.Close()
+
+	if !strings.Contains(info2.MmapStatus, "standard mode") {
+		t.Errorf("Second open should be standard mode, got: %s", info2.MmapStatus)
+	}
+
+	retrieved, err := db2.GetFileByPath(ctx, "switch/switch.jpg")
+	if err != nil {
+		t.Fatalf("GetFileByPath after mode switch failed: %v", err)
+	}
+	if retrieved.Name != "switch.jpg" {
+		t.Errorf("Name = %q after mode switch, want %q", retrieved.Name, "switch.jpg")
+	}
+
+	t.Log("Database successfully switched from mmap-disabled to mmap-enabled")
+}
+
+// TestMmapInstanceIsolation verifies that the mmapDisabled flag is per-instance,
+// not global — creating a DB with mmap disabled should not affect another DB
+// created with mmap enabled.
+func TestMmapInstanceIsolation(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	// Create first DB with mmap disabled
+	db1Path := filepath.Join(tmpDir, "disabled.db")
+	db1, info1, err := New(ctx, db1Path, &Options{MmapDisabled: true})
+	if err != nil {
+		t.Fatalf("New(disabled) failed: %v", err)
+	}
+	defer db1.Close()
+
+	if !strings.Contains(info1.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("db1 should have SIGBUS protection, got: %s", info1.MmapStatus)
+	}
+
+	// Create second DB with mmap enabled AFTER the disabled one
+	db2Path := filepath.Join(tmpDir, "enabled.db")
+	db2, info2, err := New(ctx, db2Path, nil)
+	if err != nil {
+		t.Fatalf("New(nil) failed: %v", err)
+	}
+	defer db2.Close()
+
+	// db2 must NOT inherit db1's mmap setting
+	if strings.Contains(info2.MmapStatus, "SIGBUS protection active") {
+		t.Errorf("db2 should NOT have SIGBUS protection (instance leak!), got: %s", info2.MmapStatus)
+	}
+
+	if !strings.Contains(info2.MmapStatus, "standard mode") {
+		t.Errorf("db2 should be standard mode, got: %s", info2.MmapStatus)
+	}
+
+	t.Log("Mmap settings are correctly isolated between database instances")
+}
+
+// =============================================================================
+// Storage Health Tests
+// =============================================================================
+
 func TestCheckStorageHealthNormal(t *testing.T) {
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
-	// Should complete without panic or error on a healthy database
 	db.CheckStorageHealth()
 
-	// Verify the DB file exists and is readable
 	if _, err := os.Stat(db.dbPath); err != nil {
 		t.Errorf("DB file should exist: %v", err)
 	}
 }
 
-// TestCheckStorageHealthMissingDB verifies health check handles a missing DB file
-// gracefully (this simulates the condition that causes SIGBUS with mmap).
 func TestCheckStorageHealthMissingDB(t *testing.T) {
 	db, _ := setupTestDB(t)
 
-	// Close the database and remove files to simulate storage failure
 	db.Close()
 	os.Remove(db.dbPath)
 	os.Remove(db.dbPath + "-wal")
 	os.Remove(db.dbPath + "-shm")
 
-	// Health check should not panic — it should detect the missing file
-	// and increment metrics
+	// Should not panic
 	db.CheckStorageHealth()
 }
 
-// TestCheckStorageHealthUnreadableDB verifies health check detects permission errors
-// (another condition that causes SIGBUS with mmap on some systems).
 func TestCheckStorageHealthUnreadableDB(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("skipping permission test when running as root")
@@ -2017,27 +2216,24 @@ func TestCheckStorageHealthUnreadableDB(t *testing.T) {
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
-	// Make the DB file unreadable to simulate I/O failure
 	if err := os.Chmod(db.dbPath, 0o000); err != nil {
 		t.Fatalf("Failed to chmod: %v", err)
 	}
-	// Restore permissions on cleanup so TempDir removal works
 	defer os.Chmod(db.dbPath, 0o644)
 
-	// Health check should detect the I/O error without panicking
+	// Should not panic
 	db.CheckStorageHealth()
 }
 
-// TestLogSQLiteConfig verifies the config logging runs without error.
 func TestLogSQLiteConfig(t *testing.T) {
 	db, _ := setupTestDB(t)
 	db.Close()
-
-	// Should not panic
-	// db.logSQLiteConfig(context.Background())
 }
 
-// BenchmarkConcurrentReads benchmarks concurrent read performance
+// =============================================================================
+// Benchmarks
+// =============================================================================
+
 func BenchmarkConcurrentReads(b *testing.B) {
 	db, _ := setupTestDB(b)
 	defer db.Close()
@@ -2050,7 +2246,6 @@ func BenchmarkConcurrentReads(b *testing.B) {
 	})
 }
 
-// BenchmarkConnectionPoolAcquisition benchmarks connection acquisition
 func BenchmarkConnectionPoolAcquisition(b *testing.B) {
 	db, _ := setupTestDB(b)
 	defer db.Close()
@@ -2067,7 +2262,6 @@ func BenchmarkConnectionPoolAcquisition(b *testing.B) {
 	}
 }
 
-// BenchmarkBeginEndBatch benchmarks transaction lifecycle
 func BenchmarkBeginEndBatch(b *testing.B) {
 	db, _ := setupTestDB(b)
 	defer db.Close()

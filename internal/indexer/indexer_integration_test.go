@@ -302,7 +302,10 @@ func TestIndexerWithRealDatabaseIntegration(t *testing.T) {
 	}
 
 	// Create database
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -382,7 +385,10 @@ func TestIndexerIncrementalUpdatesIntegration(t *testing.T) {
 		os.WriteFile(fullPath, []byte("data"), 0o644)
 	}
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -452,7 +458,10 @@ func TestIndexerChangeDetectionIntegration(t *testing.T) {
 	// Create initial file
 	os.WriteFile(filepath.Join(tempDir, "photo1.jpg"), []byte("data"), 0o644)
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -510,7 +519,10 @@ func TestIndexerStopAndRestartIntegration(t *testing.T) {
 		os.WriteFile(filename, []byte("data"), 0o644)
 	}
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -587,7 +599,10 @@ func TestIndexerWithCallbackIntegration(t *testing.T) {
 
 	os.WriteFile(filepath.Join(tempDir, "photo1.jpg"), []byte("data"), 0o644)
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -706,7 +721,11 @@ func BenchmarkIndexerFullCycle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		dbPath := filepath.Join(b.TempDir(), "bench.db")
-		db, _, _ := database.New(context.Background(), dbPath)
+
+		dbOpts := &database.Options{
+			MmapDisabled: false, // Set to true if you want to disable mmap
+		}
+		db, _, _ := database.New(context.Background(), dbPath, dbOpts)
 		idx := New(db, tempDir, 1*time.Hour)
 		b.StartTimer()
 

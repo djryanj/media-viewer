@@ -469,6 +469,65 @@ func TestDriverNameConstant(t *testing.T) {
 	if driverName != "sqlite3_mmap_disabled" {
 		t.Errorf("driverName = %q, want %q", driverName, "sqlite3_mmap_disabled")
 	}
+
+	if standardDriverName != "sqlite3" {
+		t.Errorf("standardDriverName = %q, want %q", standardDriverName, "sqlite3")
+	}
+}
+
+// TestActiveDriverName verifies driver selection based on options.
+func TestActiveDriverName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		opts     *Options
+		wantName string
+	}{
+		{
+			name:     "nil options uses standard driver",
+			opts:     nil,
+			wantName: standardDriverName,
+		},
+		{
+			name:     "mmap enabled uses standard driver",
+			opts:     &Options{MmapDisabled: false},
+			wantName: standardDriverName,
+		},
+		{
+			name:     "mmap disabled uses custom driver",
+			opts:     &Options{MmapDisabled: true},
+			wantName: driverName,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := activeDriverName(tt.opts)
+			if got != tt.wantName {
+				t.Errorf("activeDriverName(%+v) = %q, want %q", tt.opts, got, tt.wantName)
+			}
+		})
+	}
+}
+
+// TestOptionsStruct tests the Options struct.
+func TestOptionsStruct(t *testing.T) {
+	t.Parallel()
+
+	// Default zero value should have mmap enabled (not disabled)
+	opts := Options{}
+	if opts.MmapDisabled {
+		t.Error("Default Options.MmapDisabled should be false")
+	}
+
+	// Explicit disable
+	opts = Options{MmapDisabled: true}
+	if !opts.MmapDisabled {
+		t.Error("Options.MmapDisabled should be true when set")
+	}
 }
 
 // TestRegisterDriverIdempotent verifies that registerDriver can be called

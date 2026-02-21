@@ -32,8 +32,10 @@ func setupFavoritesIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 
 	os.MkdirAll(mediaDir, 0o755)
 	os.MkdirAll(cacheDir, 0o755)
-
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}

@@ -36,7 +36,10 @@ func setupSearchIntegrationTest(t *testing.T) (h *Handlers, mediaDir string, cle
 	}
 
 	// Initialize database
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

@@ -83,8 +83,10 @@ func setupGetAllFilesBenchmark(b *testing.B, fileCount int) (db *Database, clean
 
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
