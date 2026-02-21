@@ -6,6 +6,7 @@ const Lightbox = {
     touchEndX: 0,
     touchStartY: 0,
     isSwiping: false,
+    lastTouchMoveTime: 0,
     useAppMedia: true,
 
     // Loading management
@@ -55,6 +56,8 @@ const Lightbox = {
 
     init() {
         this.cacheElements();
+        // Track external video controls height (populated by VideoControls)
+        this.videoControlsHeight = 0;
         this.createHotZones();
         this.createLoadingIndicator();
         this.createAutoplayToggle();
@@ -62,6 +65,20 @@ const Lightbox = {
         this.createTagsOverlay();
         this.bindEvents();
         this.bindZoomEvents();
+
+        // Listen for video control size events so hotzones can avoid overlapping controls
+        const video = this.elements.video;
+        if (video) {
+            video.addEventListener('video-controls-size', (e) => {
+                try {
+                    this.videoControlsHeight =
+                        e && e.detail && typeof e.detail.height === 'number' ? e.detail.height : 0;
+                    this.updateHotZonePositions();
+                } catch (err) {
+                    console.debug('Lightbox: failed to process video-controls-size event', err);
+                }
+            });
+        }
     },
 
     cacheElements() {
@@ -443,10 +460,9 @@ const Lightbox = {
             return;
         }
 
-        // Calculate bottom position based on video size
+        // Calculate bottom position based on video size and actual controls height
         if (video && !video.classList.contains('hidden')) {
-            // Check if video metadata has loaded (videoHeight/videoWidth are only set after loadedmetadata)
-            // If not, skip calculation - it will be done when loadedmetadata event fires
+            // Check if video metadata has loaded
             if (!video.videoHeight || !video.videoWidth) {
                 return;
             }
@@ -457,9 +473,23 @@ const Lightbox = {
             // Calculate distance from bottom of viewport to bottom of video
             const videoBottom = viewportHeight - videoRect.bottom;
 
-            // Position hotzones to end 50px above the bottom of the video
-            // This keeps them clear of video controls which are typically 40-50px tall
-            const bottomPosition = videoBottom + 50;
+            // Measure the actual rendered height of the video controls bottom bar
+            const controlsBottom =
+                this.elements.videoWrapper?.querySelector('.video-controls-bottom');
+            let controlsHeight;
+
+            if (controlsBottom) {
+                const controlsRect = controlsBottom.getBoundingClientRect();
+                controlsHeight = controlsRect.height;
+            } else {
+                // Fallback if controls haven't rendered yet
+                controlsHeight = 60;
+            }
+
+            // Add padding so hotzones don't butt up against the controls
+            const padding = 12;
+
+            const bottomPosition = videoBottom + controlsHeight + padding;
 
             leftZone.style.bottom = `${bottomPosition}px`;
             rightZone.style.bottom = `${bottomPosition}px`;
@@ -590,6 +620,7 @@ const Lightbox = {
         });
 
         // Swipe handling - attach to lightbox element so swipes work anywhere
+        // Swipe handling - attach to lightbox element so swipes work anywhere
         this.elements.lightbox.addEventListener(
             'touchstart',
             (e) => {
@@ -602,6 +633,7 @@ const Lightbox = {
                 this.touchStartX = e.changedTouches[0].screenX;
                 this.touchStartY = e.changedTouches[0].screenY;
                 this.isSwiping = false;
+                this.lastTouchMoveTime = 0;
             },
             { passive: true }
         );
@@ -621,6 +653,9 @@ const Lightbox = {
                 if (deltaX > deltaY && deltaX > 10) {
                     this.isSwiping = true;
                 }
+
+                // Track when the finger last moved
+                this.lastTouchMoveTime = Date.now();
             },
             { passive: true }
         );
@@ -632,6 +667,13 @@ const Lightbox = {
                 if (this.zoom.scale > 1) return;
 
                 if (this.isSwiping) {
+                    // Cancel swipe if the finger stopped moving for 300ms+ before lifting
+                    const timeSinceLastMove = Date.now() - this.lastTouchMoveTime;
+                    if (this.lastTouchMoveTime > 0 && timeSinceLastMove > 300) {
+                        this.isSwiping = false;
+                        return;
+                    }
+
                     this.touchEndX = e.changedTouches[0].screenX;
                     this.handleSwipe();
                 }
@@ -1688,6 +1730,10 @@ const Lightbox = {
         // Apply loop setting BEFORE loading
         video.loop = Preferences.isMediaLoopEnabled();
 
+        // Initialize VideoPlayer component BEFORE loading so controls exist
+        // when loadedmetadata fires
+        this.initVideoPlayer();
+
         // Add timeout for video loading (long timeout for transcoding)
         const loadTimeout = setTimeout(
             () => {
@@ -1783,18 +1829,12 @@ const Lightbox = {
         video.addEventListener('error', onError);
 
         console.debug('Lightbox: About to call checkVideoTranscodingStatus for', file.path);
-
-        // Check if video might need transcoding and show appropriate message
         this.checkVideoTranscodingStatus(file.path, loadId);
-
         console.debug('Lightbox: checkVideoTranscodingStatus called');
 
         video.src = videoUrl;
         video.classList.remove('hidden');
         video.load();
-
-        // Initialize VideoPlayer component
-        this.initVideoPlayer();
     },
 
     initVideoPlayer() {

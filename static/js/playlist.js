@@ -5,6 +5,7 @@ const Playlist = {
     touchStartX: 0,
     touchEndX: 0,
     touchStartY: 0,
+    lastTouchMoveTime: 0,
     isSwiping: false,
     isLandscape: false,
     isTheaterMode: false,
@@ -260,6 +261,7 @@ const Playlist = {
                 this.touchStartX = e.changedTouches[0].screenX;
                 this.touchStartY = e.changedTouches[0].screenY;
                 this.isSwiping = false;
+                this.lastTouchMoveTime = 0;
             },
             { passive: true }
         );
@@ -276,6 +278,9 @@ const Playlist = {
                 if (deltaX > deltaY && deltaX > 10) {
                     this.isSwiping = true;
                 }
+
+                // Track when the finger last moved
+                this.lastTouchMoveTime = Date.now();
             },
             { passive: true }
         );
@@ -287,6 +292,13 @@ const Playlist = {
                     return;
 
                 if (this.isSwiping) {
+                    // Cancel swipe if the finger stopped moving for 300ms+ before lifting
+                    const timeSinceLastMove = Date.now() - this.lastTouchMoveTime;
+                    if (this.lastTouchMoveTime > 0 && timeSinceLastMove > 300) {
+                        this.isSwiping = false;
+                        return;
+                    }
+
                     this.touchEndX = e.changedTouches[0].screenX;
                     this.handleSwipe();
                 }

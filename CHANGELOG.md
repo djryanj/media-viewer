@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Frontend) various bugs discovered through the CI process. [#49](https://github.com/djryanj/media-viewer/issues/49))
 - (Backend) during CI update, a new version of golangci was being used which uncovered some additional lint errors. These were also fixed. [#49](https://github.com/djryanj/media-viewer/issues/49))
 - Regression: fixed a regression introduced in a previous commit to enforce file path safety from unsafe characters which were actually valid characters in file paths that caused thumbnail generation to fail for those files; like `#`, `~`, `&`, `[``]`, etc. [#297](https://github.com/djryanj/media-viewer/issues/297))
+- lightbox and playlist: Fixed behaviour where if you stop moving your finger on the screen during a swipe action, it didn't cancel the swipe navigation ([#288](https://github.com/djryanj/media-viewer/issues/288))
+- Video controls:
 
 ### Changed
 
@@ -35,14 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       The fix disables memory-mapping for database access. Benchmarking confirmed this has no measurable impact on performance for any database operation, including reads, writes, searches, and concurrent workloads. In mixed read/write scenarios, the change actually showed a small improvement.
       Additionally, we added storage health monitoring that periodically checks whether the database files are accessible. If a storage disruption occurs, it is now detected, logged, and reported through metrics rather than causing a crash. Operators can set alerts on the new db_storage_errors_total metric to be notified of storage issues before they affect users.
 
-### Changed
-
 - Backend reliability & observability improvements related to thumbnails, filesystem retries, and metrics ([#293](https://github.com/djryanj/media-viewer/issues/293))
     - Introduced a `filesystem.Observer` interface and a Prometheus-backed observer implementation to record per-volume filesystem operation and retry metrics (media, cache, database, unknown).
     - Metrics collector and filesystem access now use retry-aware helpers (`StatWithRetry`, `ReadDirWithRetry`, `WriteFileWithRetry`) and a robust directory-walk (`getDirSizeWithRetry`) so operations behave reliably on flaky network storage (NFS/Longhorn).
     - Hardened thumbnail generation: NFS-safe cache writes, added `detectImageFormat()` for format-aware metrics, and recorded decode/resize/encode/cache phase metrics to improve troubleshooting and performance analysis.
     - Added defensive checks (nil-DB guards) in orphan-cleanup and rebuild paths to avoid panics when the database is unavailable.
     - Large expansion and refactor of unit/integration tests and benchmarks across `internal/filesystem`, `internal/media`, and `internal/metrics` to cover the new behavior and improve CI confidence.
+- Video controls: Enlarged touchable area that will grab the seek bar [#281](https://github.com/djryanj/media-viewer/issues/281)
+- Video controls: Touching anywhere on the seek bar now grabs the handle and seeks to that spot, rather than needing to explicitly grab the handle ([#281](https://github.com/djryanj/media-viewer/issues/281))
 
 ## [0.13.3] - 2026-02-13
 

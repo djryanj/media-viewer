@@ -20,6 +20,7 @@ class VideoPlayer {
 
         // State
         this.isDraggingProgress = false;
+        this.isInteractingWithControls = false;
         this.controlsTimeout = null;
         this.audioCheckTimeout = null;
         this.tooltipListeners = null;
@@ -166,8 +167,14 @@ class VideoPlayer {
         });
 
         // Volume
-        this.muteBtn.addEventListener('click', () => this.toggleMute());
-        this.volumeSlider.addEventListener('input', (e) => this.setVolume(e.target.value / 100));
+        this.muteBtn.addEventListener('click', () => {
+            this.toggleMute();
+            this.resetHideTimer();
+        });
+        this.volumeSlider.addEventListener('input', (e) => {
+            this.setVolume(e.target.value / 100);
+            this.resetHideTimer();
+        });
 
         // Prevent swipe gestures on volume slider
         this.volumeSlider.addEventListener('touchstart', (e) => e.stopPropagation());
@@ -175,16 +182,46 @@ class VideoPlayer {
         this.volumeSlider.addEventListener('touchend', (e) => e.stopPropagation());
         this.volumeSlider.addEventListener('mousedown', (e) => e.stopPropagation());
 
-        // Progress bar
-        this.progressContainer.addEventListener('mousedown', (e) => this.startProgressDrag(e));
-        this.progressContainer.addEventListener('touchstart', (e) => this.startProgressDrag(e), {
-            passive: false,
-        });
-        this.progressContainer.addEventListener('click', (e) => {
-            if (!this.isDraggingProgress) {
-                this.seekToPosition(e);
+        // Keep controls visible while interacting with the bottom control bar
+        const controlsBottom = this.container.querySelector('.video-controls-bottom');
+        if (controlsBottom) {
+            controlsBottom.addEventListener('mouseenter', () => {
+                this.isInteractingWithControls = true;
+                this.cancelHideTimer();
+            });
+            controlsBottom.addEventListener('mouseleave', () => {
+                this.isInteractingWithControls = false;
+                this.hideControlsDelayed();
+            });
+            controlsBottom.addEventListener(
+                'touchstart',
+                () => {
+                    this.isInteractingWithControls = true;
+                    this.cancelHideTimer();
+                },
+                { passive: true }
+            );
+            controlsBottom.addEventListener(
+                'touchend',
+                () => {
+                    setTimeout(() => {
+                        this.isInteractingWithControls = false;
+                        this.hideControlsDelayed();
+                    }, 500);
+                },
+                { passive: true }
+            );
+        }
+
+        // Progress bar - unified touch/mouse handling
+        this.progressContainer.addEventListener('mousedown', (e) => this.onProgressPointerDown(e));
+        this.progressContainer.addEventListener(
+            'touchstart',
+            (e) => this.onProgressPointerDown(e),
+            {
+                passive: false,
             }
-        });
+        );
 
         // Navigation
         if (this.showNavigation && this.onPrevious && this.onNext) {
@@ -200,12 +237,10 @@ class VideoPlayer {
 
         // Video events
         this.video.addEventListener('loadstart', () => {
-            // Hide controls when video starts loading
             this.controls.classList.remove('show');
         });
         this.video.addEventListener('play', () => {
             this.updatePlayPauseIcon();
-            // Start auto-hide timer when video starts playing
             if (this.controls.classList.contains('show')) {
                 this.hideControlsDelayed();
             }
@@ -218,7 +253,6 @@ class VideoPlayer {
         this.video.addEventListener('loadedmetadata', () => {
             this.updateTimeDisplay();
             this.checkAudioTracks();
-            // Show controls once video metadata is loaded
             this.showControls('loadedmetadata event');
         });
         this.video.addEventListener('click', (e) => {
@@ -231,6 +265,7 @@ class VideoPlayer {
             this.showControls('mousemove');
         });
         this.container.addEventListener('mouseleave', () => {
+            this.isInteractingWithControls = false;
             this.hideControlsDelayed();
         });
 
@@ -246,7 +281,6 @@ class VideoPlayer {
         this.container.addEventListener('touchend', (e) => {
             const touchDuration = Date.now() - touchStartTime;
 
-            // Ignore if touching actual controls (buttons, sliders, progress bar)
             if (
                 e.target.closest('button') ||
                 e.target.closest('input') ||
@@ -255,9 +289,7 @@ class VideoPlayer {
                 return;
             }
 
-            // Only respond to quick taps (not drags/swipes)
             if (touchDuration < 300 && touchStartTarget === e.target) {
-                // If controls are showing, start hide timer; if hidden, show them
                 if (this.controls.classList.contains('show') && !this.video.paused) {
                     this.hideControlsDelayed();
                 } else {
@@ -271,6 +303,91 @@ class VideoPlayer {
                 togglePlayPause();
             }
         });
+    }
+
+    /**
+     * Unified pointer down handler for the progress bar area.
+     * Distinguishes between tap-to-seek and drag-to-scrub:
+     * - Tap (no/minimal movement): seeks to the tapped position
+     * - Drag (movement detected): scrubs to follow the finger/mouse
+     */
+    onProgressPointerDown(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.cancelHideTimer();
+
+        const startClientX = this.getClientX(e);
+        if (startClientX === undefined) return;
+
+        let hasDragged = false;
+        const dragThreshold = 5; // pixels of movement before we consider it a drag
+
+        const handleMove = (moveEvent) => {
+            moveEvent.preventDefault();
+            moveEvent.stopPropagation();
+
+            const currentX = this.getClientX(moveEvent);
+            if (currentX === undefined) return;
+
+            if (!hasDragged) {
+                // Check if we've moved enough to consider this a drag
+                if (Math.abs(currentX - startClientX) >= dragThreshold) {
+                    hasDragged = true;
+                    this.isDraggingProgress = true;
+                }
+            }
+
+            if (hasDragged) {
+                this.seekToPosition(moveEvent);
+            }
+        };
+
+        const handleEnd = (endEvent) => {
+            endEvent.stopPropagation();
+
+            if (!hasDragged) {
+                // It was a tap — seek to the tapped position
+                this.seekToPosition(e); // Use original event position
+            }
+
+            this.isDraggingProgress = false;
+            this.hideControlsDelayed();
+
+            document.removeEventListener('mousemove', handleMove);
+            document.removeEventListener('touchmove', handleMove);
+            document.removeEventListener('mouseup', handleEnd);
+            document.removeEventListener('touchend', handleEnd);
+        };
+
+        document.addEventListener('mousemove', handleMove);
+        document.addEventListener('touchmove', handleMove, { passive: false });
+        document.addEventListener('mouseup', handleEnd);
+        document.addEventListener('touchend', handleEnd);
+    }
+
+    /**
+     * Extract clientX from a mouse or touch event
+     */
+    getClientX(e) {
+        if (e.type.includes('touch')) {
+            return e.touches?.[0]?.clientX || e.changedTouches?.[0]?.clientX;
+        }
+        return e.clientX;
+    }
+
+    seekToPosition(e) {
+        const rect = this.progressBar.getBoundingClientRect();
+        const clientX = this.getClientX(e);
+
+        if (clientX === undefined) return;
+
+        let percent = (clientX - rect.left) / rect.width;
+        percent = Math.max(0, Math.min(1, percent));
+        this.video.currentTime = percent * this.video.duration;
+
+        // Update UI immediately
+        this.progressFilled.style.width = `${percent * 100}%`;
+        this.progressHandle.style.left = `${percent * 100}%`;
     }
 
     toggleMute() {
@@ -354,6 +471,7 @@ class VideoPlayer {
         e.preventDefault();
         e.stopPropagation();
         this.isDraggingProgress = true;
+        this.cancelHideTimer(); // Keep controls visible while dragging
         this.seekToPosition(e);
 
         const handleMove = (e) => {
@@ -367,6 +485,7 @@ class VideoPlayer {
         const handleEnd = (e) => {
             e.stopPropagation();
             this.isDraggingProgress = false;
+            this.hideControlsDelayed(); // Restart hide timer after drag ends
             document.removeEventListener('mousemove', handleMove);
             document.removeEventListener('touchmove', handleMove);
             document.removeEventListener('mouseup', handleEnd);
@@ -379,50 +498,52 @@ class VideoPlayer {
         document.addEventListener('touchend', handleEnd);
     }
 
-    seekToPosition(e) {
-        const rect = this.progressBar.getBoundingClientRect();
-        let clientX;
-
-        if (e.type.includes('touch')) {
-            clientX = e.touches?.[0]?.clientX || e.changedTouches?.[0]?.clientX;
-        } else {
-            clientX = e.clientX;
-        }
-
-        if (clientX === undefined) return;
-
-        let percent = (clientX - rect.left) / rect.width;
-        percent = Math.max(0, Math.min(1, percent));
-        this.video.currentTime = percent * this.video.duration;
-
-        // Update UI immediately when dragging
-        this.progressFilled.style.width = `${percent * 100}%`;
-        this.progressHandle.style.left = `${percent * 100}%`;
-    }
-
     showControls(_caller = 'unknown') {
-        const wasVisible = this.controls.classList.contains('show');
         this.controls.classList.add('show');
-
-        // Only restart the hide timer if controls weren't already visible
-        // This prevents constant mousemove events from resetting the timer
-        if (!wasVisible) {
+        // Always restart the hide timer when showing controls,
+        // unless the user is actively interacting with the control bar
+        if (!this.isInteractingWithControls) {
             this.hideControlsDelayed();
         }
     }
 
     hideControlsDelayed() {
+        this.cancelHideTimer();
+
+        // Don't hide if video is paused
+        if (this.video.paused) return;
+
+        // Don't hide if user is dragging the progress bar
+        if (this.isDraggingProgress) return;
+
+        // Don't hide if user is interacting with controls
+        if (this.isInteractingWithControls) return;
+
+        this.controlsTimeout = setTimeout(() => {
+            // Double-check interaction state when timer fires
+            if (this.isDraggingProgress || this.isInteractingWithControls) return;
+
+            this.controls.classList.remove('show');
+            this.controlsTimeout = null;
+        }, 3000);
+    }
+
+    /**
+     * Cancel any pending hide timer
+     */
+    cancelHideTimer() {
         if (this.controlsTimeout) {
             clearTimeout(this.controlsTimeout);
             this.controlsTimeout = null;
         }
+    }
 
-        if (this.video.paused) return;
-
-        this.controlsTimeout = setTimeout(() => {
-            this.controls.classList.remove('show');
-            this.controlsTimeout = null;
-        }, 3000);
+    /**
+     * Reset the hide timer (used when user interacts with controls)
+     */
+    resetHideTimer() {
+        this.cancelHideTimer();
+        this.hideControlsDelayed();
     }
 
     checkAudioTracks() {
@@ -504,9 +625,7 @@ class VideoPlayer {
     }
 
     destroy() {
-        if (this.controlsTimeout) {
-            clearTimeout(this.controlsTimeout);
-        }
+        this.cancelHideTimer();
         if (this.audioCheckTimeout) {
             clearTimeout(this.audioCheckTimeout);
         }

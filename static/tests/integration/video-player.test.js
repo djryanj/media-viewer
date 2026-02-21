@@ -332,35 +332,159 @@ describe('VideoPlayer Integration', () => {
             expect(player.progressHandle.style.left).toBe('25%');
         });
 
-        it('should seek when progress bar clicked', () => {
+        it('should seek on tap (mousedown + mouseup without drag)', () => {
             videoElement.duration = 100;
 
-            // Mock getBoundingClientRect
             player.progressBar.getBoundingClientRect = vi.fn(() => ({
                 left: 0,
                 width: 200,
             }));
 
-            const clickEvent = new MouseEvent('click', {
-                clientX: 100, // 50% of 200px
+            // Simulate mousedown at 50% position
+            const mousedownEvent = new MouseEvent('mousedown', {
+                clientX: 100,
+                bubbles: true,
             });
-            player.progressContainer.dispatchEvent(clickEvent);
+            player.progressContainer.dispatchEvent(mousedownEvent);
+
+            // No movement — simulate mouseup (tap)
+            const mouseupEvent = new MouseEvent('mouseup', {
+                clientX: 100,
+                bubbles: true,
+            });
+            document.dispatchEvent(mouseupEvent);
 
             expect(videoElement.currentTime).toBe(50);
         });
 
-        it('should start drag on mousedown', () => {
-            const mousedownEvent = new MouseEvent('mousedown', {
-                clientX: 50,
-            });
+        it('should not seek immediately on mousedown (waits for tap or drag)', () => {
+            videoElement.duration = 100;
+            videoElement.currentTime = 0;
+
             player.progressBar.getBoundingClientRect = vi.fn(() => ({
                 left: 0,
                 width: 200,
             }));
 
+            const mousedownEvent = new MouseEvent('mousedown', {
+                clientX: 100,
+                bubbles: true,
+            });
             player.progressContainer.dispatchEvent(mousedownEvent);
 
+            // Before mouseup, currentTime should not have changed
+            expect(videoElement.currentTime).toBe(0);
+        });
+
+        it('should start drag after movement exceeds threshold', () => {
+            videoElement.duration = 100;
+
+            player.progressBar.getBoundingClientRect = vi.fn(() => ({
+                left: 0,
+                width: 200,
+            }));
+
+            // Mousedown at 50px
+            const mousedownEvent = new MouseEvent('mousedown', {
+                clientX: 50,
+                bubbles: true,
+            });
+            player.progressContainer.dispatchEvent(mousedownEvent);
+
+            expect(player.isDraggingProgress).toBe(false);
+
+            // Move 3px — below threshold, should not start dragging
+            const smallMoveEvent = new MouseEvent('mousemove', {
+                clientX: 53,
+                bubbles: true,
+            });
+            document.dispatchEvent(smallMoveEvent);
+
+            expect(player.isDraggingProgress).toBe(false);
+
+            // Move past threshold (5px from start)
+            const dragMoveEvent = new MouseEvent('mousemove', {
+                clientX: 56,
+                bubbles: true,
+            });
+            document.dispatchEvent(dragMoveEvent);
+
             expect(player.isDraggingProgress).toBe(true);
+
+            // Clean up
+            const mouseupEvent = new MouseEvent('mouseup', { bubbles: true });
+            document.dispatchEvent(mouseupEvent);
+        });
+
+        it('should seek to drag position while dragging', () => {
+            videoElement.duration = 100;
+
+            player.progressBar.getBoundingClientRect = vi.fn(() => ({
+                left: 0,
+                width: 200,
+            }));
+
+            // Mousedown
+            const mousedownEvent = new MouseEvent('mousedown', {
+                clientX: 50,
+                bubbles: true,
+            });
+            player.progressContainer.dispatchEvent(mousedownEvent);
+
+            // Move past threshold to start drag
+            const dragMoveEvent1 = new MouseEvent('mousemove', {
+                clientX: 60,
+                bubbles: true,
+            });
+            document.dispatchEvent(dragMoveEvent1);
+
+            expect(videoElement.currentTime).toBe(30); // 60/200 = 30%
+
+            // Continue dragging to new position
+            const dragMoveEvent2 = new MouseEvent('mousemove', {
+                clientX: 150,
+                bubbles: true,
+            });
+            document.dispatchEvent(dragMoveEvent2);
+
+            expect(videoElement.currentTime).toBe(75); // 150/200 = 75%
+
+            // Clean up
+            const mouseupEvent = new MouseEvent('mouseup', { bubbles: true });
+            document.dispatchEvent(mouseupEvent);
+        });
+
+        it('should not seek to original position after drag ends', () => {
+            videoElement.duration = 100;
+
+            player.progressBar.getBoundingClientRect = vi.fn(() => ({
+                left: 0,
+                width: 200,
+            }));
+
+            // Mousedown at 50px
+            const mousedownEvent = new MouseEvent('mousedown', {
+                clientX: 50,
+                bubbles: true,
+            });
+            player.progressContainer.dispatchEvent(mousedownEvent);
+
+            // Drag past threshold
+            const dragMoveEvent = new MouseEvent('mousemove', {
+                clientX: 150,
+                bubbles: true,
+            });
+            document.dispatchEvent(dragMoveEvent);
+
+            expect(videoElement.currentTime).toBe(75);
+
+            // Release
+            const mouseupEvent = new MouseEvent('mouseup', { bubbles: true });
+            document.dispatchEvent(mouseupEvent);
+
+            // Should stay at drag position, not jump to original mousedown position
+            expect(videoElement.currentTime).toBe(75);
+            expect(player.isDraggingProgress).toBe(false);
         });
 
         it('should not update progress while dragging', () => {
@@ -380,11 +504,18 @@ describe('VideoPlayer Integration', () => {
                 width: 200,
             }));
 
-            // Try to seek beyond end
-            const clickEvent = new MouseEvent('click', {
-                clientX: 300, // 150% of 200px
+            // Tap beyond the right edge
+            const mousedownEvent = new MouseEvent('mousedown', {
+                clientX: 300,
+                bubbles: true,
             });
-            player.progressContainer.dispatchEvent(clickEvent);
+            player.progressContainer.dispatchEvent(mousedownEvent);
+
+            const mouseupEvent = new MouseEvent('mouseup', {
+                clientX: 300,
+                bubbles: true,
+            });
+            document.dispatchEvent(mouseupEvent);
 
             expect(videoElement.currentTime).toBe(100); // Clamped to duration
         });
@@ -644,19 +775,125 @@ describe('VideoPlayer Integration', () => {
             expect(player.controls.classList.contains('show')).toBe(false);
         });
 
-        it('should seek on progress bar touch', () => {
+        it('should seek on progress bar tap (touchstart + touchend)', () => {
+            vi.useRealTimers(); // Need real timers for this test
+
             videoElement.duration = 100;
             player.progressBar.getBoundingClientRect = vi.fn(() => ({
                 left: 0,
                 width: 200,
             }));
 
+            // Touchstart at 50% position
             const touchstartEvent = new TouchEvent('touchstart', {
                 touches: [{ clientX: 100 }],
             });
             player.progressContainer.dispatchEvent(touchstartEvent);
 
+            // Touchend without movement (tap)
+            const touchendEvent = new TouchEvent('touchend', {
+                changedTouches: [{ clientX: 100 }],
+            });
+            document.dispatchEvent(touchendEvent);
+
             expect(videoElement.currentTime).toBe(50);
+        });
+
+        it('should scrub on progress bar touch drag', () => {
+            vi.useRealTimers();
+
+            videoElement.duration = 100;
+            player.progressBar.getBoundingClientRect = vi.fn(() => ({
+                left: 0,
+                width: 200,
+            }));
+
+            // Touchstart
+            const touchstartEvent = new TouchEvent('touchstart', {
+                touches: [{ clientX: 50 }],
+            });
+            player.progressContainer.dispatchEvent(touchstartEvent);
+
+            // Move past drag threshold
+            const touchmoveEvent = new TouchEvent('touchmove', {
+                touches: [{ clientX: 120 }],
+            });
+            document.dispatchEvent(touchmoveEvent);
+
+            expect(player.isDraggingProgress).toBe(true);
+            expect(videoElement.currentTime).toBe(60); // 120/200 = 60%
+
+            // Release
+            const touchendEvent = new TouchEvent('touchend', {
+                changedTouches: [{ clientX: 120 }],
+            });
+            document.dispatchEvent(touchendEvent);
+
+            expect(player.isDraggingProgress).toBe(false);
+        });
+
+        it('should not seek during small touch movements (below drag threshold)', () => {
+            vi.useRealTimers();
+
+            videoElement.duration = 100;
+            videoElement.currentTime = 0;
+            player.progressBar.getBoundingClientRect = vi.fn(() => ({
+                left: 0,
+                width: 200,
+            }));
+
+            // Touchstart
+            const touchstartEvent = new TouchEvent('touchstart', {
+                touches: [{ clientX: 50 }],
+            });
+            player.progressContainer.dispatchEvent(touchstartEvent);
+
+            // Move less than drag threshold (5px)
+            const touchmoveEvent = new TouchEvent('touchmove', {
+                touches: [{ clientX: 53 }],
+            });
+            document.dispatchEvent(touchmoveEvent);
+
+            expect(player.isDraggingProgress).toBe(false);
+            expect(videoElement.currentTime).toBe(0); // No seek yet
+
+            // Release — should seek to original tap position
+            const touchendEvent = new TouchEvent('touchend', {
+                changedTouches: [{ clientX: 53 }],
+            });
+            document.dispatchEvent(touchendEvent);
+
+            expect(videoElement.currentTime).toBe(25); // 50/200 = 25% (original touchstart position)
+        });
+    });
+
+    describe('getClientX helper', () => {
+        beforeEach(() => {
+            player = createPlayer();
+        });
+
+        it('should extract clientX from mouse events', () => {
+            const mouseEvent = new MouseEvent('mousedown', { clientX: 150 });
+            expect(player.getClientX(mouseEvent)).toBe(150);
+        });
+
+        it('should extract clientX from touch events with touches', () => {
+            const touchEvent = new TouchEvent('touchstart', {
+                touches: [{ clientX: 200 }],
+            });
+            expect(player.getClientX(touchEvent)).toBe(200);
+        });
+
+        it('should extract clientX from touch events with changedTouches', () => {
+            const touchEvent = new TouchEvent('touchend', {
+                changedTouches: [{ clientX: 175 }],
+            });
+            expect(player.getClientX(touchEvent)).toBe(175);
+        });
+
+        it('should return undefined for events without position data', () => {
+            const event = new Event('touchend');
+            expect(player.getClientX(event)).toBeUndefined();
         });
     });
 

@@ -260,6 +260,16 @@ const VideoControls = {
         const showControls = () => {
             console.debug('VideoControls: showing controls');
             controls.classList.add('show');
+            // Dispatch current controls height so external UI (like Lightbox) can adapt
+            try {
+                const controlsHeight = controls.getBoundingClientRect().height || 0;
+                video.dispatchEvent(
+                    new CustomEvent('video-controls-size', { detail: { height: controlsHeight } })
+                );
+            } catch (err) {
+                console.debug('VideoControls: unable to dispatch controls size', err);
+            }
+
             hideControlsDelayed();
         };
 
@@ -277,6 +287,14 @@ const VideoControls = {
             state.controlsTimeout = setTimeout(() => {
                 console.debug('VideoControls: hiding controls');
                 controls.classList.remove('show');
+                try {
+                    // Notify listeners that controls are hidden (height = 0)
+                    video.dispatchEvent(
+                        new CustomEvent('video-controls-size', { detail: { height: 0 } })
+                    );
+                } catch (err) {
+                    console.debug('VideoControls: unable to dispatch controls hide', err);
+                }
             }, 3000);
         };
 
