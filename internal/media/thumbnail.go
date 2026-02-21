@@ -1444,7 +1444,7 @@ func (t *ThumbnailGenerator) cleanupOrphanedThumbnails(ctx context.Context) (orp
 		relativePath := strings.TrimPrefix(sourcePath, t.mediaDir)
 		relativePath = strings.TrimPrefix(relativePath, "/")
 
-		if !indexedPaths[relativePath] {
+		if _, exists := indexedPaths[relativePath]; !exists {
 			// Source file no longer exists, remove thumbnail and meta
 			if err := os.Remove(cachePath); err != nil {
 				logging.Debug("Failed to remove orphaned thumbnail %s: %v", cacheKey, err)

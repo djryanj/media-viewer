@@ -11,7 +11,7 @@ STATIC_DIR := static
 
 .PHONY: all build build-all run dev dev-info dev-frontend dev-full \
         test test-short test-coverage test-coverage-report test-race test-bench test-bench-performance test-bench-large test-performance test-clean \
-        test-unit test-integration test-all test-coverage-merge pr-check \
+        test-unit test-integration test-all test-coverage-merge pr-check pr-check-all\
         test-package test-failures \
         docker-build docker-run lint lint-fix lint-all lint-fix-all \
         resetpw frontend-install frontend-lint frontend-lint-fixv frontend-lint-css frontend-lint-css-fix \
@@ -267,23 +267,92 @@ test-coverage-merge:
 		exit 1; \
 	fi
 
-# Run PR checks: lint fixes, tests, and race detection
-# This target runs all checks typically needed before submitting a pull request
+# ──────────────────────────────────────────────
+# Change detection (mirrors CI path filters)
+# ──────────────────────────────────────────────
+
+# Base branch to diff against (override with: make pr-check PR_BASE=develop)
+PR_BASE ?= main
+
+# Force all checks regardless of changes (override with: make pr-check FORCE=1)
+FORCE ?= 0
+
+# Detect changed files: committed (vs base branch) + uncommitted/staged
+# Using "2>/dev/null || true" so this doesn't fail if PR_BASE doesn't exist locally
+_CHANGED_FILES = $(shell \
+	{ git diff --name-only $(PR_BASE)...HEAD 2>/dev/null; \
+	  git diff --name-only HEAD 2>/dev/null; \
+	  git diff --name-only --cached 2>/dev/null; \
+	  git diff --name-only 2>/dev/null; \
+	} | sort -u)
+
+# Go backend changes (matches CI "go" filter)
+_HAS_GO_CHANGES = $(shell \
+	if [ "$(FORCE)" = "1" ]; then echo "1"; \
+	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '\.go$$|^go\.(mod|sum)$$|^Makefile$$'; then echo "1"; \
+	else echo ""; fi)
+
+# Frontend changes (matches CI "frontend" filter)
+_HAS_FRONTEND_CHANGES = $(shell \
+	if [ "$(FORCE)" = "1" ]; then echo "1"; \
+	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^static/'; then echo "1"; \
+	else echo ""; fi)
+
+# ──────────────────────────────────────────────
+# Smart PR check
+# ──────────────────────────────────────────────
+
 pr-check:
-	@echo "Running PR checks..."
-	@echo "Step 1/6: Running Go linter (will auto-fix some lint issues)..."
-	@$(MAKE) lint-fix
-	@echo "\nStep 2/6: Running tests..."
-	@$(MAKE) test
-	@echo "\nStep 3/6: Running race detector..."
-	@$(MAKE) test-race
-	@echo "\nStep 4/6: Running frontend checks..."
-	@$(MAKE) frontend-check
-	@echo "\nStep 5/6: Running frontend unit tests..."
-	@$(MAKE) frontend-test-unit
-	@echo "\nStep 6/6: Running frontend integration tests..."
-	@$(MAKE) frontend-test-integration-auto
-	@echo "\nAll PR checks completed successfully!"
+	@echo "Running PR checks (base: $(PR_BASE))..."
+	@echo "Changed files:"
+	@echo "$(_CHANGED_FILES)" | tr ' ' '\n' | sed 's/^/  /'
+	@echo ""
+	@if [ -n "$(_HAS_GO_CHANGES)" ]; then \
+		echo "Go changes detected."; \
+	else \
+		echo "No Go changes detected — skipping backend checks."; \
+	fi
+	@if [ -n "$(_HAS_FRONTEND_CHANGES)" ]; then \
+		echo "Frontend changes detected."; \
+	else \
+		echo "No frontend changes detected — skipping frontend checks."; \
+	fi
+	@echo ""
+	@# ── Backend checks ──
+	@if [ -n "$(_HAS_GO_CHANGES)" ]; then \
+		echo "Step 1: Running Go linter (will auto-fix some lint issues)..."; \
+		$(MAKE) lint-fix; \
+		echo ""; \
+		echo "Step 2: Running Go tests..."; \
+		$(MAKE) test; \
+		echo ""; \
+		echo "Step 3: Running race detector..."; \
+		$(MAKE) test-race; \
+		echo ""; \
+	fi
+	@# ── Frontend checks ──
+	@if [ -n "$(_HAS_FRONTEND_CHANGES)" ]; then \
+		echo "Step 4: Running frontend checks..."; \
+		$(MAKE) frontend-check; \
+		echo ""; \
+		echo "Step 5: Running frontend unit tests..."; \
+		$(MAKE) frontend-test-unit; \
+		echo ""; \
+		echo "Step 6: Running frontend integration tests..."; \
+		$(MAKE) frontend-test-integration-auto; \
+		echo ""; \
+	fi
+	@if [ -z "$(_HAS_GO_CHANGES)" ] && [ -z "$(_HAS_FRONTEND_CHANGES)" ]; then \
+		echo "No relevant changes detected. Nothing to check!"; \
+		echo "  (Use 'make pr-check FORCE=1' to run all checks anyway)"; \
+	else \
+		echo "All relevant PR checks completed successfully!"; \
+	fi
+
+# Convenience: force full run
+pr-check-all:
+	@$(MAKE) pr-check FORCE=1
+
 
 test-clean:
 	@echo "Cleaning test artifacts..."

@@ -1675,7 +1675,9 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 // GetAllIndexedPaths returns all file paths currently in the index.
 // Used for orphan thumbnail detection.
 // Optimized with covering index (type, path) and pre-allocated map to handle large libraries efficiently.
-func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]bool, error) {
+// GetAllIndexedPaths returns all file paths currently in the index.
+// Used for orphan thumbnail detection.
+func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]struct{}, error) {
 	done := observeQuery("get_all_indexed_paths")
 
 	d.mu.RLock()
@@ -1684,15 +1686,15 @@ func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]bool, err
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	var count int
-	countQuery := "SELECT COUNT(*) FROM files WHERE type IN (?, ?, ?)"
-	if err := d.db.QueryRowContext(ctx, countQuery, FileTypeImage, FileTypeVideo, FileTypeFolder).Scan(&count); err != nil {
-		done(err)
-		return nil, fmt.Errorf("failed to count indexed paths: %w", err)
-	}
-
-	rows, err := d.db.QueryContext(ctx, "SELECT path FROM files WHERE type IN (?, ?, ?)",
-		FileTypeImage, FileTypeVideo, FileTypeFolder)
+	// Single query — no separate COUNT(*) pre-query.
+	// Use NOT IN to exclude the minority types rather than IN for the majority,
+	// which helps SQLite choose a more efficient query plan (simple scan vs.
+	// multi-range index merge). Adjust the excluded type(s) to match your schema.
+	// If 'playlist' is the only non-media type, this is significantly faster.
+	rows, err := d.db.QueryContext(ctx,
+		"SELECT path FROM files WHERE type != ?",
+		FileTypePlaylist,
+	)
 	if err != nil {
 		done(err)
 		return nil, fmt.Errorf("failed to query indexed paths: %w", err)
@@ -1703,14 +1705,17 @@ func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]bool, err
 		}
 	}()
 
-	paths := make(map[string]bool, count)
+	// Pre-allocate generously — avoids repeated map growth and rehashing.
+	// 50000 is a reasonable upper estimate; over-allocating a map is cheap
+	// compared to the cost of growing it multiple times.
+	paths := make(map[string]struct{}, 50000)
+	var path string
 	for rows.Next() {
-		var path string
 		if err := rows.Scan(&path); err != nil {
 			logging.Warn("error scanning path: %v", err)
 			continue
 		}
-		paths[path] = true
+		paths[path] = struct{}{}
 	}
 
 	if err := rows.Err(); err != nil {

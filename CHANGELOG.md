@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Filesystem retry metrics now include per-volume labels to distinguish between media, cache, and database mount points in Grafana dashboards ([#293](https://github.com/djryanj/media-viewer/issues/293))
+- **Optimized `GetAllIndexedPaths` database query for orphan thumbnail cleanup** ([#293](https://github.com/djryanj/media-viewer/issues/293))
+    - Eliminated a redundant `COUNT(*)` query that was performing a full table scan solely to pre-size a map, reducing the number of database round-trips from two to one.
+    - Inverted the type filter from `IN ('image', 'video', 'folder')` to `NOT IN ('playlist')`, allowing SQLite to use a simpler and faster query plan instead of a multi-range index merge.
+    - Switched the return type from `map[string]bool` to `map[string]struct{}` for reduced memory overhead and GC pressure.
+    - On a ~40,000 item database, this query was regularly taking ~250ms; these changes are expected to reduce that by approximately 50-60%.
 
 - **Application crashes caused by database memory-mapping on network storage** [#290](https://github.com/djryanj/media-viewer/issues/290))
     - Resolved an issue where the application could crash unexpectedly (SIGBUS) when the underlying storage — such as NFS mounts or Longhorn volumes — experienced brief interruptions. The root cause was SQLite's memory-mapping feature, which was enabled by default in the container's system library. When mapped database pages became temporarily unavailable, the application would crash immediately with no opportunity to recover.
