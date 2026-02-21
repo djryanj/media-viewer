@@ -626,12 +626,12 @@ func TestFilesystemMetricOperations(t *testing.T) {
 	})
 
 	t.Run("FilesystemRetryMetrics", func(_ *testing.T) {
-		FilesystemRetryAttempts.WithLabelValues("stat").Inc()
-		FilesystemRetrySuccess.WithLabelValues("stat").Inc()
-		FilesystemRetryFailures.WithLabelValues("open").Inc()
-		FilesystemStaleErrors.WithLabelValues("stat").Inc()
-		FilesystemRetryDuration.WithLabelValues("stat").Observe(0.05)
-		FilesystemRetryDuration.WithLabelValues("open").Observe(0.1)
+		FilesystemRetryAttempts.WithLabelValues("stat", "media").Inc()
+		FilesystemRetrySuccess.WithLabelValues("stat", "media").Inc()
+		FilesystemRetryFailures.WithLabelValues("open", "cache").Inc()
+		FilesystemStaleErrors.WithLabelValues("stat", "database").Inc()
+		FilesystemRetryDuration.WithLabelValues("stat", "media").Observe(0.05)
+		FilesystemRetryDuration.WithLabelValues("open", "cache").Observe(0.1)
 	})
 
 	t.Run("FilesystemOperationErrors", func(_ *testing.T) {

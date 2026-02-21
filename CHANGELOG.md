@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Frontend) various bugs discovered through the CI process. [#49](https://github.com/djryanj/media-viewer/issues/49))
 - (Backend) during CI update, a new version of golangci was being used which uncovered some additional lint errors. These were also fixed. [#49](https://github.com/djryanj/media-viewer/issues/49))
 
+### Changed
+
+- Filesystem retry metrics now include per-volume labels to distinguish between media, cache, and database mount points in Grafana dashboards ([#293](https://github.com/djryanj/media-viewer/issues/293))
+
 - **Application crashes caused by database memory-mapping on network storage** [#290](https://github.com/djryanj/media-viewer/issues/290))
     - Resolved an issue where the application could crash unexpectedly (SIGBUS) when the underlying storage — such as NFS mounts or Longhorn volumes — experienced brief interruptions. The root cause was SQLite's memory-mapping feature, which was enabled by default in the container's system library. When mapped database pages became temporarily unavailable, the application would crash immediately with no opportunity to recover.
     - The fix disables memory-mapping for database access. Benchmarking confirmed this has no measurable impact on performance for any database operation, including reads, writes, searches, and concurrent workloads. In mixed read/write scenarios, the change actually showed a small improvement.

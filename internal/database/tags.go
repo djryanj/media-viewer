@@ -61,13 +61,12 @@ func (d *Database) GetOrCreateTag(ctx context.Context, name string) (*Tag, error
 
 // AddTagToFile adds a tag to a file.
 func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("add_tag_to_file", start, err) }()
+	done := observeQuery("add_tag_to_file")
 
 	tagName = strings.TrimSpace(tagName)
 	if tagName == "" {
-		err = errors.New("tag name cannot be empty")
+		err := errors.New("tag name cannot be empty")
+		done(err)
 		return err
 	}
 
@@ -80,7 +79,7 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 
 	// Get or create tag within the same lock
 	var tagID int64
-	err = d.db.QueryRowContext(ctx,
+	err := d.db.QueryRowContext(ctx,
 		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
 		tagName,
 	).Scan(&tagID)
@@ -90,6 +89,7 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 		result, createErr := d.db.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
 		if createErr != nil {
 			err = fmt.Errorf("failed to create tag: %w", createErr)
+			done(err)
 			return err
 		}
 		tagID, _ = result.LastInsertId()
@@ -99,14 +99,13 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 		"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
 		filePath, tagID,
 	)
+	done(err)
 	return err
 }
 
 // RemoveTagFromFile removes a tag from a file.
 func (d *Database) RemoveTagFromFile(ctx context.Context, filePath, tagName string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("remove_tag_from_file", start, err) }()
+	done := observeQuery("remove_tag_from_file")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -115,11 +114,12 @@ func (d *Database) RemoveTagFromFile(ctx context.Context, filePath, tagName stri
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err = d.db.ExecContext(ctx, `
+	_, err := d.db.ExecContext(ctx, `
 		DELETE FROM file_tags
 		WHERE file_path = ? AND tag_id = (SELECT id FROM tags WHERE name = ? COLLATE NOCASE)
 	`, filePath, tagName)
 
+	done(err)
 	return err
 }
 
@@ -167,9 +167,7 @@ func (d *Database) getFileTagsUnlocked(ctx context.Context, filePath string) ([]
 
 // SetFileTags replaces all tags for a file.
 func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("set_file_tags", start, err) }()
+	done := observeQuery("set_file_tags")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -180,6 +178,7 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
+		done(err)
 		return err
 	}
 
@@ -195,6 +194,7 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 	// Remove existing tags
 	_, err = tx.ExecContext(ctx, "DELETE FROM file_tags WHERE file_path = ?", filePath)
 	if err != nil {
+		done(err)
 		return err
 	}
 
@@ -213,6 +213,7 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 			result, createErr := tx.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
 			if createErr != nil {
 				err = createErr
+				done(err)
 				return err
 			}
 			tagID, _ = result.LastInsertId()
@@ -224,23 +225,23 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 			filePath, tagID,
 		)
 		if err != nil {
+			done(err)
 			return err
 		}
 	}
 
 	if commitErr := tx.Commit(); commitErr != nil {
-		err = commitErr
+		done(commitErr)
 		return commitErr
 	}
 	committed = true
+	done(nil)
 	return nil
 }
 
 // GetAllTags returns all tags with item counts.
 func (d *Database) GetAllTags(ctx context.Context) ([]Tag, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_all_tags", start, err) }()
+	done := observeQuery("get_all_tags")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -257,6 +258,7 @@ func (d *Database) GetAllTags(ctx context.Context) ([]Tag, error) {
 		ORDER BY t.name COLLATE NOCASE
 	`)
 	if err != nil {
+		done(err)
 		return nil, err
 	}
 	defer func() {
@@ -283,14 +285,13 @@ func (d *Database) GetAllTags(ctx context.Context) ([]Tag, error) {
 		tags = append(tags, tag)
 	}
 
+	done(nil)
 	return tags, nil
 }
 
 // GetFilesByTag returns all files with a specific tag.
 func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, pageSize int) (*SearchResult, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_files_by_tag", start, err) }()
+	done := observeQuery("get_files_by_tag")
 
 	if page < 1 {
 		page = 1
@@ -311,13 +312,14 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 
 	// Get total count
 	var totalItems int
-	err = d.db.QueryRowContext(ctx, `
+	err := d.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT ft.file_path)
 		FROM file_tags ft
 		INNER JOIN tags t ON ft.tag_id = t.id
 		WHERE t.name = ? COLLATE NOCASE
 	`, tagName).Scan(&totalItems)
 	if err != nil {
+		done(err)
 		return nil, err
 	}
 
@@ -338,6 +340,7 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 		LIMIT ? OFFSET ?
 	`, tagName, pageSize, offset)
 	if err != nil {
+		done(err)
 		return nil, err
 	}
 	defer func() {
@@ -376,6 +379,7 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 		items = append(items, file)
 	}
 
+	done(nil)
 	return &SearchResult{
 		Items:      items,
 		Query:      "tag:" + tagName,
@@ -388,9 +392,7 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 
 // DeleteTag removes a tag and all its associations.
 func (d *Database) DeleteTag(ctx context.Context, tagName string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("delete_tag", start, err) }()
+	done := observeQuery("delete_tag")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -399,19 +401,19 @@ func (d *Database) DeleteTag(ctx context.Context, tagName string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err = d.db.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
+	_, err := d.db.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
+	done(err)
 	return err
 }
 
 // RenameTag renames a tag.
 func (d *Database) RenameTag(ctx context.Context, oldName, newName string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("rename_tag", start, err) }()
+	done := observeQuery("rename_tag")
 
 	newName = strings.TrimSpace(newName)
 	if newName == "" {
-		err = errors.New("tag name cannot be empty")
+		err := errors.New("tag name cannot be empty")
+		done(err)
 		return err
 	}
 
@@ -422,11 +424,12 @@ func (d *Database) RenameTag(ctx context.Context, oldName, newName string) error
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err = d.db.ExecContext(
+	_, err := d.db.ExecContext(
 		ctx,
 		"UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE",
 		newName, oldName,
 	)
+	done(err)
 	return err
 }
 
@@ -471,9 +474,7 @@ type TagWithCount struct {
 
 // GetAllTagsWithCounts returns all tags with their usage counts.
 func (d *Database) GetAllTagsWithCounts(ctx context.Context) ([]TagWithCount, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_all_tags_with_counts", start, err) }()
+	done := observeQuery("get_all_tags_with_counts")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -491,6 +492,7 @@ func (d *Database) GetAllTagsWithCounts(ctx context.Context) ([]TagWithCount, er
 
 	rows, err := d.db.QueryContext(ctx, query)
 	if err != nil {
+		done(err)
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -499,23 +501,24 @@ func (d *Database) GetAllTagsWithCounts(ctx context.Context) ([]TagWithCount, er
 	for rows.Next() {
 		var tag TagWithCount
 		if err := rows.Scan(&tag.Name, &tag.Color, &tag.Count); err != nil {
+			done(err)
 			return nil, err
 		}
 		tags = append(tags, tag)
 	}
 
 	if err := rows.Err(); err != nil {
+		done(err)
 		return nil, err
 	}
 
+	done(nil)
 	return tags, nil
 }
 
 // GetUnusedTags returns tags that are not associated with any files.
 func (d *Database) GetUnusedTags(ctx context.Context) ([]string, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_unused_tags", start, err) }()
+	done := observeQuery("get_unused_tags")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -533,6 +536,7 @@ func (d *Database) GetUnusedTags(ctx context.Context) ([]string, error) {
 
 	rows, err := d.db.QueryContext(ctx, query)
 	if err != nil {
+		done(err)
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -541,34 +545,37 @@ func (d *Database) GetUnusedTags(ctx context.Context) ([]string, error) {
 	for rows.Next() {
 		var tagName string
 		if err := rows.Scan(&tagName); err != nil {
+			done(err)
 			return nil, err
 		}
 		tags = append(tags, tagName)
 	}
 
 	if err := rows.Err(); err != nil {
+		done(err)
 		return nil, err
 	}
 
+	done(nil)
 	return tags, nil
 }
 
 // RenameTagEverywhere renames a tag and updates all file associations.
 func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName string) (int, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("rename_tag_everywhere", start, err) }()
+	done := observeQuery("rename_tag_everywhere")
 
 	oldName = strings.TrimSpace(oldName)
 	newName = strings.TrimSpace(newName)
 
 	if oldName == "" || newName == "" {
-		err = errors.New("tag names cannot be empty")
+		err := errors.New("tag names cannot be empty")
+		done(err)
 		return 0, err
 	}
 
 	// Allow case-only changes, only skip if names are exactly identical
 	if oldName == newName {
+		done(nil)
 		return 0, nil // No change needed
 	}
 
@@ -581,6 +588,7 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 	// Start transaction
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
+		done(err)
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
@@ -601,7 +609,9 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 			oldName,
 		).Scan(&oldID)
 		if err != nil {
-			return 0, fmt.Errorf("old tag not found: %w", err)
+			err = fmt.Errorf("old tag not found: %w", err)
+			done(err)
+			return 0, err
 		}
 
 		if existingID == oldID {
@@ -611,7 +621,9 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 				newName, oldID,
 			)
 			if err != nil {
-				return 0, fmt.Errorf("failed to update tag case: %w", err)
+				err = fmt.Errorf("failed to update tag case: %w", err)
+				done(err)
+				return 0, err
 			}
 		} else {
 			// Different tags, we need to merge
@@ -623,7 +635,9 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 				WHERE tag_id = ?
 			`, existingID, oldID)
 			if err != nil {
-				return 0, fmt.Errorf("failed to merge file tags: %w", err)
+				err = fmt.Errorf("failed to merge file tags: %w", err)
+				done(err)
+				return 0, err
 			}
 
 			// Delete old tag (cascade will remove old file_tags)
@@ -632,7 +646,9 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 				oldID,
 			)
 			if err != nil {
-				return 0, fmt.Errorf("failed to delete old tag: %w", err)
+				err = fmt.Errorf("failed to delete old tag: %w", err)
+				done(err)
+				return 0, err
 			}
 		}
 	case errors.Is(err, sql.ErrNoRows):
@@ -642,9 +658,12 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 			newName, oldName,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("failed to rename tag: %w", err)
+			err = fmt.Errorf("failed to rename tag: %w", err)
+			done(err)
+			return 0, err
 		}
 	default:
+		done(err)
 		return 0, err
 	}
 
@@ -657,27 +676,30 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 		WHERE t.name = ? COLLATE NOCASE
 	`, newName).Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count affected files: %w", err)
+		err = fmt.Errorf("failed to count affected files: %w", err)
+		done(err)
+		return 0, err
 	}
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
+		done(err)
 		return 0, err
 	}
 
 	logging.Info("Renamed tag '%s' to '%s', affecting %d files", oldName, newName, count)
+	done(nil)
 	return count, nil
 }
 
 // DeleteTagEverywhere removes a tag and all its file associations.
 func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("delete_tag_everywhere", start, err) }()
+	done := observeQuery("delete_tag_everywhere")
 
 	tagName = strings.TrimSpace(tagName)
 	if tagName == "" {
-		err = errors.New("tag name cannot be empty")
+		err := errors.New("tag name cannot be empty")
+		done(err)
 		return 0, err
 	}
 
@@ -690,6 +712,7 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 	// Start transaction
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
+		done(err)
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
@@ -703,7 +726,9 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 		WHERE t.name = ? COLLATE NOCASE
 	`, tagName).Scan(&count)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("failed to count affected files: %w", err)
+		err = fmt.Errorf("failed to count affected files: %w", err)
+		done(err)
+		return 0, err
 	}
 
 	// Delete the tag (CASCADE will remove file_tags)
@@ -712,19 +737,25 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 		tagName,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to delete tag: %w", err)
+		err = fmt.Errorf("failed to delete tag: %w", err)
+		done(err)
+		return 0, err
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return 0, fmt.Errorf("tag not found: %s", tagName)
+		err = fmt.Errorf("tag not found: %s", tagName)
+		done(err)
+		return 0, err
 	}
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
+		done(err)
 		return 0, err
 	}
 
 	logging.Info("Deleted tag '%s' from %d files", tagName, count)
+	done(nil)
 	return count, nil
 }

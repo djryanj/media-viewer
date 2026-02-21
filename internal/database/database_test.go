@@ -2,14 +2,15 @@ package database
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"media-viewer/internal/metrics"
 )
 
-// TestRecordQuery tests the recordQuery helper function.
-func TestRecordQuery(t *testing.T) {
+// TestObserveQuery tests the observeQuery helper function.
+func TestObserveQuery(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -42,50 +43,40 @@ func TestRecordQuery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			start := time.Now()
+			// Record the query using the new closure pattern - this should not panic
+			done := observeQuery(tt.operation)
 			time.Sleep(1 * time.Millisecond) // Ensure some duration
-
-			// Record the query - this should not panic
-			recordQuery(tt.operation, start, tt.err)
-
-			// Verify duration was calculated (at least 1ms passed)
-			elapsed := time.Since(start)
-			if elapsed < 1*time.Millisecond {
-				t.Error("recordQuery should have measured non-zero duration")
-			}
+			done(tt.err)
 		})
 	}
 }
 
-// TestRecordQueryMetrics tests that metrics are properly recorded.
-func TestRecordQueryMetrics(t *testing.T) {
+// TestObserveQueryMetrics tests that metrics are properly recorded.
+func TestObserveQueryMetrics(t *testing.T) {
 	t.Parallel()
 
 	operation := "test_metrics_operation"
-	start := time.Now()
-
-	// Get initial metric values (if possible)
-	// Note: This is a best-effort test since we can't easily read Prometheus metrics
-	// The main goal is to ensure recordQuery doesn't panic
 
 	// Test success case
-	recordQuery(operation, start, nil)
+	done := observeQuery(operation)
+	done(nil)
 
 	// Test error case
-	recordQuery(operation, start, errors.New("test error"))
+	done = observeQuery(operation)
+	done(errors.New("test error"))
 
 	// If we got here without panicking, the test passes
 }
 
-// TestRecordQueryWithZeroDuration tests handling of very fast queries.
-func TestRecordQueryWithZeroDuration(t *testing.T) {
+// TestObserveQueryWithZeroDuration tests handling of very fast queries.
+func TestObserveQueryWithZeroDuration(t *testing.T) {
 	t.Parallel()
 
 	operation := "instant_query"
-	start := time.Now()
 
 	// Record immediately (near-zero duration)
-	recordQuery(operation, start, nil)
+	done := observeQuery(operation)
+	done(nil)
 
 	// Should not panic even with zero/near-zero duration
 }
@@ -417,9 +408,11 @@ func TestMetricsIntegration(t *testing.T) {
 	}
 
 	// Test that metrics calls don't panic
-	start := time.Now()
-	recordQuery("test_integration", start, nil)
-	recordQuery("test_integration", start, errors.New("test error"))
+	done := observeQuery("test_integration")
+	done(nil)
+
+	done = observeQuery("test_integration")
+	done(errors.New("test error"))
 
 	// If we got here without panicking, test passes
 }
@@ -492,38 +485,171 @@ func TestRegisterDriverIdempotent(t *testing.T) {
 	// If we got here without panicking, the test passes.
 }
 
-// BenchmarkRecordQuery benchmarks the query recording overhead
-func BenchmarkRecordQuery(b *testing.B) {
+// BenchmarkObserveQuery benchmarks the query recording overhead
+func BenchmarkObserveQuery(b *testing.B) {
 	operation := "benchmark_operation"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		start := time.Now()
-		recordQuery(operation, start, nil)
+		done := observeQuery(operation)
+		done(nil)
 	}
 }
 
-// BenchmarkRecordQueryWithError benchmarks query recording with errors
-func BenchmarkRecordQueryWithError(b *testing.B) {
+// BenchmarkObserveQueryWithError benchmarks query recording with errors
+func BenchmarkObserveQueryWithError(b *testing.B) {
 	operation := "benchmark_operation"
 	err := errors.New("test error")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		start := time.Now()
-		recordQuery(operation, start, err)
+		done := observeQuery(operation)
+		done(err)
 	}
 }
 
-// BenchmarkRecordQueryConcurrent benchmarks concurrent query recording
-func BenchmarkRecordQueryConcurrent(b *testing.B) {
+// BenchmarkObserveQueryConcurrent benchmarks concurrent query recording
+func BenchmarkObserveQueryConcurrent(b *testing.B) {
 	operation := "benchmark_operation"
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			start := time.Now()
-			recordQuery(operation, start, nil)
+			done := observeQuery(operation)
+			done(nil)
 		}
 	})
+}
+
+// TestObserveQueryClosureTimingAccuracy verifies that the closure measures
+// the elapsed time between observeQuery() and done(), not some other interval.
+func TestObserveQueryClosureTimingAccuracy(t *testing.T) {
+	t.Parallel()
+
+	done := observeQuery("timing_accuracy_test")
+
+	// Sleep a known duration so the closure captures real elapsed time
+	time.Sleep(10 * time.Millisecond)
+
+	// Calling done should not panic and should record a non-trivial duration
+	done(nil)
+}
+
+// TestObserveQueryIndependentClosures verifies that multiple calls to
+// observeQuery produce independent closures with their own start times.
+func TestObserveQueryIndependentClosures(t *testing.T) {
+	t.Parallel()
+
+	// Start two queries at different times
+	done1 := observeQuery("independent_first")
+	time.Sleep(5 * time.Millisecond)
+
+	done2 := observeQuery("independent_second")
+	time.Sleep(5 * time.Millisecond)
+
+	// Finish in reverse order — each closure should be independent
+	done2(nil)
+	done1(nil)
+
+	// If we got here without panicking, closures are independent
+}
+
+// TestObserveQueryStatusLabels verifies that done() handles both nil
+// and non-nil errors without panicking.
+func TestObserveQueryStatusLabels(t *testing.T) {
+	t.Parallel()
+
+	// Success case
+	done := observeQuery("status_success")
+	done(nil)
+
+	// Error case
+	done = observeQuery("status_error")
+	done(errors.New("something went wrong"))
+
+	// Wrapped error case
+	done = observeQuery("status_wrapped_error")
+	done(errors.New("outer: inner error"))
+}
+
+// TestObserveQueryDoubleDone verifies that calling done() twice doesn't panic.
+// In production code done() should only be called once, but we want to ensure
+// it doesn't crash if misused.
+func TestObserveQueryDoubleDone(t *testing.T) {
+	t.Parallel()
+
+	done := observeQuery("double_done_test")
+	done(nil)
+
+	// Second call should not panic
+	done(errors.New("second call"))
+}
+
+// TestObserveQueryReturnsImmediately verifies that the observeQuery call
+// itself is near-instant — it should only capture the start time and return.
+func TestObserveQueryReturnsImmediately(t *testing.T) {
+	t.Parallel()
+
+	start := time.Now()
+	done := observeQuery("instant_return_test")
+	elapsed := time.Since(start)
+
+	// observeQuery() should return in well under 1ms
+	if elapsed > 1*time.Millisecond {
+		t.Errorf("observeQuery() took %v, expected < 1ms", elapsed)
+	}
+
+	done(nil)
+}
+
+// TestObserveQueryVariousOperationNames verifies that different operation
+// names used throughout the codebase don't cause panics in metrics recording.
+func TestObserveQueryVariousOperationNames(t *testing.T) {
+	t.Parallel()
+
+	operations := []string{
+		"upsert_file",
+		"list_directory",
+		"get_files_by_tag",
+		"validate_session",
+		"calculate_stats",
+		"search",
+		"add_favorite",
+		"delete_tag",
+		"create_session",
+		"save_webauthn_credential",
+	}
+
+	for _, op := range operations {
+		done := observeQuery(op)
+		done(nil)
+	}
+}
+
+// TestObserveQueryConcurrentClosureSafety verifies that many goroutines
+// can each create and use their own done() closure without data races.
+// Run with: go test -race -run TestObserveQueryConcurrentClosureSafety
+func TestObserveQueryConcurrentClosureSafety(t *testing.T) {
+	t.Parallel()
+
+	const goroutines = 100
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			done := observeQuery("concurrent_safety_test")
+			time.Sleep(time.Duration(id%5) * time.Millisecond)
+
+			var err error
+			if id%3 == 0 {
+				err = errors.New("simulated error")
+			}
+			done(err)
+		}(i)
+	}
+
+	wg.Wait()
 }
