@@ -28,7 +28,7 @@ func setupHealthIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	os.MkdirAll(mediaDir, 0o755)
 	os.MkdirAll(cacheDir, 0o755)
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
 
 	"github.com/gorilla/mux"
@@ -326,13 +327,24 @@ func enabledString(enabled bool) string {
 	return "DISABLED"
 }
 
-// LogDatabaseInit logs database initialization
-func LogDatabaseInit(duration time.Duration) {
+// LogDatabaseInit logs database initialization and diagnostics
+func LogDatabaseInit(duration time.Duration, dbInfo *database.Info) {
 	logging.Info("")
 	logging.Info("------------------------------------------------------------")
 	logging.Info("DATABASE INITIALIZATION")
 	logging.Info("------------------------------------------------------------")
 	logging.Info("  [OK] Database initialized in %v", duration)
+	if dbInfo != nil {
+		logging.Info("    Database path: %s", dbInfo.Path)
+		if dbInfo.PermissionWarning != "" {
+			logging.Warn("    Database permission diagnostics: %s", dbInfo.PermissionWarning)
+		}
+		logging.Info("    SQLite version: %s", dbInfo.SQLiteVersion)
+		if dbInfo.MmapWarning != "" {
+			logging.Warn("    %s", dbInfo.MmapWarning)
+		}
+		logging.Info("    %s", dbInfo.MmapStatus)
+	}
 }
 
 // LogTranscoderInit logs transcoder initialization and checks FFmpeg

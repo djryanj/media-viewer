@@ -33,7 +33,7 @@ func setupFavoritesIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	os.MkdirAll(mediaDir, 0o755)
 	os.MkdirAll(cacheDir, 0o755)
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -59,8 +59,8 @@ func setupFavoritesIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 // addTestFile inserts a file record into the database for testing
 func addTestFile(t *testing.T, db *database.Database, path, name string, fileType database.FileType) {
 	t.Helper()
-
-	tx, err := db.BeginBatch()
+	ctx := context.Background()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -74,7 +74,7 @@ func addTestFile(t *testing.T, db *database.Database, path, name string, fileTyp
 		ModTime:    time.Now(),
 	}
 
-	err = db.UpsertFile(tx, file)
+	err = db.UpsertFile(ctx, tx, file)
 	if err != nil {
 		tx.Rollback()
 		t.Fatalf("Failed to upsert test file: %v", err)

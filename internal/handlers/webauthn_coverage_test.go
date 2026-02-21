@@ -46,7 +46,7 @@ func setupWebAuthnCoverageTest(t *testing.T, enableWebAuthn bool) (h *Handlers, 
 	}
 
 	// Initialize database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestInitWebAuthnDisabled(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := tempDir + "/test.db"
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestInitWebAuthnSchemaError(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := tempDir + "/test.db"
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestInitWebAuthnSuccess(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := tempDir + "/test.db"
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

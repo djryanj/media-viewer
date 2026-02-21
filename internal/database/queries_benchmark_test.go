@@ -16,7 +16,7 @@ func setupBenchmarkDatabase(b *testing.B, fileCount int, favoriteRatio float64, 
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -33,7 +33,7 @@ func setupBenchmarkDatabase(b *testing.B, fileCount int, favoriteRatio float64, 
 	}
 
 	// Create files
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		b.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -52,7 +52,7 @@ func setupBenchmarkDatabase(b *testing.B, fileCount int, favoriteRatio float64, 
 			MimeType:   "image/jpeg",
 		}
 
-		if err := db.UpsertFile(tx, &file); err != nil {
+		if err := db.UpsertFile(ctx, tx, &file); err != nil {
 			b.Fatalf("Failed to upsert file: %v", err)
 		}
 	}
@@ -252,7 +252,7 @@ func BenchmarkGetMediaInDirectory_Empty(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -362,7 +362,7 @@ func setupBenchmarkDatabaseWithDirs(b *testing.B, filesPerDir, numDirs int, favo
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -379,7 +379,7 @@ func setupBenchmarkDatabaseWithDirs(b *testing.B, filesPerDir, numDirs int, favo
 	}
 
 	// Create files in multiple directories
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		b.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -398,7 +398,7 @@ func setupBenchmarkDatabaseWithDirs(b *testing.B, filesPerDir, numDirs int, favo
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		if err := db.UpsertFile(tx, &folder); err != nil {
+		if err := db.UpsertFile(ctx, tx, &folder); err != nil {
 			b.Fatalf("Failed to upsert folder: %v", err)
 		}
 
@@ -417,7 +417,7 @@ func setupBenchmarkDatabaseWithDirs(b *testing.B, filesPerDir, numDirs int, favo
 				MimeType:   "image/jpeg",
 			}
 
-			if err := db.UpsertFile(tx, &file); err != nil {
+			if err := db.UpsertFile(ctx, tx, &file); err != nil {
 				b.Fatalf("Failed to upsert file: %v", err)
 			}
 

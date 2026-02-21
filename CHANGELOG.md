@@ -19,13 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Frontend) various bugs discovered through the CI process. [#49](https://github.com/djryanj/media-viewer/issues/49))
 - (Backend) during CI update, a new version of golangci was being used which uncovered some additional lint errors. These were also fixed. [#49](https://github.com/djryanj/media-viewer/issues/49))
 
-## [0.13.3] - 2026-02-13
+- **Application crashes caused by database memory-mapping on network storage** [#290](https://github.com/djryanj/media-viewer/issues/290))
+    - Resolved an issue where the application could crash unexpectedly (SIGBUS) when the underlying storage — such as NFS mounts or Longhorn volumes — experienced brief interruptions. The root cause was SQLite's memory-mapping feature, which was enabled by default in the container's system library. When mapped database pages became temporarily unavailable, the application would crash immediately with no opportunity to recover.
+    - The fix disables memory-mapping for database access. Benchmarking confirmed this has no measurable impact on performance for any database operation, including reads, writes, searches, and concurrent workloads. In mixed read/write scenarios, the change actually showed a small improvement.
+    - Additionally, we added storage health monitoring that periodically checks whether the database files are accessible. If a storage disruption occurs, it is now detected, logged, and reported through metrics rather than causing a crash. Operators can set alerts on the new db_storage_errors_total metric to be notified of storage issues before they affect users.
 
+## [0.13.3] - 2026-02-13
 
 ### Changed
 
 - build(deps): bump renovatebot/github-action from 46.0.2 to 46.1.1 ([#282](https://github.com/djryanj/media-viewer/pull/282))
 - build(deps): bump actions/github-script from 7 to 8 ([#283](https://github.com/djryanj/media-viewer/pull/283))
+
 ### Added
 
 - build(docs): Added a github action to automatically create changelog entries for bot-submitted PRs ([#276](https://github.com/djryanj/media-viewer/issues/276))

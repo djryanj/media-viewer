@@ -34,9 +34,9 @@ func TestSearchSuggestionsTagQueries(t *testing.T) {
 		{Name: "vacation.jpg", Path: "vacation.jpg", ParentPath: "", Type: FileTypeImage, Size: 1536, ModTime: time.Now()},
 	}
 
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(tx, &files[i])
+		_ = db.UpsertFile(ctx, tx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -168,7 +168,7 @@ func TestSearchSuggestionsLimitRespected(t *testing.T) {
 
 	// Insert many files to test limit
 	files := make([]MediaFile, 30)
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
 		files[i] = MediaFile{
 			Name:       "test_" + string(rune('a'+i)) + ".jpg",
@@ -178,7 +178,7 @@ func TestSearchSuggestionsLimitRespected(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(tx, &files[i])
+		_ = db.UpsertFile(ctx, tx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -253,9 +253,9 @@ func TestSearchSuggestionsMixedResults(t *testing.T) {
 		{Name: "vacation_mountain.jpg", Path: "vacation_mountain.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 	}
 
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(tx, &files[i])
+		_ = db.UpsertFile(ctx, tx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -392,7 +392,7 @@ func TestPerformRegularSearchDistribution(t *testing.T) {
 
 	// Insert many files
 	files := make([]MediaFile, 20)
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
 		files[i] = MediaFile{
 			Name:       "photo_" + string(rune('a'+i)) + ".jpg",
@@ -402,7 +402,7 @@ func TestPerformRegularSearchDistribution(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(tx, &files[i])
+		_ = db.UpsertFile(ctx, tx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 

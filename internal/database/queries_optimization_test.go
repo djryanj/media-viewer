@@ -30,12 +30,12 @@ func TestGetMediaInDirectoryWithFavoritesAndTags(t *testing.T) {
 	}
 
 	// Insert files
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 	for i := range files {
-		if err := db.UpsertFile(tx, &files[i]); err != nil {
+		if err := db.UpsertFile(ctx, tx, &files[i]); err != nil {
 			t.Fatalf("UpsertFile failed: %v", err)
 		}
 	}
@@ -175,9 +175,9 @@ func TestGetMediaInDirectorySorting(t *testing.T) {
 		{Name: "beta.mp4", Path: "sort/beta.mp4", ParentPath: "sort", Type: FileTypeVideo, Size: 3000, ModTime: now.Add(-2 * time.Hour), MimeType: "video/mp4"},
 	}
 
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(tx, &files[i])
+		_ = db.UpsertFile(ctx, tx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -295,9 +295,9 @@ func TestGetMediaInDirectoryOnlyFolders(t *testing.T) {
 		{Name: "subfolder2", Path: "mixed/subfolder2", ParentPath: "mixed", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
 	}
 
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(tx, &files[i])
+		_ = db.UpsertFile(ctx, tx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -334,8 +334,8 @@ func TestGetMediaInDirectoryManyTags(t *testing.T) {
 		MimeType:   "image/jpeg",
 	}
 
-	tx, _ := db.BeginBatch()
-	_ = db.UpsertFile(tx, &file)
+	tx, _ := db.BeginBatch(ctx)
+	_ = db.UpsertFile(ctx, tx, &file)
 	_ = db.EndBatch(tx, nil)
 
 	// Add many tags (10 tags)
@@ -388,7 +388,7 @@ func TestGetMediaInDirectoryLargeDataset(t *testing.T) {
 
 	// Create 1000 files with varying favorites and tags
 	fileCount := 1000
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 
 	for i := 0; i < fileCount; i++ {
 		file := MediaFile{
@@ -400,7 +400,7 @@ func TestGetMediaInDirectoryLargeDataset(t *testing.T) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		_ = db.UpsertFile(tx, &file)
+		_ = db.UpsertFile(ctx, tx, &file)
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -468,9 +468,9 @@ func TestGetMediaInDirectoryDefaultParameters(t *testing.T) {
 		{Name: "alpha.jpg", Path: "default/alpha.jpg", ParentPath: "default", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
 	}
 
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(tx, &files[i])
+		_ = db.UpsertFile(ctx, tx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 

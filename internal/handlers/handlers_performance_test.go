@@ -20,7 +20,7 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -37,9 +37,9 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 		indexer:    nil,
 		cacheDir:   cacheDir,
 	}
-
+	ctx := context.Background()
 	// Create some test data
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := 0; i < 100; i++ {
 		file := database.MediaFile{
 			Name:       "test.jpg",
@@ -49,7 +49,7 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		db.UpsertFile(tx, &file)
+		db.UpsertFile(ctx, tx, &file)
 	}
 	db.EndBatch(tx, nil)
 
@@ -81,7 +81,7 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -98,9 +98,9 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 		indexer:    nil,
 		cacheDir:   cacheDir,
 	}
-
+	ctx := context.Background()
 	// Create test directory structure with many folders
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 
 	// Add 100 folders
 	for i := 0; i < 100; i++ {
@@ -112,7 +112,7 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		db.UpsertFile(tx, &folder)
+		db.UpsertFile(ctx, tx, &folder)
 
 		// Add files to each folder
 		for j := 0; j < 50; j++ {
@@ -125,7 +125,7 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 				ModTime:    time.Now(),
 				MimeType:   "image/jpeg",
 			}
-			db.UpsertFile(tx, &file)
+			db.UpsertFile(ctx, tx, &file)
 		}
 	}
 	db.EndBatch(tx, nil)
@@ -149,7 +149,7 @@ func BenchmarkGetMediaFilesEndpoint(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -169,7 +169,7 @@ func BenchmarkGetMediaFilesEndpoint(b *testing.B) {
 
 	// Create test files with tags and favorites
 	ctx := context.Background()
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 
 	for i := 0; i < 1000; i++ {
 		file := database.MediaFile{
@@ -181,7 +181,7 @@ func BenchmarkGetMediaFilesEndpoint(b *testing.B) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		db.UpsertFile(tx, &file)
+		db.UpsertFile(ctx, tx, &file)
 	}
 	db.EndBatch(tx, nil)
 
@@ -218,7 +218,7 @@ func BenchmarkGetMediaFilesEndpoint_LargeDirectory(b *testing.B) {
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -238,7 +238,7 @@ func BenchmarkGetMediaFilesEndpoint_LargeDirectory(b *testing.B) {
 
 	// Create 14,000 files to simulate user's use case
 	ctx := context.Background()
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 
 	for i := 0; i < 14000; i++ {
 		file := database.MediaFile{
@@ -250,7 +250,7 @@ func BenchmarkGetMediaFilesEndpoint_LargeDirectory(b *testing.B) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		db.UpsertFile(tx, &file)
+		db.UpsertFile(ctx, tx, &file)
 	}
 	db.EndBatch(tx, nil)
 

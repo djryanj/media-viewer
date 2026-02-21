@@ -52,7 +52,7 @@ func main() {
 	dbPath := filepath.Join(databaseDir, "media.db")
 
 	// Initialize database
-	db, err := database.New(ctx, dbPath)
+	db, _, err := database.New(ctx, dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to connect to database: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Make sure DATABASE_DIR is set correctly (current: %s)\n", databaseDir)

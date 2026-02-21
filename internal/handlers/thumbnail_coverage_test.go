@@ -44,7 +44,7 @@ func setupThumbnailCoverageTest(t *testing.T) (h *Handlers, mediaDir string, cle
 		t.Fatalf("failed to create cache directory: %v", err)
 	}
 
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -92,9 +92,9 @@ func TestGetThumbnailFileNotInDatabase(t *testing.T) {
 func TestGetThumbnailFileNotOnDisk(t *testing.T) {
 	h, _, cleanup := setupThumbnailCoverageTest(t)
 	defer cleanup()
-
+	ctx := context.Background()
 	// Add file to database but don't create it on disk
-	tx, err := h.db.BeginBatch()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -106,7 +106,8 @@ func TestGetThumbnailFileNotOnDisk(t *testing.T) {
 		Size:       0,
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}
@@ -135,7 +136,8 @@ func TestGetThumbnailDirectoryInDatabase(t *testing.T) {
 	}
 
 	// Add to database as image (wrong type)
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -147,7 +149,7 @@ func TestGetThumbnailDirectoryInDatabase(t *testing.T) {
 		Size:       0,
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add directory to database: %v", err)
 	}
@@ -187,7 +189,8 @@ func TestGetThumbnailUnsupportedFileType(t *testing.T) {
 			}
 
 			// Add to database
-			tx, err := h.db.BeginBatch()
+			ctx := context.Background()
+			tx, err := h.db.BeginBatch(ctx)
 			if err != nil {
 				t.Fatalf("failed to begin transaction: %v", err)
 			}
@@ -199,7 +202,7 @@ func TestGetThumbnailUnsupportedFileType(t *testing.T) {
 				Size:       0,
 				ModTime:    time.Now(),
 			}
-			err = h.db.UpsertFile(tx, file)
+			err = h.db.UpsertFile(ctx, tx, file)
 			if err = h.db.EndBatch(tx, err); err != nil {
 				t.Fatalf("failed to add file to database: %v", err)
 			}
@@ -241,7 +244,8 @@ func TestGetThumbnailImageSuccess(t *testing.T) {
 		t.Fatalf("failed to create image file: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -253,7 +257,7 @@ func TestGetThumbnailImageSuccess(t *testing.T) {
 		Size:       int64(len(imageData)),
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}
@@ -304,7 +308,8 @@ func TestGetThumbnailFolderSuccess(t *testing.T) {
 		t.Fatalf("failed to create folder: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -316,7 +321,7 @@ func TestGetThumbnailFolderSuccess(t *testing.T) {
 		Size:       0,
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add folder to database: %v", err)
 	}
@@ -374,7 +379,8 @@ func TestGetThumbnailConditionalRequest(t *testing.T) {
 		t.Fatalf("failed to create image file: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -386,7 +392,7 @@ func TestGetThumbnailConditionalRequest(t *testing.T) {
 		Size:       int64(len(imageData)),
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}
@@ -454,7 +460,8 @@ func TestGetThumbnailConditionalRequestMismatch(t *testing.T) {
 		t.Fatalf("failed to create image file: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -466,7 +473,7 @@ func TestGetThumbnailConditionalRequestMismatch(t *testing.T) {
 		Size:       int64(len(imageData)),
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}
@@ -501,7 +508,8 @@ func TestGetThumbnailGenerationFailure(t *testing.T) {
 		t.Fatalf("failed to create file: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -513,7 +521,7 @@ func TestGetThumbnailGenerationFailure(t *testing.T) {
 		Size:       16,
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}
@@ -541,7 +549,8 @@ func TestGetThumbnailStatError(t *testing.T) {
 		t.Fatalf("failed to create file: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -553,7 +562,7 @@ func TestGetThumbnailStatError(t *testing.T) {
 		Size:       4,
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}
@@ -600,7 +609,8 @@ func TestGetThumbnailMultipleRequests(t *testing.T) {
 		t.Fatalf("failed to create image file: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -612,7 +622,7 @@ func TestGetThumbnailMultipleRequests(t *testing.T) {
 		Size:       int64(len(imageData)),
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}
@@ -660,7 +670,8 @@ func TestGetThumbnailVideoType(t *testing.T) {
 		t.Fatalf("failed to create video file: %v", err)
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -672,7 +683,7 @@ func TestGetThumbnailVideoType(t *testing.T) {
 		Size:       18,
 		ModTime:    time.Now(),
 	}
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err = h.db.EndBatch(tx, err); err != nil {
 		t.Fatalf("failed to add file to database: %v", err)
 	}

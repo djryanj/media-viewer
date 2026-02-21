@@ -43,7 +43,7 @@ func setupMediaIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 	}
 
 	// Create real database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -91,7 +91,7 @@ func setupMediaIntegrationTestWithThumbnails(t *testing.T) (h *Handlers, cleanup
 	}
 
 	// Create real database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -132,8 +132,8 @@ func addExistingFileToDatabase(t *testing.T, h *Handlers, relativePath string, f
 	if parentPath == "." {
 		parentPath = ""
 	}
-
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch: %v", err)
 	}
@@ -147,7 +147,7 @@ func addExistingFileToDatabase(t *testing.T, h *Handlers, relativePath string, f
 		ModTime:    fileInfo.ModTime(),
 	}
 
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err != nil {
 		tx.Rollback()
 		t.Fatalf("failed to upsert file: %v", err)
@@ -182,7 +182,9 @@ func addTestMediaFile(t *testing.T, h *Handlers, relativePath string, fileType d
 		parentPath = ""
 	}
 
-	tx, err := h.db.BeginBatch()
+	ctx := context.Background()
+
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch: %v", err)
 	}
@@ -196,7 +198,7 @@ func addTestMediaFile(t *testing.T, h *Handlers, relativePath string, fileType d
 		ModTime:    fileInfo.ModTime(),
 	}
 
-	err = h.db.UpsertFile(tx, file)
+	err = h.db.UpsertFile(ctx, tx, file)
 	if err != nil {
 		tx.Rollback()
 		t.Fatalf("failed to upsert test file: %v", err)
@@ -1183,14 +1185,14 @@ func TestListFilesFilterWithFoldersIntegration(t *testing.T) {
 		Type:       database.FileTypeFolder,
 	}
 
-	tx, err := h.db.BeginBatch()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch: %v", err)
 	}
-	if err := h.db.UpsertFile(tx, folder1); err != nil {
+	if err := h.db.UpsertFile(ctx, tx, folder1); err != nil {
 		t.Fatalf("failed to upsert folder1: %v", err)
 	}
-	if err := h.db.UpsertFile(tx, folder2); err != nil {
+	if err := h.db.UpsertFile(ctx, tx, folder2); err != nil {
 		t.Fatalf("failed to upsert folder2: %v", err)
 	}
 	if err := h.db.EndBatch(tx, nil); err != nil {
@@ -1854,9 +1856,9 @@ func TestGetThumbnailSuccessFolderIntegration(t *testing.T) {
 	if err := os.MkdirAll(folderPath, 0o755); err != nil {
 		t.Fatalf("failed to create test folder: %v", err)
 	}
-
+	ctx := context.Background()
 	// Add folder to database
-	tx, err := h.db.BeginBatch()
+	tx, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch: %v", err)
 	}
@@ -1869,7 +1871,7 @@ func TestGetThumbnailSuccessFolderIntegration(t *testing.T) {
 		Size:     0,
 	}
 
-	if err := h.db.UpsertFile(tx, &file); err != nil {
+	if err := h.db.UpsertFile(ctx, tx, &file); err != nil {
 		t.Fatalf("failed to insert folder: %v", err)
 	}
 
@@ -2748,7 +2750,7 @@ exit 187
 	_ = os.Setenv("PATH", tempDir+":"+oldPath)
 
 	// Create real database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -2894,7 +2896,7 @@ exit 187
 	_ = os.Setenv("PATH", tempDir+":"+oldPath)
 
 	// Create dependencies
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}

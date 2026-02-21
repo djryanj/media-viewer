@@ -32,7 +32,7 @@ func TestSlowQueryLogging(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -143,7 +143,7 @@ func BenchmarkListDirectory_WithFolderCounts(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -153,7 +153,7 @@ func BenchmarkListDirectory_WithFolderCounts(b *testing.B) {
 
 	// Create a directory structure with many folders
 	// 100 folders in the root, each with varying number of files
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		b.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -168,7 +168,7 @@ func BenchmarkListDirectory_WithFolderCounts(b *testing.B) {
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		if err := db.UpsertFile(tx, &folder); err != nil {
+		if err := db.UpsertFile(ctx, tx, &folder); err != nil {
 			b.Fatalf("Failed to upsert folder: %v", err)
 		}
 
@@ -185,7 +185,7 @@ func BenchmarkListDirectory_WithFolderCounts(b *testing.B) {
 				ModTime:    time.Now(),
 				MimeType:   "image/jpeg",
 			}
-			if err := db.UpsertFile(tx, &file); err != nil {
+			if err := db.UpsertFile(ctx, tx, &file); err != nil {
 				b.Fatalf("Failed to upsert file: %v", err)
 			}
 		}
@@ -221,7 +221,7 @@ func BenchmarkListDirectory_LargeFolderCounts(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -231,7 +231,7 @@ func BenchmarkListDirectory_LargeFolderCounts(b *testing.B) {
 
 	// Create a directory structure simulating real-world usage
 	// 500 folders with varying sizes, some very large
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		b.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -246,7 +246,7 @@ func BenchmarkListDirectory_LargeFolderCounts(b *testing.B) {
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		if err := db.UpsertFile(tx, &folder); err != nil {
+		if err := db.UpsertFile(ctx, tx, &folder); err != nil {
 			b.Fatalf("Failed to upsert folder: %v", err)
 		}
 
@@ -269,7 +269,7 @@ func BenchmarkListDirectory_LargeFolderCounts(b *testing.B) {
 				ModTime:    time.Now(),
 				MimeType:   "image/jpeg",
 			}
-			if err := db.UpsertFile(tx, &file); err != nil {
+			if err := db.UpsertFile(ctx, tx, &file); err != nil {
 				b.Fatalf("Failed to upsert file: %v", err)
 			}
 		}
@@ -323,7 +323,7 @@ func BenchmarkGetMediaInDirectory_WithManyTags(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -341,7 +341,7 @@ func BenchmarkGetMediaInDirectory_WithManyTags(b *testing.B) {
 	}
 
 	// Create files
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		b.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -357,7 +357,7 @@ func BenchmarkGetMediaInDirectory_WithManyTags(b *testing.B) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		if err := db.UpsertFile(tx, &file); err != nil {
+		if err := db.UpsertFile(ctx, tx, &file); err != nil {
 			b.Fatalf("Failed to upsert file: %v", err)
 		}
 	}
@@ -402,7 +402,7 @@ func TestListDirectory_FolderCountAccuracy(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := New(context.Background(), dbPath)
+	db, _, err := New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestListDirectory_FolderCountAccuracy(t *testing.T) {
 	// folder3/ (empty)
 	// folder4/ (1 file)
 
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestListDirectory_FolderCountAccuracy(t *testing.T) {
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		if err := db.UpsertFile(tx, &f); err != nil {
+		if err := db.UpsertFile(ctx, tx, &f); err != nil {
 			t.Fatalf("Failed to upsert folder: %v", err)
 		}
 
@@ -457,7 +457,7 @@ func TestListDirectory_FolderCountAccuracy(t *testing.T) {
 				ModTime:    time.Now(),
 				MimeType:   "image/jpeg",
 			}
-			if err := db.UpsertFile(tx, &file); err != nil {
+			if err := db.UpsertFile(ctx, tx, &file); err != nil {
 				t.Fatalf("Failed to upsert file: %v", err)
 			}
 		}

@@ -38,7 +38,7 @@ func setupPlaylistIntegrationTest(t *testing.T) (h *Handlers, mediaDir string, c
 	}
 
 	// Initialize database
-	db, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -118,9 +118,9 @@ func addPlaylistToDatabase(t *testing.T, db *database.Database, playlistPath, me
 	if err != nil {
 		t.Fatalf("failed to stat playlist: %v", err)
 	}
-
+	ctx := context.Background()
 	// Insert into database
-	tx, err := db.BeginBatch()
+	tx, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -133,7 +133,7 @@ func addPlaylistToDatabase(t *testing.T, db *database.Database, playlistPath, me
 		Type:    database.FileTypePlaylist,
 	}
 
-	if err := db.UpsertFile(tx, mediaFile); err != nil {
+	if err := db.UpsertFile(ctx, tx, mediaFile); err != nil {
 		t.Fatalf("failed to insert playlist: %v", err)
 	}
 

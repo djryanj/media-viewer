@@ -268,7 +268,7 @@ func TestGetFilesByTagIntegration(t *testing.T) {
 		{"/movies/comedy.mp4", "comedy"},
 	}
 
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for _, f := range files {
 		file := &MediaFile{
 			Name:       f.path[len("/movies/"):],
@@ -278,7 +278,7 @@ func TestGetFilesByTagIntegration(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(tx, file)
+		_ = db.UpsertFile(ctx, tx, file)
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -322,7 +322,7 @@ func TestGetFilesByTagPaginationIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// Insert 15 files first
-	tx, _ := db.BeginBatch()
+	tx, _ := db.BeginBatch(ctx)
 	for i := 1; i <= 15; i++ {
 		path := "/test/file" + string(rune('0'+i)) + ".mp4"
 		file := &MediaFile{
@@ -333,7 +333,7 @@ func TestGetFilesByTagPaginationIntegration(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(tx, file)
+		_ = db.UpsertFile(ctx, tx, file)
 	}
 	_ = db.EndBatch(tx, nil)
 
