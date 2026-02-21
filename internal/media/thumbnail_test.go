@@ -1448,3 +1448,676 @@ func BenchmarkValidateFilePath(b *testing.B) {
 		_ = validateFilePath(validPath)
 	}
 }
+
+// =============================================================================
+// detectImageFormat Tests
+// =============================================================================
+
+func TestDetectImageFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePath string
+		want     string
+	}{
+		{"JPEG lowercase", "/media/photo.jpg", "jpeg"},
+		{"JPEG uppercase", "/media/photo.JPG", "jpeg"},
+		{"JPEG long ext", "/media/photo.jpeg", "jpeg"},
+		{"JPEG mixed case", "/media/photo.JpEg", "jpeg"},
+		{"PNG", "/media/image.png", "png"},
+		{"PNG uppercase", "/media/image.PNG", "png"},
+		{"GIF", "/media/anim.gif", "gif"},
+		{"WebP", "/media/image.webp", "webp"},
+		{"BMP", "/media/image.bmp", "bmp"},
+		{"TIFF", "/media/image.tiff", "tiff"},
+		{"TIF short", "/media/image.tif", "tiff"},
+		{"HEIC", "/media/image.heic", "heic"},
+		{"HEIF", "/media/image.heif", "heic"},
+		{"AVIF", "/media/image.avif", "avif"},
+		{"SVG", "/media/image.svg", "svg"},
+		{"Unknown extension", "/media/file.xyz", "unknown"},
+		{"No extension", "/media/file", "unknown"},
+		{"Empty string", "", "unknown"},
+		{"Dot only", "/media/file.", "unknown"},
+		{"MP4 video", "/media/video.mp4", "unknown"},
+		{"Text file", "/media/readme.txt", "unknown"},
+		{"Deep path JPEG", "/a/b/c/d/e/photo.jpg", "jpeg"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectImageFormat(tt.filePath)
+			if got != tt.want {
+				t.Errorf("detectImageFormat(%q) = %q, want %q", tt.filePath, got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// formatBytes Tests
+// =============================================================================
+
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		name  string
+		bytes int64
+		want  string
+	}{
+		{"Zero bytes", 0, "0 B"},
+		{"One byte", 1, "1 B"},
+		{"Sub-KB", 512, "512 B"},
+		{"Exactly 1 KB", 1024, "1.0 KB"},
+		{"1.5 KB", 1536, "1.5 KB"},
+		{"Sub-MB", 500 * 1024, "500.0 KB"},
+		{"Exactly 1 MB", 1024 * 1024, "1.0 MB"},
+		{"10 MB", 10 * 1024 * 1024, "10.0 MB"},
+		{"1.5 MB", 1536 * 1024, "1.5 MB"},
+		{"Exactly 1 GB", 1024 * 1024 * 1024, "1.0 GB"},
+		{"2.5 GB", int64(2.5 * 1024 * 1024 * 1024), "2.5 GB"},
+		{"1 TB", int64(1024) * 1024 * 1024 * 1024, "1.0 TB"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatBytes(tt.bytes)
+			if got != tt.want {
+				t.Errorf("formatBytes(%d) = %q, want %q", tt.bytes, got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// InvalidateAll Tests
+// =============================================================================
+
+func TestInvalidateAll_Disabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, false, nil, time.Hour, nil)
+
+	count, err := gen.InvalidateAll()
+	if err != nil {
+		t.Errorf("InvalidateAll() error = %v, want nil", err)
+	}
+	if count != 0 {
+		t.Errorf("InvalidateAll() count = %d, want 0 when disabled", count)
+	}
+}
+
+func TestInvalidateAll_EmptyCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	count, err := gen.InvalidateAll()
+	if err != nil {
+		t.Errorf("InvalidateAll() error = %v, want nil", err)
+	}
+	if count != 0 {
+		t.Errorf("InvalidateAll() count = %d, want 0 for empty cache", count)
+	}
+}
+
+func TestInvalidateAll_RemovesThumbnailsAndMeta(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create thumbnail files and meta files
+	thumbFiles := []string{"abc123.jpg", "def456.jpg", "ghi789.png"}
+	metaFiles := []string{"abc123.meta", "def456.meta", "ghi789.meta"}
+
+	for _, name := range thumbFiles {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("thumb data"), 0o644); err != nil {
+			t.Fatalf("Failed to create thumb file %s: %v", name, err)
+		}
+	}
+	for _, name := range metaFiles {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("/source/path"), 0o644); err != nil {
+			t.Fatalf("Failed to create meta file %s: %v", name, err)
+		}
+	}
+
+	count, err := gen.InvalidateAll()
+	if err != nil {
+		t.Fatalf("InvalidateAll() error = %v", err)
+	}
+
+	// Count should reflect thumbnail files only (not meta files)
+	if count != len(thumbFiles) {
+		t.Errorf("InvalidateAll() count = %d, want %d", count, len(thumbFiles))
+	}
+
+	// Verify all files are removed
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatalf("os.ReadDir() error = %v", err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("Cache directory should be empty after InvalidateAll, found: %v", names)
+	}
+}
+
+func TestInvalidateAll_SkipsDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create a subdirectory (should be skipped)
+	if err := os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o755); err != nil {
+		t.Fatalf("Failed to create subdir: %v", err)
+	}
+	// Create a thumbnail file
+	if err := os.WriteFile(filepath.Join(tmpDir, "thumb.jpg"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("Failed to create thumb: %v", err)
+	}
+
+	count, err := gen.InvalidateAll()
+	if err != nil {
+		t.Fatalf("InvalidateAll() error = %v", err)
+	}
+
+	if count != 1 {
+		t.Errorf("InvalidateAll() count = %d, want 1", count)
+	}
+
+	// Subdirectory should still exist
+	if _, err := os.Stat(filepath.Join(tmpDir, "subdir")); os.IsNotExist(err) {
+		t.Error("InvalidateAll should not remove subdirectories")
+	}
+}
+
+func TestInvalidateAll_NonexistentCacheDir(t *testing.T) {
+	gen := NewThumbnailGenerator("/nonexistent/cache/dir", t.TempDir(), true, nil, time.Hour, nil)
+
+	count, err := gen.InvalidateAll()
+	if err != nil {
+		t.Errorf("InvalidateAll() error = %v, want nil for nonexistent dir", err)
+	}
+	if count != 0 {
+		t.Errorf("InvalidateAll() count = %d, want 0", count)
+	}
+}
+
+// =============================================================================
+// InvalidateThumbnail Tests
+// =============================================================================
+
+func TestInvalidateThumbnail_Disabled(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), false, nil, time.Hour, nil)
+
+	err := gen.InvalidateThumbnail("/some/path.jpg")
+	if err != nil {
+		t.Errorf("InvalidateThumbnail() error = %v, want nil when disabled", err)
+	}
+}
+
+func TestInvalidateThumbnail_RemovesCachedFileAndMeta(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	filePath := "/media/photos/test.jpg"
+
+	// Create the cached thumbnail and meta file
+	cacheKey := gen.getCacheKey(filePath, database.FileTypeImage)
+	cachePath := filepath.Join(tmpDir, cacheKey)
+	if err := os.WriteFile(cachePath, []byte("thumb"), 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+	if err := gen.writeMetaFile(cacheKey, filePath); err != nil {
+		t.Fatalf("Failed to write meta file: %v", err)
+	}
+
+	err := gen.InvalidateThumbnail(filePath)
+	if err != nil {
+		t.Fatalf("InvalidateThumbnail() error = %v", err)
+	}
+
+	// Thumbnail should be removed
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Error("Cached thumbnail should be removed after invalidation")
+	}
+
+	// Meta file should be removed
+	metaPath := gen.getMetaPath(cacheKey)
+	if _, err := os.Stat(metaPath); !os.IsNotExist(err) {
+		t.Error("Meta file should be removed after invalidation")
+	}
+}
+
+func TestInvalidateThumbnail_NonexistentFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Should not error when invalidating a file that was never cached
+	err := gen.InvalidateThumbnail("/nonexistent/file.jpg")
+	if err != nil {
+		t.Errorf("InvalidateThumbnail() error = %v, want nil for uncached file", err)
+	}
+}
+
+// =============================================================================
+// GetCachedMetrics Tests
+// =============================================================================
+
+func TestGetCachedMetrics_InitialValues(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	count, size := gen.GetCachedMetrics()
+	if count != 0 {
+		t.Errorf("Initial cached count = %d, want 0", count)
+	}
+	if size != 0 {
+		t.Errorf("Initial cached size = %d, want 0", size)
+	}
+}
+
+func TestGetCachedMetrics_AfterUpdate(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create some cache files
+	thumbContent := []byte("thumbnail data here")
+	for i := 0; i < 3; i++ {
+		name := fmt.Sprintf("thumb%d.jpg", i)
+		if err := os.WriteFile(filepath.Join(tmpDir, name), thumbContent, 0o644); err != nil {
+			t.Fatalf("Failed to create file: %v", err)
+		}
+	}
+
+	gen.UpdateCacheMetrics()
+
+	count, size := gen.GetCachedMetrics()
+	if count != 3 {
+		t.Errorf("Cached count = %d, want 3", count)
+	}
+	expectedSize := int64(len(thumbContent)) * 3
+	if size != expectedSize {
+		t.Errorf("Cached size = %d, want %d", size, expectedSize)
+	}
+}
+
+func TestGetCachedMetrics_ExcludesMetaFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create thumbnail and meta files
+	if err := os.WriteFile(filepath.Join(tmpDir, "thumb.jpg"), []byte("thumb"), 0o644); err != nil {
+		t.Fatalf("Failed to create thumb: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "thumb.meta"), []byte("/source"), 0o644); err != nil {
+		t.Fatalf("Failed to create meta: %v", err)
+	}
+
+	gen.UpdateCacheMetrics()
+
+	count, _ := gen.GetCachedMetrics()
+	if count != 1 {
+		t.Errorf("Cached count = %d, want 1 (meta files should be excluded)", count)
+	}
+}
+
+// =============================================================================
+// UpdateCacheMetrics Tests (additional)
+// =============================================================================
+
+func TestUpdateCacheMetrics_Disabled(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), false, nil, time.Hour, nil)
+
+	// Should not panic
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("UpdateCacheMetrics panicked when disabled: %v", r)
+		}
+	}()
+
+	gen.UpdateCacheMetrics()
+
+	count, size := gen.GetCachedMetrics()
+	if count != 0 || size != 0 {
+		t.Errorf("Disabled generator should report 0 metrics, got count=%d size=%d", count, size)
+	}
+}
+
+func TestUpdateCacheMetrics_NonexistentDir(t *testing.T) {
+	gen := NewThumbnailGenerator("/nonexistent/cache", t.TempDir(), true, nil, time.Hour, nil)
+
+	// Should not panic
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("UpdateCacheMetrics panicked for nonexistent dir: %v", r)
+		}
+	}()
+
+	gen.UpdateCacheMetrics()
+}
+
+// =============================================================================
+// IsGenerating Tests
+// =============================================================================
+
+func TestIsGenerating_InitiallyFalse(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), true, nil, time.Hour, nil)
+
+	if gen.IsGenerating() {
+		t.Error("IsGenerating() should be false initially")
+	}
+}
+
+// =============================================================================
+// TriggerGeneration Tests
+// =============================================================================
+
+func TestTriggerGeneration_DisabledNoOp(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), false, nil, time.Hour, nil)
+
+	// Should not panic or block
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("TriggerGeneration panicked when disabled: %v", r)
+		}
+	}()
+
+	gen.TriggerGeneration()
+
+	// Give the goroutine a moment to run (it should return immediately)
+	time.Sleep(50 * time.Millisecond)
+
+	if gen.IsGenerating() {
+		t.Error("Should not be generating when disabled")
+	}
+}
+
+func TestTriggerGeneration_NilDBNoOp(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), true, nil, time.Hour, nil)
+
+	// Should not panic — runGeneration returns early when db is nil
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("TriggerGeneration panicked with nil DB: %v", r)
+		}
+	}()
+
+	gen.TriggerGeneration()
+
+	// Give the goroutine a moment
+	time.Sleep(50 * time.Millisecond)
+
+	if gen.IsGenerating() {
+		t.Error("Should not be generating with nil DB")
+	}
+}
+
+// =============================================================================
+// RebuildAll Tests
+// =============================================================================
+
+func TestRebuildAll_Disabled(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), false, nil, time.Hour, nil)
+
+	// Should not panic or block
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RebuildAll panicked when disabled: %v", r)
+		}
+	}()
+
+	gen.RebuildAll()
+}
+
+func TestRebuildAll_NilDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create some cache files
+	if err := os.WriteFile(filepath.Join(tmpDir, "thumb.jpg"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("Failed to create file: %v", err)
+	}
+
+	// Should not panic — clears cache, then runGeneration returns early for nil DB
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RebuildAll panicked with nil DB: %v", r)
+		}
+	}()
+
+	gen.RebuildAll()
+
+	// Give the goroutine a moment
+	time.Sleep(100 * time.Millisecond)
+}
+
+// =============================================================================
+// cleanupOrphanedThumbnails Tests
+// =============================================================================
+
+func TestCleanupOrphanedThumbnails_NilDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	ctx := context.Background()
+
+	// Should not panic with nil DB — returns early with 0, 0
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("cleanupOrphanedThumbnails panicked with nil DB: %v", r)
+		}
+	}()
+
+	orphans, legacy := gen.cleanupOrphanedThumbnails(ctx)
+	if orphans != 0 {
+		t.Errorf("orphansRemoved = %d, want 0 with nil DB", orphans)
+	}
+	if legacy != 0 {
+		t.Errorf("legacyRemoved = %d, want 0 with nil DB", legacy)
+	}
+}
+
+// =============================================================================
+// thumbnailExists Tests
+// =============================================================================
+
+func TestThumbnailExists_NotCached(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	exists := gen.thumbnailExists("photos/test.jpg", database.FileTypeImage)
+	if exists {
+		t.Error("thumbnailExists should return false for uncached file")
+	}
+}
+
+func TestThumbnailExists_Cached(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Create a cached thumbnail
+	relPath := "photos/test.jpg"
+	fullPath := filepath.Join(mediaDir, relPath)
+	cacheKey := gen.getCacheKey(fullPath, database.FileTypeImage)
+	cachePath := filepath.Join(tmpDir, cacheKey)
+	if err := os.WriteFile(cachePath, []byte("thumb data"), 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+
+	exists := gen.thumbnailExists(relPath, database.FileTypeImage)
+	if !exists {
+		t.Error("thumbnailExists should return true for cached file")
+	}
+}
+
+func TestThumbnailExists_WrongType(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Cache as image type
+	relPath := "photos/test.jpg"
+	fullPath := filepath.Join(mediaDir, relPath)
+	cacheKey := gen.getCacheKey(fullPath, database.FileTypeImage)
+	cachePath := filepath.Join(tmpDir, cacheKey)
+	if err := os.WriteFile(cachePath, []byte("thumb data"), 0o644); err != nil {
+		t.Fatalf("Failed to create cache file: %v", err)
+	}
+
+	// Check as folder type — different cache key, should not exist
+	exists := gen.thumbnailExists(relPath, database.FileTypeFolder)
+	if exists {
+		t.Error("thumbnailExists should return false for different file type")
+	}
+}
+
+// =============================================================================
+// GetStatus additional tests
+// =============================================================================
+
+func TestGetStatus_Disabled(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), false, nil, time.Hour, nil)
+
+	status := gen.GetStatus()
+
+	if status.Enabled {
+		t.Error("Status.Enabled should be false")
+	}
+	if status.CacheCount != 0 {
+		t.Errorf("CacheCount = %d, want 0 when disabled", status.CacheCount)
+	}
+	if status.CacheSize != 0 {
+		t.Errorf("CacheSize = %d, want 0 when disabled", status.CacheSize)
+	}
+	if status.CacheSizeHuman != "" {
+		t.Errorf("CacheSizeHuman = %q, want empty when disabled", status.CacheSizeHuman)
+	}
+}
+
+func TestGetStatus_IncludesGenerationStats(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	// Manually set generation stats
+	gen.generationMu.Lock()
+	gen.generationStats = GenerationStats{
+		InProgress: true,
+		TotalFiles: 100,
+		Processed:  50,
+		Generated:  40,
+		Skipped:    8,
+		Failed:     2,
+	}
+	gen.generationMu.Unlock()
+
+	status := gen.GetStatus()
+
+	if status.Generation == nil {
+		t.Fatal("Generation stats should not be nil")
+	}
+	if !status.Generation.InProgress {
+		t.Error("Generation.InProgress should be true")
+	}
+	if status.Generation.TotalFiles != 100 {
+		t.Errorf("Generation.TotalFiles = %d, want 100", status.Generation.TotalFiles)
+	}
+	if status.Generation.Processed != 50 {
+		t.Errorf("Generation.Processed = %d, want 50", status.Generation.Processed)
+	}
+	if status.Generation.Generated != 40 {
+		t.Errorf("Generation.Generated = %d, want 40", status.Generation.Generated)
+	}
+}
+
+// =============================================================================
+// Start/Stop Tests
+// =============================================================================
+
+func TestStartStop_Disabled(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), false, nil, time.Hour, nil)
+
+	// Should not panic or block
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Start/Stop panicked when disabled: %v", r)
+		}
+	}()
+
+	gen.Start()
+	time.Sleep(10 * time.Millisecond)
+	gen.Stop()
+}
+
+func TestStartStop_EnabledNilDB(t *testing.T) {
+	gen := NewThumbnailGenerator(t.TempDir(), t.TempDir(), true, nil, time.Hour, nil)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Start/Stop panicked with nil DB: %v", r)
+		}
+	}()
+
+	gen.Start()
+	time.Sleep(50 * time.Millisecond)
+	gen.Stop()
+}
+
+// =============================================================================
+// Benchmarks for new functions
+// =============================================================================
+
+func BenchmarkDetectImageFormat(b *testing.B) {
+	paths := []string{
+		"/media/photos/image.jpg",
+		"/media/photos/image.png",
+		"/media/photos/image.webp",
+		"/media/photos/image.heic",
+		"/media/photos/unknown.xyz",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = detectImageFormat(paths[i%len(paths)])
+	}
+}
+
+func BenchmarkFormatBytes(b *testing.B) {
+	sizes := []int64{0, 512, 1024, 1024 * 1024, 1024 * 1024 * 1024}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = formatBytes(sizes[i%len(sizes)])
+	}
+}
+
+func BenchmarkInvalidateAll(b *testing.B) {
+	tmpDir := b.TempDir()
+	mediaDir := b.TempDir()
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, nil, time.Hour, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Create files each iteration
+		for j := 0; j < 10; j++ {
+			name := fmt.Sprintf("thumb%d.jpg", j)
+			os.WriteFile(filepath.Join(tmpDir, name), []byte("data"), 0o644)
+		}
+
+		_, err := gen.InvalidateAll()
+		if err != nil {
+			b.Fatalf("InvalidateAll error: %v", err)
+		}
+	}
+}

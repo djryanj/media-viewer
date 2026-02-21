@@ -43,7 +43,7 @@ services:
       #   - /Volumes/Media/videos:/media
       #
       # Note: The directory must exist on the host before starting
-      - D:\\Installs\\pr0n:/media
+      - D:\\Media\\Videos:/media
       - cache-data:/cache
       - db-data:/database
     networks:

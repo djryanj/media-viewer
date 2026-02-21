@@ -30,8 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Application crashes caused by database memory-mapping on network storage** [#290](https://github.com/djryanj/media-viewer/issues/290))
     - Resolved an issue where the application could crash unexpectedly (SIGBUS) when the underlying storage — such as NFS mounts or Longhorn volumes — experienced brief interruptions. The root cause was SQLite's memory-mapping feature, which was enabled by default in the container's system library. When mapped database pages became temporarily unavailable, the application would crash immediately with no opportunity to recover.
-    - The fix disables memory-mapping for database access. Benchmarking confirmed this has no measurable impact on performance for any database operation, including reads, writes, searches, and concurrent workloads. In mixed read/write scenarios, the change actually showed a small improvement.
-    - Additionally, we added storage health monitoring that periodically checks whether the database files are accessible. If a storage disruption occurs, it is now detected, logged, and reported through metrics rather than causing a crash. Operators can set alerts on the new db_storage_errors_total metric to be notified of storage issues before they affect users.
+      The fix disables memory-mapping for database access. Benchmarking confirmed this has no measurable impact on performance for any database operation, including reads, writes, searches, and concurrent workloads. In mixed read/write scenarios, the change actually showed a small improvement.
+      Additionally, we added storage health monitoring that periodically checks whether the database files are accessible. If a storage disruption occurs, it is now detected, logged, and reported through metrics rather than causing a crash. Operators can set alerts on the new db_storage_errors_total metric to be notified of storage issues before they affect users.
+
+### Changed
+
+- Backend reliability & observability improvements related to thumbnails, filesystem retries, and metrics ([#293](https://github.com/djryanj/media-viewer/issues/293))
+    - Introduced a `filesystem.Observer` interface and a Prometheus-backed observer implementation to record per-volume filesystem operation and retry metrics (media, cache, database, unknown).
+    - Metrics collector and filesystem access now use retry-aware helpers (`StatWithRetry`, `ReadDirWithRetry`, `WriteFileWithRetry`) and a robust directory-walk (`getDirSizeWithRetry`) so operations behave reliably on flaky network storage (NFS/Longhorn).
+    - Hardened thumbnail generation: NFS-safe cache writes, added `detectImageFormat()` for format-aware metrics, and recorded decode/resize/encode/cache phase metrics to improve troubleshooting and performance analysis.
+    - Added defensive checks (nil-DB guards) in orphan-cleanup and rebuild paths to avoid panics when the database is unavailable.
+    - Large expansion and refactor of unit/integration tests and benchmarks across `internal/filesystem`, `internal/media`, and `internal/metrics` to cover the new behavior and improve CI confidence.
 
 ## [0.13.3] - 2026-02-13
 

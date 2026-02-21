@@ -357,9 +357,10 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 	}
 	metrics.ThumbnailGenerationDurationDetailed.WithLabelValues(fileTypeStr, "encode").Observe(time.Since(encodeStart).Seconds())
 
-	// Cache the result
+	// Cache the result (with NFS retry protection and write metrics)
 	cacheWriteStart := time.Now()
-	if err := os.WriteFile(cachePath, buf.Bytes(), 0o644); err != nil {
+	retryConfig := filesystem.DefaultRetryConfig()
+	if err := filesystem.WriteFileWithRetry(cachePath, buf.Bytes(), 0o644, retryConfig); err != nil {
 		logging.Warn("Failed to cache thumbnail %s: %v", cachePath, err)
 	} else {
 		metrics.ThumbnailCacheWriteLatency.Observe(time.Since(cacheWriteStart).Seconds())
@@ -410,9 +411,14 @@ func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePat
 		return nil, fmt.Errorf("thumbnail generation stopped")
 	}
 
+	// Detect format from file extension for metrics labeling
+	format := detectImageFormat(filePath)
+
 	// Use constrained image loading to prevent OOM
+	decodeStart := time.Now()
 	img, err := LoadImageConstrained(filePath, MaxImageDimension, MaxImagePixels)
 	if err == nil {
+		metrics.ThumbnailImageDecodeByFormat.WithLabelValues(format).Observe(time.Since(decodeStart).Seconds())
 		return img, nil
 	}
 
@@ -424,8 +430,10 @@ func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePat
 	}
 
 	// Try standard imaging library
+	decodeStart = time.Now()
 	img, err = imaging.Open(filePath, imaging.AutoOrientation(true))
 	if err == nil {
+		metrics.ThumbnailImageDecodeByFormat.WithLabelValues(format).Observe(time.Since(decodeStart).Seconds())
 		return img, nil
 	}
 
@@ -436,13 +444,15 @@ func (t *ThumbnailGenerator) generateImageThumbnail(ctx context.Context, filePat
 		return nil, fmt.Errorf("context canceled: %w", err)
 	}
 
-	// FFmpeg fallback
+	// FFmpeg fallback — format recorded as "ffmpeg_<original>" to distinguish
+	decodeStart = time.Now()
 	img, err = t.generateImageWithFFmpeg(ctx, filePath)
 	if err != nil {
 		logging.Error("Image thumbnail failed for %s: all decode methods exhausted (constrained load, imaging.Open, ffmpeg): %v", filePath, err)
 		return nil, fmt.Errorf("all image decode methods failed for %s: %w", filePath, err)
 	}
 
+	metrics.ThumbnailImageDecodeByFormat.WithLabelValues(format).Observe(time.Since(decodeStart).Seconds())
 	return img, nil
 }
 
@@ -1398,6 +1408,11 @@ func (t *ThumbnailGenerator) processFoldersForGeneration(ctx context.Context, fo
 func (t *ThumbnailGenerator) cleanupOrphanedThumbnails(ctx context.Context) (orphansRemoved, legacyRemoved int) {
 	logging.Info("Checking for orphaned thumbnails...")
 
+	if t.db == nil {
+		logging.Debug("Database not available for orphan cleanup")
+		return 0, 0
+	}
+
 	// Get all indexed paths
 	indexedPaths, err := t.db.GetAllIndexedPaths(ctx)
 	if err != nil {
@@ -1803,9 +1818,11 @@ func (t *ThumbnailGenerator) RebuildAll() {
 	}
 
 	// Clear last run time to force full generation
-	ctx := context.Background()
-	if err := t.db.SetLastThumbnailRun(ctx, time.Time{}); err != nil {
-		logging.Error("Failed to clear last thumbnail run time: %v", err)
+	if t.db != nil {
+		ctx := context.Background()
+		if err := t.db.SetLastThumbnailRun(ctx, time.Time{}); err != nil {
+			logging.Error("Failed to clear last thumbnail run time: %v", err)
+		}
 	}
 
 	go t.runGeneration(false)
@@ -1902,3 +1919,36 @@ func validateFilePath(filePath string) error {
 	}
 	return nil
 }
+
+// detectImageFormat returns a normalized format label from a file path's extension.
+// Returns "unknown" for unrecognized extensions.
+func detectImageFormat(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".jpg", ".jpeg":
+		return formatJPEG
+	case ".png":
+		return formatPNG
+	case ".gif":
+		return "gif"
+	case ".webp":
+		return "webp"
+	case ".bmp":
+		return "bmp"
+	case ".tiff", ".tif":
+		return "tiff"
+	case ".heic", ".heif":
+		return "heic"
+	case ".avif":
+		return "avif"
+	case ".svg":
+		return "svg"
+	default:
+		return "unknown"
+	}
+}
+
+const (
+	formatJPEG = "jpeg"
+	formatPNG  = "png"
+)

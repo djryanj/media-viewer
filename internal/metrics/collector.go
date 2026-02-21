@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"media-viewer/internal/filesystem"
 	"media-viewer/internal/logging"
 )
 
@@ -55,8 +56,6 @@ func NewCollector(provider StatsProvider, dbPath string, interval time.Duration)
 }
 
 // SetStorageHealthChecker sets the database instance for storage health monitoring.
-// This enables periodic checks that detect conditions which would have caused
-// SIGBUS crashes when mmap was enabled.
 func (c *Collector) SetStorageHealthChecker(checker StorageHealthChecker) {
 	c.storageHealthChecker = checker
 }
@@ -77,7 +76,6 @@ func (c *Collector) SetTranscoderCacheDir(dir string) {
 }
 
 func (c *Collector) collectLoop() {
-	// Collect immediately on start
 	c.collect()
 
 	ticker := time.NewTicker(c.interval)
@@ -94,22 +92,15 @@ func (c *Collector) collectLoop() {
 }
 
 func (c *Collector) collect() {
-	// Collect memory metrics
 	c.collectMemoryMetrics()
-
-	// Collect database file size
 	c.collectDBSize()
-
-	// Collect transcoder cache size
 	c.collectTranscoderCacheSize()
 
-	// Run database storage health check (detects conditions that cause SIGBUS with mmap)
 	if c.storageHealthChecker != nil {
 		c.storageHealthChecker.CheckStorageHealth()
 		c.storageHealthChecker.UpdateDBMetrics()
 	}
 
-	// Collect stats from provider
 	if c.statsProvider == nil {
 		return
 	}
@@ -156,19 +147,21 @@ func (c *Collector) collectDBSize() {
 		return
 	}
 
-	if fileInfo, err := os.Stat(c.dbPath); err == nil {
+	retryConfig := filesystem.DefaultRetryConfig()
+
+	if fileInfo, err := filesystem.StatWithRetry(c.dbPath, retryConfig); err == nil {
 		DBSizeBytes.WithLabelValues("main").Set(float64(fileInfo.Size()))
-	} else {
+	} else if !os.IsNotExist(err) {
 		logging.Debug("Failed to get database file size: %v", err)
 	}
 
-	if walInfo, err := os.Stat(c.dbPath + "-wal"); err == nil {
+	if walInfo, err := filesystem.StatWithRetry(c.dbPath+"-wal", retryConfig); err == nil {
 		DBSizeBytes.WithLabelValues("wal").Set(float64(walInfo.Size()))
 	} else {
 		DBSizeBytes.WithLabelValues("wal").Set(0)
 	}
 
-	if shmInfo, err := os.Stat(c.dbPath + "-shm"); err == nil {
+	if shmInfo, err := filesystem.StatWithRetry(c.dbPath+"-shm", retryConfig); err == nil {
 		DBSizeBytes.WithLabelValues("shm").Set(float64(shmInfo.Size()))
 	} else {
 		DBSizeBytes.WithLabelValues("shm").Set(0)
@@ -180,10 +173,14 @@ func (c *Collector) collectTranscoderCacheSize() {
 		return
 	}
 
-	cacheSize, err := c.getDirSize(c.transcoderCacheDir)
+	// Use ReadDirWithRetry-based walk for cache directory on Longhorn
+	start := time.Now()
+	cacheSize, err := c.getDirSizeWithRetry(c.transcoderCacheDir)
+	elapsed := time.Since(start)
+
 	if err != nil {
 		if !os.IsNotExist(err) {
-			logging.Debug("Failed to get transcoder cache size: %v", err)
+			logging.Debug("Failed to get transcoder cache size (took %v): %v", elapsed, err)
 		}
 		TranscoderCacheSizeBytes.Set(0)
 		return
@@ -192,16 +189,40 @@ func (c *Collector) collectTranscoderCacheSize() {
 	TranscoderCacheSizeBytes.Set(float64(cacheSize))
 }
 
-func (c *Collector) getDirSize(path string) (int64, error) {
+// getDirSizeWithRetry walks a directory tree using retry-aware filesystem operations.
+// Each directory listing uses ReadDirWithRetry; each file stat uses StatWithRetry.
+func (c *Collector) getDirSizeWithRetry(root string) (int64, error) {
+	retryConfig := filesystem.DefaultRetryConfig()
+
 	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+	var walkDir func(dir string) error
+
+	walkDir = func(dir string) error {
+		entries, err := filesystem.ReadDirWithRetry(dir, retryConfig)
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() {
+
+		for _, entry := range entries {
+			fullPath := filepath.Join(dir, entry.Name())
+			if entry.IsDir() {
+				if err := walkDir(fullPath); err != nil {
+					// Log but continue — don't abort the whole walk for one bad subdir
+					logging.Debug("Failed to walk subdirectory %s: %v", fullPath, err)
+				}
+				continue
+			}
+
+			info, err := filesystem.StatWithRetry(fullPath, retryConfig)
+			if err != nil {
+				logging.Debug("Failed to stat file %s: %v", fullPath, err)
+				continue
+			}
 			size += info.Size()
 		}
 		return nil
-	})
+	}
+
+	err := walkDir(root)
 	return size, err
 }

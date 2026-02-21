@@ -65,6 +65,12 @@ func main() {
 		"database": config.DatabaseDir,
 	}))
 
+	// Wire up filesystem metrics observer
+	filesystem.SetObserver(metrics.NewFilesystemObserver())
+
+	// Pre-populate all metric label combinations so Grafana panels show 0 instead of "No Data"
+	metrics.InitializeMetrics()
+
 	// Configure session duration
 	database.SetSessionDuration(config.SessionDuration)
 

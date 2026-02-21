@@ -31,6 +31,11 @@ const (
 	MaxImagePixels = 2_560_000 // ~2.6MP, uses ~10MB in RGBA
 )
 
+const (
+	jpegExt     = ".jpg"
+	jpegExtLong = ".jpeg"
+)
+
 // LoadJPEGDownsampled loads a JPEG with optimized memory usage
 // Uses JPEG-specific DCT-based decoding for better memory efficiency
 func LoadJPEGDownsampled(path string, targetWidth, targetHeight int) (image.Image, error) {
@@ -148,7 +153,7 @@ func LoadImageConstrained(path string, maxDimension, maxPixels int) (image.Image
 
 	// For JPEG files specifically, try optimized JPEG two-stage loading as fallback
 	ext := strings.ToLower(filepath.Ext(path))
-	if ext == ".jpg" || ext == ".jpeg" {
+	if ext == jpegExt || ext == jpegExtLong {
 		img, err := LoadJPEGDownsampled(path, targetWidth, targetHeight)
 		if err == nil {
 			return img, nil
