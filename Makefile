@@ -320,6 +320,7 @@ pr-check:
 	@echo ""
 	@# ── Backend checks ──
 	@if [ -n "$(_HAS_GO_CHANGES)" ]; then \
+		set -e; \
 		echo "Step 1: Running Go linter (will auto-fix some lint issues)..."; \
 		$(MAKE) lint-fix; \
 		echo ""; \
@@ -332,6 +333,7 @@ pr-check:
 	fi
 	@# ── Frontend checks ──
 	@if [ -n "$(_HAS_FRONTEND_CHANGES)" ]; then \
+		set -e; \
 		echo "Step 4: Running frontend checks..."; \
 		$(MAKE) frontend-check; \
 		echo ""; \
@@ -348,6 +350,7 @@ pr-check:
 	else \
 		echo "All relevant PR checks completed successfully!"; \
 	fi
+
 
 # Convenience: force full run
 pr-check-all:
@@ -680,6 +683,7 @@ clean:
 	rm -f media-viewer
 	rm -f resetpw
 	rm -f coverage.out coverage.html
+	rm -f *.log
 
 clean-all: clean
 	@echo "Cleaning all artifacts including node_modules..."

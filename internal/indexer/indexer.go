@@ -770,7 +770,7 @@ func (idx *Indexer) cleanupMissingFiles(indexTime time.Time) error {
 		return fmt.Errorf("failed to begin cleanup transaction: %w", err)
 	}
 
-	deleted, err := idx.db.DeleteMissingFiles(tx, indexTime)
+	deleted, err := idx.db.DeleteMissingFiles(ctx, tx, indexTime)
 	if err != nil {
 		if endErr := idx.db.EndBatch(tx, err); endErr != nil {
 			logging.Error("failed to end batch after cleanup error: %v", endErr)

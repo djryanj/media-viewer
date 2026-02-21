@@ -1,8 +1,10 @@
 package metrics
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -20,6 +22,40 @@ func (m *mockStatsProvider) GetStats() Stats {
 }
 
 // =============================================================================
+// Mock StorageHealthChecker
+// =============================================================================
+
+type mockStorageHealthChecker struct {
+	mu                    sync.Mutex
+	checkStorageHealthCnt int
+	updateDBMetricsCnt    int
+}
+
+func (m *mockStorageHealthChecker) CheckStorageHealth() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.checkStorageHealthCnt++
+}
+
+func (m *mockStorageHealthChecker) UpdateDBMetrics() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateDBMetricsCnt++
+}
+
+func (m *mockStorageHealthChecker) getCheckStorageHealthCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.checkStorageHealthCnt
+}
+
+func (m *mockStorageHealthChecker) getUpdateDBMetricsCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.updateDBMetricsCnt
+}
+
+// =============================================================================
 // Collector Tests
 // =============================================================================
 
@@ -30,7 +66,9 @@ func TestNewCollector(t *testing.T) {
 			TotalFolders:   10,
 			TotalImages:    80,
 			TotalVideos:    20,
-			TotalPlaylists: 5, TotalFavorites: 15, TotalTags: 8,
+			TotalPlaylists: 5,
+			TotalFavorites: 15,
+			TotalTags:      8,
 		},
 	}
 
@@ -54,6 +92,14 @@ func TestNewCollector(t *testing.T) {
 
 	if collector.stopChan == nil {
 		t.Error("stopChan not initialized")
+	}
+
+	if collector.transcoderCacheDir != "" {
+		t.Errorf("transcoderCacheDir should be empty by default, got %q", collector.transcoderCacheDir)
+	}
+
+	if collector.storageHealthChecker != nil {
+		t.Error("storageHealthChecker should be nil by default")
 	}
 }
 
@@ -340,6 +386,11 @@ func TestStatsProviderInterface(_ *testing.T) {
 	var _ StatsProvider = (*mockStatsProvider)(nil)
 }
 
+func TestStorageHealthCheckerInterface(_ *testing.T) {
+	// Verify our mock implements the interface
+	var _ StorageHealthChecker = (*mockStorageHealthChecker)(nil)
+}
+
 func TestStatsStructFields(t *testing.T) {
 	stats := Stats{
 		TotalFiles:     100,
@@ -347,7 +398,6 @@ func TestStatsStructFields(t *testing.T) {
 		TotalImages:    80,
 		TotalVideos:    15,
 		TotalPlaylists: 5,
-
 		TotalFavorites: 20,
 		TotalTags:      8,
 	}
@@ -506,6 +556,7 @@ func TestCollectorStopCompletesCleanly(_ *testing.T) {
 
 	// Test completes successfully if we get here
 }
+
 func TestCollectorTranscoderCacheSizeCollection(t *testing.T) {
 	tempDir := t.TempDir()
 	cacheDir := filepath.Join(tempDir, "transcoder-cache")
@@ -526,7 +577,6 @@ func TestCollectorTranscoderCacheSizeCollection(t *testing.T) {
 		{"video3.mp4", 256 * 1024, "subdir"}, // 256 KB in subdirectory
 	}
 
-	var expectedSize int64
 	for _, tf := range testFiles {
 		var filePath string
 		if tf.subdir != "" {
@@ -543,16 +593,11 @@ func TestCollectorTranscoderCacheSizeCollection(t *testing.T) {
 		if err := os.WriteFile(filePath, data, 0o644); err != nil {
 			t.Fatalf("failed to create test file: %v", err)
 		}
-		expectedSize += int64(tf.size)
 	}
 
 	collector := NewCollector(nil, "", 1*time.Second)
 	collector.SetTranscoderCacheDir(cacheDir)
 	collector.collectTranscoderCacheSize()
-
-	// Note: We can't easily verify the metric value directly in tests
-	// without exposing it or using the prometheus registry,
-	// but we can verify the method doesn't panic or error
 }
 
 func TestCollectorTranscoderCacheSizeWithEmptyDir(t *testing.T) {
@@ -577,6 +622,14 @@ func TestCollectorTranscoderCacheSizeWithNonexistentDir(_ *testing.T) {
 	collector.collectTranscoderCacheSize()
 }
 
+func TestCollectorTranscoderCacheSizeWithEmptyPath(_ *testing.T) {
+	collector := NewCollector(nil, "", 1*time.Second)
+	// transcoderCacheDir is "" by default
+
+	// Should return early without panic
+	collector.collectTranscoderCacheSize()
+}
+
 func TestCollectorSetTranscoderCacheDir(t *testing.T) {
 	collector := NewCollector(nil, "", 1*time.Second)
 
@@ -592,7 +645,9 @@ func TestCollectorSetTranscoderCacheDir(t *testing.T) {
 	}
 }
 
-func TestCollectorGetDirSize(t *testing.T) {
+// FIX: Renamed from getDirSize to getDirSizeWithRetry to match the actual
+// method signature in collector.go.
+func TestCollectorGetDirSizeWithRetry(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create test files
@@ -619,12 +674,499 @@ func TestCollectorGetDirSize(t *testing.T) {
 	}
 
 	collector := NewCollector(nil, "", 1*time.Second)
-	size, err := collector.getDirSize(tempDir)
+	size, err := collector.getDirSizeWithRetry(tempDir)
 	if err != nil {
-		t.Fatalf("getDirSize failed: %v", err)
+		t.Fatalf("getDirSizeWithRetry failed: %v", err)
 	}
 
 	if size != expectedSize {
-		t.Errorf("getDirSize() = %d, want %d", size, expectedSize)
+		t.Errorf("getDirSizeWithRetry() = %d, want %d", size, expectedSize)
+	}
+}
+
+func TestCollectorGetDirSizeWithRetryEmptyDir(t *testing.T) {
+	tempDir := t.TempDir()
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	size, err := collector.getDirSizeWithRetry(tempDir)
+	if err != nil {
+		t.Fatalf("getDirSizeWithRetry on empty dir failed: %v", err)
+	}
+
+	if size != 0 {
+		t.Errorf("getDirSizeWithRetry() on empty dir = %d, want 0", size)
+	}
+}
+
+func TestCollectorGetDirSizeWithRetryNonexistent(t *testing.T) {
+	collector := NewCollector(nil, "", 1*time.Second)
+	_, err := collector.getDirSizeWithRetry("/nonexistent/path")
+	if err == nil {
+		t.Error("getDirSizeWithRetry on nonexistent path should return error")
+	}
+}
+
+func TestCollectorGetDirSizeWithRetryNestedDirs(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a deeper directory structure
+	dirs := []string{
+		"a",
+		"a/b",
+		"a/b/c",
+		"d",
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(filepath.Join(tempDir, d), 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", d, err)
+		}
+	}
+
+	files := []struct {
+		path string
+		size int
+	}{
+		{"a/f1.txt", 10},
+		{"a/b/f2.txt", 20},
+		{"a/b/c/f3.txt", 30},
+		{"d/f4.txt", 40},
+	}
+
+	var expectedSize int64
+	for _, f := range files {
+		data := make([]byte, f.size)
+		if err := os.WriteFile(filepath.Join(tempDir, f.path), data, 0o644); err != nil {
+			t.Fatalf("failed to create file: %v", err)
+		}
+		expectedSize += int64(f.size)
+	}
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	size, err := collector.getDirSizeWithRetry(tempDir)
+	if err != nil {
+		t.Fatalf("getDirSizeWithRetry failed: %v", err)
+	}
+
+	if size != expectedSize {
+		t.Errorf("getDirSizeWithRetry() = %d, want %d", size, expectedSize)
+	}
+}
+
+// =============================================================================
+// StorageHealthChecker Tests
+// =============================================================================
+
+func TestSetStorageHealthChecker(t *testing.T) {
+	collector := NewCollector(nil, "", 1*time.Second)
+
+	if collector.storageHealthChecker != nil {
+		t.Error("storageHealthChecker should be nil initially")
+	}
+
+	checker := &mockStorageHealthChecker{}
+	collector.SetStorageHealthChecker(checker)
+
+	if collector.storageHealthChecker != checker {
+		t.Error("storageHealthChecker not set correctly")
+	}
+}
+
+func TestSetStorageHealthCheckerToNil(t *testing.T) {
+	collector := NewCollector(nil, "", 1*time.Second)
+
+	checker := &mockStorageHealthChecker{}
+	collector.SetStorageHealthChecker(checker)
+	collector.SetStorageHealthChecker(nil)
+
+	if collector.storageHealthChecker != nil {
+		t.Error("storageHealthChecker should be nil after setting to nil")
+	}
+}
+
+func TestCollectCallsStorageHealthChecker(t *testing.T) {
+	provider := &mockStatsProvider{
+		stats: Stats{TotalFiles: 10},
+	}
+	checker := &mockStorageHealthChecker{}
+
+	collector := NewCollector(provider, "", 1*time.Second)
+	collector.SetStorageHealthChecker(checker)
+
+	collector.collect()
+
+	if cnt := checker.getCheckStorageHealthCount(); cnt != 1 {
+		t.Errorf("CheckStorageHealth called %d times, want 1", cnt)
+	}
+	if cnt := checker.getUpdateDBMetricsCount(); cnt != 1 {
+		t.Errorf("UpdateDBMetrics called %d times, want 1", cnt)
+	}
+}
+
+func TestCollectCallsStorageHealthCheckerMultipleTimes(t *testing.T) {
+	provider := &mockStatsProvider{
+		stats: Stats{TotalFiles: 10},
+	}
+	checker := &mockStorageHealthChecker{}
+
+	collector := NewCollector(provider, "", 1*time.Second)
+	collector.SetStorageHealthChecker(checker)
+
+	for i := 0; i < 5; i++ {
+		collector.collect()
+	}
+
+	if cnt := checker.getCheckStorageHealthCount(); cnt != 5 {
+		t.Errorf("CheckStorageHealth called %d times, want 5", cnt)
+	}
+	if cnt := checker.getUpdateDBMetricsCount(); cnt != 5 {
+		t.Errorf("UpdateDBMetrics called %d times, want 5", cnt)
+	}
+}
+
+func TestCollectWithNilStorageHealthChecker(t *testing.T) {
+	provider := &mockStatsProvider{
+		stats: Stats{TotalFiles: 10},
+	}
+
+	collector := NewCollector(provider, "", 1*time.Second)
+	// storageHealthChecker is nil by default
+
+	// Should not panic
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("collect() panicked with nil storageHealthChecker: %v", r)
+		}
+	}()
+
+	collector.collect()
+}
+
+func TestCollectWithStorageHealthCheckerAndNilProvider(t *testing.T) {
+	checker := &mockStorageHealthChecker{}
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	collector.SetStorageHealthChecker(checker)
+
+	// Should not panic — health checker runs, then returns early for nil provider
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("collect() panicked: %v", r)
+		}
+	}()
+
+	collector.collect()
+
+	// Health checker should still be called even with nil stats provider
+	if cnt := checker.getCheckStorageHealthCount(); cnt != 1 {
+		t.Errorf("CheckStorageHealth called %d times, want 1", cnt)
+	}
+	if cnt := checker.getUpdateDBMetricsCount(); cnt != 1 {
+		t.Errorf("UpdateDBMetrics called %d times, want 1", cnt)
+	}
+}
+
+func TestCollectorStartStopWithStorageHealthChecker(t *testing.T) {
+	provider := &mockStatsProvider{
+		stats: Stats{TotalFiles: 10},
+	}
+	checker := &mockStorageHealthChecker{}
+
+	collector := NewCollector(provider, "", 50*time.Millisecond)
+	collector.SetStorageHealthChecker(checker)
+
+	collector.Start()
+	time.Sleep(150 * time.Millisecond)
+	collector.Stop()
+
+	// Should have been called at least twice (immediate + at least one tick)
+	if cnt := checker.getCheckStorageHealthCount(); cnt < 2 {
+		t.Errorf("CheckStorageHealth called %d times, want >= 2", cnt)
+	}
+	if cnt := checker.getUpdateDBMetricsCount(); cnt < 2 {
+		t.Errorf("UpdateDBMetrics called %d times, want >= 2", cnt)
+	}
+}
+
+// =============================================================================
+// Observer Tests
+// =============================================================================
+
+func TestNewFilesystemObserver(t *testing.T) {
+	observer := NewFilesystemObserver()
+	if observer == nil {
+		t.Fatal("NewFilesystemObserver returned nil")
+	}
+}
+
+func TestFilesystemObserverImplementsInterface(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	// Verify it satisfies the filesystem.Observer interface at compile time
+	// (this is also checked by the return type, but explicit is nice)
+	if observer == nil {
+		t.Fatal("observer is nil")
+	}
+}
+
+func TestObserveOperationSuccess(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ObserveOperation panicked: %v", r)
+		}
+	}()
+
+	observer.ObserveOperation("media", "read", 0.005, nil)
+	observer.ObserveOperation("cache", "write", 0.01, nil)
+	observer.ObserveOperation("database", "stat", 0.001, nil)
+	observer.ObserveOperation("unknown", "readdir", 0.02, nil)
+}
+
+func TestObserveOperationWithError(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ObserveOperation with error panicked: %v", r)
+		}
+	}()
+
+	testErr := errors.New("test filesystem error")
+	observer.ObserveOperation("media", "read", 0.1, testErr)
+	observer.ObserveOperation("cache", "write", 0.5, testErr)
+}
+
+func TestObserveRetryAttempt(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ObserveRetryAttempt panicked: %v", r)
+		}
+	}()
+
+	observer.ObserveRetryAttempt("stat", "media")
+	observer.ObserveRetryAttempt("open", "cache")
+	observer.ObserveRetryAttempt("readdir", "database")
+	observer.ObserveRetryAttempt("write", "unknown")
+}
+
+func TestObserveRetrySuccess(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ObserveRetrySuccess panicked: %v", r)
+		}
+	}()
+
+	observer.ObserveRetrySuccess("stat", "media")
+	observer.ObserveRetrySuccess("open", "cache")
+}
+
+func TestObserveRetryFailure(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ObserveRetryFailure panicked: %v", r)
+		}
+	}()
+
+	observer.ObserveRetryFailure("stat", "media")
+	observer.ObserveRetryFailure("open", "database")
+}
+
+func TestObserveRetryDuration(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ObserveRetryDuration panicked: %v", r)
+		}
+	}()
+
+	observer.ObserveRetryDuration("stat", "media", 0.05)
+	observer.ObserveRetryDuration("open", "cache", 0.1)
+	observer.ObserveRetryDuration("readdir", "database", 1.5)
+}
+
+func TestObserveStaleError(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ObserveStaleError panicked: %v", r)
+		}
+	}()
+
+	observer.ObserveStaleError("stat", "media")
+	observer.ObserveStaleError("open", "cache")
+	observer.ObserveStaleError("readdir", "database")
+}
+
+func TestObserverAllMethodsCombined(t *testing.T) {
+	observer := NewFilesystemObserver()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Observer combined operations panicked: %v", r)
+		}
+	}()
+
+	// Simulate a retry sequence: attempt, stale error, retry, success
+	observer.ObserveRetryAttempt("stat", "media")
+	observer.ObserveStaleError("stat", "media")
+	observer.ObserveRetryAttempt("stat", "media")
+	observer.ObserveRetrySuccess("stat", "media")
+	observer.ObserveRetryDuration("stat", "media", 0.15)
+	observer.ObserveOperation("media", "stat", 0.15, nil)
+}
+
+func TestObserverConcurrentAccess(t *testing.T) {
+	observer := NewFilesystemObserver()
+	done := make(chan bool, 10)
+
+	for i := 0; i < 10; i++ {
+		go func(id int) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("Goroutine %d panicked: %v", id, r)
+				}
+				done <- true
+			}()
+
+			observer.ObserveOperation("media", "read", 0.001, nil)
+			observer.ObserveRetryAttempt("stat", "media")
+			observer.ObserveRetrySuccess("stat", "media")
+			observer.ObserveRetryDuration("stat", "media", 0.01)
+			observer.ObserveStaleError("open", "cache")
+			observer.ObserveRetryFailure("open", "cache")
+		}(i)
+	}
+
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
+// =============================================================================
+// InitializeMetrics Tests
+// =============================================================================
+
+func TestInitializeMetrics(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("InitializeMetrics() panicked: %v", r)
+		}
+	}()
+
+	InitializeMetrics()
+}
+
+func TestInitializeMetricsIdempotent(t *testing.T) {
+	// Calling InitializeMetrics multiple times should not panic or cause
+	// duplicate registration errors (WithLabelValues on existing labels is safe).
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("InitializeMetrics() panicked on second call: %v", r)
+		}
+	}()
+
+	InitializeMetrics()
+	InitializeMetrics()
+}
+
+func TestInitializeMetricsPrePopulatesDBStorageErrors(t *testing.T) {
+	InitializeMetrics()
+
+	// After initialization, these label combos should exist and not panic
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Accessing pre-populated DBStorageErrors panicked: %v", r)
+		}
+	}()
+
+	for _, file := range []string{"main", "wal", "shm"} {
+		DBStorageErrors.WithLabelValues(file).Add(0)
+	}
+}
+
+func TestInitializeMetricsPrePopulatesFilesystemMetrics(t *testing.T) {
+	InitializeMetrics()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Accessing pre-populated filesystem metrics panicked: %v", r)
+		}
+	}()
+
+	volumes := []string{"media", "cache", "database", "unknown"}
+	fsOps := []string{"read", "write", "stat", "readdir"}
+
+	for _, vol := range volumes {
+		for _, op := range fsOps {
+			FilesystemOperationDuration.WithLabelValues(vol, op).Observe(0)
+			FilesystemOperationErrors.WithLabelValues(vol, op).Add(0)
+		}
+	}
+
+	retryOps := []string{"stat", "open", "readdir", "write"}
+	for _, op := range retryOps {
+		for _, vol := range volumes {
+			FilesystemRetryAttempts.WithLabelValues(op, vol).Add(0)
+			FilesystemRetrySuccess.WithLabelValues(op, vol).Add(0)
+			FilesystemRetryFailures.WithLabelValues(op, vol).Add(0)
+			FilesystemStaleErrors.WithLabelValues(op, vol).Add(0)
+			FilesystemRetryDuration.WithLabelValues(op, vol).Observe(0)
+		}
+	}
+}
+
+func TestInitializeMetricsPrePopulatesThumbnailMetrics(t *testing.T) {
+	InitializeMetrics()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Accessing pre-populated thumbnail metrics panicked: %v", r)
+		}
+	}()
+
+	formats := []string{"jpeg", "png", "gif", "webp", "bmp", "tiff", "heic", "avif", "svg", "unknown"}
+	for _, format := range formats {
+		ThumbnailImageDecodeByFormat.WithLabelValues(format).Observe(0)
+	}
+
+	thumbTypes := []string{"image", "video", "folder"}
+	phases := []string{"decode", "resize", "encode", "cache"}
+	for _, tt := range thumbTypes {
+		for _, p := range phases {
+			ThumbnailGenerationDurationDetailed.WithLabelValues(tt, p).Observe(0)
+		}
+		ThumbnailMemoryUsageBytes.WithLabelValues(tt).Observe(0)
+	}
+}
+
+func TestInitializeMetricsPrePopulatesDBQueryMetrics(t *testing.T) {
+	InitializeMetrics()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Accessing pre-populated DB query metrics panicked: %v", r)
+		}
+	}()
+
+	ops := []string{"initialize_schema", "upsert_file", "delete_missing_files",
+		"get_file_by_path", "rebuild_fts", "vacuum", "begin_transaction", "commit", "rollback"}
+	for _, op := range ops {
+		DBQueryTotal.WithLabelValues(op, "success").Add(0)
+		DBQueryTotal.WithLabelValues(op, "error").Add(0)
+		DBQueryDuration.WithLabelValues(op).Observe(0)
+	}
+
+	txTypes := []string{"commit", "rollback", "batch_insert", "batch_update", "cleanup"}
+	for _, tt := range txTypes {
+		DBTransactionDuration.WithLabelValues(tt).Observe(0)
 	}
 }

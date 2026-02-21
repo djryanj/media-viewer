@@ -561,10 +561,10 @@ func (d *Database) UpsertFile(ctx context.Context, tx *sql.Tx, file *MediaFile) 
 }
 
 // DeleteMissingFiles removes files that weren't seen during indexing.
-func (d *Database) DeleteMissingFiles(tx *sql.Tx, cutoffTime time.Time) (int64, error) {
+func (d *Database) DeleteMissingFiles(ctx context.Context, tx *sql.Tx, cutoffTime time.Time) (int64, error) {
 	done := observeQuery("delete_missing_files")
 
-	result, err := tx.ExecContext(context.Background(),
+	result, err := tx.ExecContext(ctx,
 		"DELETE FROM files WHERE updated_at < ?",
 		cutoffTime.Unix(),
 	)
