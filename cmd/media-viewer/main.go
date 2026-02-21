@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"media-viewer/internal/database"
+	"media-viewer/internal/filesystem"
 	"media-viewer/internal/handlers"
 	"media-viewer/internal/indexer"
 	"media-viewer/internal/logging"
@@ -57,6 +58,12 @@ func main() {
 	if err != nil {
 		startup.LogFatal("Configuration error: %v", err)
 	}
+	// Initialize filesystem volume resolver for per-mount metrics
+	filesystem.SetDefaultVolumeResolver(filesystem.NewVolumeResolver(map[string]string{
+		"media":    config.MediaDir,
+		"cache":    config.CacheDir,
+		"database": config.DatabaseDir,
+	}))
 
 	// Configure session duration
 	database.SetSessionDuration(config.SessionDuration)

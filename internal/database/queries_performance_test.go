@@ -3,6 +3,7 @@ package database
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -114,16 +115,15 @@ func TestSlowQueryThresholdConfiguration(t *testing.T) {
 				t.Errorf("Expected threshold=%v, got %v", tt.expectedSec, threshold)
 			}
 
-			// Simulate query timing
-			start := time.Now().Add(-time.Duration(tt.queryTimeSec * float64(time.Second)))
-
 			var logBuf bytes.Buffer
 			oldOutput := log.Writer()
 			log.SetOutput(&logBuf)
 			defer log.SetOutput(oldOutput)
 
-			// Simulate recordQuery
-			recordQuery("test_operation", start, nil)
+			// Simulate query timing using the new closure pattern
+			done := observeQuery("test_operation")
+			time.Sleep(time.Duration(tt.queryTimeSec * float64(time.Second)))
+			done(nil)
 
 			logOutput := logBuf.String()
 			hasSlowQueryLog := strings.Contains(logOutput, "Slow query detected")
@@ -501,5 +501,122 @@ func TestListDirectory_FolderCountAccuracy(t *testing.T) {
 		if item.ItemCount != expectedCount {
 			t.Errorf("Folder %s: expected count=%d, got %d", item.Name, expectedCount, item.ItemCount)
 		}
+	}
+}
+
+// TestObserveQuerySlowQueryThresholdRespected verifies that queries below
+// the threshold are NOT logged as slow, and queries above ARE logged.
+func TestObserveQuerySlowQueryThresholdRespected(t *testing.T) {
+	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "100")
+	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
+
+	var logBuf bytes.Buffer
+	oldOutput := log.Writer()
+	oldFlags := log.Flags()
+	log.SetOutput(&logBuf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(oldOutput)
+		log.SetFlags(oldFlags)
+	}()
+
+	// Fast query — should NOT be logged as slow
+	done := observeQuery("fast_query")
+	done(nil)
+
+	logOutput := logBuf.String()
+	if strings.Contains(logOutput, "Slow query detected") {
+		t.Errorf("Fast query should not be logged as slow, got: %s", logOutput)
+	}
+
+	logBuf.Reset()
+
+	// Slow query — should be logged
+	done = observeQuery("slow_query")
+	time.Sleep(120 * time.Millisecond)
+	done(nil)
+
+	logOutput = logBuf.String()
+	if !strings.Contains(logOutput, "Slow query detected") {
+		t.Errorf("Slow query should be logged, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "slow_query") {
+		t.Errorf("Log should contain operation name 'slow_query', got: %s", logOutput)
+	}
+}
+
+// TestObserveQueryErrorStatusInLog verifies that error status and message
+// appear correctly in slow query log output.
+func TestObserveQueryErrorStatusInLog(t *testing.T) {
+	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "0")
+	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
+
+	var logBuf bytes.Buffer
+	oldOutput := log.Writer()
+	oldFlags := log.Flags()
+	log.SetOutput(&logBuf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(oldOutput)
+		log.SetFlags(oldFlags)
+	}()
+
+	// Success case
+	done := observeQuery("log_status_success")
+	done(nil)
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "status=success") {
+		t.Errorf("Expected status=success in log, got: %s", logOutput)
+	}
+
+	logBuf.Reset()
+
+	// Error case
+	done = observeQuery("log_status_error")
+	done(errors.New("context deadline exceeded"))
+
+	logOutput = logBuf.String()
+	if !strings.Contains(logOutput, "status=error") {
+		t.Errorf("Expected status=error in log, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "context deadline exceeded") {
+		t.Errorf("Expected error message in log, got: %s", logOutput)
+	}
+}
+
+// TestObserveQueryOperationNameInLog verifies the operation name appears
+// correctly in slow query log output.
+func TestObserveQueryOperationNameInLog(t *testing.T) {
+	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "0")
+	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
+
+	operations := []string{
+		"upsert_file",
+		"list_directory",
+		"validate_session",
+	}
+
+	for _, op := range operations {
+		t.Run(op, func(t *testing.T) {
+			var logBuf bytes.Buffer
+			oldOutput := log.Writer()
+			oldFlags := log.Flags()
+			log.SetOutput(&logBuf)
+			log.SetFlags(0)
+			defer func() {
+				log.SetOutput(oldOutput)
+				log.SetFlags(oldFlags)
+			}()
+
+			done := observeQuery(op)
+			done(nil)
+
+			logOutput := logBuf.String()
+			expectedFragment := "operation=" + op
+			if !strings.Contains(logOutput, expectedFragment) {
+				t.Errorf("Expected log to contain %q, got: %s", expectedFragment, logOutput)
+			}
+		})
 	}
 }

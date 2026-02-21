@@ -10,9 +10,7 @@ import (
 
 // AddFavorite adds a path to favorites.
 func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType FileType) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("add_favorite", start, err) }()
+	done := observeQuery("add_favorite")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -26,15 +24,14 @@ func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType 
 		ON CONFLICT(path) DO NOTHING
 	`
 
-	_, err = d.db.ExecContext(ctx, query, path, name, fileType, time.Now().Unix())
+	_, err := d.db.ExecContext(ctx, query, path, name, fileType, time.Now().Unix())
+	done(err)
 	return err
 }
 
 // RemoveFavorite removes a path from favorites.
 func (d *Database) RemoveFavorite(ctx context.Context, path string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("remove_favorite", start, err) }()
+	done := observeQuery("remove_favorite")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -42,7 +39,8 @@ func (d *Database) RemoveFavorite(ctx context.Context, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err = d.db.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
+	_, err := d.db.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
+	done(err)
 	return err
 }
 
@@ -70,9 +68,7 @@ func (d *Database) isFavoriteUnlocked(ctx context.Context, path string) bool {
 
 // GetFavorites returns all favorites with their file info.
 func (d *Database) GetFavorites(ctx context.Context) ([]MediaFile, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_favorites", start, err) }()
+	done := observeQuery("get_favorites")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -80,7 +76,9 @@ func (d *Database) GetFavorites(ctx context.Context) ([]MediaFile, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	return d.getFavoritesUnlocked(ctx)
+	result, err := d.getFavoritesUnlocked(ctx)
+	done(err)
+	return result, err
 }
 
 // getFavoritesUnlocked returns favorites without acquiring lock.

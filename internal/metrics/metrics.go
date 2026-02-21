@@ -462,33 +462,33 @@ var (
 	FilesystemRetryAttempts = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "media_viewer_filesystem_retry_attempts_total",
-			Help: "Total number of filesystem retry attempts by operation",
+			Help: "Total number of filesystem retry attempts by operation and volume",
 		},
-		[]string{"operation"}, // operation: stat/open
+		[]string{"operation", "volume"}, // operation: stat/open, volume: media/cache/database/root/tmp/unknown
 	)
 
 	FilesystemRetrySuccess = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "media_viewer_filesystem_retry_success_total",
-			Help: "Total number of successful filesystem retries by operation",
+			Help: "Total number of successful filesystem retries by operation and volume",
 		},
-		[]string{"operation"}, // operation: stat/open
+		[]string{"operation", "volume"},
 	)
 
 	FilesystemRetryFailures = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "media_viewer_filesystem_retry_failures_total",
-			Help: "Total number of failed filesystem retries (exhausted all attempts) by operation",
+			Help: "Total number of failed filesystem retries (exhausted all attempts) by operation and volume",
 		},
-		[]string{"operation"}, // operation: stat/open
+		[]string{"operation", "volume"},
 	)
 
 	FilesystemStaleErrors = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "media_viewer_filesystem_estale_errors_total",
-			Help: "Total number of ESTALE (stale file handle) errors encountered by operation",
+			Help: "Total number of ESTALE (stale file handle) errors encountered by operation and volume",
 		},
-		[]string{"operation"}, // operation: stat/open
+		[]string{"operation", "volume"},
 	)
 
 	FilesystemRetryDuration = promauto.NewHistogramVec(
@@ -497,7 +497,7 @@ var (
 			Help:    "Duration of filesystem operations including retries",
 			Buckets: []float64{0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5},
 		},
-		[]string{"operation"}, // operation: stat/open
+		[]string{"operation", "volume"},
 	)
 )
 

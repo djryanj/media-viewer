@@ -121,9 +121,7 @@ func (d *Database) InitWebAuthnSchema() error {
 
 // SaveWebAuthnCredential stores a new passkey credential
 func (d *Database) SaveWebAuthnCredential(ctx context.Context, userID int64, cred *webauthn.Credential, name string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("save_webauthn_credential", start, err) }()
+	done := observeQuery("save_webauthn_credential")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -133,6 +131,7 @@ func (d *Database) SaveWebAuthnCredential(ctx context.Context, userID int64, cre
 
 	// Serialize transports to JSON
 	var transportsJSON []byte
+	var err error
 	if len(cred.Transport) > 0 {
 		transports := make([]string, len(cred.Transport))
 		for i, t := range cred.Transport {
@@ -164,18 +163,18 @@ func (d *Database) SaveWebAuthnCredential(ctx context.Context, userID int64, cre
 
 	if err != nil {
 		logging.Error("Failed to save WebAuthn credential: %v", err)
+		done(err)
 		return fmt.Errorf("failed to save credential: %w", err)
 	}
 
 	logging.Info("Saved new WebAuthn credential for user %d: %s", userID, name)
+	done(nil)
 	return nil
 }
 
 // GetWebAuthnCredentials returns all credentials for a user
 func (d *Database) GetWebAuthnCredentials(ctx context.Context, userID int64) ([]webauthn.Credential, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_webauthn_credentials", start, err) }()
+	done := observeQuery("get_webauthn_credentials")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -190,6 +189,7 @@ func (d *Database) GetWebAuthnCredentials(ctx context.Context, userID int64) ([]
 	`, userID)
 	if err != nil {
 		logging.Error("Failed to query WebAuthn credentials: %v", err)
+		done(err)
 		return nil, fmt.Errorf("failed to query credentials: %w", err)
 	}
 	defer func() {
@@ -235,17 +235,17 @@ func (d *Database) GetWebAuthnCredentials(ctx context.Context, userID int64) ([]
 
 	if err := rows.Err(); err != nil {
 		logging.Error("Error iterating credential rows: %v", err)
+		done(err)
 		return nil, err
 	}
 
+	done(nil)
 	return credentials, nil
 }
 
 // GetWebAuthnUser returns a WebAuthnUser for the single user with all their credentials
 func (d *Database) GetWebAuthnUser(ctx context.Context) (*WebAuthnUser, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_webauthn_user", start, err) }()
+	done := observeQuery("get_webauthn_user")
 
 	d.mu.RLock()
 
@@ -255,7 +255,7 @@ func (d *Database) GetWebAuthnUser(ctx context.Context) (*WebAuthnUser, error) {
 	// Get the single user
 	var user User
 	var createdAt, updatedAt int64
-	err = d.db.QueryRowContext(ctx,
+	err := d.db.QueryRowContext(ctx,
 		"SELECT id, created_at, updated_at FROM users LIMIT 1",
 	).Scan(&user.ID, &createdAt, &updatedAt)
 
@@ -263,9 +263,11 @@ func (d *Database) GetWebAuthnUser(ctx context.Context) (*WebAuthnUser, error) {
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			done(err)
 			return nil, fmt.Errorf("no user found")
 		}
 		logging.Error("Failed to get user for WebAuthn: %v", err)
+		done(err)
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
@@ -279,6 +281,7 @@ func (d *Database) GetWebAuthnUser(ctx context.Context) (*WebAuthnUser, error) {
 		credentials = []webauthn.Credential{}
 	}
 
+	done(nil)
 	return &WebAuthnUser{
 		user:        &user,
 		credentials: credentials,
@@ -287,9 +290,7 @@ func (d *Database) GetWebAuthnUser(ctx context.Context) (*WebAuthnUser, error) {
 
 // UpdateCredentialSignCount updates the sign count after successful authentication
 func (d *Database) UpdateCredentialSignCount(ctx context.Context, credentialID []byte, signCount uint32) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("update_credential_sign_count", start, err) }()
+	done := observeQuery("update_credential_sign_count")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -297,7 +298,7 @@ func (d *Database) UpdateCredentialSignCount(ctx context.Context, credentialID [
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err = d.db.ExecContext(ctx, `
+	_, err := d.db.ExecContext(ctx, `
 		UPDATE webauthn_credentials
 		SET sign_count = ?, last_used_at = strftime('%s', 'now')
 		WHERE credential_id = ?
@@ -307,14 +308,13 @@ func (d *Database) UpdateCredentialSignCount(ctx context.Context, credentialID [
 		logging.Warn("Failed to update credential sign count: %v", err)
 	}
 
+	done(err)
 	return err
 }
 
 // DeleteWebAuthnCredential removes a passkey
 func (d *Database) DeleteWebAuthnCredential(ctx context.Context, userID, credentialID int64) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("delete_webauthn_credential", start, err) }()
+	done := observeQuery("delete_webauthn_credential")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -327,23 +327,25 @@ func (d *Database) DeleteWebAuthnCredential(ctx context.Context, userID, credent
 	`, credentialID, userID)
 	if err != nil {
 		logging.Error("Failed to delete WebAuthn credential: %v", err)
+		done(err)
 		return fmt.Errorf("failed to delete credential: %w", err)
 	}
 
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("credential not found")
+		err = fmt.Errorf("credential not found")
+		done(err)
+		return err
 	}
 
 	logging.Info("Deleted WebAuthn credential ID %d for user %d", credentialID, userID)
+	done(nil)
 	return nil
 }
 
 // ListWebAuthnCredentials returns credential metadata for display
 func (d *Database) ListWebAuthnCredentials(ctx context.Context, userID int64) ([]WebAuthnCredential, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("list_webauthn_credentials", start, err) }()
+	done := observeQuery("list_webauthn_credentials")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -359,6 +361,7 @@ func (d *Database) ListWebAuthnCredentials(ctx context.Context, userID int64) ([
 	`, userID)
 	if err != nil {
 		logging.Error("Failed to list WebAuthn credentials: %v", err)
+		done(err)
 		return nil, fmt.Errorf("failed to query credentials: %w", err)
 	}
 	defer func() {
@@ -391,14 +394,14 @@ func (d *Database) ListWebAuthnCredentials(ctx context.Context, userID int64) ([
 		credentials = append(credentials, cred)
 	}
 
-	return credentials, rows.Err()
+	rowsErr := rows.Err()
+	done(rowsErr)
+	return credentials, rowsErr
 }
 
 // SaveWebAuthnSession stores challenge data for WebAuthn ceremonies
 func (d *Database) SaveWebAuthnSession(ctx context.Context, sessionID string, data []byte, ttl time.Duration) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("save_webauthn_session", start, err) }()
+	done := observeQuery("save_webauthn_session")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -408,7 +411,7 @@ func (d *Database) SaveWebAuthnSession(ctx context.Context, sessionID string, da
 
 	expiresAt := time.Now().Add(ttl)
 
-	_, err = d.db.ExecContext(ctx, `
+	_, err := d.db.ExecContext(ctx, `
 		INSERT OR REPLACE INTO webauthn_sessions (session_id, session_data, expires_at)
 		VALUES (?, ?, ?)
 	`, sessionID, data, expiresAt.Unix())
@@ -417,14 +420,13 @@ func (d *Database) SaveWebAuthnSession(ctx context.Context, sessionID string, da
 		logging.Error("Failed to save WebAuthn session: %v", err)
 	}
 
+	done(err)
 	return err
 }
 
 // GetWebAuthnSession retrieves and deletes challenge data
 func (d *Database) GetWebAuthnSession(ctx context.Context, sessionID string) ([]byte, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("get_webauthn_session", start, err) }()
+	done := observeQuery("get_webauthn_session")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -435,14 +437,17 @@ func (d *Database) GetWebAuthnSession(ctx context.Context, sessionID string) ([]
 	var data []byte
 	var expiresAt int64
 
-	err = d.db.QueryRowContext(ctx, `
+	err := d.db.QueryRowContext(ctx, `
 		SELECT session_data, expires_at FROM webauthn_sessions WHERE session_id = ?
 	`, sessionID).Scan(&data, &expiresAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("session not found")
+		if errors.Is(err, sql.ErrNoRows) {
+			err = fmt.Errorf("session not found")
+			done(err)
+			return nil, err
 		}
 		logging.Error("Failed to get WebAuthn session: %v", err)
+		done(err)
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
@@ -454,17 +459,18 @@ func (d *Database) GetWebAuthnSession(ctx context.Context, sessionID string) ([]
 
 	// Check expiration
 	if time.Now().Unix() > expiresAt {
-		return nil, fmt.Errorf("session expired")
+		err = fmt.Errorf("session expired")
+		done(err)
+		return nil, err
 	}
 
+	done(nil)
 	return data, nil
 }
 
 // CleanExpiredWebAuthnSessions removes expired challenge sessions
 func (d *Database) CleanExpiredWebAuthnSessions(ctx context.Context) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("clean_expired_webauthn_sessions", start, err) }()
+	done := observeQuery("clean_expired_webauthn_sessions")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -475,6 +481,7 @@ func (d *Database) CleanExpiredWebAuthnSessions(ctx context.Context) error {
 	result, err := d.db.ExecContext(ctx, "DELETE FROM webauthn_sessions WHERE expires_at < ?", time.Now().Unix())
 	if err != nil {
 		logging.Error("Failed to clean expired WebAuthn sessions: %v", err)
+		done(err)
 		return err
 	}
 
@@ -482,6 +489,7 @@ func (d *Database) CleanExpiredWebAuthnSessions(ctx context.Context) error {
 		logging.Debug("Cleaned %d expired WebAuthn sessions", rows)
 	}
 
+	done(nil)
 	return nil
 }
 

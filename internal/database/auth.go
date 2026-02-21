@@ -87,9 +87,7 @@ func (d *Database) HasUsers(ctx context.Context) bool {
 
 // CreateUser creates the single user with the given password.
 func (d *Database) CreateUser(ctx context.Context, password string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("create_user", start, err) }()
+	done := observeQuery("create_user")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -99,18 +97,24 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 
 	// Check if a user already exists (single-user system)
 	var count int
-	err = d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+	err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
 	if err != nil {
-		return fmt.Errorf("failed to check existing users: %w", err)
+		err = fmt.Errorf("failed to check existing users: %w", err)
+		done(err)
+		return err
 	}
 	if count > 0 {
-		return fmt.Errorf("user already exists (single-user system)")
+		err = fmt.Errorf("user already exists (single-user system)")
+		done(err)
+		return err
 	}
 
 	// Hash the password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		err = fmt.Errorf("failed to hash password: %w", err)
+		done(err)
+		return err
 	}
 
 	_, err = d.db.ExecContext(ctx,
@@ -118,17 +122,18 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 		string(hash),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+		err = fmt.Errorf("failed to create user: %w", err)
+		done(err)
+		return err
 	}
 
+	done(nil)
 	return nil
 }
 
 // ValidatePassword checks the password and returns the user if valid.
 func (d *Database) ValidatePassword(ctx context.Context, password string) (*User, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("validate_password", start, err) }()
+	done := observeQuery("validate_password")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -139,32 +144,33 @@ func (d *Database) ValidatePassword(ctx context.Context, password string) (*User
 	var user User
 	var createdAt, updatedAt int64
 
-	err = d.db.QueryRowContext(ctx,
+	err := d.db.QueryRowContext(ctx,
 		"SELECT id, password_hash, created_at, updated_at FROM users LIMIT 1",
 	).Scan(&user.ID, &user.PasswordHash, &createdAt, &updatedAt)
 
 	if err != nil {
 		err = fmt.Errorf("invalid password")
+		done(err)
 		return nil, err
 	}
 
 	// Check password
 	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		err = fmt.Errorf("invalid password")
+		done(err)
 		return nil, err
 	}
 
 	user.CreatedAt = time.Unix(createdAt, 0)
 	user.UpdatedAt = time.Unix(updatedAt, 0)
 
+	done(nil)
 	return &user, nil
 }
 
 // CreateSession creates a new session for a user.
 func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("create_session", start, err) }()
+	done := observeQuery("create_session")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -174,8 +180,10 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 
 	// Generate random token
 	tokenBytes := make([]byte, 32)
-	if _, err = rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		err = fmt.Errorf("failed to generate token: %w", err)
+		done(err)
+		return nil, err
 	}
 
 	// Hash the token for storage
@@ -190,7 +198,9 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 		userID, tokenHash, expiresAt.Unix(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		err = fmt.Errorf("failed to create session: %w", err)
+		done(err)
+		return nil, err
 	}
 
 	id, _ := result.LastInsertId()
@@ -198,6 +208,7 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 	//nolint:contextcheck // Metrics update uses background context for reliability
 	d.updateActiveSessionsMetric()
 
+	done(nil)
 	return &Session{
 		ID:        id,
 		UserID:    userID,
@@ -209,9 +220,7 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 
 // ValidateSession checks if a session token is valid.
 func (d *Database) ValidateSession(ctx context.Context, token string) (*User, error) {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("validate_session", start, err) }()
+	done := observeQuery("validate_session")
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -223,6 +232,7 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
 		err = fmt.Errorf("invalid token format")
+		done(err)
 		return nil, err
 	}
 	hash := sha256.Sum256(tokenBytes)
@@ -238,6 +248,7 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 
 	if err != nil {
 		err = fmt.Errorf("invalid session")
+		done(err)
 		return nil, err
 	}
 
@@ -253,6 +264,7 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 			}
 		}()
 		err = fmt.Errorf("session expired")
+		done(err)
 		return nil, err
 	}
 
@@ -266,20 +278,20 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 
 	if err != nil {
 		err = fmt.Errorf("user not found")
+		done(err)
 		return nil, err
 	}
 
 	user.CreatedAt = time.Unix(createdAtU, 0)
 	user.UpdatedAt = time.Unix(updatedAtU, 0)
 
+	done(nil)
 	return &user, nil
 }
 
 // ExtendSession extends the expiration time of an existing session.
 func (d *Database) ExtendSession(ctx context.Context, token string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("extend_session", start, err) }()
+	done := observeQuery("extend_session")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -290,6 +302,7 @@ func (d *Database) ExtendSession(ctx context.Context, token string) error {
 	// Hash the token for lookup
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
+		done(err)
 		return fmt.Errorf("invalid token format: %w", err)
 	}
 	hash := sha256.Sum256(tokenBytes)
@@ -302,14 +315,19 @@ func (d *Database) ExtendSession(ctx context.Context, token string) error {
 		newExpiresAt.Unix(), tokenHash, time.Now().Unix(),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to extend session: %w", err)
+		err = fmt.Errorf("failed to extend session: %w", err)
+		done(err)
+		return err
 	}
 
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("session not found or expired")
+		err = fmt.Errorf("session not found or expired")
+		done(err)
+		return err
 	}
 
+	done(nil)
 	return nil
 }
 
@@ -365,9 +383,7 @@ func (d *Database) DeleteAllSessions(ctx context.Context) error {
 
 // CleanExpiredSessions removes all expired sessions.
 func (d *Database) CleanExpiredSessions(ctx context.Context) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("clean_expired_sessions", start, err) }()
+	done := observeQuery("clean_expired_sessions")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -383,14 +399,13 @@ func (d *Database) CleanExpiredSessions(ctx context.Context) error {
 		//nolint:contextcheck // Metrics update uses background context for reliability
 		d.updateActiveSessionsMetric()
 	}
+	done(err)
 	return err
 }
 
 // UpdatePassword updates the user's password and invalidates all sessions.
 func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error {
-	start := time.Now()
-	var err error
-	defer func() { recordQuery("update_password", start, err) }()
+	done := observeQuery("update_password")
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -400,7 +415,9 @@ func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		err = fmt.Errorf("failed to hash password: %w", err)
+		done(err)
+		return err
 	}
 
 	// Update the single user's password
@@ -409,12 +426,15 @@ func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error
 		string(hash),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update password: %w", err)
+		err = fmt.Errorf("failed to update password: %w", err)
+		done(err)
+		return err
 	}
 
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		err = fmt.Errorf("no user found")
+		done(err)
 		return err
 	}
 
@@ -423,6 +443,7 @@ func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error
 		logging.Warn("failed to invalidate sessions: %v", delErr)
 	}
 
+	done(nil)
 	return nil
 }
 
