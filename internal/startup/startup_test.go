@@ -435,18 +435,18 @@ func TestParseDurations_MixedValues(t *testing.T) {
 
 func TestParseWebAuthnConfig(t *testing.T) {
 	tests := []struct {
-		name           string
-		rpID           string
-		originsStr     string
-		wantEnabled    bool
-		wantOrigins    []string
-		wantOriginLen  int
+		name          string
+		rpID          string
+		originsStr    string
+		wantEnabled   bool
+		wantOrigins   []string
+		wantOriginLen int
 	}{
 		{
-			name:        "disabled — empty RP ID",
-			rpID:        "",
-			originsStr:  "",
-			wantEnabled: false,
+			name:          "disabled — empty RP ID",
+			rpID:          "",
+			originsStr:    "",
+			wantEnabled:   false,
 			wantOriginLen: 0,
 		},
 		{
@@ -486,7 +486,7 @@ func TestParseWebAuthnConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rc := &rawConfig{
-				webAuthnRPID:    tt.rpID,
+				webAuthnRPID:      tt.rpID,
 				webAuthnRPOrigins: tt.originsStr,
 			}
 
@@ -820,7 +820,7 @@ func BenchmarkParseDurations(b *testing.B) {
 
 func BenchmarkParseWebAuthnConfig(b *testing.B) {
 	rc := &rawConfig{
-		webAuthnRPID:    "media.example.com",
+		webAuthnRPID:      "media.example.com",
 		webAuthnRPOrigins: "https://media.example.com,https://alt.example.com",
 	}
 

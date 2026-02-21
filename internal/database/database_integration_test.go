@@ -14,7 +14,7 @@ import (
 // Integration tests for database operations with real SQLite database
 
 // setupTestDB creates a test database. An optional Options value can be passed
-// to control database behaviour (e.g. mmap). When omitted, nil is used
+// to control database behavior (e.g. mmap). When omitted, nil is used
 // (standard defaults — mmap enabled).
 func setupTestDB(t testing.TB, opts ...*Options) (db *Database, dbPath string) {
 	t.Helper()

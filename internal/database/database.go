@@ -27,6 +27,9 @@ const driverName = "sqlite3_mmap_disabled"
 // standardDriverName is the default go-sqlite3 driver.
 const standardDriverName = "sqlite3"
 
+// unknownStr is a constant string to satisfy goconst
+const unknownStr = "unknown"
+
 // registerOnce ensures the custom driver is registered exactly once.
 var registerOnce sync.Once
 
@@ -59,12 +62,12 @@ func getSlowQueryThreshold() float64 {
 
 // Database manages all database operations for the media viewer.
 type Database struct {
-	db      *sql.DB
-	dbPath  string
-	mu      sync.RWMutex
-	stats   IndexStats
-	statsMu sync.RWMutex
-	txStart time.Time
+	db           *sql.DB
+	dbPath       string
+	mu           sync.RWMutex
+	stats        IndexStats
+	statsMu      sync.RWMutex
+	txStart      time.Time
 	mmapDisabled bool
 }
 
@@ -184,14 +187,13 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 	return d, info, nil
 }
 
-
 // getSQLiteDiagnostics returns SQLite version, mmap status, and any mmap warnings.
 func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatus, mmapWarning string) {
 	queryCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	if err := d.db.QueryRowContext(queryCtx, "SELECT sqlite_version()").Scan(&version); err != nil {
-		version = "unknown"
+		version = unknownStr
 	}
 
 	rows, err := d.db.QueryContext(queryCtx, "PRAGMA compile_options")
@@ -232,11 +234,10 @@ func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatu
 			metrics.DBMmapStatus.Set(float64(mmapSize))
 		}
 	} else {
-		mmapStatus = "unknown"
+		mmapStatus = unknownStr
 	}
 	return
 }
-
 
 // CheckStorageHealth verifies that the database's underlying storage is accessible.
 func (d *Database) CheckStorageHealth() {
