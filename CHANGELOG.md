@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extensive frontend test suite added along with CI and other requirements. [#49](https://github.com/djryanj/media-viewer/issues/49))
 - Extended renovate config to address golangci (see below in fixed section)
+- Add `DB_MMAP_DISABLED` environment variable to disable SQLite mmap on network-backed storage (avoid SIGBUS) ([#292](https://github.com/djryanj/media-viewer/issues/292)); ([#290](https://github.com/djryanj/media-viewer/issues/290))
 
 ### Fixed
 
@@ -28,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Switched the return type from `map[string]bool` to `map[string]struct{}` for reduced memory overhead and GC pressure.
     - On a ~40,000 item database, this query was regularly taking ~250ms; these changes are expected to reduce that by approximately 50-60%.
 
-- **Application crashes caused by database memory-mapping on network storage** [#290](https://github.com/djryanj/media-viewer/issues/290))
+- **Application crashes caused by database memory-mapping on network storage** [#290](https://github.com/djryanj/media-viewer/issues/290)), ([#292](https://github.com/djryanj/media-viewer/issues/292))
     - Resolved an issue where the application could crash unexpectedly (SIGBUS) when the underlying storage — such as NFS mounts or Longhorn volumes — experienced brief interruptions. The root cause was SQLite's memory-mapping feature, which was enabled by default in the container's system library. When mapped database pages became temporarily unavailable, the application would crash immediately with no opportunity to recover.
       The fix disables memory-mapping for database access. Benchmarking confirmed this has no measurable impact on performance for any database operation, including reads, writes, searches, and concurrent workloads. In mixed read/write scenarios, the change actually showed a small improvement.
       Additionally, we added storage health monitoring that periodically checks whether the database files are accessible. If a storage disruption occurs, it is now detected, logged, and reported through metrics rather than causing a crash. Operators can set alerts on the new db_storage_errors_total metric to be notified of storage issues before they affect users.

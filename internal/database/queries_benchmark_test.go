@@ -15,8 +15,10 @@ func setupBenchmarkDatabase(b *testing.B, fileCount int, favoriteRatio float64, 
 
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -251,8 +253,10 @@ func BenchmarkGetMediaInDirectory_SortBySize(b *testing.B) {
 func BenchmarkGetMediaInDirectory_Empty(b *testing.B) {
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -361,8 +365,10 @@ func setupBenchmarkDatabaseWithDirs(b *testing.B, filesPerDir, numDirs int, favo
 
 	tmpDir := b.TempDir()
 	dbPath := filepath.Join(tmpDir, "bench.db")
-
-	db, _, err := New(context.Background(), dbPath)
+	dbOpts := &Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}

@@ -37,8 +37,10 @@ func setupTestDB(t *testing.T) (db *database.Database, tempDir string, cleanup f
 
 	tempDir = t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
-
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create test database: %v", err)
 	}
@@ -210,9 +212,11 @@ func TestDatabasePathHandlingIntegration(t *testing.T) {
 				if dbPath != expectedPath {
 					t.Errorf("dbPath = %q, want %q", dbPath, expectedPath)
 				}
-
+				dbOpts := &database.Options{
+					MmapDisabled: false, // Set to true if you want to disable mmap
+				}
 				// Try to create database to verify path is valid
-				db, _, err := database.New(context.Background(), dbPath)
+				db, _, err := database.New(context.Background(), dbPath, dbOpts)
 				if err != nil {
 					t.Fatalf("failed to create database at expected path: %v", err)
 				}
@@ -259,7 +263,10 @@ func TestDatabaseCloseHandlingIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create test database: %v", err)
 	}
@@ -358,7 +365,10 @@ func TestDatabaseCreationFailureIntegration(t *testing.T) {
 	// This simulates what happens when DATABASE_DIR is misconfigured
 	invalidPath := "/nonexistent/impossible/path/test.db"
 
-	_, _, err := database.New(context.Background(), invalidPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	_, _, err := database.New(context.Background(), invalidPath, dbOpts)
 	if err == nil {
 		t.Error("Expected error when creating database in invalid path")
 	}
@@ -515,9 +525,11 @@ func TestDatabasePathFromEnvironmentIntegration(t *testing.T) {
 	}
 
 	dbPath := filepath.Join(databaseDir, "media.db")
-
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
 	// Try to create database at this path
-	db, _, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database at custom path: %v", err)
 	}
@@ -579,7 +591,10 @@ func TestResetPasswordEdgeCasesIntegration(t *testing.T) {
 			tempDir := t.TempDir()
 			dbPath := filepath.Join(tempDir, "test.db")
 
-			db, _, err := database.New(context.Background(), dbPath)
+			dbOpts := &database.Options{
+				MmapDisabled: false, // Set to true if you want to disable mmap
+			}
+			db, _, err := database.New(context.Background(), dbPath, dbOpts)
 			if err != nil {
 				t.Fatalf("failed to create database: %v", err)
 			}
@@ -609,7 +624,10 @@ func TestShowStatusWithClosedDatabaseIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -635,7 +653,10 @@ func TestConcurrentDatabaseAccessIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -681,7 +702,10 @@ func TestDatabaseRecoveryIntegration(t *testing.T) {
 	dbPath := filepath.Join(tempDir, "test.db")
 
 	// Create database and add user
-	db1, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db1, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -693,7 +717,7 @@ func TestDatabaseRecoveryIntegration(t *testing.T) {
 	db1.Close()
 
 	// Reopen database - user should still exist
-	db2, _, err := database.New(context.Background(), dbPath)
+	db2, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to reopen database: %v", err)
 	}
@@ -779,7 +803,10 @@ func TestContextTimeoutBehaviorIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -852,7 +879,10 @@ func TestDatabaseCreationWithVariousPathsIntegration(t *testing.T) {
 			tempDir := t.TempDir()
 			dbPath := tt.pathFunc(tempDir)
 
-			db, _, err := database.New(context.Background(), dbPath)
+			dbOpts := &database.Options{
+				MmapDisabled: false, // Set to true if you want to disable mmap
+			}
+			db, _, err := database.New(context.Background(), dbPath, dbOpts)
 			if tt.shouldWork && err != nil {
 				t.Errorf("%s: failed to create database: %v", tt.description, err)
 				return

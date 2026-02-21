@@ -82,11 +82,220 @@ type Config struct {
 	ThumbnailsEnabled  bool
 	TranscodingEnabled bool
 
+	// Database options
+	DBMmapDisabled bool // Disable SQLite mmap for unreliable storage (Longhorn, NFS)
+
 	// WebAuthn configuration
 	WebAuthnEnabled       bool
 	WebAuthnRPID          string   // Relying Party ID (domain, e.g., "media.example.com")
 	WebAuthnRPDisplayName string   // Display name shown to user
 	WebAuthnRPOrigins     []string // Allowed origins
+}
+
+// startup.go — LoadConfig refactored to reduce cognitive complexity
+
+// rawConfig holds the raw string values from environment variables
+// before parsing and validation.
+type rawConfig struct {
+	mediaDir              string
+	cacheDir              string
+	databaseDir           string
+	transcoderLogDir      string
+	gpuAccel              string
+	port                  string
+	metricsPort           string
+	indexInterval         string
+	thumbnailInterval     string
+	pollInterval          string
+	sessionDuration       string
+	sessionCleanup        string
+	logStaticFiles        bool
+	logHealthChecks       bool
+	metricsEnabled        bool
+	dbMmapDisabled        bool
+	webAuthnRPID          string
+	webAuthnRPDisplayName string
+	webAuthnRPOrigins     string
+}
+
+// loadRawConfig reads all environment variables into a rawConfig struct.
+func loadRawConfig() *rawConfig {
+	return &rawConfig{
+		mediaDir:              getEnv("MEDIA_DIR", "/media"),
+		cacheDir:              getEnv("CACHE_DIR", "/cache"),
+		databaseDir:           getEnv("DATABASE_DIR", "/database"),
+		transcoderLogDir:      getEnv("TRANSCODER_LOG_DIR", ""),
+		gpuAccel:              getEnv("GPU_ACCEL", "auto"),
+		port:                  getEnv("PORT", "8080"),
+		metricsPort:           getEnv("METRICS_PORT", "9090"),
+		indexInterval:         getEnv("INDEX_INTERVAL", "30m"),
+		thumbnailInterval:     getEnv("THUMBNAIL_INTERVAL", "6h"),
+		pollInterval:          getEnv("POLL_INTERVAL", "30s"),
+		sessionDuration:       getEnv("SESSION_DURATION", "5m"),
+		sessionCleanup:        getEnv("SESSION_CLEANUP_INTERVAL", "1m"),
+		logStaticFiles:        getEnvBool("LOG_STATIC_FILES", false),
+		logHealthChecks:       getEnvBool("LOG_HEALTH_CHECKS", true),
+		metricsEnabled:        getEnvBool("METRICS_ENABLED", true),
+		dbMmapDisabled:        getEnvBool("DB_MMAP_DISABLED", false),
+		webAuthnRPID:          getEnv("WEBAUTHN_RP_ID", ""),
+		webAuthnRPDisplayName: getEnv("WEBAUTHN_RP_DISPLAY_NAME", "Media Viewer"),
+		webAuthnRPOrigins:     getEnv("WEBAUTHN_RP_ORIGINS", ""),
+	}
+}
+
+// logRawConfig logs all configuration values.
+func logRawConfig(rc *rawConfig) {
+	logging.Info("  MEDIA_DIR:               %s", rc.mediaDir)
+	logging.Info("  CACHE_DIR:               %s", rc.cacheDir)
+	logging.Info("  DATABASE_DIR:            %s", rc.databaseDir)
+	if rc.transcoderLogDir != "" {
+		logging.Info("  TRANSCODER_LOG_DIR:      %s", rc.transcoderLogDir)
+	} else {
+		logging.Info("  TRANSCODER_LOG_DIR:      (not configured)")
+	}
+	logging.Info("  GPU_ACCEL:               %s (auto-detect: nvidia/vaapi/videotoolbox)", rc.gpuAccel)
+	logging.Info("  PORT:                    %s", rc.port)
+	logging.Info("  METRICS_PORT:            %s", rc.metricsPort)
+	logging.Info("  METRICS_ENABLED:         %v", rc.metricsEnabled)
+	logging.Info("  DB_MMAP_DISABLED:        %v", rc.dbMmapDisabled)
+	if rc.dbMmapDisabled {
+		logging.Info("    (SIGBUS protection enabled — recommended for Longhorn/NFS/network storage)")
+	}
+	logging.Info("  INDEX_INTERVAL:          %s", rc.indexInterval)
+	logging.Info("  THUMBNAIL_INTERVAL:      %s", rc.thumbnailInterval)
+	logging.Info("  POLL_INTERVAL:           %s", rc.pollInterval)
+	logWorkerConfig("INDEX_WORKERS", getEnv("INDEX_WORKERS", ""), "3 (default for NFS safety)")
+	logWorkerConfig("THUMBNAIL_WORKERS", getEnv("THUMBNAIL_WORKERS", ""), "(auto - CPU-based, max 6)")
+	logging.Info("  SESSION_DURATION:        %s", rc.sessionDuration)
+	logging.Info("  SESSION_CLEANUP_INTERVAL:%s", rc.sessionCleanup)
+	logging.Info("  LOG_STATIC_FILES:        %v", rc.logStaticFiles)
+	logging.Info("  LOG_HEALTH_CHECKS:       %v", rc.logHealthChecks)
+	logging.Info("  LOG_LEVEL:               %s", logging.GetLevel())
+	logWebAuthnConfig(rc)
+}
+
+// logWorkerConfig logs a worker configuration line with override detection.
+func logWorkerConfig(name, value, defaultDesc string) {
+	if value != "" {
+		logging.Info("  %-23s%s (override)", name+":", value)
+	} else {
+		logging.Info("  %-23s%s", name+":", defaultDesc)
+	}
+}
+
+// logWebAuthnConfig logs WebAuthn-related configuration.
+func logWebAuthnConfig(rc *rawConfig) {
+	if rc.webAuthnRPID == "" {
+		logging.Info("  WEBAUTHN_RP_ID:          (not configured)")
+		return
+	}
+	logging.Info("  WEBAUTHN_RP_ID:          %s", rc.webAuthnRPID)
+	logging.Info("  WEBAUTHN_RP_DISPLAY_NAME:%s", rc.webAuthnRPDisplayName)
+	if rc.webAuthnRPOrigins != "" {
+		logging.Info("  WEBAUTHN_RP_ORIGINS:     %s", rc.webAuthnRPOrigins)
+	} else {
+		logging.Info("  WEBAUTHN_RP_ORIGINS:     https://%s (default)", rc.webAuthnRPID)
+	}
+}
+
+// parsedDurations holds all parsed time.Duration values.
+type parsedDurations struct {
+	indexInterval     time.Duration
+	thumbnailInterval time.Duration
+	pollInterval      time.Duration
+	sessionDuration   time.Duration
+	sessionCleanup    time.Duration
+}
+
+// parseDurations parses all duration strings from the raw config.
+func parseDurations(rc *rawConfig) parsedDurations {
+	return parsedDurations{
+		indexInterval:     parseDurationWithDefault(rc.indexInterval, "INDEX_INTERVAL", 30*time.Minute),
+		thumbnailInterval: parseDurationWithDefault(rc.thumbnailInterval, "THUMBNAIL_INTERVAL", 6*time.Hour),
+		pollInterval:      parseDurationWithDefault(rc.pollInterval, "POLL_INTERVAL", 30*time.Second),
+		sessionDuration:   parseDurationWithDefault(rc.sessionDuration, "SESSION_DURATION", 5*time.Minute),
+		sessionCleanup:    parseDurationWithDefault(rc.sessionCleanup, "SESSION_CLEANUP_INTERVAL", 1*time.Minute),
+	}
+}
+
+// parseDurationWithDefault parses a duration string, logging a warning and
+// returning the default if parsing fails.
+func parseDurationWithDefault(value, name string, defaultVal time.Duration) time.Duration {
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		logging.Warn("  Invalid %s, using default: %v", name, defaultVal)
+		return defaultVal
+	}
+	return d
+}
+
+// parseWebAuthnConfig parses and validates WebAuthn configuration.
+func parseWebAuthnConfig(rc *rawConfig) (enabled bool, origins []string) {
+	if rc.webAuthnRPID == "" {
+		return false, nil
+	}
+
+	if rc.webAuthnRPOrigins != "" {
+		parts := strings.Split(rc.webAuthnRPOrigins, ",")
+		for _, origin := range parts {
+			origins = append(origins, strings.TrimSpace(origin))
+		}
+	} else {
+		origins = []string{"https://" + rc.webAuthnRPID}
+	}
+
+	if len(origins) == 0 {
+		logging.Warn("  WebAuthn RP ID set but no origins configured, WebAuthn disabled")
+		return false, nil
+	}
+
+	return true, origins
+}
+
+// resolveDirectories resolves all directory paths to absolute paths and
+// validates required directories. Returns the resolved paths or an error.
+func resolveDirectories(rc *rawConfig) (mediaDir, cacheDir, databaseDir string, err error) {
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("DIRECTORY SETUP")
+	logging.Info("------------------------------------------------------------")
+
+	mediaDir, err = filepath.Abs(rc.mediaDir)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to resolve media directory path: %w", err)
+	}
+	logging.Info("  Media directory (absolute): %s", mediaDir)
+
+	cacheDir, err = filepath.Abs(rc.cacheDir)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to resolve cache directory path: %w", err)
+	}
+	logging.Info("  Cache directory (absolute): %s", cacheDir)
+
+	databaseDir, err = filepath.Abs(rc.databaseDir)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to resolve database directory path: %w", err)
+	}
+	logging.Info("  Database directory (absolute): %s", databaseDir)
+
+	// Check/create media directory (warning only)
+	if dirErr := ensureDirectory(mediaDir, "media"); dirErr != nil {
+		logging.Warn("  Media directory issue: %v", dirErr)
+	}
+
+	// Ensure base database directory exists (required)
+	if dirErr := ensureDirectory(databaseDir, "database"); dirErr != nil {
+		return "", "", "", fmt.Errorf("database directory error: %w", dirErr)
+	}
+
+	// Test write access for database (required)
+	logging.Debug("  Testing database directory write access...")
+	if dirErr := testWriteAccess(databaseDir); dirErr != nil {
+		return "", "", "", fmt.Errorf("database directory is not writable (required for database): %w", dirErr)
+	}
+	logging.Info("  [OK] Database directory is writable")
+
+	return mediaDir, cacheDir, databaseDir, nil
 }
 
 // LoadConfig loads and validates configuration from environment variables
@@ -98,190 +307,45 @@ func LoadConfig() (*Config, error) {
 	logging.Info("CONFIGURATION")
 	logging.Info("------------------------------------------------------------")
 
-	mediaDir := getEnv("MEDIA_DIR", "/media")
-	cacheDir := getEnv("CACHE_DIR", "/cache")
-	databaseDir := getEnv("DATABASE_DIR", "/database")
-	transcoderLogDir := getEnv("TRANSCODER_LOG_DIR", "")
-	gpuAccel := getEnv("GPU_ACCEL", "auto")
-	port := getEnv("PORT", "8080")
-	metricsPort := getEnv("METRICS_PORT", "9090")
-	indexIntervalStr := getEnv("INDEX_INTERVAL", "30m")
-	thumbnailIntervalStr := getEnv("THUMBNAIL_INTERVAL", "6h")
-	pollIntervalStr := getEnv("POLL_INTERVAL", "30s")
-	indexWorkersStr := getEnv("INDEX_WORKERS", "")
-	thumbnailWorkersStr := getEnv("THUMBNAIL_WORKERS", "")
-	sessionDurationStr := getEnv("SESSION_DURATION", "5m")
-	sessionCleanupStr := getEnv("SESSION_CLEANUP_INTERVAL", "1m")
-	logStaticFiles := getEnvBool("LOG_STATIC_FILES", false)
-	logHealthChecks := getEnvBool("LOG_HEALTH_CHECKS", true)
-	metricsEnabled := getEnvBool("METRICS_ENABLED", true)
-	webAuthnRPID := getEnv("WEBAUTHN_RP_ID", "")
-	webAuthnRPDisplayName := getEnv("WEBAUTHN_RP_DISPLAY_NAME", "Media Viewer")
-	webAuthnRPOriginsStr := getEnv("WEBAUTHN_RP_ORIGINS", "")
+	rc := loadRawConfig()
+	logRawConfig(rc)
 
-	logging.Info("  MEDIA_DIR:               %s", mediaDir)
-	logging.Info("  CACHE_DIR:               %s", cacheDir)
-	logging.Info("  DATABASE_DIR:            %s", databaseDir)
-	if transcoderLogDir != "" {
-		logging.Info("  TRANSCODER_LOG_DIR:      %s", transcoderLogDir)
-	} else {
-		logging.Info("  TRANSCODER_LOG_DIR:      (not configured)")
-	}
-	logging.Info("  GPU_ACCEL:               %s (auto-detect: nvidia/vaapi/videotoolbox)", gpuAccel)
-	logging.Info("  PORT:                    %s", port)
-	logging.Info("  METRICS_PORT:            %s", metricsPort)
-	logging.Info("  METRICS_ENABLED:         %v", metricsEnabled)
-	logging.Info("  INDEX_INTERVAL:          %s", indexIntervalStr)
-	logging.Info("  THUMBNAIL_INTERVAL:      %s", thumbnailIntervalStr)
-	logging.Info("  POLL_INTERVAL:           %s", pollIntervalStr)
-	if indexWorkersStr != "" {
-		logging.Info("  INDEX_WORKERS:           %s (override for indexer parallelism)", indexWorkersStr)
-	} else {
-		logging.Info("  INDEX_WORKERS:           3 (default for NFS safety)")
-	}
-	if thumbnailWorkersStr != "" {
-		logging.Info("  THUMBNAIL_WORKERS:       %s (override for thumbnail workers)", thumbnailWorkersStr)
-	} else {
-		logging.Info("  THUMBNAIL_WORKERS:       (auto - CPU-based, max 6)")
-	}
-	logging.Info("  SESSION_DURATION:        %s", sessionDurationStr)
-	logging.Info("  SESSION_CLEANUP_INTERVAL:%s", sessionCleanupStr)
-	logging.Info("  LOG_STATIC_FILES:        %v", logStaticFiles)
-	logging.Info("  LOG_HEALTH_CHECKS:       %v", logHealthChecks)
-	logging.Info("  LOG_LEVEL:               %s", logging.GetLevel())
-	if webAuthnRPID != "" {
-		logging.Info("  WEBAUTHN_RP_ID:          %s", webAuthnRPID)
-		logging.Info("  WEBAUTHN_RP_DISPLAY_NAME:%s", webAuthnRPDisplayName)
-		if webAuthnRPOriginsStr != "" {
-			logging.Info("  WEBAUTHN_RP_ORIGINS:     %s", webAuthnRPOriginsStr)
-		} else {
-			logging.Info("  WEBAUTHN_RP_ORIGINS:     https://%s (default)", webAuthnRPID)
-		}
-	} else {
-		logging.Info("  WEBAUTHN_RP_ID:          (not configured)")
-	}
-	indexInterval, err := time.ParseDuration(indexIntervalStr)
+	durations := parseDurations(rc)
+	webAuthnEnabled, webAuthnOrigins := parseWebAuthnConfig(rc)
+
+	mediaDir, cacheDir, databaseDir, err := resolveDirectories(rc)
 	if err != nil {
-		logging.Warn("  Invalid INDEX_INTERVAL, using default: 30m")
-		indexInterval = 30 * time.Minute
-	}
-
-	thumbnailInterval, err := time.ParseDuration(thumbnailIntervalStr)
-	if err != nil {
-		logging.Warn("  Invalid THUMBNAIL_INTERVAL, using default: 6h")
-		thumbnailInterval = 6 * time.Hour
-	}
-
-	pollInterval, err := time.ParseDuration(pollIntervalStr)
-	if err != nil {
-		logging.Warn("  Invalid POLL_INTERVAL, using default: 30s")
-		pollInterval = 30 * time.Second
-	}
-
-	sessionDuration, err := time.ParseDuration(sessionDurationStr)
-	if err != nil {
-		logging.Warn("  Invalid SESSION_DURATION, using default: 5m")
-		sessionDuration = 5 * time.Minute
-	}
-
-	sessionCleanup, err := time.ParseDuration(sessionCleanupStr)
-	if err != nil {
-		logging.Warn("  Invalid SESSION_CLEANUP_INTERVAL, using default: 1m")
-		sessionCleanup = 1 * time.Minute
-	}
-
-	// Parse WebAuthn origins
-	var webAuthnRPOrigins []string
-	if webAuthnRPOriginsStr != "" {
-		webAuthnRPOrigins = strings.Split(webAuthnRPOriginsStr, ",")
-		for i, origin := range webAuthnRPOrigins {
-			webAuthnRPOrigins[i] = strings.TrimSpace(origin)
-		}
-	} else if webAuthnRPID != "" {
-		// Default to https://RPID
-		webAuthnRPOrigins = []string{"https://" + webAuthnRPID}
-	}
-
-	// Validate WebAuthn configuration
-	webAuthnEnabled := false
-	if webAuthnRPID != "" {
-		if len(webAuthnRPOrigins) == 0 {
-			logging.Warn("  WebAuthn RP ID set but no origins configured, WebAuthn disabled")
-		} else {
-			webAuthnEnabled = true
-		}
-	}
-
-	// Resolve paths
-	logging.Info("")
-	logging.Info("------------------------------------------------------------")
-	logging.Info("DIRECTORY SETUP")
-	logging.Info("------------------------------------------------------------")
-
-	mediaDir, err = filepath.Abs(mediaDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve media directory path: %w", err)
-	}
-	logging.Info("  Media directory (absolute): %s", mediaDir)
-
-	cacheDir, err = filepath.Abs(cacheDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve cache directory path: %w", err)
-	}
-	logging.Info("  Cache directory (absolute): %s", cacheDir)
-
-	databaseDir, err = filepath.Abs(databaseDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve database directory path: %w", err)
-	}
-	logging.Info("  Database directory (absolute): %s", databaseDir)
-
-	// Check/create media directory (warning only)
-	if err := ensureDirectory(mediaDir, "media"); err != nil {
-		logging.Warn("  Media directory issue: %v", err)
+		return nil, err
 	}
 
 	config := &Config{
 		MediaDir:              mediaDir,
 		CacheDir:              cacheDir,
 		DatabaseDir:           databaseDir,
-		Port:                  port,
-		MetricsPort:           metricsPort,
-		IndexInterval:         indexInterval,
-		ThumbnailInterval:     thumbnailInterval,
-		PollInterval:          pollInterval,
-		SessionDuration:       sessionDuration,
-		SessionCleanup:        sessionCleanup,
-		LogStaticFiles:        logStaticFiles,
-		LogHealthChecks:       logHealthChecks,
-		MetricsEnabled:        metricsEnabled,
+		Port:                  rc.port,
+		MetricsPort:           rc.metricsPort,
+		IndexInterval:         durations.indexInterval,
+		ThumbnailInterval:     durations.thumbnailInterval,
+		PollInterval:          durations.pollInterval,
+		SessionDuration:       durations.sessionDuration,
+		SessionCleanup:        durations.sessionCleanup,
+		LogStaticFiles:        rc.logStaticFiles,
+		LogHealthChecks:       rc.logHealthChecks,
+		MetricsEnabled:        rc.metricsEnabled,
 		DatabasePath:          filepath.Join(databaseDir, "media.db"),
 		ThumbnailDir:          filepath.Join(cacheDir, "thumbnails"),
 		TranscodeDir:          filepath.Join(cacheDir, "transcoded"),
-		TranscoderLogDir:      transcoderLogDir,
-		GPUAccel:              gpuAccel,
+		TranscoderLogDir:      rc.transcoderLogDir,
+		GPUAccel:              rc.gpuAccel,
+		DBMmapDisabled:        rc.dbMmapDisabled,
 		WebAuthnEnabled:       webAuthnEnabled,
-		WebAuthnRPID:          webAuthnRPID,
-		WebAuthnRPDisplayName: webAuthnRPDisplayName,
-		WebAuthnRPOrigins:     webAuthnRPOrigins,
+		WebAuthnRPID:          rc.webAuthnRPID,
+		WebAuthnRPDisplayName: rc.webAuthnRPDisplayName,
+		WebAuthnRPOrigins:     webAuthnOrigins,
 	}
 
-	// Ensure base database directory exists (required for database)
-	if err := ensureDirectory(databaseDir, "database"); err != nil {
-		return nil, fmt.Errorf("database directory error: %w", err)
-	}
-
-	// Test write access for database (required)
-	logging.Debug("  Testing database directory write access...")
-	if err := testWriteAccess(databaseDir); err != nil {
-		return nil, fmt.Errorf("database directory is not writable (required for database): %w", err)
-	}
-	logging.Info("  [OK] Database directory is writable")
-
-	// Setup thumbnail directory (optional)
+	// Setup optional directories
 	config.ThumbnailsEnabled = setupOptionalDir(config.ThumbnailDir, "thumbnails")
-
-	// Setup transcode directory (optional)
 	config.TranscodingEnabled = setupOptionalDir(config.TranscodeDir, "transcoding")
 
 	// Summary

@@ -1204,7 +1204,11 @@ func TestConcurrentRunGeneration(t *testing.T) {
 
 	// Set up database
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1460,7 +1464,11 @@ func TestCleanupOrphanedThumbnailsIntegration(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "orphan_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1551,7 +1559,10 @@ func TestRunGenerationFullWithDB(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "gen_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1619,7 +1630,10 @@ func TestRunGenerationIncrementalWithDB(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "incr_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1703,7 +1717,10 @@ func TestGenerateFolderThumbnailWithDBImages(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "folder_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1767,7 +1784,10 @@ func TestGenerateFolderThumbnailWithSubdirectoryImages(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "subfolder_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1837,7 +1857,10 @@ func TestGetThumbnailFolderEndToEndWithDB(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "folder_e2e_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -1927,7 +1950,10 @@ func TestRebuildAllIntegration(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "rebuild_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -2035,7 +2061,10 @@ func TestNotifyIndexCompleteTriggersGeneration(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "notify_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -2115,7 +2144,10 @@ func TestProcessFoldersForGenerationIntegration(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "folders_gen_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -2197,7 +2229,10 @@ func TestTriggerGenerationWithDB(t *testing.T) {
 	mediaDir := t.TempDir()
 
 	dbPath := filepath.Join(t.TempDir(), "trigger_test.db")
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}

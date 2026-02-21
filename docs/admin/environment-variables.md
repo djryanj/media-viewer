@@ -10,6 +10,8 @@ Complete reference for all environment variables supported by Media Viewer.
 | `MEDIA_DIR`                   | `/media`       | Media directory path                                   |
 | `CACHE_DIR`                   | `/cache`       | Cache directory for thumbnails and transcoded videos   |
 | `DATABASE_DIR`                | `/database`    | Database directory path                                |
+| **Database**                  |                |                                                        |
+| `DB_MMAP_DISABLED`            | `false`        | Disable SQLite mmap (avoid SIGBUS on network storage)  |
 | `TRANSCODER_LOG_DIR`          | _(none)_       | Transcoder log directory (optional)                    |
 | **Video Transcoding**         |                |                                                        |
 | `GPU_ACCEL`                   | `auto`         | GPU acceleration (auto/nvidia/vaapi/videotoolbox/none) |
@@ -79,6 +81,22 @@ DATABASE_DIR=/database
 - Default: `/database`
 - Must be writable
 - Should be persisted between container restarts
+
+### DB_MMAP_DISABLED
+
+Disable SQLite memory-mapped I/O to avoid SIGBUS errors when the database file
+is stored on unreliable or network-backed storage (for example Longhorn or NFS).
+
+```bash
+DB_MMAP_DISABLED=true
+```
+
+- Default: `false`
+- When set to `true`, the application disables SQLite mmap usage. This can
+  prevent SIGBUS crashes when the database file is stored on network filesystems
+  that do not fully support memory-mapped I/O. There may be a small performance
+  impact when disabling mmap, but it is recommended for Longhorn/NFS-style
+  storage to improve stability.
 
 ### TRANSCODER_LOG_DIR
 

@@ -19,8 +19,10 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 	mediaDir := filepath.Join(tmpDir, "media")
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -80,8 +82,11 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 	mediaDir := filepath.Join(tmpDir, "media")
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
 
-	db, _, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -148,8 +153,11 @@ func BenchmarkGetMediaFilesEndpoint(b *testing.B) {
 	mediaDir := filepath.Join(tmpDir, "media")
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
 
-	db, _, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}
@@ -217,8 +225,11 @@ func BenchmarkGetMediaFilesEndpoint_LargeDirectory(b *testing.B) {
 	mediaDir := filepath.Join(tmpDir, "media")
 	cacheDir := filepath.Join(tmpDir, "cache")
 	dbPath := filepath.Join(tmpDir, "test.db")
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
 
-	db, _, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		b.Fatalf("Failed to create database: %v", err)
 	}

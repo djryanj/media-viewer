@@ -21,7 +21,11 @@ import (
 const defaultTimeout = 5 * time.Second
 
 // driverName is the custom SQLite driver name with mmap disabled.
+// Used only when mmap protection is requested.
 const driverName = "sqlite3_mmap_disabled"
+
+// standardDriverName is the default go-sqlite3 driver.
+const standardDriverName = "sqlite3"
 
 // registerOnce ensures the custom driver is registered exactly once.
 var registerOnce sync.Once
@@ -61,6 +65,16 @@ type Database struct {
 	stats   IndexStats
 	statsMu sync.RWMutex
 	txStart time.Time
+	mmapDisabled bool
+}
+
+// Options holds configuration options for database initialization.
+type Options struct {
+	// MmapDisabled disables memory-mapped I/O for SQLite.
+	// This prevents SIGBUS crashes on unreliable storage backends
+	// (e.g., Longhorn, NFS, network-attached volumes).
+	// Default: false (mmap enabled — standard SQLite behavior).
+	MmapDisabled bool
 }
 
 // Info holds diagnostic info about the database initialization
@@ -103,17 +117,34 @@ func observeQuery(operation string) func(error) {
 	}
 }
 
+// activeDriverName returns the SQLite driver name to use based on options.
+func activeDriverName(opts *Options) string {
+	if opts != nil && opts.MmapDisabled {
+		return driverName
+	}
+	return standardDriverName
+}
+
 // New creates a new Database instance and returns diagnostic info for logging.
-func New(ctx context.Context, dbPath string) (*Database, *Info, error) {
+func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, error) {
 	info := &Info{Path: dbPath}
 
 	if err := diagnoseDatabasePermissions(dbPath); err != nil {
 		info.PermissionWarning = err.Error()
 	}
 
+	// Determine which driver to use based on mmap configuration
+	driver := activeDriverName(opts)
+	isMmapDisabled := opts != nil && opts.MmapDisabled
+	if isMmapDisabled {
+		logging.Info("SQLite mmap disabled (SIGBUS protection active for unreliable storage)")
+	} else {
+		logging.Debug("SQLite mmap enabled (default — standard performance mode)")
+	}
+
 	connStr := fmt.Sprintf("%s?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=10000&_temp_store=MEMORY&_busy_timeout=5000", dbPath)
 
-	db, err := sql.Open(driverName, connStr)
+	db, err := sql.Open(driver, connStr)
 	if err != nil {
 		return nil, info, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -133,8 +164,9 @@ func New(ctx context.Context, dbPath string) (*Database, *Info, error) {
 	db.SetConnMaxLifetime(time.Hour)
 
 	d := &Database{
-		db:     db,
-		dbPath: dbPath,
+		db:           db,
+		dbPath:       dbPath,
+		mmapDisabled: isMmapDisabled,
 	}
 
 	if err := d.initialize(ctx); err != nil {
@@ -151,6 +183,7 @@ func New(ctx context.Context, dbPath string) (*Database, *Info, error) {
 
 	return d, info, nil
 }
+
 
 // getSQLiteDiagnostics returns SQLite version, mmap status, and any mmap warnings.
 func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatus, mmapWarning string) {
@@ -173,8 +206,8 @@ func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatu
 			if err := rows.Scan(&opt); err == nil {
 				if len(opt) > 18 && opt[:18] == "DEFAULT_MMAP_SIZE=" {
 					defaultVal := opt[18:]
-					if defaultVal != "0" {
-						mmapWarning = fmt.Sprintf("System SQLite compiled with %s — without our fix, mmap would be enabled by default, risking SIGBUS on storage failures. Our ConnectHook sets mmap_size=0 to prevent this.", opt)
+					if defaultVal != "0" && d.mmapDisabled {
+						mmapWarning = fmt.Sprintf("System SQLite compiled with %s — our ConnectHook sets mmap_size=0 to prevent SIGBUS on unreliable storage.", opt)
 						metrics.DBMmapOverrideApplied.Inc()
 					}
 				}
@@ -184,18 +217,26 @@ func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatu
 
 	var mmapSize int64
 	if err := d.db.QueryRowContext(queryCtx, "PRAGMA mmap_size").Scan(&mmapSize); err == nil {
-		if mmapSize != 0 {
-			mmapStatus = fmt.Sprintf("CRITICAL: mmap_size is %d but should be 0 — SIGBUS protection is NOT active!", mmapSize)
-			metrics.DBMmapStatus.Set(float64(mmapSize))
+		if d.mmapDisabled {
+			// We intended to disable mmap
+			if mmapSize != 0 {
+				mmapStatus = fmt.Sprintf("CRITICAL: mmap_size is %d but should be 0 — SIGBUS protection is NOT active!", mmapSize)
+				metrics.DBMmapStatus.Set(float64(mmapSize))
+			} else {
+				mmapStatus = "mmap_size = 0 (SIGBUS protection active)"
+				metrics.DBMmapStatus.Set(0)
+			}
 		} else {
-			mmapStatus = "mmap_size = 0 (SIGBUS protection active)"
-			metrics.DBMmapStatus.Set(0)
+			// mmap is intentionally enabled (default)
+			mmapStatus = fmt.Sprintf("mmap_size = %d (standard mode — set DB_MMAP_DISABLED=true if on unreliable storage)", mmapSize)
+			metrics.DBMmapStatus.Set(float64(mmapSize))
 		}
 	} else {
 		mmapStatus = "unknown"
 	}
 	return
 }
+
 
 // CheckStorageHealth verifies that the database's underlying storage is accessible.
 func (d *Database) CheckStorageHealth() {

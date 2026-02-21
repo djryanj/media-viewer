@@ -46,7 +46,10 @@ func setupWebAuthnCoverageTest(t *testing.T, enableWebAuthn bool) (h *Handlers, 
 	}
 
 	// Initialize database
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -410,8 +413,10 @@ func TestFinishWebAuthnLoginInvalidSessionID(t *testing.T) {
 func TestInitWebAuthnDisabled(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := tempDir + "/test.db"
-
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -436,8 +441,11 @@ func TestInitWebAuthnDisabled(t *testing.T) {
 func TestInitWebAuthnSchemaError(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := tempDir + "/test.db"
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
 
-	db, _, err := database.New(context.Background(), dbPath)
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
@@ -467,8 +475,10 @@ func TestInitWebAuthnSchemaError(t *testing.T) {
 func TestInitWebAuthnSuccess(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := tempDir + "/test.db"
-
-	db, _, err := database.New(context.Background(), dbPath)
+	dbOpts := &database.Options{
+		MmapDisabled: false, // Set to true if you want to disable mmap
+	}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
