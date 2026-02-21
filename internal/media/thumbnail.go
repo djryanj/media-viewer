@@ -1908,10 +1908,15 @@ func formatBytes(b int64) string {
 // It rejects paths containing shell metacharacters or control characters that could
 // enable command injection. Returns an error if the path is unsafe.
 func validateFilePath(filePath string) error {
-	// Reject shell metacharacters and control characters
-	const dangerousChars = ";&|$><`!(){}[]\\*?#~\n\r\x00"
-	if strings.ContainsAny(filePath, dangerousChars) {
-		return fmt.Errorf("file path contains unsafe characters: %s", filePath)
+	// Reject NUL and control characters (newline/carriage return).
+	// We allow other characters (including brackets, tilde, and shell metacharacters)
+	// because we invoke external commands with exec.Command (no shell) and
+	// these characters are valid in real-world filenames. Only control bytes
+	// and an empty path are considered unsafe here.
+	for _, r := range filePath {
+		if r == '\x00' || r == '\n' || r == '\r' || (r < 32 && r != '\t') {
+			return fmt.Errorf("file path contains unsafe characters: %s", filePath)
+		}
 	}
 	// Reject empty paths
 	if filePath == "" {

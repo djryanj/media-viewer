@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - (Frontend) various bugs discovered through the CI process. [#49](https://github.com/djryanj/media-viewer/issues/49))
 - (Backend) during CI update, a new version of golangci was being used which uncovered some additional lint errors. These were also fixed. [#49](https://github.com/djryanj/media-viewer/issues/49))
+- Regression: fixed a regression introduced in a previous commit to enforce file path safety from unsafe characters which were actually valid characters in file paths that caused thumbnail generation to fail for those files; like `#`, `~`, `&`, `[``]`, etc. [#297](https://github.com/djryanj/media-viewer/issues/297))
 
 ### Changed
 
