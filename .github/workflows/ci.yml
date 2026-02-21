@@ -98,6 +98,40 @@ jobs:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
+    build-binary-pr:
+        name: Build Binary for Frontend PR Integration Tests
+        runs-on: ubuntu-latest
+        needs: [changes]
+        if: |
+            github.event_name == 'pull_request' &&
+            needs.changes.outputs.frontend == 'true' &&
+            needs.changes.outputs.go != 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Install libvips
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Build application
+              run: |
+                  make build
+
+            - name: Upload binary artifact
+              uses: actions/upload-artifact@v6
+              with:
+                  name: media-viewer-binary
+                  path: media-viewer
+                  retention-days: 1
+
     # ──────────────────────────────────────────────
     # STAGE 1: Linting (runs first, gates everything)
     # ──────────────────────────────────────────────
@@ -106,8 +140,7 @@ jobs:
         name: Backend Lint
         runs-on: ubuntu-latest
         needs: changes
-        if: needs.changes.outputs.go == 'true' ||
-            ( github.event_name == 'pull_request' && needs.changes.outputs.frontend == 'true')
+        if: needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -161,22 +194,17 @@ jobs:
               run: npm run format:check
 
     # ──────────────────────────────────────────────
-    # STAGE 2: Build + Unit Tests (gated on lint)
+    # STAGE 2: Backend binary build + Unit Tests (gated on lint)
     # ──────────────────────────────────────────────
 
-    build:
+    build-binary-check:
         name: Backend Build Check
         runs-on: ubuntu-latest
         needs: [changes, lint]
         if: |
-            always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
-            (
-              needs.changes.outputs.go == 'true' ||
-              (
-                github.event_name == 'pull_request' && needs.changes.outputs.frontend == 'true'
-              )
-            )
+            needs.build-binary-pr.result == 'skipped' &&
+            needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
@@ -185,6 +213,7 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev
+
             - name: Set up Go
               uses: actions/setup-go@v6
               with:
@@ -194,9 +223,11 @@ jobs:
             - name: Build application
               run: |
                   make build
+
             - name: Build password reset tool
               run: |
                   make resetpw
+
             - name: Upload binary artifact
               uses: actions/upload-artifact@v6
               with:
