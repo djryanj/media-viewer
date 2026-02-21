@@ -2,174 +2,174 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://djryanj.github.io/media-viewer/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/faq/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/troubleshooting/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/docker-gpu/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/environment-variables/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/libvips/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/memory-tuning/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/metrics/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/overview/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/security/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/server-config/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/thumbnails/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/admin/webauthn/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/authentication/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/favorites/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/files/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/openapi/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/overview/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/search/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/system/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/tags-favorites/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/tags/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/api/webauthn/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/development/architecture/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/development/contributing/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/development/monitoring/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/development/sample-media/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/development/testing/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/features/pwa/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/features/selection-mode/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/features/tag-management/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/getting-started/configuration/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/getting-started/installation/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/getting-started/quick-start/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/includes/abbreviations/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/browsing/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/favorites/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/keyboard-shortcuts/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/overview/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/playlists/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/search/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/tagging/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
     <url>
          <loc>https://djryanj.github.io/media-viewer/user-guide/webauthn/</loc>
-         <lastmod>2026-02-19</lastmod>
+         <lastmod>2026-02-21</lastmod>
     </url>
 </urlset>
