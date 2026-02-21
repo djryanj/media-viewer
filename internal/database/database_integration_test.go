@@ -1376,12 +1376,12 @@ func TestGetAllIndexedPaths(t *testing.T) {
 	}
 
 	for _, expectedPath := range expectedPaths {
-		if !paths[expectedPath] {
+		if _, exists := paths[expectedPath]; !exists {
 			t.Errorf("Missing expected path: %s", expectedPath)
 		}
 	}
 
-	if paths["path/playlist.m3u"] {
+	if _, exists := paths["path/playlist.m3u"]; exists {
 		t.Error("Playlist path should not be included in GetAllIndexedPaths result")
 	}
 }
@@ -1428,7 +1428,7 @@ func TestGetAllIndexedPaths_LargeSet(t *testing.T) {
 	}
 
 	for _, testPath := range testPaths {
-		if !paths[testPath] {
+		if _, exists := paths[testPath]; !exists {
 			t.Errorf("Missing expected path: %s", testPath)
 		}
 	}
