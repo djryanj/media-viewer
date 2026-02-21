@@ -2835,6 +2835,23 @@ select:focus {
     pointer-events: auto;
 }
 
+/* Enlarged touch target for the progress/scrub bar */
+.video-progress-container[data-progress-container] {
+    position: relative;
+    width: 100%;
+
+    /* Generous padding creates a large invisible touch target
+       while the visual bar stays thin */
+    padding: 14px 0;
+    cursor: pointer;
+
+    /* Ensure the touch target extends visually */
+    margin: -14px 0;
+
+    /* Compensate for negative margin in layout */
+    box-sizing: content-box;
+}
+
 .video-progress-bar {
     width: 100%;
     height: 5px;
@@ -2843,6 +2860,16 @@ select:focus {
     position: relative;
     overflow: visible;
     pointer-events: auto;
+}
+
+/* The visible progress bar stays thin */
+.video-progress-bar[data-progress-bar] {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    background: rgb(255 255 255 / 30%);
+    border-radius: 2px;
+    overflow: visible;
 }
 
 .video-progress-bar:hover {
@@ -2880,6 +2907,30 @@ select:focus {
     pointer-events: none;
     box-shadow: 0 2px 4px rgb(0 0 0 / 50%);
     z-index: 2;
+}
+
+/* Make the handle easier to see and grab */
+.video-progress-handle[data-progress-handle] {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none; /* Handle is visual only; container captures all events */
+    transition: transform 0.1s ease;
+}
+
+/* Enlarge handle on hover/active for visual feedback */
+.video-progress-container:hover .video-progress-handle,
+.video-progress-container:active .video-progress-handle {
+    transform: translate(-50%, -50%) scale(1.3);
+}
+
+/* Thicken the bar on hover for visual feedback */
+.video-progress-container:hover .video-progress-bar {
+    height: 6px;
 }
 
 .video-controls.show .video-progress-handle {

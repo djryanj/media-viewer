@@ -60,7 +60,6 @@ jobs:
                         - 'Dockerfile.nvidia'
                         - '.dockerignore'
                         - '.github/workflows/*.yml'
-
     # ──────────────────────────────────────────────
     # STAGE 0: Prepare sample media (runs early,
     #          can take ~10 min on cold cache)
@@ -99,6 +98,40 @@ jobs:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
+    build-binary-pr:
+        name: Build Binary for Frontend PR Integration Tests
+        runs-on: ubuntu-latest
+        needs: [changes]
+        if: |
+            github.event_name == 'pull_request' &&
+            needs.changes.outputs.frontend == 'true' &&
+            needs.changes.outputs.go == 'false'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Install libvips
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Build application
+              run: |
+                  make build
+
+            - name: Upload binary artifact
+              uses: actions/upload-artifact@v6
+              with:
+                  name: media-viewer-binary
+                  path: media-viewer
+                  retention-days: 1
+
     # ──────────────────────────────────────────────
     # STAGE 1: Linting (runs first, gates everything)
     # ──────────────────────────────────────────────
@@ -116,7 +149,6 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev
-
             - name: Set up Go
               uses: actions/setup-go@v6
               with:
@@ -162,16 +194,16 @@ jobs:
               run: npm run format:check
 
     # ──────────────────────────────────────────────
-    # STAGE 2: Build + Unit Tests (gated on lint)
+    # STAGE 2: Backend binary build + Unit Tests (gated on lint)
     # ──────────────────────────────────────────────
 
-    build:
+    build-binary-check:
         name: Backend Build Check
         runs-on: ubuntu-latest
         needs: [changes, lint]
         if: |
-            always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+            needs.build-binary-pr.result == 'skipped' &&
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
@@ -219,7 +251,6 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev
-
             - name: Set up Go
               uses: actions/setup-go@v6
               with:
@@ -229,7 +260,6 @@ jobs:
             - name: Run unit tests
               run: |
                   make test-unit
-
             - name: Generate coverage report
               if: always()
               run: |
@@ -238,7 +268,6 @@ jobs:
                   echo '```' >> $GITHUB_STEP_SUMMARY
                   go tool cover -func=coverage-unit.out | tail -20 >> $GITHUB_STEP_SUMMARY
                   echo '```' >> $GITHUB_STEP_SUMMARY
-
             - name: Upload test results
               if: always()
               uses: actions/upload-artifact@v6
@@ -247,7 +276,6 @@ jobs:
                   path: |
                       coverage-unit.out
                       test-unit.json
-
     test-frontend-unit:
         name: Frontend Unit Tests
         runs-on: ubuntu-latest
@@ -289,7 +317,6 @@ jobs:
                   else
                     echo "No coverage report generated" >> $GITHUB_STEP_SUMMARY
                   fi
-
             - name: Upload frontend unit coverage
               if: always()
               uses: actions/upload-artifact@v6
@@ -318,7 +345,6 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg
-
             - name: Set up Go
               uses: actions/setup-go@v6
               with:
@@ -343,7 +369,6 @@ jobs:
                       echo "No coverage file generated" >> $GITHUB_STEP_SUMMARY
                   fi
                   echo '```' >> $GITHUB_STEP_SUMMARY
-
             - name: Upload coverage
               if: always()
               uses: actions/upload-artifact@v6
@@ -352,7 +377,6 @@ jobs:
                   path: |
                       coverage-integration.out
                       test-integration.json
-
     test-race:
         name: Backend Race Detector
         runs-on: ubuntu-latest
@@ -369,7 +393,6 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg
-
             - name: Set up Go
               uses: actions/setup-go@v6
               with:
@@ -379,14 +402,12 @@ jobs:
             - name: Run tests with race detector
               run: |
                   make test-race
-
     test-frontend-integration:
         name: Frontend Integration Tests
         runs-on: ubuntu-latest
-        needs: [changes, build, test-frontend-unit, prepare-sample-media]
+        needs: [changes, build-binary-pr, test-frontend-unit, prepare-sample-media]
         if: |
             github.event_name == 'pull_request' &&
-            needs.build.result == 'success' &&
             (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
             (needs.prepare-sample-media.result == 'success' || needs.prepare-sample-media.result == 'skipped') &&
             needs.changes.outputs.frontend == 'true'
@@ -398,7 +419,6 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg
-
             - name: Set up Node.js
               uses: actions/setup-node@v4
               with:
@@ -428,11 +448,9 @@ jobs:
             - name: Copy sample media to runtime location
               run: |
                   cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
-
             - name: Start backend server
               run: |
                   mkdir -p /tmp/backend-logs
-
                   MEDIA_DIR=/tmp/media \
                   CACHE_DIR=/tmp/cache \
                   DATABASE_DIR=/tmp/database \
@@ -440,10 +458,8 @@ jobs:
                   LOG_HEALTH_CHECKS=false \
                   LOG_LEVEL=info \
                   ./media-viewer > /tmp/backend-logs/backend-stdout.log 2>&1 &
-
                   BACKEND_PID=$!
                   echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
-
                   echo "Waiting for backend to be ready..."
                   for i in {1..30}; do
                     if curl -f http://localhost:8080/readyz > /dev/null 2>&1; then
@@ -459,7 +475,6 @@ jobs:
                     sleep 1
                   done
                   sleep 5 # just because
-
                   # Also verify the auth endpoint is responding (database is initialized)
                   echo "Verifying auth endpoint is ready..."
                   for i in {1..15}; do
@@ -474,13 +489,10 @@ jobs:
                     fi
                     sleep 1
                   done
-
                   echo "Backend is fully ready!"
-
                   echo "--- Backend startup logs ---"
                   cat /tmp/backend-logs/backend-stdout.log
                   echo "--- End startup logs ---"
-
             - name: Run frontend integration tests
               run: |
                   make frontend-test-integration
@@ -495,7 +507,6 @@ jobs:
                     # Give it a moment to flush logs
                     sleep 2
                   fi
-
             - name: Upload backend logs on failure
               if: failure()
               uses: actions/upload-artifact@v6
@@ -512,7 +523,6 @@ jobs:
                   path: |
                       static/e2e/playwright-report/
                       static/e2e/test-results/
-
             - name: Upload Playwright report
               if: always()
               uses: actions/upload-artifact@v6
@@ -536,7 +546,7 @@ jobs:
                 test-integration,
                 test-frontend-unit,
                 test-frontend-integration,
-                build,
+                build-binary-check,
             ]
         if: |
             always() &&
@@ -546,7 +556,7 @@ jobs:
             (needs.test-integration.result == 'success' || needs.test-integration.result == 'skipped') &&
             (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
             (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
-            (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+            (needs.build-binary-check.result == 'success' || needs.build-binary-check.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
               (github.event_name == 'pull_request')
@@ -572,7 +582,7 @@ jobs:
                 test-integration,
                 test-frontend-unit,
                 test-frontend-integration,
-                build,
+                build-binary-check,
             ]
         if: |
             always() &&
@@ -582,7 +592,7 @@ jobs:
             (needs.test-integration.result == 'success' || needs.test-integration.result == 'skipped') &&
             (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
             (needs.test-frontend-integration.result == 'success' || needs.test-frontend-integration.result == 'skipped') &&
-            (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+            (needs.build-binary-check.result == 'success' || needs.build-binary-check.result == 'skipped') &&
             (
               (github.event_name == 'push' && needs.changes.outputs.docker-related == 'true') ||
               (github.event_name == 'pull_request')
@@ -605,7 +615,7 @@ jobs:
             [
                 lint,
                 lint-frontend,
-                build,
+                build-binary-check,
                 test-unit,
                 test-integration,
                 test-race,
@@ -623,57 +633,46 @@ jobs:
                     echo "Lint failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.lint-frontend.result }}" == "failure" ]]; then
                     echo "Frontend lint failed"
                     exit 1
                   fi
-
-                  if [[ "${{ needs.build.result }}" == "failure" ]]; then
-                    echo "Build failed"
+                  if [[ "${{ needs.build-binary-check.result }}" == "failure" ]]; then
+                    echo "Build binary check failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.test-unit.result }}" == "failure" ]]; then
                     echo "Unit tests failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.test-frontend-unit.result }}" == "failure" ]]; then
                     echo "Frontend unit tests failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.test-frontend-integration.result }}" == "failure" ]]; then
                     echo "Frontend integration tests failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.test-integration.result }}" == "failure" ]]; then
                     echo "Integration tests failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.test-race.result }}" == "failure" ]]; then
                     echo "Race detector found issues"
                     exit 1
                   fi
-
                   if [[ "${{ needs.prepare-sample-media.result }}" == "failure" ]]; then
                     echo "Sample media preparation failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.build-docker.result }}" == "failure" ]]; then
                     echo "Docker build failed"
                     exit 1
                   fi
-
                   if [[ "${{ needs.build-docker-nvidia.result }}" == "failure" ]]; then
                     echo "Docker NVIDIA build failed"
                     exit 1
                   fi
-
                   if [[ "${{ github.event_name }}" == "pull_request" ]]; then
                     echo "All PR checks passed!"
                   else
