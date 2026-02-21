@@ -430,7 +430,7 @@ jobs:
               run: npm ci
 
             - name: Download backend binary
-              uses: actions/download-artifact@v6
+              uses: actions/download-artifact@v7
               with:
                   name: media-viewer-binary
                   path: .
