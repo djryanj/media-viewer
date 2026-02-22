@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Large expansion and refactor of unit/integration tests and benchmarks across `internal/filesystem`, `internal/media`, and `internal/metrics` to cover the new behavior and improve CI confidence.
 - Video controls: Enlarged touchable area that will grab the seek bar [#281](https://github.com/djryanj/media-viewer/issues/281)
 - Video controls: Touching anywhere on the seek bar now grabs the handle and seeks to that spot, rather than needing to explicitly grab the handle ([#281](https://github.com/djryanj/media-viewer/issues/281))
+- ci: bump version of download-artifact github action to v7 in ci.yml ([#303](https://github.com/djryanj/media-viewer/issues/303))
+- chore: Release pipeline did not include anything for frontend checks and was too light on backend. Extended to include all that. ([#303](https://github.com/djryanj/media-viewer/issues/303))
 
 ## [0.13.3] - 2026-02-13
 
