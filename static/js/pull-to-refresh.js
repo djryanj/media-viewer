@@ -50,35 +50,32 @@ const PullToRefresh = {
         const gallery = document.getElementById('gallery');
         if (!gallery) return;
 
-        document.addEventListener(
+        const isModalOpen = (id) => {
+            const el = document.getElementById(id);
+            return el && !el.classList.contains('hidden');
+        };
+
+        gallery.addEventListener(
             'touchstart',
             (e) => {
                 if (!this.enabled || this.refreshing) return;
 
-                // Only activate when scrolled to top
                 const scrollTop = window.scrollY || document.documentElement.scrollTop;
                 if (scrollTop > 5) return;
 
-                // Don't activate if touching interactive elements
-                if (
-                    e.target.closest(
-                        '.lightbox-content, .modal, .search-container, #lightbox, #tag-modal, #playlist-modal, .settings-modal'
-                    )
-                ) {
-                    return;
-                }
-
-                // Don't activate if lightbox or modals are open
-                if (!document.getElementById('lightbox')?.classList.contains('hidden')) return;
-                if (!document.getElementById('tag-modal')?.classList.contains('hidden')) return;
+                if (isModalOpen('lightbox')) return;
+                if (isModalOpen('tag-modal')) return;
+                if (isModalOpen('playlist-modal')) return;
+                if (isModalOpen('confirm-modal')) return;
 
                 this.startY = e.touches[0].clientY;
+                this.currentY = 0;
                 this.pulling = true;
             },
             { passive: true }
         );
 
-        document.addEventListener(
+        gallery.addEventListener(
             'touchmove',
             (e) => {
                 if (!this.pulling || this.refreshing) return;
@@ -86,20 +83,22 @@ const PullToRefresh = {
                 this.currentY = e.touches[0].clientY;
                 const pullDistance = this.currentY - this.startY;
 
-                // Only handle downward pulls
                 if (pullDistance <= 0) {
                     this.resetVisual();
                     return;
                 }
 
-                // Check we're still at the top
                 const scrollTop = window.scrollY || document.documentElement.scrollTop;
                 if (scrollTop > 5) {
+                    this.pulling = false;
                     this.resetVisual();
                     return;
                 }
 
-                // Apply resistance
+                if (pullDistance < 10) return;
+
+                e.preventDefault();
+
                 const resistedDistance = Math.min(
                     pullDistance * this.resistanceFactor,
                     this.maxPull
@@ -107,14 +106,19 @@ const PullToRefresh = {
 
                 this.updateVisual(resistedDistance);
             },
-            { passive: true }
+            { passive: false }
         );
 
-        document.addEventListener(
+        gallery.addEventListener(
             'touchend',
             () => {
                 if (!this.pulling) return;
                 this.pulling = false;
+
+                if (this.currentY === 0) {
+                    this.resetVisual();
+                    return;
+                }
 
                 const pullDistance = (this.currentY - this.startY) * this.resistanceFactor;
 
@@ -127,10 +131,11 @@ const PullToRefresh = {
             { passive: true }
         );
 
-        document.addEventListener(
+        gallery.addEventListener(
             'touchcancel',
             () => {
                 this.pulling = false;
+                this.currentY = 0;
                 this.resetVisual();
             },
             { passive: true }
