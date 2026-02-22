@@ -50,9 +50,6 @@ const PullToRefresh = {
         const gallery = document.getElementById('gallery');
         if (!gallery) return;
 
-        // Use the scrollable container — could be gallery's parent or window
-        const scrollContainer = gallery.parentElement || document.documentElement;
-
         document.addEventListener(
             'touchstart',
             (e) => {
