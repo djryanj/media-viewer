@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
     No API, frontend, or test changes required.
 
+- ui: Tags not displayed on gallery items after navigating away and back to a directory ([#313](https://github.com/djryanj/media-viewer/issues/313))
+  The ETag cache key for `/api/files` and `/api/media` was computed from file metadata only (modification times, sizes, counts). Tag changes did not alter any of these values, so the server returned 304 Not Modified with stale data. Combined with `max-age=300` and the service worker cache, tags could be missing for up to 5 minutes after being added. The ETag now incorporates tag state so that tag additions or removals invalidate the cache immediately.
+
 ## [0.13.4] - 02-21-2026
 
 ### Added

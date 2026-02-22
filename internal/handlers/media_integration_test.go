@@ -3190,3 +3190,296 @@ func TestGetMediaFilesETagStableForSameState(t *testing.T) {
 		t.Errorf("expected same ETag for unchanged state, got %s and %s", etag1, etag2)
 	}
 }
+
+// addTestTag creates a tag and returns its ID. Uses a transaction for direct SQL insert
+// since tag management methods may not be available on the Database type.
+func addTestTag(t *testing.T, h *Handlers, name string) int64 {
+	t.Helper()
+
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin batch for tag creation: %v", err)
+	}
+
+	result, err := tx.ExecContext(ctx,
+		"INSERT INTO tags (name, created_at) VALUES (?, strftime('%s', 'now'))", name)
+	if err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			t.Errorf("rollback failed: %v", rbErr)
+		}
+		// Unlock the mutex that BeginBatch locked
+		h.db.EndBatch(tx, err)
+		t.Fatalf("failed to insert tag: %v", err)
+	}
+
+	tagID, err := result.LastInsertId()
+	if err != nil {
+		h.db.EndBatch(tx, err)
+		t.Fatalf("failed to get tag ID: %v", err)
+	}
+
+	if err := h.db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("failed to commit tag creation: %v", err)
+	}
+
+	return tagID
+}
+
+// addTagToFile associates a tag with a file path.
+func addTagToFile(t *testing.T, h *Handlers, filePath string, tagID int64) {
+	t.Helper()
+
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin batch for file tag: %v", err)
+	}
+
+	_, err = tx.ExecContext(ctx,
+		"INSERT INTO file_tags (file_path, tag_id, created_at) VALUES (?, ?, strftime('%s', 'now'))",
+		filePath, tagID)
+	if err != nil {
+		h.db.EndBatch(tx, err)
+		t.Fatalf("failed to add tag to file: %v", err)
+	}
+
+	if err := h.db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("failed to commit file tag: %v", err)
+	}
+}
+
+// TestListFilesETagChangesWhenTagsChangeIntegration verifies that adding a tag
+// to a file produces a different ETag, preventing stale cache responses.
+func TestListFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add test file
+	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo content")
+
+	// First request — capture ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w1.Code)
+	}
+
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag header on first response")
+	}
+
+	// Add a tag to the file — no file metadata changes
+	tagID := addTestTag(t, h, "landscape")
+	addTagToFile(t, h, "photo.jpg", tagID)
+
+	// Second request — ETag must differ
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w2.Code)
+	}
+
+	etag2 := w2.Header().Get("ETag")
+	if etag2 == "" {
+		t.Fatal("expected ETag header on second response")
+	}
+
+	if etag1 == etag2 {
+		t.Errorf("ETag did not change after adding tag: both are %s", etag1)
+	}
+
+	// Verify the old ETag now returns 200, not 304
+	req3 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req3.Header.Set("If-None-Match", etag1)
+	w3 := httptest.NewRecorder()
+	h.ListFiles(w3, req3)
+
+	if w3.Code != http.StatusOK {
+		t.Errorf("expected status 200 for stale ETag after tag change, got %d", w3.Code)
+	}
+}
+
+// TestListFilesETagStableWhenTagsUnchangedIntegration verifies that 304 still
+// works correctly — the ETag fix must not break conditional request support.
+func TestListFilesETagStableWhenTagsUnchangedIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add file with a tag already present
+	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo content")
+	tagID := addTestTag(t, h, "nature")
+	addTagToFile(t, h, "photo.jpg", tagID)
+
+	// First request
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag header")
+	}
+
+	// Second request with If-None-Match — no changes, expect 304
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req2.Header.Set("If-None-Match", etag1)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+
+	if w2.Code != http.StatusNotModified {
+		t.Errorf("expected status 304 when tags unchanged, got %d", w2.Code)
+	}
+}
+
+// TestGetMediaFilesETagChangesWhenTagsChangeIntegration is the equivalent test
+// for the /api/media endpoint used by the lightbox.
+func TestGetMediaFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add test files
+	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
+	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
+
+	// First request — capture ETag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.GetMediaFiles(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w1.Code)
+	}
+
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag header on first response")
+	}
+
+	// Add a tag — no file metadata changes
+	tagID := addTestTag(t, h, "vacation")
+	addTagToFile(t, h, "image1.jpg", tagID)
+
+	// Second request — ETag must differ
+	req2 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.GetMediaFiles(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w2.Code)
+	}
+
+	etag2 := w2.Header().Get("ETag")
+	if etag2 == "" {
+		t.Fatal("expected ETag header on second response")
+	}
+
+	if etag1 == etag2 {
+		t.Errorf("ETag did not change after adding tag: both are %s", etag1)
+	}
+}
+
+// TestGetMediaFilesETagChangesWhenTagRemovedIntegration verifies that removing
+// a tag also invalidates the ETag.
+func TestGetMediaFilesETagChangesWhenTagRemovedIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add file with tag
+	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo")
+	tagID := addTestTag(t, h, "portrait")
+	addTagToFile(t, h, "photo.jpg", tagID)
+
+	// First request — capture ETag with tag present
+	req1 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.GetMediaFiles(w1, req1)
+
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag header")
+	}
+
+	// Remove the tag
+	ctx := context.Background()
+	tx, err := h.db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin batch: %v", err)
+	}
+	_, err = tx.ExecContext(ctx,
+		"DELETE FROM file_tags WHERE file_path = ? AND tag_id = ?",
+		"photo.jpg", tagID)
+	if err != nil {
+		h.db.EndBatch(tx, err)
+		t.Fatalf("failed to remove tag: %v", err)
+	}
+	if err := h.db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("failed to commit tag removal: %v", err)
+	}
+
+	// Second request — ETag must differ
+	req2 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.GetMediaFiles(w2, req2)
+
+	etag2 := w2.Header().Get("ETag")
+	if etag1 == etag2 {
+		t.Errorf("ETag did not change after removing tag: both are %s", etag1)
+	}
+}
+
+// TestListFilesETagChangesWithMultipleTagsIntegration verifies that adding
+// a second tag to an already-tagged file still changes the ETag.
+func TestListFilesETagChangesWithMultipleTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add file with one tag
+	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo")
+	tag1ID := addTestTag(t, h, "landscape")
+	addTagToFile(t, h, "photo.jpg", tag1ID)
+
+	// Capture ETag with one tag
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag header")
+	}
+
+	// Add a second tag
+	tag2ID := addTestTag(t, h, "sunset")
+	addTagToFile(t, h, "photo.jpg", tag2ID)
+
+	// ETag must differ
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+
+	etag2 := w2.Header().Get("ETag")
+	if etag1 == etag2 {
+		t.Errorf("ETag did not change after adding second tag: both are %s", etag1)
+	}
+}

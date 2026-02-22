@@ -70,11 +70,20 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	etagData := fmt.Sprintf("%s_%s_%s_%s_%d_%d_%d_%d_%d",
-		opts.Path, opts.SortField, opts.SortOrder, opts.FilterType,
-		opts.Page, opts.PageSize, listing.TotalItems, len(listing.Items), lastModTime)
-	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
+	// Include tag state in ETag so tag changes invalidate the cache.
+	// Build a lightweight tag fingerprint from the items in this page.
+	var tagFingerprint strings.Builder
+	for i := range listing.Items {
+		if len(listing.Items[i].Tags) > 0 {
+			tagFingerprint.WriteString(listing.Items[i].Path + ":" + strings.Join(listing.Items[i].Tags, ",") + ";")
+		}
+	}
 
+	etagData := fmt.Sprintf("%s_%s_%s_%s_%d_%d_%d_%d_%d_%s",
+		opts.Path, opts.SortField, opts.SortOrder, opts.FilterType,
+		opts.Page, opts.PageSize, listing.TotalItems, len(listing.Items), lastModTime,
+		tagFingerprint.String())
+	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
 	// Set cache headers
 	// Use "private" since response may include user-specific data
 	// max-age=300 (5 minutes) balances freshness with caching benefit
@@ -133,9 +142,17 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	etagData := fmt.Sprintf("%s_%s_%s_%d_%d", parentPath, sortField, sortOrder, len(files), lastModTime)
-	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
+	var tagFingerprint strings.Builder
+	for i := range files {
+		if len(files[i].Tags) > 0 {
+			tagFingerprint.WriteString(files[i].Path + ":" + strings.Join(files[i].Tags, ",") + ";")
+		}
+	}
 
+	etagData := fmt.Sprintf("%s_%s_%s_%d_%d_%s",
+		parentPath, sortField, sortOrder, len(files), lastModTime,
+		tagFingerprint.String())
+	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
 	// Set cache headers
 	// Use "private" since response includes user-specific data (favorites)
 	// max-age=300 (5 minutes) to balance freshness with caching benefit
