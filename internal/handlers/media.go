@@ -86,8 +86,8 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
 	// Set cache headers
 	// Use "private" since response may include user-specific data
-	// max-age=300 (5 minutes) balances freshness with caching benefit
-	w.Header().Set("Cache-Control", "private, max-age=300, must-revalidate")
+	// no-cache ensures the client always revalidates the cache
+	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Header().Set("ETag", etag)
 
 	// Check If-None-Match header for conditional request
@@ -155,9 +155,8 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
 	// Set cache headers
 	// Use "private" since response includes user-specific data (favorites)
-	// max-age=300 (5 minutes) to balance freshness with caching benefit
-	// must-revalidate ensures stale cache is revalidated
-	w.Header().Set("Cache-Control", "private, max-age=300, must-revalidate")
+	// no-cache ensures the client always revalidates the cache
+	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Header().Set("ETag", etag)
 
 	// Check If-None-Match header for conditional request
