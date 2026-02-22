@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.13.5] - Unreleased
+
+### Fixed
+
+- ui: under some circumstances with the paste modal, e.g., there is a state that happens when you select several files, tag them, and then exit the tag screen. If you re-enter the tag screen, then touch events to the files underneath are not blocked; you can inadvertently remove a tag (for example) from an image in the gallery if you happen to touch in the spot where the remove for that tag would be. This fix adds a better touchstart handler to avoid those issues in the paste modal. ([#306](https://github.com/djryanj/media-viewer/issues/306))
+
 ## [0.13.4] - 02-21-2026
 
 ### Added
