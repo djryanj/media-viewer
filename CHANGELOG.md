@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [0.13.6] - Unrelease
+## [0.13.6] - Unreleased
 
 ### Fixed
 
 - ci: pipelines now correctly run conditional build steps [[#315](https://github.com/djryanj/media-viewer/issues/315)]
 - dx: cleaned up makefile and made local frontend integration tests correctly run (and kill) a temporary server
+- ui: fixed an issue where the pull-to-refresh behaviour introduced in ([#312](https://github.com/djryanj/media-viewer/issues/312)) accidentally fired when tapping buttons near the top. ([#319](https://github.com/djryanj/media-viewer/issues/319))
 
 ## [0.13.5] - 02-21-2026
 
