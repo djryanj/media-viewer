@@ -70,6 +70,7 @@ jobs:
         runs-on: ubuntu-latest
         needs: changes
         if: |
+            github.event_name == 'pull_request' &&
             needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
@@ -103,6 +104,7 @@ jobs:
         runs-on: ubuntu-latest
         needs: [changes]
         if: |
+            github.event_name == 'pull_request' &&
             needs.changes.outputs.frontend == 'true' &&
             needs.changes.outputs.go == 'false'
         steps:
@@ -199,8 +201,9 @@ jobs:
     build-binary-check:
         name: Backend Build Check
         runs-on: ubuntu-latest
-        needs: [changes, lint]
+        needs: [changes, lint, build-binary-pr]
         if: |
+            always() &&
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
             needs.build-binary-pr.result == 'skipped' &&
             needs.changes.outputs.go == 'true'
@@ -404,9 +407,15 @@ jobs:
     test-frontend-integration:
         name: Frontend Integration Tests
         runs-on: ubuntu-latest
-        needs: [changes, build-binary-pr, test-frontend-unit, prepare-sample-media]
+        needs:
+            [changes, build-binary-pr, build-binary-check, test-frontend-unit, prepare-sample-media]
         if: |
+            always() &&
             github.event_name == 'pull_request' &&
+            (
+              (needs.build-binary-pr.result == 'success' || needs.build-binary-pr.result == 'skipped') ||
+              (needs.build-binary-check.result == 'success' || needs.build-binary-check.result == 'skipped')
+            ) &&
             (needs.test-frontend-unit.result == 'success' || needs.test-frontend-unit.result == 'skipped') &&
             (needs.prepare-sample-media.result == 'success' || needs.prepare-sample-media.result == 'skipped') &&
             needs.changes.outputs.frontend == 'true'
