@@ -127,17 +127,21 @@ const InfiniteScroll = {
      * @param {object} initialData - Initial listing data from server
      */
     async startForDirectory(path, initialData) {
-        // Check cache first
+        // Check cache for scroll position restoration
         const cached = this.cache.get(path);
-        if (cached) {
-            await this.restoreFromCache(path, cached);
+        const savedScrollPosition = cached ? cached.scrollPosition : null;
+
+        // If we have cached data with more items loaded (from previous scrolling),
+        // merge fresh metadata from the server into the cached items.
+        // This preserves pagination progress while ensuring tags/favorites are current.
+        if (cached && cached.loadedItems.length > initialData.items.length) {
+            this.restoreWithFreshData(path, cached, initialData, savedScrollPosition);
             return;
         }
 
-        // Reset state for new directory
+        // No usable cache — start fresh with server data
         this.resetState();
 
-        // Store initial data
         this.state.totalItems = initialData.totalItems;
         this.state.hasMore = initialData.items.length < initialData.totalItems;
         this.state.loadedItems = [...initialData.items];
@@ -146,75 +150,71 @@ const InfiniteScroll = {
         // Render initial items
         this.renderItems(initialData.items, false);
 
+        // Restore scroll position if returning to this directory
+        if (savedScrollPosition !== null) {
+            // Clear stale cache entry since we're using fresh data now
+            this.cache.delete(path);
+
+            requestAnimationFrame(() => {
+                window.scrollTo(0, savedScrollPosition);
+            });
+        }
+
         // Start observing
         this.startObserving();
-
-        // Update stats
         this.updateStats();
 
-        // Auto-load more items if viewport is not filled and more items are available
-        // Use setTimeout to ensure DOM has updated and measurements are accurate
         setTimeout(() => {
             this.checkAndFillViewport();
         }, 100);
     },
 
     /**
-     * Restore from cache with priority loading for visible items
+     * Restore from cache but merge fresh server data for the first page.
+     * Preserves scroll position and pagination progress while ensuring
+     * metadata (tags, favorites) is current for visible items.
      */
-    async restoreFromCache(path, cached) {
+    async restoreWithFreshData(path, cached, initialData, savedScrollPosition) {
         this.resetState();
 
-        // Restore state
-        this.state.totalItems = cached.totalItems;
-        this.state.currentPage = cached.currentPage;
-        this.state.hasMore = cached.hasMore;
-        this.state.loadedItems = [...cached.loadedItems];
+        // Build a lookup of fresh items by path for fast merging
+        const freshByPath = new Map();
+        for (const item of initialData.items) {
+            freshByPath.set(item.path, item);
+        }
 
-        // Calculate which items should be visible based on scroll position
-        const scrollPosition = cached.scrollPosition;
-        const viewportHeight = window.innerHeight;
-        const itemHeight = this.estimateItemHeight();
-        const itemsPerRow = this.estimateItemsPerRow();
-
-        // Calculate visible range
-        const startRow = Math.floor(scrollPosition / itemHeight);
-        const endRow = Math.ceil((scrollPosition + viewportHeight) / itemHeight) + 2; // +2 buffer
-        const startIndex = Math.max(0, startRow * itemsPerRow - itemsPerRow); // One row buffer above
-        const endIndex = Math.min(cached.loadedItems.length, (endRow + 1) * itemsPerRow);
-
-        // First, render placeholder skeletons for all items
-        this.renderSkeletonsForCount(cached.loadedItems.length);
-
-        // Immediately scroll to approximate position
-        requestAnimationFrame(() => {
-            window.scrollTo(0, scrollPosition);
+        // Merge fresh metadata into cached items
+        const mergedItems = cached.loadedItems.map((item) => {
+            const fresh = freshByPath.get(item.path);
+            if (fresh) {
+                // Replace with fresh data (has updated tags, favorites, etc.)
+                return fresh;
+            }
+            // Item was loaded via pagination beyond the first page — keep as-is
+            return item;
         });
 
-        // Then prioritize loading visible items first
-        const visibleItems = cached.loadedItems.slice(startIndex, endIndex);
-        const beforeItems = cached.loadedItems.slice(0, startIndex);
-        const afterItems = cached.loadedItems.slice(endIndex);
+        // Restore state with merged data
+        this.state.totalItems = initialData.totalItems;
+        this.state.currentPage = cached.currentPage;
+        this.state.hasMore = mergedItems.length < initialData.totalItems;
+        this.state.loadedItems = mergedItems;
 
-        // Render visible items first (replacing skeletons)
-        await this.renderItemsAtPosition(visibleItems, startIndex);
+        // Render all items
+        this.renderItems(mergedItems, false);
 
-        // Then render items before and after
-        if (beforeItems.length > 0) {
-            await this.renderItemsAtPosition(beforeItems, 0);
+        // Restore scroll position
+        if (savedScrollPosition !== null) {
+            requestAnimationFrame(() => {
+                window.scrollTo(0, savedScrollPosition);
+            });
         }
-        if (afterItems.length > 0) {
-            await this.renderItemsAtPosition(afterItems, endIndex);
-        }
 
-        // Start observing for more
+        // Clear stale cache
+        this.cache.delete(path);
+
         this.startObserving();
         this.updateStats();
-
-        // Fine-tune scroll position after render
-        requestAnimationFrame(() => {
-            window.scrollTo(0, scrollPosition);
-        });
     },
 
     /**
