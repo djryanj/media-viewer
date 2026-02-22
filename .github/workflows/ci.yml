@@ -200,7 +200,7 @@ jobs:
     build-binary-check:
         name: Backend Build Check
         runs-on: ubuntu-latest
-        needs: [changes, lint]
+        needs: [changes, lint, build-binary-pr]
         if: |
             (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
             needs.build-binary-pr.result == 'skipped' &&
