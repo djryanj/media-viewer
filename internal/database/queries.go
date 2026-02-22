@@ -1142,6 +1142,9 @@ func (d *Database) GetAllPlaylists(ctx context.Context) ([]MediaFile, error) {
 
 // GetMediaInDirectory returns all media files in a directory (for lightbox).
 // Optimized to fetch favorites and tags in a single query using JOINs to eliminate N+1 queries.
+// GetMediaInDirectory returns all media files in a directory (for lightbox).
+// Uses a correlated subquery approach to avoid row multiplication from tag JOINs,
+// and eliminates the expensive GROUP BY over joined columns.
 func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
 	done := observeQuery("get_media_in_directory")
 
@@ -1170,6 +1173,24 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		sortColumn = "f." + sortColumn
 	}
 
+	// Validate against allowlists (same pattern as ListDirectory)
+	allowedColumns := map[string]bool{
+		"f.name COLLATE NOCASE": true,
+		"f.mod_time":            true,
+		"f.size":                true,
+		"f.type":                true,
+	}
+	allowedSortDirs := map[string]bool{
+		"ASC":  true,
+		"DESC": true,
+	}
+	if !allowedColumns[sortColumn] {
+		sortColumn = "f.name COLLATE NOCASE"
+	}
+	if !allowedSortDirs[sortDir] {
+		sortDir = "ASC"
+	}
+
 	secondarySort := ""
 	if sortField != SortByName && sortField != "" {
 		secondarySort = ", f.name COLLATE NOCASE ASC"
@@ -1178,16 +1199,15 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 	query := fmt.Sprintf(`
 		SELECT
 			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
-			CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
-			GROUP_CONCAT(t.name, ',') as tags
+			EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+			(SELECT GROUP_CONCAT(t.name, ',')
+			 FROM file_tags ft
+			 JOIN tags t ON ft.tag_id = t.id
+			 WHERE ft.file_path = f.path) AS tags
 		FROM files f
-		LEFT JOIN favorites fav ON f.path = fav.path
-		LEFT JOIN file_tags ft ON f.path = ft.file_path
-		LEFT JOIN tags t ON ft.tag_id = t.id
 		WHERE f.parent_path = ? AND f.type IN ('image', 'video')
-		GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path
 		ORDER BY %s %s%s
-	`, sortColumn, sortDir, secondarySort)
+	`, sortColumn, sortDir, secondarySort) //nolint:gosec // G202 - sortColumn and sortDir validated against static allowlists
 
 	rows, err := d.db.QueryContext(ctx, query, parentPath)
 	if err != nil {

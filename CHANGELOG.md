@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ui: under some circumstances with the paste modal, e.g., there is a state that happens when you select several files, tag them, and then exit the tag screen. If you re-enter the tag screen, then touch events to the files underneath are not blocked; you can inadvertently remove a tag (for example) from an image in the gallery if you happen to touch in the spot where the remove for that tag would be. This fix adds a better touchstart handler to avoid those issues in the paste modal. ([#306](https://github.com/djryanj/media-viewer/issues/306))
 
+- Performance: Improve lightbox media query speed ([#308](https://github.com/djryanj/media-viewer/issues/308))
+  Optimized the database query used to load media files for the lightbox viewer. The previous query structure caused unnecessary work that scaled poorly in directories with many files and tags. Replaced with a more efficient query pattern and added supporting database indexes.
+
+    No API, frontend, or test changes required.
+
 ## [0.13.4] - 02-21-2026
 
 ### Added

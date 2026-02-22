@@ -342,6 +342,22 @@ func (d *Database) initialize(ctx context.Context) error {
 		id, path, size, mime_type
 	);
 
+	-- Optimized for GetMediaInDirectory: covers the IN ('image','video') filter
+	-- with parent_path, and includes columns for all three sort options so SQLite
+	-- can satisfy ORDER BY directly from the index (for single-type scans).
+	CREATE INDEX IF NOT EXISTS idx_files_parent_media_name ON files(
+		parent_path, name COLLATE NOCASE
+	) WHERE type IN ('image', 'video');
+
+	CREATE INDEX IF NOT EXISTS idx_files_parent_media_modtime ON files(
+		parent_path, mod_time
+	) WHERE type IN ('image', 'video');
+
+	CREATE INDEX IF NOT EXISTS idx_files_parent_media_size ON files(
+		parent_path, size
+	) WHERE type IN ('image', 'video');
+
+
 	CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
 		name,
 		path,
