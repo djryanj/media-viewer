@@ -32,6 +32,7 @@ const PRECACHE_ASSETS = [
     '/js/selection.js',
     '/js/infinite-scroll.js',
     '/js/wake-lock.js',
+    '/js/pull-to-refresh.js',
     '/manifest.json',
     '/icons/icon-192x192.png',
     '/icons/icon-512x512.png',

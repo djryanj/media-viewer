@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.13.5] - Unreleased
 
+### Added
+
+- ui: Pull-to-refresh support on mobile ([#312](https://github.com/djryanj/media-viewer/issues/312))
+  Added a pull-to-refresh gesture on the gallery view. Pulling down clears the service worker API cache and reloads the current directory, providing an explicit way to force fresh data on mobile.
+
 ### Fixed
 
 - ui: under some circumstances with the paste modal, e.g., there is a state that happens when you select several files, tag them, and then exit the tag screen. If you re-enter the tag screen, then touch events to the files underneath are not blocked; you can inadvertently remove a tag (for example) from an image in the gallery if you happen to touch in the spot where the remove for that tag would be. This fix adds a better touchstart handler to avoid those issues in the paste modal. ([#306](https://github.com/djryanj/media-viewer/issues/306))
@@ -20,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ui: Tags not displayed on gallery items after navigating away and back to a directory ([#313](https://github.com/djryanj/media-viewer/issues/313))
   The ETag cache key for `/api/files` and `/api/media` was computed from file metadata only (modification times, sizes, counts). Tag changes did not alter any of these values, so the server returned 304 Not Modified with stale data. Combined with `max-age=300` and the service worker cache, tags could be missing for up to 5 minutes after being added. The ETag now incorporates tag state so that tag additions or removals invalidate the cache immediately.
+  This was also due to the infinite-scroll ignoring data from the server if it has a cache entry.
 
 ## [0.13.4] - 02-21-2026
 
