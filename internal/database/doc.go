@@ -89,6 +89,4 @@
 //	    db.UpsertFile(tx, &file)
 //	}
 //	err = db.EndBatch(tx, nil)
-//
-// comment
 package database
