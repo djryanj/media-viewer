@@ -613,6 +613,18 @@ const TagClipboard = {
             }
         });
 
+        // Prevent touch events from propagating through the modal backdrop on mobile
+        modal.addEventListener(
+            'touchstart',
+            (e) => {
+                if (e.target === modal) {
+                    e.preventDefault();
+                    this.closeModalWithHistory();
+                }
+            },
+            { passive: false }
+        );
+
         return modal;
     },
 
