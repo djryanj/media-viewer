@@ -89,4 +89,7 @@
 //	    db.UpsertFile(tx, &file)
 //	}
 //	err = db.EndBatch(tx, nil)
+
+// Test addition to this file to trigger CI
+
 package database
