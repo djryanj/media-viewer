@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.13.7] - Unreleased
 
+### Added
+
+- test: added basic playwright tests. Not all working yet. [#289](https://github.com/djryanj/media-viewer/issues/289)
+
 ### Changed
 
 - perf: optimizing some slow database queries [[#322](https://github.com/djryanj/media-viewer/issues/322)]. Performance analysis before/after:
