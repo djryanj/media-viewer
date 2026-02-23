@@ -169,13 +169,16 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 	selectQuery := `
 		SELECT
 			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
-			CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
-			GROUP_CONCAT(t.name, ',') as tags,
-			(SELECT COUNT(*) FROM files WHERE parent_path = f.path) as folder_count
+			EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+			(SELECT GROUP_CONCAT(t.name, ',')
+			 FROM file_tags ft
+			 JOIN tags t ON ft.tag_id = t.id
+			 WHERE ft.file_path = f.path) AS tags,
+			CASE WHEN f.type = 'folder'
+				THEN (SELECT COUNT(*) FROM files WHERE parent_path = f.path)
+				ELSE 0
+			END AS folder_count
 		FROM files f
-		LEFT JOIN favorites fav ON f.path = fav.path
-		LEFT JOIN file_tags ft ON f.path = ft.file_path
-		LEFT JOIN tags t ON ft.tag_id = t.id
 		WHERE f.parent_path = ?
 	`
 	selectArgs := []interface{}{opts.Path}
@@ -184,8 +187,6 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 		selectQuery += ` AND (f.type = 'folder' OR f.type = ?)`
 		selectArgs = append(selectArgs, opts.FilterType)
 	}
-
-	selectQuery += ` GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path`
 
 	var orderColumn string
 	if sortColumn == NameCollation {
@@ -210,7 +211,7 @@ func (d *Database) fetchDirectoryItemsUnlocked(ctx context.Context, opts ListOpt
 	if !allowedSortDirs[sortDir] {
 		sortDir = SortAscStr
 	}
-	selectQuery += fmt.Sprintf(` ORDER BY (CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END), %s %s`, orderColumn, sortDir) //nolint:gosec // G202 - orderColumn and sortDir are validated against static allowlists; SQL column names cannot be parameterized
+	selectQuery += fmt.Sprintf(` ORDER BY (CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END), %s %s`, orderColumn, sortDir) //nolint:gosec // G202 - orderColumn and sortDir are validated against static allowlists
 	selectQuery += ` LIMIT ? OFFSET ?`
 	selectArgs = append(selectArgs, opts.PageSize, offset)
 
@@ -438,20 +439,12 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 	var conditions []string
 	var args []interface{}
 
-	baseQuery := `
-		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
-		       COALESCE(fav.path IS NOT NULL, 0) AS is_favorite,
-		       GROUP_CONCAT(t_all.name, ',') AS tags
-		FROM files f
-		LEFT JOIN favorites fav ON f.path = fav.path
-		LEFT JOIN file_tags ft_all ON f.path = ft_all.file_path
-		LEFT JOIN tags t_all ON ft_all.tag_id = t_all.id
-	`
-
+	// Build inclusion JOINs for the base file query
+	var inclusionJoins string
 	for i, tag := range includedTags {
 		alias := fmt.Sprintf("ft_inc_%d", i)
 		tagAlias := fmt.Sprintf("t_inc_%d", i)
-		baseQuery += fmt.Sprintf(`
+		inclusionJoins += fmt.Sprintf(`
 			INNER JOIN file_tags %s ON f.path = %s.file_path
 			INNER JOIN tags %s ON %s.tag_id = %s.id AND %s.name = ? COLLATE NOCASE
 		`, alias, alias, tagAlias, alias, tagAlias, tagAlias)
@@ -479,20 +472,9 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	countBaseQuery := "SELECT COUNT(DISTINCT f.path) FROM files f"
-	for i := range includedTags {
-		alias := fmt.Sprintf("ft_inc_%d", i)
-		tagAlias := fmt.Sprintf("t_inc_%d", i)
-		countBaseQuery += fmt.Sprintf(`
-			INNER JOIN file_tags %s ON f.path = %s.file_path
-			INNER JOIN tags %s ON %s.tag_id = %s.id AND %s.name = ? COLLATE NOCASE
-		`, alias, alias, tagAlias, alias, tagAlias, tagAlias)
-	}
-
-	countQuery := countBaseQuery
-	if whereClause != "" {
-		countQuery += " " + whereClause
-	}
+	// Count query
+	countQuery := fmt.Sprintf("SELECT COUNT(DISTINCT f.path) FROM files f %s %s",
+		inclusionJoins, whereClause)
 
 	var totalItems int
 	err := d.db.QueryRowContext(ctx, countQuery, args...).Scan(&totalItems)
@@ -506,13 +488,20 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 	}
 	offset := (opts.Page - 1) * opts.PageSize
 
-	groupBy := " GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path"
+	// Select query using scalar subqueries instead of LEFT JOIN + GROUP BY
+	selectQuery := fmt.Sprintf(`
+		SELECT DISTINCT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+		       EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+		       (SELECT GROUP_CONCAT(t_all.name, ',')
+		        FROM file_tags ft_all
+		        JOIN tags t_all ON ft_all.tag_id = t_all.id
+		        WHERE ft_all.file_path = f.path) AS tags
+		FROM files f
+		%s
+		%s
+		ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?
+	`, inclusionJoins, whereClause)
 
-	selectQuery := baseQuery
-	if whereClause != "" {
-		selectQuery += " " + whereClause
-	}
-	selectQuery += groupBy + " ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?"
 	selectArgs := make([]interface{}, len(args), len(args)+2)
 	copy(selectArgs, args)
 	selectArgs = append(selectArgs, opts.PageSize, offset)
@@ -540,6 +529,7 @@ func (d *Database) searchByTagFiltersUnlocked(ctx context.Context, opts SearchOp
 			&file.Type, &file.Size, &modTime, &mimeType,
 			&isFavorite, &tagsString,
 		); err != nil {
+			logging.Warn("error scanning search result row: %v", err)
 			continue
 		}
 
@@ -614,37 +604,37 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		filterArgs = append(filterArgs, opts.FilterType)
 	}
 
+	// FTS query using scalar subqueries — no GROUP BY needed
 	ftsQuery := fmt.Sprintf(`
 		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
-		       CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
-		       GROUP_CONCAT(t_all.name, ',') as tags
+		       EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+		       (SELECT GROUP_CONCAT(t_all.name, ',')
+		        FROM file_tags ft_all
+		        JOIN tags t_all ON ft_all.tag_id = t_all.id
+		        WHERE ft_all.file_path = f.path) AS tags
 		FROM files f
 		INNER JOIN files_fts fts ON f.id = fts.rowid
 		%s
-		LEFT JOIN favorites fav ON f.path = fav.path
-		LEFT JOIN file_tags ft_all ON f.path = ft_all.file_path
-		LEFT JOIN tags t_all ON ft_all.tag_id = t_all.id
 		WHERE files_fts MATCH ?
 		%s
 		%s
-		GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path
 	`, inclusionJoins, filterClause, exclusionClause)
 
+	// Tag name query using scalar subqueries — no GROUP BY needed
 	tagQuery := fmt.Sprintf(`
 		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
-		       CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END as is_favorite,
-		       GROUP_CONCAT(t_all.name, ',') as tags
+		       EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+		       (SELECT GROUP_CONCAT(t_all.name, ',')
+		        FROM file_tags ft_all
+		        JOIN tags t_all ON ft_all.tag_id = t_all.id
+		        WHERE ft_all.file_path = f.path) AS tags
 		FROM files f
 		INNER JOIN file_tags ft ON f.path = ft.file_path
 		INNER JOIN tags t ON ft.tag_id = t.id
 		%s
-		LEFT JOIN favorites fav ON f.path = fav.path
-		LEFT JOIN file_tags ft_all ON f.path = ft_all.file_path
-		LEFT JOIN tags t_all ON ft_all.tag_id = t_all.id
 		WHERE t.name LIKE ?
 		%s
 		%s
-		GROUP BY f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type, fav.path
 	`, inclusionJoins, filterClause, exclusionClause)
 
 	ftsArgs := make([]interface{}, 0, len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs))
@@ -669,6 +659,7 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		ORDER BY name COLLATE NOCASE
 	`, ftsQuery, tagQuery)
 
+	// Count query — simplified without JOINs for favorites/tags
 	ftsCountQuery := fmt.Sprintf(`
 		SELECT DISTINCT f.path
 		FROM files f
@@ -696,15 +687,9 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 		)
 	`, ftsCountQuery, tagCountQuery)
 
-	countArgs := make([]interface{}, 0, len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs)+len(inclusionArgs)+1+len(filterArgs)+len(exclusionArgs))
-	countArgs = append(countArgs, inclusionArgs...)
-	countArgs = append(countArgs, searchTerm)
-	countArgs = append(countArgs, filterArgs...)
-	countArgs = append(countArgs, exclusionArgs...)
-	countArgs = append(countArgs, inclusionArgs...)
-	countArgs = append(countArgs, tagPattern)
-	countArgs = append(countArgs, filterArgs...)
-	countArgs = append(countArgs, exclusionArgs...)
+	countArgs := make([]interface{}, 0, len(ftsArgs)+len(tagArgs))
+	countArgs = append(countArgs, ftsArgs...)
+	countArgs = append(countArgs, tagArgs...)
 
 	var totalItems int
 	err := d.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems)
@@ -719,7 +704,7 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 	}
 	offset := (opts.Page - 1) * opts.PageSize
 
-	paginatedQuery := combinedQuery + " LIMIT ? OFFSET ?" //nolint:gosec // G202 false positive - LIMIT and OFFSET use parameterized placeholders (?), values are bound via selectArgs
+	paginatedQuery := combinedQuery + " LIMIT ? OFFSET ?" //nolint:gosec // G202 false positive - LIMIT and OFFSET use parameterized placeholders
 
 	selectArgs := make([]interface{}, 0, len(ftsArgs)+len(tagArgs)+2)
 	selectArgs = append(selectArgs, ftsArgs...)
@@ -750,6 +735,7 @@ func (d *Database) searchWithTagFiltersUnlocked(ctx context.Context, opts Search
 			&file.Type, &file.Size, &modTime, &mimeType,
 			&isFavorite, &tagsString,
 		); err != nil {
+			logging.Warn("error scanning search result row: %v", err)
 			continue
 		}
 
@@ -1320,27 +1306,33 @@ func (d *Database) CalculateStats() (IndexStats, error) {
 
 	var stats IndexStats
 
-	queries := []struct {
-		query string
-		dest  *int
-	}{
-		{"SELECT COUNT(*) FROM files WHERE type != 'folder'", &stats.TotalFiles},
-		{"SELECT COUNT(*) FROM files WHERE type = 'folder'", &stats.TotalFolders},
-		{"SELECT COUNT(*) FROM files WHERE type = 'image'", &stats.TotalImages},
-		{"SELECT COUNT(*) FROM files WHERE type = 'video'", &stats.TotalVideos},
-		{"SELECT COUNT(*) FROM files WHERE type = 'playlist'", &stats.TotalPlaylists},
-		{"SELECT COUNT(*) FROM favorites", &stats.TotalFavorites},
-		{"SELECT COUNT(*) FROM tags", &stats.TotalTags},
+	query := `
+		SELECT
+			COALESCE(SUM(CASE WHEN type != 'folder' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'folder' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'image' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'playlist' THEN 1 ELSE 0 END), 0),
+			(SELECT COUNT(*) FROM favorites),
+			(SELECT COUNT(*) FROM tags)
+		FROM files
+	`
+
+	err := d.db.QueryRowContext(ctx, query).Scan(
+		&stats.TotalFiles,
+		&stats.TotalFolders,
+		&stats.TotalImages,
+		&stats.TotalVideos,
+		&stats.TotalPlaylists,
+		&stats.TotalFavorites,
+		&stats.TotalTags,
+	)
+	done(err)
+
+	if err != nil {
+		return stats, err
 	}
 
-	for _, q := range queries {
-		if queryErr := d.db.QueryRowContext(ctx, q.query).Scan(q.dest); queryErr != nil {
-			done(queryErr)
-			return stats, queryErr
-		}
-	}
-
-	done(nil)
 	return stats, nil
 }
 
@@ -1556,7 +1548,7 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 	adjustedSince := since.Add(-10 * time.Second)
 	sinceTimestamp := adjustedSince.Unix()
 
-	logging.Debug("GetFilesUpdatedSince: original since=%v, adjusted since=%v (buffer: -10s), timestamp=%d",
+	logging.Debug("GetFilesUpdatedSince: since=%v, adjusted=%v, timestamp=%d",
 		since.Format(time.RFC3339), adjustedSince.Format(time.RFC3339), sinceTimestamp)
 
 	query := `
@@ -1595,19 +1587,6 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 			file.MimeType = mimeType.String
 		}
 
-		dbContentUpdatedAt := time.Unix(contentUpdatedAt, 0)
-		fsToDBDelta := dbContentUpdatedAt.Sub(file.ModTime)
-		dbToAdjustedSinceDelta := dbContentUpdatedAt.Sub(adjustedSince)
-		dbToOriginalSinceDelta := dbContentUpdatedAt.Sub(since)
-
-		if contentUpdatedAt <= sinceTimestamp {
-			logging.Warn("LOGIC ERROR: File %s returned but content_updated_at=%d <= adjustedSinceTimestamp=%d",
-				file.Path, contentUpdatedAt, sinceTimestamp)
-		}
-
-		logging.Debug("  Found updated file: path=%s, fs_mod_time=%v, db_content_updated_at=%v, fs_to_db_delta=%v, db_to_adjusted_since_delta=%v, db_to_original_since_delta=%v, passes_filter=%v",
-			file.Path, file.ModTime.Format(time.RFC3339), dbContentUpdatedAt.Format(time.RFC3339), fsToDBDelta, dbToAdjustedSinceDelta, dbToOriginalSinceDelta, contentUpdatedAt > sinceTimestamp)
-
 		files = append(files, file)
 	}
 
@@ -1616,7 +1595,8 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 		return nil, fmt.Errorf("iterate files: %w", err)
 	}
 
-	logging.Debug("GetFilesUpdatedSince: found %d files updated since %v (filter: content_updated_at > %d)", len(files), since.Format(time.RFC3339), sinceTimestamp)
+	logging.Debug("GetFilesUpdatedSince: found %d files updated since %v",
+		len(files), since.Format(time.RFC3339))
 	done(nil)
 	return files, nil
 }
@@ -1635,20 +1615,18 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 	adjustedSince := since.Add(-10 * time.Second)
 	sinceTimestamp := adjustedSince.Unix()
 
-	logging.Debug("GetFoldersWithUpdatedContents: original since=%v, adjusted since=%v (buffer: -10s), timestamp=%d",
+	logging.Debug("GetFoldersWithUpdatedContents: since=%v, adjusted=%v, timestamp=%d",
 		since.Format(time.RFC3339), adjustedSince.Format(time.RFC3339), sinceTimestamp)
 
 	query := `
 	WITH RECURSIVE
 	updated_parents AS (
-		-- Get immediate parent paths of files whose content was updated
 		SELECT DISTINCT parent_path as path
 		FROM files
 		WHERE COALESCE(content_updated_at, updated_at) > ? AND parent_path != ''
 
 		UNION
 
-		-- Recursively get parent paths up to root
 		SELECT
 			CASE
 				WHEN INSTR(path, '/') > 0
@@ -1682,12 +1660,8 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 		return nil, err
 	}
 
-	for _, folder := range folders {
-		logging.Debug("  Found folder with updated contents: path=%s, folder_mod_time=%v, db_timestamp=%d",
-			folder.Path, folder.ModTime.Format(time.RFC3339), folder.ModTime.Unix())
-	}
-
-	logging.Debug("GetFoldersWithUpdatedContents: found %d folders with updated contents since %v", len(folders), since.Format(time.RFC3339))
+	logging.Debug("GetFoldersWithUpdatedContents: found %d folders with updated contents since %v",
+		len(folders), since.Format(time.RFC3339))
 	done(nil)
 	return folders, nil
 }

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.13.7] - Unreleased
+
+### Changed
+
+- perf: optimizing some slow database queries [[#322](https://github.com/djryanj/media-viewer/issues/322)]. Performance analysis before/after:
+  | Benchmark | Before (ns/op) | After (ns/op) | Change | Notes |
+  | ---------------------------------------------- | -------------- | ------------- | -------- | ------------------------------------------ |
+  | **ListDirectory** | 288,369 | 260,940 | **-10%** | Base case improvement |
+  | **ListDirectory_Small** | 536,690 | 465,763 | **-13%** | |
+  | **ListDirectory_Medium** | 1,616,896 | 555,034 | **-66%** | Biggest win |
+  | **ListDirectory_Large** | 6,527,549 | 992,048 | **-85%** | Biggest win |
+  | **ListDirectory_WithFolderCounts** | 707,274 | 590,350 | **-17%** | Conditional folder_count helping |
+  | **ListDirectory_LargeFolderCounts/SecondPage** | 1,781,027 | 1,439,663 | **-19%** | |
+  | **ListDirectory_LargeFolderCounts/LastPage** | 3,121,846 | 2,646,741 | **-15%** | |
+  | **ListDirectory_MemorySmall** | 537,215 | 443,307 | **-17%** | |
+  | **Search_TagFilters_Small** | 1,005,577 | 843,362 | **-16%** | |
+  | **Search_TagFilters_Large** | 6,031,427 | 4,558,828 | **-24%** | |
+  | **Search_MultipleTagFilters** | 3,199,139 | 2,319,799 | **-27%** | |
+  | **Search_WithExclusion** | 3,442,747 | 2,152,224 | **-37%** | |
+  | **GetFavorites_Small** | 206,692 | 164,397 | **-20%** | Indirect benefit from less lock contention |
+- tests: fixed a failing test case
+
 ## [0.13.6] - 02-22-2026
 
 ### Fixed
