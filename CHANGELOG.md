@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | **Search_WithExclusion** | 3,442,747 | 2,152,224 | **-37%** | |
   | **GetFavorites_Small** | 206,692 | 164,397 | **-20%** | Indirect benefit from less lock contention |
 - tests: fixed a failing test case
+- perf: Frontend performance problems during tagging operations and selection. Narrowed down to requiring backend changes to the bulk tags endpoint; may also affect [#322](https://github.com/djryanj/media-viewer/issues/322). ([#326](https://github.com/djryanj/media-viewer/issues/326))
 
 ## [0.13.6] - 02-22-2026
 

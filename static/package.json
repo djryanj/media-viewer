@@ -26,10 +26,10 @@
         "test:unit:coverage": "vitest run tests/unit --coverage",
         "test:integration:coverage": "vitest run tests/integration --coverage",
         "test:file": "vitest run",
-        "test:e2e": "playwright test",
-        "test:e2e:headed": "playwright test --headed",
+        "test:e2e": "playwright test --reporter=list",
+        "test:e2e:headed": "playwright test --headed --host 0.0.0.0",
         "test:e2e:ui": "playwright test --ui --host 0.0.0.0",
-        "test:e2e:debug": "playwright test --debug",
+        "test:e2e:debug": "playwright test --debug --host 0.0.0.0",
         "test:e2e:report": "playwright show-report e2e/playwright-report --host 0.0.0.0",
         "test:e2e:codegen": "playwright codegen http://localhost:8080",
         "test:e2e:coverage": "node e2e/generate-coverage-report.js --all"

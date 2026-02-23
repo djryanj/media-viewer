@@ -70,3 +70,8 @@ site/
 *.tgz
 
 *.mp4
+
+# Playwright test results and coverage
+static/e2e/test-results/
+static/coverage/
+static/e2e/playwright-report/

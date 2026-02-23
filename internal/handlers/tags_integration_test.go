@@ -1245,11 +1245,11 @@ func TestBulkRemoveTagPartialFailureIntegration(t *testing.T) {
 
 	// Mix valid and non-existent paths
 	mixedPaths := []string{
-		"photo1.jpg",       // valid
-		"nonexistent.jpg",  // invalid
-		"photo2.jpg",       // valid
-		"another-fake.jpg", // invalid
-		"photo3.jpg",       // valid
+		"photo1.jpg",       // valid, has tag
+		"nonexistent.jpg",  // no tag association — 0 rows affected
+		"photo2.jpg",       // valid, has tag
+		"another-fake.jpg", // no tag association — 0 rows affected
+		"photo3.jpg",       // valid, has tag
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -1275,7 +1275,6 @@ func TestBulkRemoveTagPartialFailureIntegration(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	// BulkTagResponse has success/failed counts, not a results array
 	successCount, ok := response["success"].(float64)
 	if !ok {
 		t.Fatal("expected 'success' field in response")
@@ -1286,9 +1285,10 @@ func TestBulkRemoveTagPartialFailureIntegration(t *testing.T) {
 		t.Fatal("expected 'failed' field in response")
 	}
 
-	// All 5 paths should succeed - removing tags from nonexistent files is a no-op (success)
-	if int(successCount) != 5 {
-		t.Errorf("expected 5 successful removals (no-op for nonexistent files), got %d", int(successCount))
+	// Only 3 files actually had the tag — those are the only ones with RowsAffected > 0.
+	// Non-existent files have no file_tags rows, so they are no-ops (neither success nor failure).
+	if int(successCount) != 3 {
+		t.Errorf("expected 3 successful removals (only files with actual tag associations), got %d", int(successCount))
 	}
 
 	if int(failedCount) != 0 {
@@ -1686,4 +1686,129 @@ func TestDeleteTagEverywhereIntegration(t *testing.T) {
 			t.Errorf("expected file to have no tags after deletion, got %v", tags)
 		}
 	})
+}
+
+// TestBulkAddMultipleTagsIntegration tests adding multiple tags via the Tags array
+func TestBulkAddMultipleTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	addTagTestFile(t, h.db, mediaDir, "multi1.jpg", database.FileTypeImage)
+	addTagTestFile(t, h.db, mediaDir, "multi2.jpg", database.FileTypeImage)
+
+	reqBody := BulkTagRequest{
+		Paths: []string{"multi1.jpg", "multi2.jpg"},
+		Tags:  []string{"vacation", "summer", "2026"},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/bulk/add", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	h.BulkAddTag(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var response BulkTagResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Success != 2 {
+		t.Errorf("expected 2 successful, got %d", response.Success)
+	}
+
+	// Verify each file has all 3 tags
+	ctx := context.Background()
+	for _, path := range []string{"multi1.jpg", "multi2.jpg"} {
+		tags, err := h.db.GetFileTags(ctx, path)
+		if err != nil {
+			t.Fatalf("failed to get tags for %s: %v", path, err)
+		}
+		if len(tags) != 3 {
+			t.Errorf("expected 3 tags for %s, got %d: %v", path, len(tags), tags)
+		}
+	}
+}
+
+// TestBulkAddMixedTagAndTagsIntegration tests using both Tag and Tags fields together
+func TestBulkAddMixedTagAndTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	addTagTestFile(t, h.db, mediaDir, "mixed.jpg", database.FileTypeImage)
+
+	reqBody := BulkTagRequest{
+		Paths: []string{"mixed.jpg"},
+		Tag:   "vacation",
+		Tags:  []string{"summer", "vacation"}, // "vacation" duplicated across Tag and Tags
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/bulk/add", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	h.BulkAddTag(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify deduplication: should have 2 unique tags, not 3
+	ctx := context.Background()
+	tags, err := h.db.GetFileTags(ctx, "mixed.jpg")
+	if err != nil {
+		t.Fatalf("failed to get tags: %v", err)
+	}
+	if len(tags) != 2 {
+		t.Errorf("expected 2 tags (deduplicated), got %d: %v", len(tags), tags)
+	}
+}
+
+// TestBulkRemoveMultipleTagsIntegration tests removing multiple tags via the Tags array
+func TestBulkRemoveMultipleTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	addTagTestFile(t, h.db, mediaDir, "rmulti.jpg", database.FileTypeImage)
+
+	ctx := context.Background()
+	_ = h.db.AddTagToFile(ctx, "rmulti.jpg", "vacation")
+	_ = h.db.AddTagToFile(ctx, "rmulti.jpg", "summer")
+	_ = h.db.AddTagToFile(ctx, "rmulti.jpg", "keep")
+
+	reqBody := BulkTagRequest{
+		Paths: []string{"rmulti.jpg"},
+		Tags:  []string{"vacation", "summer"},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/bulk/remove", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	h.BulkRemoveTag(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify only "keep" remains
+	tags, err := h.db.GetFileTags(ctx, "rmulti.jpg")
+	if err != nil {
+		t.Fatalf("failed to get tags: %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "keep" {
+		t.Errorf("expected only ['keep'] to remain, got %v", tags)
+	}
 }

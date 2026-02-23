@@ -296,11 +296,14 @@ describe('ItemSelection Integration', () => {
             expect(ItemSelection.selectedPaths.size).toBe(0);
         });
 
-        it('should update toolbar after selection', () => {
+        it('should update toolbar after selection', async () => {
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
 
-            expect(ItemSelection.elements.count.textContent).toContain('1 selected');
+            // Toolbar updates are debounced via requestAnimationFrame
+            await vi.waitFor(() => {
+                expect(ItemSelection.elements.count.textContent).toContain('1 selected');
+            });
         });
     });
 
@@ -443,66 +446,85 @@ describe('ItemSelection Integration', () => {
             ItemSelection.enterSelectionMode();
         });
 
-        it('should update count display', () => {
+        it('should update count display', async () => {
             const items = document.querySelectorAll('.gallery-item[data-type="image"]');
             items.forEach((item) => ItemSelection.selectItem(item));
 
-            expect(ItemSelection.elements.count.textContent).toBe('2 selected');
+            // Toolbar updates are debounced via requestAnimationFrame
+            await vi.waitFor(() => {
+                expect(ItemSelection.elements.count.textContent).toBe('2 selected');
+            });
         });
 
-        it('should enable copy tags only with one item', () => {
+        it('should enable copy tags only with one item', async () => {
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
 
-            expect(ItemSelection.elements.copyTagsBtn.disabled).toBe(false);
+            await vi.waitFor(() => {
+                expect(ItemSelection.elements.copyTagsBtn.disabled).toBe(false);
+            });
 
             const item2 = document.querySelectorAll('.gallery-item[data-type="image"]')[1];
             ItemSelection.selectItem(item2);
 
-            expect(ItemSelection.elements.copyTagsBtn.disabled).toBe(true);
+            await vi.waitFor(() => {
+                expect(ItemSelection.elements.copyTagsBtn.disabled).toBe(true);
+            });
         });
 
-        it('should enable paste tags when tags are copied', () => {
+        it('should enable paste tags when tags are copied', async () => {
             _TagClipboard.hasTags.mockReturnValue(true);
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
-            ItemSelection.updateToolbar();
 
-            expect(ItemSelection.elements.pasteTagsBtn.disabled).toBe(false);
+            // Force immediate update since we changed mock after selectItem
+            await vi.waitFor(() => {
+                ItemSelection.updateToolbar();
+                expect(ItemSelection.elements.pasteTagsBtn.disabled).toBe(false);
+            });
         });
 
-        it('should disable paste tags when no tags copied', () => {
+        it('should disable paste tags when no tags copied', async () => {
             _TagClipboard.hasTags.mockReturnValue(false);
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
-            ItemSelection.updateToolbar();
 
-            expect(ItemSelection.elements.pasteTagsBtn.disabled).toBe(true);
+            await vi.waitFor(() => {
+                ItemSelection.updateToolbar();
+                expect(ItemSelection.elements.pasteTagsBtn.disabled).toBe(true);
+            });
         });
 
-        it('should show merge tags button with 2+ items', () => {
+        it('should show merge tags button with 2+ items', async () => {
             const items = document.querySelectorAll('.gallery-item[data-type="image"]');
             items.forEach((item) => ItemSelection.selectItem(item));
 
-            expect(ItemSelection.elements.mergeTagsBtn.style.display).not.toBe('none');
+            await vi.waitFor(() => {
+                expect(ItemSelection.elements.mergeTagsBtn.style.display).not.toBe('none');
+            });
         });
 
-        it('should hide merge tags button with < 2 items', () => {
+        it('should hide merge tags button with < 2 items', async () => {
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
 
-            expect(ItemSelection.elements.mergeTagsBtn.style.display).toBe('none');
+            await vi.waitFor(() => {
+                expect(ItemSelection.elements.mergeTagsBtn.style.display).toBe('none');
+            });
         });
 
         it('should disable tag button when no items selected', () => {
+            // No selectItem call — toolbar was updated synchronously in enterSelectionMode
             expect(ItemSelection.elements.tagBtn.disabled).toBe(true);
         });
 
-        it('should enable tag button when items selected', () => {
+        it('should enable tag button when items selected', async () => {
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
 
-            expect(ItemSelection.elements.tagBtn.disabled).toBe(false);
+            await vi.waitFor(() => {
+                expect(ItemSelection.elements.tagBtn.disabled).toBe(false);
+            });
         });
 
         it('should update select all button text', () => {

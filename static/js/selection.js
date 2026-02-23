@@ -28,6 +28,14 @@ const ItemSelection = {
     pendingUpdates: new Set(),
     updateScheduled: false,
 
+    // PERF: Debounced toolbar update state
+    _toolbarUpdateScheduled: false,
+    _toolbarUpdateRAFId: null,
+
+    // PERF: Incremental taggable item counter — avoids iterating
+    // selectedData on every toolbar update.
+    _taggableCount: 0,
+
     createIcon(name) {
         const icon = document.createElement('i');
         icon.setAttribute('data-lucide', name);
@@ -299,6 +307,7 @@ const ItemSelection = {
         this.selectedData.clear();
         this.isAllSelected = false;
         this.allSelectablePaths = null;
+        this._taggableCount = 0; // PERF: reset counter
 
         document.body.classList.add('selection-mode');
         this.elements.toolbar.classList.remove('hidden');
@@ -309,6 +318,8 @@ const ItemSelection = {
             this.selectItem(initialElement);
         }
 
+        // PERF: Immediate toolbar update here is intentional — this is a
+        // one-time call when entering selection mode, not a hot path.
         this.updateToolbar();
 
         if (typeof HistoryManager !== 'undefined') {
@@ -328,8 +339,16 @@ const ItemSelection = {
         this.selectedData.clear();
         this.isAllSelected = false;
         this.allSelectablePaths = null;
+        this._taggableCount = 0; // PERF: reset counter
         this.isDragging = false;
         this.pendingUpdates.clear();
+
+        // PERF: Cancel any pending toolbar update
+        if (this._toolbarUpdateRAFId) {
+            cancelAnimationFrame(this._toolbarUpdateRAFId);
+            this._toolbarUpdateRAFId = null;
+            this._toolbarUpdateScheduled = false;
+        }
 
         document.body.classList.remove('selection-mode');
         this.elements.toolbar.classList.add('hidden');
@@ -466,6 +485,17 @@ const ItemSelection = {
         document.querySelectorAll('.selection-checkbox').forEach((cb) => cb.remove());
     },
 
+    /**
+     * PERF: Adjust the incremental taggable count.
+     * Called when items are selected (+1) or deselected (-1).
+     * Non-folder items are "taggable".
+     */
+    _adjustTaggableCount(type, delta) {
+        if (type !== 'folder') {
+            this._taggableCount += delta;
+        }
+    },
+
     selectItem(element) {
         const path = element.dataset.path;
         const name = element.dataset.name || path.split('/').pop();
@@ -473,11 +503,16 @@ const ItemSelection = {
 
         if (!this.isSelectableType(type)) return;
 
+        // PERF: Early return if already selected — avoids redundant work
+        // during drag selection where selectRectangularRegion may revisit items.
+        if (this.selectedPaths.has(path)) return;
+
         this.selectedPaths.add(path);
         this.selectedData.set(path, { name, type });
+        this._adjustTaggableCount(type, 1); // PERF: incremental count
 
         this.scheduleDOMUpdate(path, true);
-        this.updateToolbar();
+        this.scheduleToolbarUpdate(); // PERF: debounced instead of immediate
     },
 
     /**
@@ -486,8 +521,12 @@ const ItemSelection = {
     selectItemByData(path, name, type) {
         if (!this.isSelectableType(type)) return;
 
+        // PERF: Early return if already selected
+        if (this.selectedPaths.has(path)) return;
+
         this.selectedPaths.add(path);
         this.selectedData.set(path, { name, type });
+        this._adjustTaggableCount(type, 1); // PERF: incremental count
 
         // Schedule DOM update only if element exists
         const element = document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
@@ -496,15 +535,47 @@ const ItemSelection = {
         }
     },
 
+    /**
+     * PERF: Select multiple items from DOM elements in a single batch.
+     * Defers the toolbar update until the entire batch is processed,
+     * reducing N updateToolbar() calls to 1.
+     *
+     * Used by selectRectangularRegion() for drag selection.
+     */
+    selectItemBatch(elements) {
+        for (const element of elements) {
+            const path = element.dataset.path;
+            const name = element.dataset.name || path.split('/').pop();
+            const type = element.dataset.type;
+
+            if (!this.isSelectableType(type)) continue;
+            if (this.selectedPaths.has(path)) continue;
+
+            this.selectedPaths.add(path);
+            this.selectedData.set(path, { name, type });
+            this._adjustTaggableCount(type, 1);
+
+            this.scheduleDOMUpdate(path, true);
+        }
+        // Single toolbar update for the entire batch
+        this.scheduleToolbarUpdate();
+    },
+
     deselectItem(element, autoExit = true) {
         const path = element.dataset.path;
+        const data = this.selectedData.get(path); // PERF: grab before deleting
 
         this.selectedPaths.delete(path);
         this.selectedData.delete(path);
         this.isAllSelected = false; // No longer "all" selected
 
+        // PERF: decrement taggable count
+        if (data) {
+            this._adjustTaggableCount(data.type, -1);
+        }
+
         this.scheduleDOMUpdate(path, false);
-        this.updateToolbar();
+        this.scheduleToolbarUpdate(); // PERF: debounced
 
         if (autoExit && this.selectedPaths.size === 0) {
             this.exitSelectionModeWithHistory();
@@ -515,16 +586,23 @@ const ItemSelection = {
      * Deselect an item by path (without DOM element)
      */
     deselectItemByPath(path, autoExit = true) {
+        const data = this.selectedData.get(path); // PERF: grab before deleting
+
         this.selectedPaths.delete(path);
         this.selectedData.delete(path);
         this.isAllSelected = false;
+
+        // PERF: decrement taggable count
+        if (data) {
+            this._adjustTaggableCount(data.type, -1);
+        }
 
         const element = document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
         if (element) {
             this.scheduleDOMUpdate(path, false);
         }
 
-        this.updateToolbar();
+        this.scheduleToolbarUpdate(); // PERF: debounced
 
         if (autoExit && this.selectedPaths.size === 0) {
             this.exitSelectionModeWithHistory();
@@ -637,10 +715,10 @@ const ItemSelection = {
             // Store for future reference
             this.allSelectablePaths = allItems;
 
-            // Select all items
-            allItems.forEach((item) => {
+            // PERF: Select all items via selectItemByData (no per-item toolbar update)
+            for (const item of allItems) {
                 this.selectItemByData(item.path, item.name, item.type);
-            });
+            }
 
             this.isAllSelected = true;
 
@@ -652,6 +730,7 @@ const ItemSelection = {
                 }
             });
 
+            // Immediate toolbar update — this is a one-time call after bulk operation
             this.updateToolbar();
 
             Gallery.showToast(`Selected ${allItems.length} items`);
@@ -690,11 +769,13 @@ const ItemSelection = {
             if (!this.selectedPaths.has(item.path)) {
                 this.selectedPaths.add(item.path);
                 this.selectedData.set(item.path, { name: item.name, type: item.type });
+                this._adjustTaggableCount(item.type, 1); // PERF: incremental count
                 this.scheduleDOMUpdate(item.path, true);
             }
         });
 
-        this.updateToolbar();
+        // PERF: Single toolbar update after bulk operation
+        this.scheduleToolbarUpdate();
     },
 
     /**
@@ -715,21 +796,52 @@ const ItemSelection = {
         this.selectedData.clear();
         this.isAllSelected = false;
         this.allSelectablePaths = null;
+        this._taggableCount = 0; // PERF: reset counter
 
         this.updateToolbar();
     },
 
+    /**
+     * PERF: Schedule a toolbar update for the next animation frame.
+     * Multiple calls within the same frame are coalesced into one update.
+     * This is the key optimization — selectItem/deselectItem/selectItemBatch
+     * all call this instead of updateToolbar() directly, so N rapid
+     * selections produce at most 1 toolbar DOM update per frame.
+     */
+    scheduleToolbarUpdate() {
+        if (this._toolbarUpdateScheduled) return;
+        this._toolbarUpdateScheduled = true;
+
+        this._toolbarUpdateRAFId = requestAnimationFrame(() => {
+            this._toolbarUpdateScheduled = false;
+            this._toolbarUpdateRAFId = null;
+            this.updateToolbar();
+        });
+    },
+
+    /**
+     * Update the selection toolbar UI.
+     *
+     * PERF: Uses the incrementally maintained _taggableCount instead of
+     * iterating over selectedData on every call.
+     *
+     * Before fix:
+     *   - Array.from(selectedData.values()).some(...)   → O(n)
+     *   - Array.from(selectedData.values()).filter(...) → O(n)
+     *   - Array.from(selectedPaths).filter(...)         → O(n)
+     *   Total: O(3n) per call, called N times = O(3n²)
+     *
+     * After fix:
+     *   - this._taggableCount                          → O(1)
+     *   - this.selectedPaths.has(sourcePath)            → O(1)
+     *   Total: O(1) per call
+     */
     updateToolbar() {
         const count = this.selectedPaths.size;
+        const taggableCount = this._taggableCount; // PERF: O(1) lookup
+        const hasTaggableItems = taggableCount > 0;
+
         this.elements.count.textContent = `${count} selected`;
-
-        const hasTaggableItems = Array.from(this.selectedData.values()).some(
-            (item) => item.type !== 'folder'
-        );
-
-        const taggableCount = Array.from(this.selectedData.values()).filter(
-            (item) => item.type !== 'folder'
-        ).length;
 
         // Copy tags: only enabled when exactly 1 non-folder item is selected
         const canCopy = count === 1 && hasTaggableItems;
@@ -743,9 +855,10 @@ const ItemSelection = {
         }
 
         // Paste tags
+        // PERF: O(1) computation instead of Array.from().filter().length
         const sourcePath = TagClipboard.sourcePath;
         const destinationCount = sourcePath
-            ? Array.from(this.selectedPaths).filter((p) => p !== sourcePath).length
+            ? count - (this.selectedPaths.has(sourcePath) ? 1 : 0)
             : count;
         const canPaste = destinationCount > 0 && hasTaggableItems && TagClipboard.hasTags();
 
@@ -772,7 +885,7 @@ const ItemSelection = {
         this.elements.tagBtn.disabled = count === 0 || !hasTaggableItems;
         this.elements.favoriteBtn.disabled = count === 0;
 
-        // Update select all button state
+        // Update select all button
         const selectAllBtn = this.elements.selectAllBtn;
         if (selectAllBtn) {
             const textSpan = selectAllBtn.querySelector('span');
@@ -794,8 +907,15 @@ const ItemSelection = {
     },
 
     /**
-     * Select all items in the range between two gallery items (in reading order)
-     * Uses cached items array for performance in large libraries
+     * Select all items in the range between two gallery items (in reading order).
+     * Uses cached items array for performance in large libraries.
+     *
+     * PERF: Collects all unselected items in the range first, then calls
+     * selectItemBatch() once — replacing the old loop that called
+     * selectItem() (and thus updateToolbar()) for each individual item.
+     *
+     * Before fix: O(n) selectItem calls × O(n) updateToolbar each = O(n²)
+     * After fix:  O(n) collect + O(1) batch toolbar update = O(n)
      */
     selectRectangularRegion(startElement, endElement) {
         if (!startElement || !endElement) return;
@@ -816,7 +936,8 @@ const ItemSelection = {
         const minIndex = Math.min(startIndex, endIndex);
         const maxIndex = Math.max(startIndex, endIndex);
 
-        // Select all items in the range (inclusive)
+        // PERF: Collect elements to select, then batch them
+        const toSelect = [];
         for (let i = minIndex; i <= maxIndex; i++) {
             const item = allItems[i];
             const type = item.dataset.type;
@@ -825,8 +946,13 @@ const ItemSelection = {
 
             const path = item.dataset.path;
             if (!this.selectedPaths.has(path)) {
-                this.selectItem(item);
+                toSelect.push(item);
             }
+        }
+
+        // PERF: Single batch operation — one toolbar update for the entire range
+        if (toSelect.length > 0) {
+            this.selectItemBatch(toSelect);
         }
     },
 

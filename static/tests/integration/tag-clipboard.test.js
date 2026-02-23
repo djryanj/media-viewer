@@ -780,7 +780,12 @@ describe('TagClipboard Integration Tests', () => {
     });
 
     describe('Execute Paste', () => {
-        it('should apply existing tags to destinations', async () => {
+        it('should apply all existing tags in a single bulk request', async () => {
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 2 }),
+            });
+
             await TagClipboard.executePaste(
                 ['/dest1', '/dest2'],
                 ['tag1', 'tag2'],
@@ -789,22 +794,28 @@ describe('TagClipboard Integration Tests', () => {
                 'paste'
             );
 
+            // New behavior: sends all tags in one request via "tags" array
             expect(mockFetch).toHaveBeenCalledWith(
                 '/api/tags/bulk',
                 expect.objectContaining({
                     method: 'POST',
-                    body: JSON.stringify({ paths: ['/dest1', '/dest2'], tag: 'tag1' }),
+                    body: JSON.stringify({ paths: ['/dest1', '/dest2'], tags: ['tag1', 'tag2'] }),
                 })
             );
         });
 
         it('should apply new tags to destinations only', async () => {
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 1 }),
+            });
+
             await TagClipboard.executePaste(['/dest1'], [], ['newtag'], false, 'paste');
 
             expect(mockFetch).toHaveBeenCalledWith(
                 '/api/tags/bulk',
                 expect.objectContaining({
-                    body: JSON.stringify({ paths: ['/dest1'], tag: 'newtag' }),
+                    body: JSON.stringify({ paths: ['/dest1'], tags: ['newtag'] }),
                 })
             );
         });
@@ -812,17 +823,83 @@ describe('TagClipboard Integration Tests', () => {
         it('should apply new tags to source when includeSource is true', async () => {
             TagClipboard.sourcePath = '/source';
 
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 2 }),
+            });
+
             await TagClipboard.executePaste(['/dest1'], [], ['newtag'], true, 'paste');
 
             expect(mockFetch).toHaveBeenCalledWith(
                 '/api/tags/bulk',
                 expect.objectContaining({
-                    body: JSON.stringify({ paths: ['/dest1', '/source'], tag: 'newtag' }),
+                    body: JSON.stringify({ paths: ['/dest1', '/source'], tags: ['newtag'] }),
                 })
             );
         });
 
+        it('should send separate requests for existing and new tags', async () => {
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 1 }),
+            });
+
+            await TagClipboard.executePaste(
+                ['/dest1'],
+                ['existing1', 'existing2'],
+                ['new1'],
+                false,
+                'paste'
+            );
+
+            // Should make exactly 2 fetch calls: one for existing, one for new
+            expect(mockFetch).toHaveBeenCalledTimes(2);
+
+            expect(mockFetch).toHaveBeenCalledWith(
+                '/api/tags/bulk',
+                expect.objectContaining({
+                    body: JSON.stringify({ paths: ['/dest1'], tags: ['existing1', 'existing2'] }),
+                })
+            );
+
+            expect(mockFetch).toHaveBeenCalledWith(
+                '/api/tags/bulk',
+                expect.objectContaining({
+                    body: JSON.stringify({ paths: ['/dest1'], tags: ['new1'] }),
+                })
+            );
+        });
+
+        it('should not call fetch when no existing tags', async () => {
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 1 }),
+            });
+
+            await TagClipboard.executePaste(['/dest1'], [], ['new1'], false, 'paste');
+
+            // Only one call for new tags, none for existing
+            expect(mockFetch).toHaveBeenCalledTimes(1);
+        });
+
+        it('should not call fetch when no new tags', async () => {
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 1 }),
+            });
+
+            await TagClipboard.executePaste(['/dest1'], ['existing1'], [], false, 'paste');
+
+            // Only one call for existing tags, none for new
+            expect(mockFetch).toHaveBeenCalledTimes(1);
+        });
+
         it('should refresh gallery items after paste', async () => {
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 1 }),
+            });
+
             await TagClipboard.executePaste(['/dest1'], ['tag1'], [], false, 'paste');
 
             expect(globalThis.Tags.batchRefreshGalleryItemTags).toHaveBeenCalled();
@@ -842,15 +919,30 @@ describe('TagClipboard Integration Tests', () => {
             );
         });
 
-        it('should handle API errors', async () => {
+        it('should handle API errors gracefully', async () => {
             mockFetch.mockResolvedValueOnce({
                 ok: false,
             });
 
             await TagClipboard.executePaste(['/dest1'], ['tag1'], [], false, 'paste');
 
-            // Should still show a toast (partial success or error count)
             expect(globalThis.Gallery.showToast).toHaveBeenCalled();
+        });
+
+        it('should include source in affected paths for gallery refresh', async () => {
+            TagClipboard.sourcePath = '/source';
+
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 2 }),
+            });
+
+            await TagClipboard.executePaste(['/dest1'], [], ['newtag'], true, 'paste');
+
+            // batchRefreshGalleryItemTags should include both dest and source
+            const refreshCall = globalThis.Tags.batchRefreshGalleryItemTags.mock.calls[0][0];
+            expect(refreshCall).toContain('/dest1');
+            expect(refreshCall).toContain('/source');
         });
     });
 });

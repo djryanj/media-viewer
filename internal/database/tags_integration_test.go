@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -832,6 +833,558 @@ func TestDeleteTagEverywhereIntegration(t *testing.T) {
 		tags, _ := db.GetFileTags(ctx, "/test/delcase.mp4")
 		if len(tags) != 0 {
 			t.Errorf("Expected file to have no tags after deletion, got %v", tags)
+		}
+	})
+}
+
+// Add to tags_integration_test.go
+
+func TestBuildPlaceholders(t *testing.T) {
+	tests := []struct {
+		name           string
+		values         []string
+		expectedClause string
+		expectedArgs   int
+	}{
+		{
+			name:           "Multiple values",
+			values:         []string{"/path/a", "/path/b", "/path/c"},
+			expectedClause: "?,?,?",
+			expectedArgs:   3,
+		},
+		{
+			name:           "Single value",
+			values:         []string{"/path/a"},
+			expectedClause: "?",
+			expectedArgs:   1,
+		},
+		{
+			name:           "Empty slice",
+			values:         []string{},
+			expectedClause: "",
+			expectedArgs:   0,
+		},
+		{
+			name:           "Nil slice",
+			values:         nil,
+			expectedClause: "",
+			expectedArgs:   0,
+		},
+		{
+			name:           "Skips empty strings",
+			values:         []string{"/path/a", "", "/path/b", ""},
+			expectedClause: "?,?",
+			expectedArgs:   2,
+		},
+		{
+			name:           "All empty strings",
+			values:         []string{"", "", ""},
+			expectedClause: "",
+			expectedArgs:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clause, args := buildPlaceholders(tt.values)
+			if clause != tt.expectedClause {
+				t.Errorf("Expected clause %q, got %q", tt.expectedClause, clause)
+			}
+			if len(args) != tt.expectedArgs {
+				t.Errorf("Expected %d args, got %d", tt.expectedArgs, len(args))
+			}
+		})
+	}
+}
+
+func TestBulkAddTagsToFilesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	t.Run("Add multiple tags to multiple files", func(t *testing.T) {
+		paths := []string{"/test/bulk1.mp4", "/test/bulk2.mp4", "/test/bulk3.mp4"}
+		tagNames := []string{"action", "thriller"}
+
+		count, errs, err := db.BulkAddTagsToFiles(ctx, paths, tagNames)
+		if err != nil {
+			t.Fatalf("BulkAddTagsToFiles failed: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no per-file errors, got %v", errs)
+		}
+		if count != 3 {
+			t.Errorf("Expected 3 successful files, got %d", count)
+		}
+
+		// Verify each file has both tags
+		for _, path := range paths {
+			tags, err := db.GetFileTags(ctx, path)
+			if err != nil {
+				t.Fatalf("GetFileTags failed for %s: %v", path, err)
+			}
+			if len(tags) != 2 {
+				t.Errorf("Expected 2 tags for %s, got %d: %v", path, len(tags), tags)
+			}
+		}
+	})
+
+	t.Run("Empty tag names", func(t *testing.T) {
+		count, errs, err := db.BulkAddTagsToFiles(ctx, []string{"/test/empty.mp4"}, []string{})
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors, got %v", errs)
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 successful files, got %d", count)
+		}
+	})
+
+	t.Run("Empty file paths", func(t *testing.T) {
+		count, errs, err := db.BulkAddTagsToFiles(ctx, []string{}, []string{"tag1"})
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors, got %v", errs)
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 successful files, got %d", count)
+		}
+	})
+
+	t.Run("Skips blank tag names and file paths", func(t *testing.T) {
+		paths := []string{"/test/skipblank.mp4", "", "/test/skipblank2.mp4"}
+		tagNames := []string{"valid", "", "  ", "alsovalid"}
+
+		count, errs, err := db.BulkAddTagsToFiles(ctx, paths, tagNames)
+		if err != nil {
+			t.Fatalf("BulkAddTagsToFiles failed: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no per-file errors, got %v", errs)
+		}
+		if count != 2 {
+			t.Errorf("Expected 2 successful files (blank path skipped), got %d", count)
+		}
+
+		tags, _ := db.GetFileTags(ctx, "/test/skipblank.mp4")
+		if len(tags) != 2 {
+			t.Errorf("Expected 2 tags (blank/whitespace skipped), got %d: %v", len(tags), tags)
+		}
+	})
+
+	t.Run("Idempotent - duplicate adds do not error", func(t *testing.T) {
+		paths := []string{"/test/idempotent.mp4"}
+		tagNames := []string{"repeat"}
+
+		_, _, err := db.BulkAddTagsToFiles(ctx, paths, tagNames)
+		if err != nil {
+			t.Fatalf("First BulkAddTagsToFiles failed: %v", err)
+		}
+
+		// Add the same tag again
+		count, errs, err := db.BulkAddTagsToFiles(ctx, paths, tagNames)
+		if err != nil {
+			t.Fatalf("Second BulkAddTagsToFiles failed: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors on duplicate add, got %v", errs)
+		}
+		if count != 1 {
+			t.Errorf("Expected 1 successful file, got %d", count)
+		}
+
+		// Should still have only one instance of the tag
+		tags, _ := db.GetFileTags(ctx, "/test/idempotent.mp4")
+		if len(tags) != 1 {
+			t.Errorf("Expected 1 tag after duplicate add, got %d", len(tags))
+		}
+	})
+
+	t.Run("Creates tags that do not yet exist", func(t *testing.T) {
+		paths := []string{"/test/newtag.mp4"}
+		tagNames := []string{"brandnewtag"}
+
+		_, _, err := db.BulkAddTagsToFiles(ctx, paths, tagNames)
+		if err != nil {
+			t.Fatalf("BulkAddTagsToFiles failed: %v", err)
+		}
+
+		// Verify tag was created
+		allTags, _ := db.GetAllTagsWithCounts(ctx)
+		found := false
+		for _, tag := range allTags {
+			if tag.Name == "brandnewtag" {
+				found = true
+				if tag.Count != 1 {
+					t.Errorf("Expected count 1 for new tag, got %d", tag.Count)
+				}
+			}
+		}
+		if !found {
+			t.Error("Expected 'brandnewtag' to exist in all tags")
+		}
+	})
+}
+
+func TestBulkRemoveTagsFromFilesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	t.Run("Remove multiple tags from multiple files", func(t *testing.T) {
+		// Setup: add tags to files
+		paths := []string{"/test/bulkrm1.mp4", "/test/bulkrm2.mp4"}
+		_ = db.AddTagToFile(ctx, paths[0], "rmtag1")
+		_ = db.AddTagToFile(ctx, paths[0], "rmtag2")
+		_ = db.AddTagToFile(ctx, paths[0], "keeptag")
+		_ = db.AddTagToFile(ctx, paths[1], "rmtag1")
+		_ = db.AddTagToFile(ctx, paths[1], "rmtag2")
+
+		count, errs, err := db.BulkRemoveTagsFromFiles(ctx, paths, []string{"rmtag1", "rmtag2"})
+		if err != nil {
+			t.Fatalf("BulkRemoveTagsFromFiles failed: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no per-file errors, got %v", errs)
+		}
+		if count != 2 {
+			t.Errorf("Expected 2 files with removals, got %d", count)
+		}
+
+		// Verify rmtag1 and rmtag2 are gone, keeptag remains
+		tags, _ := db.GetFileTags(ctx, paths[0])
+		if len(tags) != 1 || tags[0] != "keeptag" {
+			t.Errorf("Expected only 'keeptag' to remain, got %v", tags)
+		}
+
+		tags, _ = db.GetFileTags(ctx, paths[1])
+		if len(tags) != 0 {
+			t.Errorf("Expected no tags remaining, got %v", tags)
+		}
+	})
+
+	t.Run("Empty tag names", func(t *testing.T) {
+		count, errs, err := db.BulkRemoveTagsFromFiles(ctx, []string{"/test/x.mp4"}, []string{})
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors, got %v", errs)
+		}
+		if count != 0 {
+			t.Errorf("Expected 0, got %d", count)
+		}
+	})
+
+	t.Run("Non-existent tags are silently skipped", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/skipnonexist.mp4", "exists")
+
+		count, errs, err := db.BulkRemoveTagsFromFiles(
+			ctx,
+			[]string{"/test/skipnonexist.mp4"},
+			[]string{"doesnotexist", "alsomissing"},
+		)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors, got %v", errs)
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 removals (tags don't exist), got %d", count)
+		}
+
+		// Original tag should still be there
+		tags, _ := db.GetFileTags(ctx, "/test/skipnonexist.mp4")
+		if len(tags) != 1 || tags[0] != "exists" {
+			t.Errorf("Expected 'exists' tag to remain, got %v", tags)
+		}
+	})
+
+	t.Run("Remove from file that does not have the tag", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/notag.mp4", "othertag")
+
+		count, errs, err := db.BulkRemoveTagsFromFiles(
+			ctx,
+			[]string{"/test/notag.mp4"},
+			[]string{"othertag"},
+		)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors, got %v", errs)
+		}
+		if count != 1 {
+			t.Errorf("Expected 1 file with removal, got %d", count)
+		}
+	})
+
+	t.Run("Skips blank paths and tag names", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/blankskip.mp4", "blanktag")
+
+		count, errs, err := db.BulkRemoveTagsFromFiles(
+			ctx,
+			[]string{"/test/blankskip.mp4", ""},
+			[]string{"blanktag", "", "  "},
+		)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors, got %v", errs)
+		}
+		if count != 1 {
+			t.Errorf("Expected 1 file with removal, got %d", count)
+		}
+
+		tags, _ := db.GetFileTags(ctx, "/test/blankskip.mp4")
+		if len(tags) != 0 {
+			t.Errorf("Expected no tags after removal, got %v", tags)
+		}
+	})
+}
+
+func TestGetBatchFileTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	t.Run("Multiple files with various tags", func(t *testing.T) {
+		// Setup
+		_ = db.AddTagToFile(ctx, "/test/batch1.mp4", "action")
+		_ = db.AddTagToFile(ctx, "/test/batch1.mp4", "thriller")
+		_ = db.AddTagToFile(ctx, "/test/batch2.mp4", "comedy")
+		_ = db.AddTagToFile(ctx, "/test/batch3.mp4", "action")
+		// batch4 has no tags
+
+		paths := []string{"/test/batch1.mp4", "/test/batch2.mp4", "/test/batch3.mp4", "/test/batch4.mp4"}
+		result, err := db.GetBatchFileTags(ctx, paths)
+		if err != nil {
+			t.Fatalf("GetBatchFileTags failed: %v", err)
+		}
+
+		// All requested paths should be present in the result
+		if len(result) != 4 {
+			t.Errorf("Expected 4 entries in result, got %d", len(result))
+		}
+
+		// batch1 should have 2 tags
+		if len(result["/test/batch1.mp4"]) != 2 {
+			t.Errorf("Expected 2 tags for batch1, got %d: %v",
+				len(result["/test/batch1.mp4"]), result["/test/batch1.mp4"])
+		}
+
+		// batch2 should have 1 tag
+		if len(result["/test/batch2.mp4"]) != 1 || result["/test/batch2.mp4"][0] != "comedy" {
+			t.Errorf("Expected ['comedy'] for batch2, got %v", result["/test/batch2.mp4"])
+		}
+
+		// batch3 should have 1 tag
+		if len(result["/test/batch3.mp4"]) != 1 || result["/test/batch3.mp4"][0] != "action" {
+			t.Errorf("Expected ['action'] for batch3, got %v", result["/test/batch3.mp4"])
+		}
+
+		// batch4 should have empty slice (not nil)
+		tags4 := result["/test/batch4.mp4"]
+		if tags4 == nil {
+			t.Error("Expected empty slice for batch4, got nil")
+		}
+		if len(tags4) != 0 {
+			t.Errorf("Expected 0 tags for batch4, got %d: %v", len(tags4), tags4)
+		}
+	})
+
+	t.Run("Empty file paths", func(t *testing.T) {
+		result, err := db.GetBatchFileTags(ctx, []string{})
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("Expected empty result, got %d entries", len(result))
+		}
+	})
+
+	t.Run("Nil file paths", func(t *testing.T) {
+		result, err := db.GetBatchFileTags(ctx, nil)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("Expected empty result, got %d entries", len(result))
+		}
+	})
+
+	t.Run("Skips blank paths", func(t *testing.T) {
+		_ = db.AddTagToFile(ctx, "/test/batchblank.mp4", "sometag")
+
+		result, err := db.GetBatchFileTags(ctx, []string{"/test/batchblank.mp4", "", ""})
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		// Should only have the non-blank path
+		if len(result) != 1 {
+			t.Errorf("Expected 1 entry (blanks skipped), got %d", len(result))
+		}
+		if len(result["/test/batchblank.mp4"]) != 1 {
+			t.Errorf("Expected 1 tag, got %v", result["/test/batchblank.mp4"])
+		}
+	})
+
+	t.Run("Consistent with GetFileTags", func(t *testing.T) {
+		// Verify batch results match individual lookups
+		_ = db.AddTagToFile(ctx, "/test/consistent1.mp4", "alpha")
+		_ = db.AddTagToFile(ctx, "/test/consistent1.mp4", "beta")
+		_ = db.AddTagToFile(ctx, "/test/consistent2.mp4", "gamma")
+
+		paths := []string{"/test/consistent1.mp4", "/test/consistent2.mp4"}
+
+		batchResult, err := db.GetBatchFileTags(ctx, paths)
+		if err != nil {
+			t.Fatalf("GetBatchFileTags failed: %v", err)
+		}
+
+		for _, path := range paths {
+			individual, err := db.GetFileTags(ctx, path)
+			if err != nil {
+				t.Fatalf("GetFileTags failed for %s: %v", path, err)
+			}
+
+			batchTags := batchResult[path]
+			if len(batchTags) != len(individual) {
+				t.Errorf("Mismatch for %s: batch=%v, individual=%v", path, batchTags, individual)
+				continue
+			}
+			for i, tag := range individual {
+				if batchTags[i] != tag {
+					t.Errorf("Tag mismatch for %s at index %d: batch=%s, individual=%s",
+						path, i, batchTags[i], tag)
+				}
+			}
+		}
+	})
+
+	t.Run("Large batch", func(t *testing.T) {
+		// Test with a larger number of files to exercise the IN clause
+		paths := make([]string, 50)
+		for i := 0; i < 50; i++ {
+			path := fmt.Sprintf("/test/largebatch_%03d.mp4", i)
+			paths[i] = path
+			if i%3 == 0 {
+				_ = db.AddTagToFile(ctx, path, "batchlabel")
+			}
+		}
+
+		result, err := db.GetBatchFileTags(ctx, paths)
+		if err != nil {
+			t.Fatalf("GetBatchFileTags failed for large batch: %v", err)
+		}
+
+		if len(result) != 50 {
+			t.Errorf("Expected 50 entries, got %d", len(result))
+		}
+
+		// Verify files at index 0, 3, 6, ... have the tag
+		taggedCount := 0
+		for _, path := range paths {
+			if len(result[path]) > 0 {
+				taggedCount++
+			}
+		}
+
+		// Indices 0,3,6,...,48 → 17 files
+		expectedTagged := 17
+		if taggedCount != expectedTagged {
+			t.Errorf("Expected %d tagged files, got %d", expectedTagged, taggedCount)
+		}
+	})
+}
+
+func TestBulkOperationsInteractionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	t.Run("Bulk add then bulk remove", func(t *testing.T) {
+		paths := []string{"/test/interact1.mp4", "/test/interact2.mp4"}
+
+		// Bulk add
+		_, _, err := db.BulkAddTagsToFiles(ctx, paths, []string{"x", "y", "z"})
+		if err != nil {
+			t.Fatalf("BulkAddTagsToFiles failed: %v", err)
+		}
+
+		// Verify via batch get
+		result, err := db.GetBatchFileTags(ctx, paths)
+		if err != nil {
+			t.Fatalf("GetBatchFileTags failed: %v", err)
+		}
+		for _, path := range paths {
+			if len(result[path]) != 3 {
+				t.Errorf("Expected 3 tags for %s, got %d", path, len(result[path]))
+			}
+		}
+
+		// Bulk remove only "x" and "z"
+		count, _, err := db.BulkRemoveTagsFromFiles(ctx, paths, []string{"x", "z"})
+		if err != nil {
+			t.Fatalf("BulkRemoveTagsFromFiles failed: %v", err)
+		}
+		if count != 2 {
+			t.Errorf("Expected 2 files with removals, got %d", count)
+		}
+
+		// Verify only "y" remains
+		result, _ = db.GetBatchFileTags(ctx, paths)
+		for _, path := range paths {
+			if len(result[path]) != 1 || result[path][0] != "y" {
+				t.Errorf("Expected only ['y'] for %s, got %v", path, result[path])
+			}
+		}
+	})
+
+	t.Run("Bulk add interacts with single-file operations", func(t *testing.T) {
+		// Add a tag via single-file API
+		_ = db.AddTagToFile(ctx, "/test/mixed.mp4", "single")
+
+		// Add more tags via bulk API
+		_, _, err := db.BulkAddTagsToFiles(ctx, []string{"/test/mixed.mp4"}, []string{"bulk1", "bulk2"})
+		if err != nil {
+			t.Fatalf("BulkAddTagsToFiles failed: %v", err)
+		}
+
+		tags, _ := db.GetFileTags(ctx, "/test/mixed.mp4")
+		if len(tags) != 3 {
+			t.Errorf("Expected 3 tags, got %d: %v", len(tags), tags)
+		}
+
+		// Remove one via single-file API
+		_ = db.RemoveTagFromFile(ctx, "/test/mixed.mp4", "single")
+
+		tags, _ = db.GetFileTags(ctx, "/test/mixed.mp4")
+		if len(tags) != 2 {
+			t.Errorf("Expected 2 tags after single remove, got %d: %v", len(tags), tags)
 		}
 	})
 }

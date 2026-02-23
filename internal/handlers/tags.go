@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"media-viewer/internal/database"
 
@@ -24,10 +25,12 @@ type BatchTagsRequest struct {
 	Paths []string `json:"paths"`
 }
 
-// BulkTagRequest represents a request to add/remove a tag from multiple files
+// BulkTagRequest represents a request to add/remove tags from multiple files.
+// Supports both single-tag (Tag) and multi-tag (Tags) for backward compatibility.
 type BulkTagRequest struct {
 	Paths []string `json:"paths"`
-	Tag   string   `json:"tag"`
+	Tag   string   `json:"tag,omitempty"`
+	Tags  []string `json:"tags,omitempty"`
 }
 
 // BulkTagResponse represents the response from a bulk tag operation
@@ -79,7 +82,8 @@ func (h *Handlers) GetFileTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, tags)
 }
 
-// GetBatchFileTags returns tags for multiple files at once
+// GetBatchFileTags returns tags for multiple files at once.
+// Uses a single query instead of N individual GetFileTags calls.
 func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -94,33 +98,16 @@ func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Allow large batch requests for bulk operations
 	maxPaths := 10000
 	if len(req.Paths) > maxPaths {
 		http.Error(w, fmt.Sprintf("Too many paths (max %d)", maxPaths), http.StatusBadRequest)
 		return
 	}
 
-	// Build result map
-	result := make(map[string][]string)
-
-	for _, path := range req.Paths {
-		if path == "" {
-			continue
-		}
-
-		tags, err := h.db.GetFileTags(ctx, path)
-		if err != nil {
-			// Log error but continue with other paths
-			continue
-		}
-
-		// Include all paths, even those without tags (empty array)
-		// This lets the frontend know the request was processed
-		if tags == nil {
-			tags = []string{}
-		}
-		result[path] = tags
+	result, err := h.db.GetBatchFileTags(ctx, req.Paths)
+	if err != nil {
+		http.Error(w, "Failed to get batch tags", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -173,7 +160,8 @@ func (h *Handlers) RemoveTagFromFile(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, "ok")
 }
 
-// BulkAddTag adds a tag to multiple files at once
+// BulkAddTag adds one or more tags to multiple files in a single transaction.
+// Accepts either {"tag": "name"} or {"tags": ["a", "b"]} or both.
 func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -188,8 +176,9 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Tag == "" {
-		http.Error(w, "Tag is required", http.StatusBadRequest)
+	tags := req.resolveTags()
+	if len(tags) == 0 {
+		http.Error(w, "At least one tag is required (via 'tag' or 'tags')", http.StatusBadRequest)
 		return
 	}
 
@@ -199,36 +188,40 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxTags := 100
+	if len(tags) > maxTags {
+		http.Error(w, fmt.Sprintf("Too many tags (max %d)", maxTags), http.StatusBadRequest)
+		return
+	}
+
+	successCount, errs, err := h.db.BulkAddTagsToFiles(ctx, req.Paths, tags)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to add tags: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	response := BulkTagResponse{
-		Success: 0,
-		Failed:  0,
-		Errors:  []string{},
+		Success: successCount,
+		Failed:  len(errs),
 	}
 
-	for _, path := range req.Paths {
-		if path == "" {
-			continue
-		}
-
-		if err := h.db.AddTagToFile(ctx, path, req.Tag); err != nil {
-			response.Failed++
-			if len(response.Errors) < 10 {
-				response.Errors = append(response.Errors, path+": "+err.Error())
+	if len(errs) > 0 {
+		errStrings := make([]string, 0, min(len(errs), 10))
+		for i, e := range errs {
+			if i >= 10 {
+				break
 			}
-		} else {
-			response.Success++
+			errStrings = append(errStrings, e.Error())
 		}
-	}
-
-	if len(response.Errors) == 0 {
-		response.Errors = nil
+		response.Errors = errStrings
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, response)
 }
 
-// BulkRemoveTag removes a tag from multiple files at once
+// BulkRemoveTag removes one or more tags from multiple files in a single transaction.
+// Accepts either {"tag": "name"} or {"tags": ["a", "b"]} or both.
 func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -243,42 +236,37 @@ func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Tag == "" {
-		http.Error(w, "Tag is required", http.StatusBadRequest)
+	tags := req.resolveTags()
+	if len(tags) == 0 {
+		http.Error(w, "At least one tag is required (via 'tag' or 'tags')", http.StatusBadRequest)
 		return
 	}
 
-	// Limit the number of paths to prevent abuse
 	maxPaths := 10000
 	if len(req.Paths) > maxPaths {
 		req.Paths = req.Paths[:maxPaths]
 	}
 
+	successCount, errs, err := h.db.BulkRemoveTagsFromFiles(ctx, req.Paths, tags)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to remove tags: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	response := BulkTagResponse{
-		Success: 0,
-		Failed:  0,
-		Errors:  []string{},
+		Success: successCount,
+		Failed:  len(errs),
 	}
 
-	for _, path := range req.Paths {
-		if path == "" {
-			continue
-		}
-
-		if err := h.db.RemoveTagFromFile(ctx, path, req.Tag); err != nil {
-			response.Failed++
-			// Optionally collect error details (limit to prevent response bloat)
-			if len(response.Errors) < 10 {
-				response.Errors = append(response.Errors, path+": "+err.Error())
+	if len(errs) > 0 {
+		errStrings := make([]string, 0, min(len(errs), 10))
+		for i, e := range errs {
+			if i >= 10 {
+				break
 			}
-		} else {
-			response.Success++
+			errStrings = append(errStrings, e.Error())
 		}
-	}
-
-	// Clear errors if empty to keep response clean
-	if len(response.Errors) == 0 {
-		response.Errors = nil
+		response.Errors = errStrings
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -472,4 +460,35 @@ func (h *Handlers) DeleteTagEverywhere(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response) //nolint:errcheck
+}
+
+// resolveTags returns the deduplicated list of tags from the request,
+// supporting both the single "tag" field and the "tags" array.
+func (r *BulkTagRequest) resolveTags() []string {
+	seen := make(map[string]struct{})
+	var result []string
+
+	// Single tag field (backward compat)
+	if r.Tag != "" {
+		t := strings.TrimSpace(r.Tag)
+		if t != "" {
+			seen[strings.ToLower(t)] = struct{}{}
+			result = append(result, t)
+		}
+	}
+
+	// Multi-tag field
+	for _, tag := range r.Tags {
+		t := strings.TrimSpace(tag)
+		if t == "" {
+			continue
+		}
+		lower := strings.ToLower(t)
+		if _, exists := seen[lower]; !exists {
+			seen[lower] = struct{}{}
+			result = append(result, t)
+		}
+	}
+
+	return result
 }

@@ -759,3 +759,310 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 	done(nil)
 	return count, nil
 }
+
+// BulkAddTagsToFiles adds one or more tags to multiple files in a single transaction.
+// This replaces the previous pattern of calling AddTagToFile in a loop per path per tag,
+// reducing N*M individual lock/transaction cycles to a single transaction with prepared
+// statements.
+func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
+	done := observeQuery("bulk_add_tags_to_files")
+
+	if len(tagNames) == 0 {
+		done(nil)
+		return 0, nil, nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return 0, nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				logging.Error("rollback failed: %v", rbErr)
+			}
+		}
+	}()
+
+	// Resolve all tag IDs upfront — create any that don't exist.
+	tagIDs, err := resolveTagIDs(ctx, tx, tagNames, true)
+	if err != nil {
+		done(err)
+		return 0, nil, err
+	}
+
+	// Prepare the association insert once — reused for all path×tag combinations
+	assocStmt, err := tx.PrepareContext(ctx,
+		"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
+	)
+	if err != nil {
+		done(err)
+		return 0, nil, fmt.Errorf("failed to prepare association insert: %w", err)
+	}
+	defer func() { _ = assocStmt.Close() }()
+
+	// Apply all tags to all files
+	successCount := 0
+	var errs []error
+
+	for _, path := range filePaths {
+		if path == "" {
+			continue
+		}
+
+		pathFailed := false
+		for _, tagID := range tagIDs {
+			if _, execErr := assocStmt.ExecContext(ctx, path, tagID); execErr != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", path, execErr))
+				pathFailed = true
+			}
+		}
+		if !pathFailed {
+			successCount++
+		}
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		done(commitErr)
+		return 0, nil, fmt.Errorf("failed to commit: %w", commitErr)
+	}
+	committed = true
+
+	done(nil)
+	return successCount, errs, nil
+}
+
+// BulkRemoveTagsFromFiles removes one or more tags from multiple files in a single transaction.
+func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
+	done := observeQuery("bulk_remove_tags_from_files")
+
+	if len(tagNames) == 0 {
+		done(nil)
+		return 0, nil, nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return 0, nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				logging.Error("rollback failed: %v", rbErr)
+			}
+		}
+	}()
+
+	// Resolve tag IDs — don't create missing tags
+	tagIDs, err := resolveTagIDs(ctx, tx, tagNames, false)
+	if err != nil {
+		done(err)
+		return 0, nil, err
+	}
+
+	if len(tagIDs) == 0 {
+		// None of the tags exist — nothing to do
+		done(nil)
+		return 0, nil, nil
+	}
+
+	// Prepare the delete statement
+	deleteStmt, err := tx.PrepareContext(ctx,
+		"DELETE FROM file_tags WHERE file_path = ? AND tag_id = ?",
+	)
+	if err != nil {
+		done(err)
+		return 0, nil, fmt.Errorf("failed to prepare delete: %w", err)
+	}
+	defer func() { _ = deleteStmt.Close() }()
+
+	successCount := 0
+	var errs []error
+
+	for _, path := range filePaths {
+		if path == "" {
+			continue
+		}
+
+		pathHadRemoval := false
+		for _, tagID := range tagIDs {
+			result, execErr := deleteStmt.ExecContext(ctx, path, tagID)
+			if execErr != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", path, execErr))
+			} else if rows, _ := result.RowsAffected(); rows > 0 {
+				pathHadRemoval = true
+			}
+		}
+		if pathHadRemoval {
+			successCount++
+		}
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		done(commitErr)
+		return 0, nil, fmt.Errorf("failed to commit: %w", commitErr)
+	}
+	committed = true
+
+	done(nil)
+	return successCount, errs, nil
+}
+
+// GetBatchFileTags returns tags for multiple files in a single query.
+// Replaces the pattern of calling GetFileTags N times in a loop,
+// reducing N lock/query cycles to 1.
+func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (map[string][]string, error) {
+	done := observeQuery("get_batch_file_tags")
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	// Initialize result with empty slices for all requested paths
+	result := make(map[string][]string, len(filePaths))
+	for _, path := range filePaths {
+		if path != "" {
+			result[path] = []string{}
+		}
+	}
+
+	if len(filePaths) == 0 {
+		done(nil)
+		return result, nil
+	}
+
+	// Build parameterized IN clause safely (placeholders are only "?" literals)
+	inClause, args := buildPlaceholders(filePaths)
+	if inClause == "" {
+		done(nil)
+		return result, nil
+	}
+
+	//nolint:gosec // inClause contains only "?" placeholders generated by buildPlaceholders; no user input is interpolated
+	query := `
+		SELECT ft.file_path, t.name
+		FROM file_tags ft
+		INNER JOIN tags t ON ft.tag_id = t.id
+		WHERE ft.file_path IN (` + inClause + `)
+		ORDER BY ft.file_path, t.name COLLATE NOCASE
+	`
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		done(err)
+		return nil, fmt.Errorf("batch file tags query failed: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logging.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	for rows.Next() {
+		var filePath, tagName string
+		if err := rows.Scan(&filePath, &tagName); err != nil {
+			logging.Warn("error scanning batch tag row: %v", err)
+			continue
+		}
+		result[filePath] = append(result[filePath], tagName)
+	}
+
+	if err := rows.Err(); err != nil {
+		done(err)
+		return nil, fmt.Errorf("batch file tags iteration error: %w", err)
+	}
+
+	done(nil)
+	return result, nil
+}
+
+// resolveTagIDs looks up or creates tags within an existing transaction,
+// returning their IDs. This is extracted to reduce cognitive complexity
+// of the bulk operation callers.
+func resolveTagIDs(ctx context.Context, tx *sql.Tx, tagNames []string, createMissing bool) ([]int64, error) {
+	selectStmt, err := tx.PrepareContext(ctx,
+		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare tag select: %w", err)
+	}
+	defer func() { _ = selectStmt.Close() }()
+
+	var insertStmt *sql.Stmt
+	if createMissing {
+		insertStmt, err = tx.PrepareContext(ctx,
+			"INSERT INTO tags (name) VALUES (?)",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare tag insert: %w", err)
+		}
+		defer func() { _ = insertStmt.Close() }()
+	}
+
+	tagIDs := make([]int64, 0, len(tagNames))
+	for _, tagName := range tagNames {
+		tagName = strings.TrimSpace(tagName)
+		if tagName == "" {
+			continue
+		}
+
+		var tagID int64
+		err = selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID)
+		if err != nil {
+			if !createMissing {
+				// Tag doesn't exist — skip it
+				continue
+			}
+			// Tag doesn't exist — create it
+			result, createErr := insertStmt.ExecContext(ctx, tagName)
+			if createErr != nil {
+				// Might be a race with UNIQUE constraint; try select again
+				if err2 := selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID); err2 != nil {
+					return nil, fmt.Errorf("failed to create tag %q: %w", tagName, createErr)
+				}
+			} else {
+				tagID, _ = result.LastInsertId()
+			}
+		}
+		tagIDs = append(tagIDs, tagID)
+	}
+
+	return tagIDs, nil
+}
+
+// buildPlaceholders generates a parameterized IN clause with the given
+// string values. It returns the placeholder string (e.g. "?,?,?") and
+// the corresponding args. Empty strings are skipped.
+func buildPlaceholders(values []string) (clause string, args []interface{}) {
+	placeholders := make([]string, 0, len(values))
+	args = make([]interface{}, 0, len(values))
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, v)
+	}
+	clause = strings.Join(placeholders, ",")
+	return clause, args
+}

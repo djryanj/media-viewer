@@ -105,7 +105,7 @@ describe('Gallery and Media Integration', () => {
             const testFilePath = mediaFile.path;
 
             // Add to favorites
-            const addResult = await addFavorite(testFilePath);
+            const addResult = await addFavorite(testFilePath, mediaFile.name, mediaFile.type);
             expect(addResult.success).toBe(true);
 
             // Verify it's in favorites
@@ -146,10 +146,10 @@ describe('Gallery and Media Integration', () => {
             const testFilePath = mediaFile.path;
 
             // Add twice
-            const add1 = await addFavorite(testFilePath);
+            const add1 = await addFavorite(testFilePath, mediaFile.name, mediaFile.type);
             expect(add1.success).toBe(true);
 
-            const add2 = await addFavorite(testFilePath);
+            const add2 = await addFavorite(testFilePath, mediaFile.name, mediaFile.type);
             // Should either succeed (idempotent) or fail gracefully
             expect([200, 400, 409]).toContain(add2.status);
 

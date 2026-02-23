@@ -700,23 +700,29 @@ const TagClipboard = {
         let errorCount = 0;
         const allAffectedPaths = new Set(destinationPaths);
 
-        for (const tag of existingTags) {
+        // PERF: Send all existing tags in a single bulk request instead of
+        // one request per tag. The server handles the entire batch in one
+        // transaction, reducing N round trips to 1.
+        if (existingTags.length > 0) {
             try {
                 const response = await fetch('/api/tags/bulk', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ paths: destinationPaths, tag }),
+                    body: JSON.stringify({
+                        paths: destinationPaths,
+                        tags: existingTags,
+                    }),
                 });
 
                 if (response.ok) {
                     const result = await response.json();
-                    successCount = Math.max(successCount, result.success || 0);
+                    successCount = result.success || 0;
                 } else {
-                    errorCount++;
+                    errorCount += existingTags.length;
                 }
             } catch (error) {
-                console.error(`Error applying tag "${tag}":`, error);
-                errorCount++;
+                console.error('Error applying existing tags:', error);
+                errorCount += existingTags.length;
             }
         }
 
@@ -730,24 +736,25 @@ const TagClipboard = {
                 allAffectedPaths.add(this.sourcePath);
             }
 
-            for (const tag of newTags) {
-                try {
-                    const response = await fetch('/api/tags/bulk', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ paths: pathsForNewTags, tag }),
-                    });
+            try {
+                const response = await fetch('/api/tags/bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        paths: pathsForNewTags,
+                        tags: newTags,
+                    }),
+                });
 
-                    if (response.ok) {
-                        const result = await response.json();
-                        successCount = Math.max(successCount, result.success || 0);
-                    } else {
-                        errorCount++;
-                    }
-                } catch (error) {
-                    console.error(`Error applying new tag "${tag}":`, error);
-                    errorCount++;
+                if (response.ok) {
+                    const result = await response.json();
+                    successCount = Math.max(successCount, result.success || 0);
+                } else {
+                    errorCount += newTags.length;
                 }
+            } catch (error) {
+                console.error('Error applying new tags:', error);
+                errorCount += newTags.length;
             }
         }
 
@@ -760,7 +767,7 @@ const TagClipboard = {
         let message;
 
         if (errorCount > 0) {
-            message = `Applied ${totalTags - errorCount} of ${totalTags} tags`;
+            message = `Applied ${successCount} of ${totalTags} tags`;
         } else if (newTags.length > 0 && existingTags.length > 0) {
             if (includeSourceForNewTags) {
                 message = `Applied ${existingTags.length} existing tags to ${destinationPaths.length} items, ${newTags.length} new tags to ${destinationPaths.length + 1} items`;
