@@ -2986,7 +2986,7 @@ func TestGetMediaFilesCachingHeaders(t *testing.T) {
 
 	// Check Cache-Control header
 	cacheControl := w.Header().Get("Cache-Control")
-	expectedCache := "private, max-age=300, must-revalidate"
+	expectedCache := "private, no-cache"
 	if cacheControl != expectedCache {
 		t.Errorf("expected Cache-Control %q, got %q", expectedCache, cacheControl)
 	}

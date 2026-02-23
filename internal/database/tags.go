@@ -764,7 +764,7 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 // This replaces the previous pattern of calling AddTagToFile in a loop per path per tag,
 // reducing N*M individual lock/transaction cycles to a single transaction with prepared
 // statements.
-func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths []string, tagNames []string) (int, []error, error) {
+func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
 	done := observeQuery("bulk_add_tags_to_files")
 
 	if len(tagNames) == 0 {
@@ -794,48 +794,10 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths []string, t
 	}()
 
 	// Resolve all tag IDs upfront — create any that don't exist.
-	// Uses prepared statements to avoid repeated query parsing.
-	selectStmt, err := tx.PrepareContext(ctx,
-		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
-	)
+	tagIDs, err := resolveTagIDs(ctx, tx, tagNames, true)
 	if err != nil {
 		done(err)
-		return 0, nil, fmt.Errorf("failed to prepare tag select: %w", err)
-	}
-	defer selectStmt.Close()
-
-	insertTagStmt, err := tx.PrepareContext(ctx,
-		"INSERT INTO tags (name) VALUES (?)",
-	)
-	if err != nil {
-		done(err)
-		return 0, nil, fmt.Errorf("failed to prepare tag insert: %w", err)
-	}
-	defer insertTagStmt.Close()
-
-	tagIDs := make([]int64, 0, len(tagNames))
-	for _, tagName := range tagNames {
-		tagName = strings.TrimSpace(tagName)
-		if tagName == "" {
-			continue
-		}
-
-		var tagID int64
-		err = selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID)
-		if err != nil {
-			// Tag doesn't exist — create it
-			result, createErr := insertTagStmt.ExecContext(ctx, tagName)
-			if createErr != nil {
-				// Might be a race with UNIQUE constraint; try select again
-				if err2 := selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID); err2 != nil {
-					done(createErr)
-					return 0, nil, fmt.Errorf("failed to create tag %q: %w", tagName, createErr)
-				}
-			} else {
-				tagID, _ = result.LastInsertId()
-			}
-		}
-		tagIDs = append(tagIDs, tagID)
+		return 0, nil, err
 	}
 
 	// Prepare the association insert once — reused for all path×tag combinations
@@ -846,7 +808,7 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths []string, t
 		done(err)
 		return 0, nil, fmt.Errorf("failed to prepare association insert: %w", err)
 	}
-	defer assocStmt.Close()
+	defer func() { _ = assocStmt.Close() }()
 
 	// Apply all tags to all files
 	successCount := 0
@@ -880,7 +842,7 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths []string, t
 }
 
 // BulkRemoveTagsFromFiles removes one or more tags from multiple files in a single transaction.
-func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths []string, tagNames []string) (int, []error, error) {
+func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
 	done := observeQuery("bulk_remove_tags_from_files")
 
 	if len(tagNames) == 0 {
@@ -909,29 +871,11 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths []stri
 		}
 	}()
 
-	// Resolve tag IDs
-	selectStmt, err := tx.PrepareContext(ctx,
-		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
-	)
+	// Resolve tag IDs — don't create missing tags
+	tagIDs, err := resolveTagIDs(ctx, tx, tagNames, false)
 	if err != nil {
 		done(err)
-		return 0, nil, fmt.Errorf("failed to prepare tag select: %w", err)
-	}
-	defer selectStmt.Close()
-
-	tagIDs := make([]int64, 0, len(tagNames))
-	for _, tagName := range tagNames {
-		tagName = strings.TrimSpace(tagName)
-		if tagName == "" {
-			continue
-		}
-
-		var tagID int64
-		if err := selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID); err != nil {
-			// Tag doesn't exist — nothing to remove for this tag
-			continue
-		}
-		tagIDs = append(tagIDs, tagID)
+		return 0, nil, err
 	}
 
 	if len(tagIDs) == 0 {
@@ -948,7 +892,7 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths []stri
 		done(err)
 		return 0, nil, fmt.Errorf("failed to prepare delete: %w", err)
 	}
-	defer deleteStmt.Close()
+	defer func() { _ = deleteStmt.Close() }()
 
 	successCount := 0
 	var errs []error
@@ -1007,29 +951,21 @@ func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (ma
 		return result, nil
 	}
 
-	// Build parameterized IN clause
-	placeholders := make([]string, 0, len(filePaths))
-	args := make([]interface{}, 0, len(filePaths))
-	for _, path := range filePaths {
-		if path == "" {
-			continue
-		}
-		placeholders = append(placeholders, "?")
-		args = append(args, path)
-	}
-
-	if len(placeholders) == 0 {
+	// Build parameterized IN clause safely (placeholders are only "?" literals)
+	inClause, args := buildPlaceholders(filePaths)
+	if inClause == "" {
 		done(nil)
 		return result, nil
 	}
 
-	query := fmt.Sprintf(`
+	//nolint:gosec // inClause contains only "?" placeholders generated by buildPlaceholders; no user input is interpolated
+	query := `
 		SELECT ft.file_path, t.name
 		FROM file_tags ft
 		INNER JOIN tags t ON ft.tag_id = t.id
-		WHERE ft.file_path IN (%s)
+		WHERE ft.file_path IN (` + inClause + `)
 		ORDER BY ft.file_path, t.name COLLATE NOCASE
-	`, strings.Join(placeholders, ","))
+	`
 
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -1058,4 +994,75 @@ func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (ma
 
 	done(nil)
 	return result, nil
+}
+
+// resolveTagIDs looks up or creates tags within an existing transaction,
+// returning their IDs. This is extracted to reduce cognitive complexity
+// of the bulk operation callers.
+func resolveTagIDs(ctx context.Context, tx *sql.Tx, tagNames []string, createMissing bool) ([]int64, error) {
+	selectStmt, err := tx.PrepareContext(ctx,
+		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare tag select: %w", err)
+	}
+	defer func() { _ = selectStmt.Close() }()
+
+	var insertStmt *sql.Stmt
+	if createMissing {
+		insertStmt, err = tx.PrepareContext(ctx,
+			"INSERT INTO tags (name) VALUES (?)",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare tag insert: %w", err)
+		}
+		defer func() { _ = insertStmt.Close() }()
+	}
+
+	tagIDs := make([]int64, 0, len(tagNames))
+	for _, tagName := range tagNames {
+		tagName = strings.TrimSpace(tagName)
+		if tagName == "" {
+			continue
+		}
+
+		var tagID int64
+		err = selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID)
+		if err != nil {
+			if !createMissing {
+				// Tag doesn't exist — skip it
+				continue
+			}
+			// Tag doesn't exist — create it
+			result, createErr := insertStmt.ExecContext(ctx, tagName)
+			if createErr != nil {
+				// Might be a race with UNIQUE constraint; try select again
+				if err2 := selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID); err2 != nil {
+					return nil, fmt.Errorf("failed to create tag %q: %w", tagName, createErr)
+				}
+			} else {
+				tagID, _ = result.LastInsertId()
+			}
+		}
+		tagIDs = append(tagIDs, tagID)
+	}
+
+	return tagIDs, nil
+}
+
+// buildPlaceholders generates a parameterized IN clause with the given
+// string values. It returns the placeholder string (e.g. "?,?,?") and
+// the corresponding args. Empty strings are skipped.
+func buildPlaceholders(values []string) (clause string, args []interface{}) {
+	placeholders := make([]string, 0, len(values))
+	args = make([]interface{}, 0, len(values))
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, v)
+	}
+	clause = strings.Join(placeholders, ",")
+	return clause, args
 }

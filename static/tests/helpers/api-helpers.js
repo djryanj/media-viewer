@@ -305,12 +305,18 @@ export async function getFavorites() {
 /**
  * Add file to favorites
  * @param {string} filePath - File path
+ * @param {string} [name] - File name
+ * @param {string} [type] - File type (image, video, folder, etc.)
  * @returns {Promise<{success: boolean}>}
  */
-export async function addFavorite(filePath) {
+export async function addFavorite(filePath, name, type) {
+    const body = { path: filePath };
+    if (name) body.name = name;
+    if (type) body.type = type;
+
     const response = await apiRequest(TEST_CONFIG.API.FAVORITES.ADD, {
         method: 'POST',
-        body: JSON.stringify({ path: filePath }),
+        body: JSON.stringify(body),
     });
 
     return {

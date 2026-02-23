@@ -659,3 +659,92 @@ func TestTagNameNormalization(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// BulkTagRequest.resolveTags Tests
+// =============================================================================
+
+func TestBulkTagRequestResolveTags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		req      BulkTagRequest
+		expected []string
+	}{
+		{
+			name:     "Single tag field only",
+			req:      BulkTagRequest{Tag: "vacation"},
+			expected: []string{"vacation"},
+		},
+		{
+			name:     "Tags array only",
+			req:      BulkTagRequest{Tags: []string{"action", "thriller"}},
+			expected: []string{"action", "thriller"},
+		},
+		{
+			name:     "Both tag and tags",
+			req:      BulkTagRequest{Tag: "vacation", Tags: []string{"action", "thriller"}},
+			expected: []string{"vacation", "action", "thriller"},
+		},
+		{
+			name:     "Deduplicates case-insensitively",
+			req:      BulkTagRequest{Tag: "Vacation", Tags: []string{"vacation", "VACATION", "other"}},
+			expected: []string{"Vacation", "other"},
+		},
+		{
+			name:     "Preserves original case of first occurrence",
+			req:      BulkTagRequest{Tags: []string{"Action", "action", "ACTION"}},
+			expected: []string{"Action"},
+		},
+		{
+			name:     "Trims whitespace",
+			req:      BulkTagRequest{Tag: "  vacation  ", Tags: []string{"  action  ", " thriller "}},
+			expected: []string{"vacation", "action", "thriller"},
+		},
+		{
+			name:     "Skips empty and whitespace-only entries",
+			req:      BulkTagRequest{Tag: "", Tags: []string{"", "  ", "valid", ""}},
+			expected: []string{"valid"},
+		},
+		{
+			name:     "All empty",
+			req:      BulkTagRequest{Tag: "", Tags: []string{"", "  "}},
+			expected: nil,
+		},
+		{
+			name:     "No tag or tags",
+			req:      BulkTagRequest{Paths: []string{"file.jpg"}},
+			expected: nil,
+		},
+		{
+			name:     "Tag duplicated in tags array",
+			req:      BulkTagRequest{Tag: "vacation", Tags: []string{"vacation", "summer"}},
+			expected: []string{"vacation", "summer"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.req.resolveTags()
+
+			if tt.expected == nil {
+				if len(result) != 0 {
+					t.Errorf("Expected empty/nil result, got %v", result)
+				}
+				return
+			}
+
+			if len(result) != len(tt.expected) {
+				t.Fatalf("Expected %d tags %v, got %d tags %v",
+					len(tt.expected), tt.expected, len(result), result)
+			}
+
+			for i, tag := range tt.expected {
+				if result[i] != tag {
+					t.Errorf("At index %d: expected %q, got %q", i, tag, result[i])
+				}
+			}
+		})
+	}
+}

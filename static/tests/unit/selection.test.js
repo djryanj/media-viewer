@@ -82,6 +82,7 @@ describe('ItemSelection Module', () => {
         ItemSelection.selectedData = new Map();
         ItemSelection.isAllSelected = false;
         ItemSelection.allSelectablePaths = null;
+        ItemSelection._taggableCount = 0;
 
         // Ensure elements are cached (call cacheElements if init() wasn't called during eval)
         if (!ItemSelection.elements.gallery) {
@@ -385,6 +386,187 @@ describe('ItemSelection Module', () => {
             expect(ItemSelection.selectedPaths.size).toBe(0);
             expect(ItemSelection.selectedData.size).toBe(0);
             expect(ItemSelection.isAllSelected).toBe(false);
+        });
+    });
+
+    describe('_taggableCount tracking', () => {
+        test('increments for non-folder items', () => {
+            ItemSelection.selectItemByData('/img.jpg', 'img.jpg', 'image');
+            expect(ItemSelection._taggableCount).toBe(1);
+
+            ItemSelection.selectItemByData('/vid.mp4', 'vid.mp4', 'video');
+            expect(ItemSelection._taggableCount).toBe(2);
+        });
+
+        test('does not increment for folders', () => {
+            ItemSelection.selectItemByData('/folder', 'folder', 'folder');
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        test('decrements on deselect', () => {
+            ItemSelection.selectItemByData('/img.jpg', 'img.jpg', 'image');
+            ItemSelection.selectItemByData('/vid.mp4', 'vid.mp4', 'video');
+            expect(ItemSelection._taggableCount).toBe(2);
+
+            ItemSelection.deselectItemByPath('/img.jpg', false);
+            expect(ItemSelection._taggableCount).toBe(1);
+        });
+
+        test('does not decrement below zero for folder deselect', () => {
+            ItemSelection.selectItemByData('/folder', 'folder', 'folder');
+            expect(ItemSelection._taggableCount).toBe(0);
+
+            ItemSelection.deselectItemByPath('/folder', false);
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        test('resets on enterSelectionMode', () => {
+            ItemSelection._taggableCount = 5;
+            ItemSelection.enterSelectionMode();
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        test('resets on exitSelectionMode', () => {
+            ItemSelection.isActive = true;
+            ItemSelection._taggableCount = 5;
+            ItemSelection.exitSelectionMode();
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        test('mixed folder and non-folder selections', () => {
+            ItemSelection.selectItemByData('/img.jpg', 'img.jpg', 'image');
+            ItemSelection.selectItemByData('/folder', 'folder', 'folder');
+            ItemSelection.selectItemByData('/vid.mp4', 'vid.mp4', 'video');
+
+            expect(ItemSelection.selectedPaths.size).toBe(3);
+            expect(ItemSelection._taggableCount).toBe(2);
+
+            ItemSelection.deselectItemByPath('/vid.mp4', false);
+            expect(ItemSelection._taggableCount).toBe(1);
+
+            ItemSelection.deselectItemByPath('/folder', false);
+            expect(ItemSelection._taggableCount).toBe(1);
+
+            ItemSelection.deselectItemByPath('/img.jpg', false);
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+    });
+
+    describe('selectItemBatch()', () => {
+        test('selects multiple items at once', () => {
+            const elements = [
+                { dataset: { path: '/img1.jpg', name: 'img1.jpg', type: 'image' } },
+                { dataset: { path: '/img2.jpg', name: 'img2.jpg', type: 'image' } },
+                { dataset: { path: '/vid.mp4', name: 'vid.mp4', type: 'video' } },
+            ];
+
+            ItemSelection.selectItemBatch(elements);
+
+            expect(ItemSelection.selectedPaths.size).toBe(3);
+            expect(ItemSelection.selectedData.size).toBe(3);
+            expect(ItemSelection._taggableCount).toBe(3);
+        });
+
+        test('skips non-selectable types', () => {
+            const elements = [
+                { dataset: { path: '/img.jpg', name: 'img.jpg', type: 'image' } },
+                { dataset: { path: '/doc.pdf', name: 'doc.pdf', type: 'document' } },
+            ];
+
+            ItemSelection.selectItemBatch(elements);
+
+            expect(ItemSelection.selectedPaths.size).toBe(1);
+            expect(ItemSelection._taggableCount).toBe(1);
+        });
+
+        test('skips already selected items', () => {
+            ItemSelection.selectItemByData('/img.jpg', 'img.jpg', 'image');
+            expect(ItemSelection._taggableCount).toBe(1);
+
+            const elements = [
+                { dataset: { path: '/img.jpg', name: 'img.jpg', type: 'image' } },
+                { dataset: { path: '/img2.jpg', name: 'img2.jpg', type: 'image' } },
+            ];
+
+            ItemSelection.selectItemBatch(elements);
+
+            expect(ItemSelection.selectedPaths.size).toBe(2);
+            expect(ItemSelection._taggableCount).toBe(2); // not 3
+        });
+
+        test('handles empty array', () => {
+            ItemSelection.selectItemBatch([]);
+
+            expect(ItemSelection.selectedPaths.size).toBe(0);
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        test('counts folders correctly in batch', () => {
+            const elements = [
+                { dataset: { path: '/img.jpg', name: 'img.jpg', type: 'image' } },
+                { dataset: { path: '/folder', name: 'folder', type: 'folder' } },
+                { dataset: { path: '/vid.mp4', name: 'vid.mp4', type: 'video' } },
+            ];
+
+            ItemSelection.selectItemBatch(elements);
+
+            expect(ItemSelection.selectedPaths.size).toBe(3);
+            expect(ItemSelection._taggableCount).toBe(2); // folder excluded
+        });
+    });
+
+    describe('deselectAll()', () => {
+        test('clears all state including taggable count', () => {
+            ItemSelection.selectItemByData('/img1.jpg', 'img1.jpg', 'image');
+            ItemSelection.selectItemByData('/img2.jpg', 'img2.jpg', 'image');
+            ItemSelection.isAllSelected = true;
+            ItemSelection.allSelectablePaths = [{ path: '/img1.jpg' }];
+
+            ItemSelection.deselectAll();
+
+            expect(ItemSelection.selectedPaths.size).toBe(0);
+            expect(ItemSelection.selectedData.size).toBe(0);
+            expect(ItemSelection._taggableCount).toBe(0);
+            expect(ItemSelection.isAllSelected).toBe(false);
+            expect(ItemSelection.allSelectablePaths).toBeNull();
+        });
+    });
+
+    describe('_adjustTaggableCount()', () => {
+        test('increments for image type', () => {
+            ItemSelection._taggableCount = 0;
+            ItemSelection._adjustTaggableCount('image', 1);
+            expect(ItemSelection._taggableCount).toBe(1);
+        });
+
+        test('increments for video type', () => {
+            ItemSelection._taggableCount = 0;
+            ItemSelection._adjustTaggableCount('video', 1);
+            expect(ItemSelection._taggableCount).toBe(1);
+        });
+
+        test('increments for playlist type', () => {
+            ItemSelection._taggableCount = 0;
+            ItemSelection._adjustTaggableCount('playlist', 1);
+            expect(ItemSelection._taggableCount).toBe(1);
+        });
+
+        test('does not increment for folder type', () => {
+            ItemSelection._taggableCount = 0;
+            ItemSelection._adjustTaggableCount('folder', 1);
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        test('decrements correctly', () => {
+            ItemSelection._taggableCount = 3;
+            ItemSelection._adjustTaggableCount('image', -1);
+            expect(ItemSelection._taggableCount).toBe(2);
+        });
+
+        test('does not decrement for folder type', () => {
+            ItemSelection._taggableCount = 3;
+            ItemSelection._adjustTaggableCount('folder', -1);
+            expect(ItemSelection._taggableCount).toBe(3);
         });
     });
 });

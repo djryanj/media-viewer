@@ -767,7 +767,7 @@ const TagClipboard = {
         let message;
 
         if (errorCount > 0) {
-            message = `Applied ${totalTags - errorCount} of ${totalTags} tags`;
+            message = `Applied ${successCount} of ${totalTags} tags`;
         } else if (newTags.length > 0 && existingTags.length > 0) {
             if (includeSourceForNewTags) {
                 message = `Applied ${existingTags.length} existing tags to ${destinationPaths.length} items, ${newTags.length} new tags to ${destinationPaths.length + 1} items`;
