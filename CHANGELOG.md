@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [0.13.7] - Unreleased
+## [0.14.0] - Unreleased
 
 ### Added
 
@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Major UI Overhaul ([#331](https://github.com/djryanj/media-viewer/issues/331)): During the work for [#326](https://github.com/djryanj/media-viewer/issues/326), it became apparent that the UI was a contributing factor in many of the problems experienced by users during tagging and general browsing workflows, such as taps removing tags on items in the gallery _through_ the tagging modal. The following were implemented:
+    - Desktop and mobile gallery views are now effectively identical. No more extra "select" button or information pane.
+    - Tags and filename overlays are now hidden in the gallery. They can still be accessed and used for search in the lightbox.
+    - Tags and favorite icon removed from gallery view. They can still be accessed in the lightbox.
+    - Select icon moved from lower left to upper left.
+    - Spacing reduced on desktop.
+    - Click-drag to select multiple items extended to desktop.
+      The interface now much more closely resembles proven designs.
 - perf: optimizing some slow database queries [[#322](https://github.com/djryanj/media-viewer/issues/322)]. Performance analysis before/after:
   | Benchmark | Before (ns/op) | After (ns/op) | Change | Notes |
   | ---------------------------------------------- | -------------- | ------------- | -------- | ------------------------------------------ |
@@ -31,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | **Search_MultipleTagFilters** | 3,199,139 | 2,319,799 | **-27%** | |
   | **Search_WithExclusion** | 3,442,747 | 2,152,224 | **-37%** | |
   | **GetFavorites_Small** | 206,692 | 164,397 | **-20%** | Indirect benefit from less lock contention |
-- tests: fixed a failing test case
+- tests: fixed a variety of test cases across both frontend and backend.
 - perf: Frontend performance problems during tagging operations and selection. Narrowed down to requiring backend changes to the bulk tags endpoint; may also affect [#322](https://github.com/djryanj/media-viewer/issues/322). ([#326](https://github.com/djryanj/media-viewer/issues/326))
 
 ## [0.13.6] - 02-22-2026

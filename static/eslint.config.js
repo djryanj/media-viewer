@@ -26,7 +26,6 @@ export default [
                 Search: 'writable',
                 Favorites: 'writable',
                 Tags: 'writable',
-                TagTooltip: 'writable',
                 TagClipboard: 'writable',
                 Preferences: 'writable',
                 HistoryManager: 'writable',

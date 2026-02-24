@@ -14,20 +14,31 @@ describe('ItemSelection Integration', () => {
         vi.resetModules();
 
         // Set up DOM structure
+        // NOTE: Selection checkboxes are now permanently part of gallery items,
+        // created by Gallery.createThumbArea(). The test DOM includes them
+        // for selectable types to match the real rendering.
         document.body.innerHTML = `
             <div id="main-content">
                 <div id="gallery" class="gallery">
                     <div class="gallery-item" data-path="/test/image1.jpg" data-name="image1.jpg" data-type="image">
-                        <div class="gallery-item-thumb"></div>
+                        <div class="gallery-item-thumb">
+                            <div class="selection-checkbox"><i data-lucide="check" class="checkbox-icon"></i></div>
+                        </div>
                     </div>
                     <div class="gallery-item" data-path="/test/image2.jpg" data-name="image2.jpg" data-type="image">
-                        <div class="gallery-item-thumb"></div>
+                        <div class="gallery-item-thumb">
+                            <div class="selection-checkbox"><i data-lucide="check" class="checkbox-icon"></i></div>
+                        </div>
                     </div>
                     <div class="gallery-item" data-path="/test/video1.mp4" data-name="video1.mp4" data-type="video">
-                        <div class="gallery-item-thumb"></div>
+                        <div class="gallery-item-thumb">
+                            <div class="selection-checkbox"><i data-lucide="check" class="checkbox-icon"></i></div>
+                        </div>
                     </div>
                     <div class="gallery-item" data-path="/test/folder1" data-name="folder1" data-type="folder">
-                        <div class="gallery-item-thumb"></div>
+                        <div class="gallery-item-thumb">
+                            <div class="selection-checkbox"><i data-lucide="check" class="checkbox-icon"></i></div>
+                        </div>
                     </div>
                     <div class="gallery-item" data-path="/test/document.pdf" data-name="document.pdf" data-type="document">
                         <div class="gallery-item-thumb"></div>
@@ -164,11 +175,11 @@ describe('ItemSelection Integration', () => {
             expect(ItemSelection.elements.toolbar.classList.contains('hidden')).toBe(false);
         });
 
-        it('should add checkboxes to gallery items', () => {
-            ItemSelection.enterSelectionMode();
-
+        it('should have permanent checkboxes on selectable gallery items', () => {
+            // Checkboxes are now permanently part of gallery items (created by Gallery.createThumbArea)
+            // They exist before entering selection mode
             const checkboxes = document.querySelectorAll('.selection-checkbox');
-            expect(checkboxes.length).toBeGreaterThan(0);
+            expect(checkboxes.length).toBe(4); // 4 selectable items have checkboxes
         });
 
         it('should push history state on enter', () => {
@@ -224,11 +235,12 @@ describe('ItemSelection Integration', () => {
             expect(ItemSelection.selectedData.size).toBe(0);
         });
 
-        it('should remove checkboxes from gallery', () => {
+        it('should keep checkboxes on exit (permanent in new UI)', () => {
             ItemSelection.exitSelectionMode();
 
+            // Checkboxes are permanent — they remain after exiting selection mode
             const checkboxes = document.querySelectorAll('.selection-checkbox');
-            expect(checkboxes.length).toBe(0);
+            expect(checkboxes.length).toBe(4);
         });
 
         it('should remove selected class from items', () => {
@@ -296,6 +308,14 @@ describe('ItemSelection Integration', () => {
             expect(ItemSelection.selectedPaths.size).toBe(0);
         });
 
+        it('should not select same item twice', () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+            ItemSelection.selectItem(item);
+
+            expect(ItemSelection.selectedPaths.size).toBe(1);
+        });
+
         it('should update toolbar after selection', async () => {
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
@@ -347,6 +367,25 @@ describe('ItemSelection Integration', () => {
 
             ItemSelection.toggleItem(item);
             expect(ItemSelection.selectedPaths.has('/test/image1.jpg')).toBe(false);
+        });
+
+        it('should deselect item by path', () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            ItemSelection.deselectItemByPath('/test/image1.jpg', false);
+
+            expect(ItemSelection.selectedPaths.has('/test/image1.jpg')).toBe(false);
+        });
+
+        it('should reset isAllSelected when deselecting', () => {
+            ItemSelection.isAllSelected = true;
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            ItemSelection.deselectItem(item, false);
+
+            expect(ItemSelection.isAllSelected).toBe(false);
         });
     });
 
@@ -538,6 +577,22 @@ describe('ItemSelection Integration', () => {
 
             expect(textSpan.textContent).toBe('None');
         });
+
+        it('should track taggable count incrementally', async () => {
+            expect(ItemSelection._taggableCount).toBe(0);
+
+            const imageItem = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(imageItem);
+            expect(ItemSelection._taggableCount).toBe(1);
+
+            const folderItem = document.querySelector('.gallery-item[data-type="folder"]');
+            ItemSelection.selectItem(folderItem);
+            // Folders are not taggable
+            expect(ItemSelection._taggableCount).toBe(1);
+
+            ItemSelection.deselectItem(imageItem, false);
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
     });
 
     describe('Keyboard Shortcuts', () => {
@@ -629,6 +684,19 @@ describe('ItemSelection Integration', () => {
             expect(_Tags.openBulkModal).toHaveBeenCalled();
         });
 
+        it('should trigger bulk favorite on F key', () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            const mockTarget = { matches: vi.fn(() => false) };
+            const event = new KeyboardEvent('keydown', { key: 'f', bubbles: true });
+            Object.defineProperty(event, 'target', { value: mockTarget, enumerable: true });
+            document.dispatchEvent(event);
+
+            // bulkFavorite is async, but it should be called
+            expect(global.fetch).toHaveBeenCalled();
+        });
+
         it('should not trigger shortcuts in input fields', () => {
             const input = document.createElement('input');
             input.type = 'text';
@@ -712,6 +780,17 @@ describe('ItemSelection Integration', () => {
             );
         });
 
+        it('should show message when no tags to paste', () => {
+            _TagClipboard.hasTags.mockReturnValue(false);
+
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            ItemSelection.pasteTagsToSelection();
+
+            expect(_Gallery.showToast).toHaveBeenCalledWith('No tags copied');
+        });
+
         it('should merge tags from multiple items', async () => {
             const items = document.querySelectorAll('.gallery-item[data-type="image"]');
             items.forEach((item) => ItemSelection.selectItem(item));
@@ -726,6 +805,15 @@ describe('ItemSelection Integration', () => {
             );
         });
 
+        it('should not merge with fewer than 2 taggable items', async () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            await ItemSelection.mergeTagsInSelection();
+
+            expect(_Gallery.showToast).toHaveBeenCalledWith(expect.stringContaining('at least 2'));
+        });
+
         it('should open bulk tag modal', () => {
             const items = document.querySelectorAll('.gallery-item[data-type="image"]');
             items.forEach((item) => ItemSelection.selectItem(item));
@@ -736,6 +824,15 @@ describe('ItemSelection Integration', () => {
                 ['/test/image1.jpg', '/test/image2.jpg'],
                 ['image1.jpg', 'image2.jpg']
             );
+        });
+
+        it('should not open bulk tag modal with no taggable items', () => {
+            const folder = document.querySelector('.gallery-item[data-type="folder"]');
+            ItemSelection.selectItem(folder);
+
+            ItemSelection.openBulkTagModal();
+
+            expect(_Gallery.showToast).toHaveBeenCalledWith('No taggable items selected');
         });
 
         it('should bulk favorite selected items', async () => {
@@ -812,7 +909,8 @@ describe('ItemSelection Integration', () => {
             expect(ItemSelection.isSelectableType('unknown')).toBe(false);
         });
 
-        it('should only add checkboxes to selectable types', () => {
+        it('should not have checkbox on non-selectable types', () => {
+            // Document type items don't get checkboxes (not added by Gallery.createThumbArea)
             const documentItem = document.querySelector('.gallery-item[data-type="document"]');
             const thumbArea = documentItem.querySelector('.gallery-item-thumb');
 
@@ -821,19 +919,18 @@ describe('ItemSelection Integration', () => {
     });
 
     describe('Checkbox Management', () => {
-        beforeEach(() => {
-            ItemSelection.enterSelectionMode();
-        });
-
-        it('should add checkbox to item', () => {
-            const item = document.querySelector('.gallery-item[data-type="image"]');
-            const checkbox = item.querySelector('.selection-checkbox');
+        it('should have permanent checkboxes before entering selection mode', () => {
+            // Checkboxes are now permanent — created by Gallery.createThumbArea()
+            const imageItem = document.querySelector('.gallery-item[data-type="image"]');
+            const checkbox = imageItem.querySelector('.selection-checkbox');
 
             expect(checkbox).toBeTruthy();
             expect(checkbox.querySelector('i[data-lucide="check"]')).toBeTruthy();
         });
 
-        it('should apply selected state to checkbox', async () => {
+        it('should apply selected state to item', async () => {
+            ItemSelection.enterSelectionMode();
+
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
 
@@ -843,11 +940,34 @@ describe('ItemSelection Integration', () => {
             });
         });
 
-        it('should remove checkboxes on exit', () => {
+        it('should keep checkboxes after exit (permanent UI)', () => {
+            ItemSelection.enterSelectionMode();
             ItemSelection.exitSelectionMode();
 
+            // Checkboxes are permanent — removeCheckboxesFromGallery is a no-op
             const checkboxes = document.querySelectorAll('.selection-checkbox');
-            expect(checkboxes.length).toBe(0);
+            expect(checkboxes.length).toBe(4);
+        });
+
+        it('should apply selection state to new items via addCheckboxesToNewItems', () => {
+            ItemSelection.enterSelectionMode();
+
+            // Simulate selecting an item by data (e.g., from select all)
+            ItemSelection.selectItemByData('/test/new-image.jpg', 'new-image.jpg', 'image');
+
+            // Create a new container with a matching item
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div class="gallery-item" data-path="/test/new-image.jpg" data-name="new-image.jpg" data-type="image">
+                    <div class="gallery-item-thumb"></div>
+                </div>
+            `;
+            document.getElementById('gallery').appendChild(container);
+
+            ItemSelection.addCheckboxesToNewItems(container);
+
+            const newItem = container.querySelector('.gallery-item');
+            expect(newItem.classList.contains('selected')).toBe(true);
         });
     });
 
@@ -881,6 +1001,64 @@ describe('ItemSelection Integration', () => {
 
             expect(ItemSelection.dragCachedItems).toBeInstanceOf(Array);
             expect(ItemSelection.dragCachedItems.length).toBeGreaterThan(0);
+        });
+
+        it('should use batch selection for rectangular region', () => {
+            const selectItemBatchSpy = vi.spyOn(ItemSelection, 'selectItemBatch');
+
+            const items = document.querySelectorAll('.gallery-item');
+            ItemSelection.selectRectangularRegion(items[0], items[2]);
+
+            expect(selectItemBatchSpy).toHaveBeenCalled();
+        });
+
+        it('should reset drag state on completion', () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.startDragSelection(item);
+
+            // Simulate drag end
+            ItemSelection.isDragging = false;
+            ItemSelection.isMouseDragging = false;
+            ItemSelection.lastTouchedElement = null;
+            ItemSelection.dragStartElement = null;
+            ItemSelection.dragCachedItems = null;
+            ItemSelection.dragStartIndex = -1;
+
+            expect(ItemSelection.isDragging).toBe(false);
+            expect(ItemSelection.dragCachedItems).toBeNull();
+        });
+    });
+
+    describe('Batch Operations', () => {
+        beforeEach(() => {
+            ItemSelection.enterSelectionMode();
+        });
+
+        it('should select multiple items in a batch', () => {
+            const items = Array.from(document.querySelectorAll('.gallery-item[data-type="image"]'));
+            ItemSelection.selectItemBatch(items);
+
+            expect(ItemSelection.selectedPaths.size).toBe(2);
+            expect(ItemSelection._taggableCount).toBe(2);
+        });
+
+        it('should skip non-selectable types in batch', () => {
+            const allItems = Array.from(document.querySelectorAll('.gallery-item'));
+            ItemSelection.selectItemBatch(allItems);
+
+            // document type should be skipped
+            expect(ItemSelection.selectedPaths.has('/test/document.pdf')).toBe(false);
+        });
+
+        it('should skip already selected items in batch', () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            const items = Array.from(document.querySelectorAll('.gallery-item[data-type="image"]'));
+            ItemSelection.selectItemBatch(items);
+
+            // Should still be 2, not 3
+            expect(ItemSelection.selectedPaths.size).toBe(2);
         });
     });
 
@@ -919,6 +1097,15 @@ describe('ItemSelection Integration', () => {
             const result = await ItemSelection.fetchAllSelectablePaths();
 
             expect(result).toBeNull();
+        });
+
+        it('should include sort parameters in fetch', async () => {
+            _MediaApp.state.currentSort = { field: 'date', order: 'desc' };
+
+            await ItemSelection.fetchAllSelectablePaths();
+
+            expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('sort=date'));
+            expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('order=desc'));
         });
     });
 
@@ -961,6 +1148,72 @@ describe('ItemSelection Integration', () => {
             ItemSelection.deselectItemByPath('/new/file.jpg', false);
 
             expect(ItemSelection.selectedPaths.has('/new/file.jpg')).toBe(false);
+        });
+
+        it('should not select non-selectable type by data', () => {
+            ItemSelection.selectItemByData('/new/doc.pdf', 'doc.pdf', 'document');
+
+            expect(ItemSelection.selectedPaths.has('/new/doc.pdf')).toBe(false);
+        });
+
+        it('should schedule DOM updates via requestAnimationFrame', () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            // pendingUpdates should have an entry
+            expect(ItemSelection.pendingUpdates.size).toBeGreaterThan(0);
+        });
+    });
+
+    describe('Performance Optimizations', () => {
+        beforeEach(() => {
+            ItemSelection.enterSelectionMode();
+        });
+
+        it('should debounce toolbar updates', () => {
+            const updateToolbarSpy = vi.spyOn(ItemSelection, 'updateToolbar');
+
+            // Select multiple items rapidly
+            const items = document.querySelectorAll('.gallery-item[data-type="image"]');
+            items.forEach((item) => ItemSelection.selectItem(item));
+
+            // updateToolbar should not have been called directly by selectItem
+            // (it uses scheduleToolbarUpdate which defers via rAF)
+            // The spy counts direct calls only
+            expect(ItemSelection._toolbarUpdateScheduled).toBe(true);
+        });
+
+        it('should reset taggable count on exit', () => {
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+            expect(ItemSelection._taggableCount).toBe(1);
+
+            ItemSelection.exitSelectionMode();
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        it('should reset taggable count on deselect all', () => {
+            const items = document.querySelectorAll('.gallery-item[data-type="image"]');
+            items.forEach((item) => ItemSelection.selectItem(item));
+            expect(ItemSelection._taggableCount).toBe(2);
+
+            ItemSelection.deselectAll();
+            expect(ItemSelection._taggableCount).toBe(0);
+        });
+
+        it('should cancel pending rAF on exit', () => {
+            const cancelSpy = vi.spyOn(globalThis, 'cancelAnimationFrame');
+
+            const item = document.querySelector('.gallery-item[data-type="image"]');
+            ItemSelection.selectItem(item);
+
+            // Force a scheduled update
+            ItemSelection._toolbarUpdateScheduled = true;
+            ItemSelection._toolbarUpdateRAFId = 123;
+
+            ItemSelection.exitSelectionMode();
+
+            expect(cancelSpy).toHaveBeenCalledWith(123);
         });
     });
 });

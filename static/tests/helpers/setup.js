@@ -34,7 +34,6 @@ global.Player = undefined;
 global.Search = undefined;
 global.Favorites = undefined;
 global.Tags = undefined;
-global.TagTooltip = undefined;
 global.Preferences = undefined;
 global.HistoryManager = undefined;
 global.ItemSelection = undefined;
@@ -48,7 +47,7 @@ global.SessionManager = undefined;
  * To reset state between tests, reset the module's properties in beforeEach().
  *
  * @param {string} moduleName - Name of the JS file (without .js extension)
- * @param {string} globalName - Name of the global variable the module assigns to (e.g., 'TagTooltip', 'Settings')
+ * @param {string} globalName - Name of the global variable the module assigns to (e.g., 'Settings')
  * @param {Object} options - Loading options
  * @param {boolean} options.preventAutoInit - Prevent DOMContentLoaded auto-initialization (default: true)
  * @returns {Promise<any>} The loaded module object

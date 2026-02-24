@@ -196,14 +196,6 @@ describe('Tags Integration Tests', () => {
             exitSelectionMode: vi.fn(),
         };
 
-        // Mock TagTooltip
-        const mockTagTooltip = {
-            hide: vi.fn(),
-            show: vi.fn(),
-            currentTarget: null,
-            getTagsForItem: vi.fn(() => []),
-        };
-
         // Mock CSS
         const mockCSS = {
             escape: vi.fn((str) => str.replace(/[^a-zA-Z0-9-_]/g, '\\$&')),
@@ -231,7 +223,6 @@ describe('Tags Integration Tests', () => {
         globalThis.Lightbox = mockLightbox;
         globalThis.Search = mockSearch;
         globalThis.ItemSelection = mockItemSelection;
-        globalThis.TagTooltip = mockTagTooltip;
         globalThis.CSS = mockCSS;
         globalThis.history = mockHistory;
         globalThis.console = { ...console, error: mockConsole.error };

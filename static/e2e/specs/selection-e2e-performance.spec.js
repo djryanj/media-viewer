@@ -30,7 +30,6 @@ const MAX_DEGRADATION = 4;
  */
 function createAPITimer(page) {
     const records = [];
-    let recording = true;
 
     // Intercept at the browser level using Performance Observer
     // for fetch calls, which captures actual network timing
