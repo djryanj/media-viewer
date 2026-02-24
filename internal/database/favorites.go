@@ -12,9 +12,6 @@ import (
 func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType FileType) error {
 	done := observeQuery("add_favorite")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -24,67 +21,49 @@ func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType 
 		ON CONFLICT(path) DO NOTHING
 	`
 
-	_, err := d.db.ExecContext(ctx, query, path, name, fileType, time.Now().Unix())
+	_, err := d.writer.ExecContext(ctx, query, path, name, fileType, time.Now().Unix())
 	done(err)
 	return err
 }
 
-// RemoveFavorite removes a path from favorites.
+// RemoveFavorite removes a favorite by its path.
 func (d *Database) RemoveFavorite(ctx context.Context, path string) error {
 	done := observeQuery("remove_favorite")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
+	_, err := d.writer.ExecContext(ctx, "DELETE FROM favorites WHERE path = ?", path)
 	done(err)
 	return err
 }
 
-// IsFavorite checks if a path is a favorite.
+// IsFavorite uses a prepared statement for the favorite check.
 func (d *Database) IsFavorite(ctx context.Context, path string) bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	return d.isFavoriteUnlocked(ctx, path)
-}
-
-// isFavoriteUnlocked checks favorite status without acquiring lock.
-// Caller must hold at least a read lock.
-func (d *Database) isFavoriteUnlocked(ctx context.Context, path string) bool {
-	var count int
-	err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites WHERE path = ?", path).Scan(&count)
+	var exists bool
+	err := d.stmts.isFavorite.QueryRowContext(ctx, path).Scan(&exists)
 	if err != nil {
 		return false
 	}
-	return count > 0
+	return exists
 }
 
 // GetFavorites returns all favorites with their file info.
 func (d *Database) GetFavorites(ctx context.Context) ([]MediaFile, error) {
 	done := observeQuery("get_favorites")
 
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	result, err := d.getFavoritesUnlocked(ctx)
+	result, err := d.getFavorites(ctx)
 	done(err)
 	return result, err
 }
 
-// getFavoritesUnlocked returns favorites without acquiring lock.
-// Caller must hold at least a read lock.
-func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error) {
-	// Optimized query with LEFT JOIN for folder counts (eliminates N+1 for folders)
+func (d *Database) getFavorites(ctx context.Context) ([]MediaFile, error) {
 	query := `
 		SELECT
 			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
@@ -99,13 +78,13 @@ func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error
 		ORDER BY fav.created_at DESC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.reader.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get favorites: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			logging.Error("error closing rows in getFavoritesUnlocked: %v", err)
+			logging.Error("error closing rows in getFavorites: %v", err)
 		}
 	}()
 
@@ -146,14 +125,11 @@ func (d *Database) getFavoritesUnlocked(ctx context.Context) ([]MediaFile, error
 
 // GetFavoriteCount returns the number of favorites.
 func (d *Database) GetFavoriteCount(ctx context.Context) int {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var count int
-	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites").Scan(&count); err != nil {
+	if err := d.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM favorites").Scan(&count); err != nil {
 		return 0
 	}
 	return count

@@ -123,7 +123,7 @@ func addPlaylistToDatabase(t *testing.T, db *database.Database, playlistPath, me
 	}
 	ctx := context.Background()
 	// Insert into database
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -136,11 +136,11 @@ func addPlaylistToDatabase(t *testing.T, db *database.Database, playlistPath, me
 		Type:    database.FileTypePlaylist,
 	}
 
-	if err := db.UpsertFile(ctx, tx, mediaFile); err != nil {
+	if err := batch.UpsertFile(ctx, mediaFile); err != nil {
 		t.Fatalf("failed to insert playlist: %v", err)
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("failed to commit transaction: %v", err)
 	}
 }

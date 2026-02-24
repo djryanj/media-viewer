@@ -100,7 +100,7 @@ func addTagTestFile(t *testing.T, db *database.Database, mediaDir, relPath strin
 	}
 	ctx := context.Background()
 	// Insert into database
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -113,11 +113,11 @@ func addTagTestFile(t *testing.T, db *database.Database, mediaDir, relPath strin
 		Type:    fileType,
 	}
 
-	if err := db.UpsertFile(ctx, tx, mediaFile); err != nil {
+	if err := batch.UpsertFile(ctx, mediaFile); err != nil {
 		t.Fatalf("failed to insert file: %v", err)
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("failed to commit transaction: %v", err)
 	}
 }

@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Click-drag to select multiple items extended to desktop.
     - Tags in the lightbox have been changed to a drawer system with better copy/paste functionality. [#327](https://github.com/djryanj/media-viewer/issues/327)
       The interface now much more closely resembles proven designs.
+- BREAKING: Database layer refactored for significantly improved performance and concurrency ([#338](https://github.com/djryanj/media-viewer/issues/338)
+    - Removed application-level sync.RWMutex from all database operations. SQLite WAL mode with busy_timeout now handles all read/write concurrency internally, eliminating unnecessary Go-level serialization that was blocking concurrent readers during writes.
+    - WAL mode and all SQLite PRAGMAs (synchronous, cache_size, temp_store, busy_timeout, mmap_size) moved from the connection string to a ConnectHook, ensuring consistent per-connection configuration across the pool.
+    - Introduced separate reader and writer connection pools. The writer pool is limited to a single connection (eliminating SQLITE_BUSY between writers entirely), while the reader pool allows up to 16 concurrent read connections under WAL mode.
+    - Introduced BatchInserter type for batch indexing operations. The upsert and delete prepared statements are now created once per batch and reused across all files, eliminating repeated query parsing during indexing.
+    - BeginBatch now returns a \*BatchInserter (breaking API change). UpsertFile and DeleteMissingFiles are now methods on BatchInserter rather than Database.
+    - Fixed N+1 query pattern in GetFilesByTag — per-row tag and favorite lookups replaced with scalar subqueries in the main SQL query.
+    - Benchmark results show 2× faster writes (UpsertFile), 11% faster directory listings, and up to 16% faster large read operations with many tags.
+
 - perf: optimizing some slow database queries [[#322](https://github.com/djryanj/media-viewer/issues/322)]. Performance analysis before/after:
   | Benchmark | Before (ns/op) | After (ns/op) | Change | Notes |
   | ---------------------------------------------- | -------------- | ------------- | -------- | ------------------------------------------ |

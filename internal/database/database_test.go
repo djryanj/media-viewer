@@ -466,50 +466,8 @@ func TestBeginBatchLockingBehavior(t *testing.T) {
 func TestDriverNameConstant(t *testing.T) {
 	t.Parallel()
 
-	if driverName != "sqlite3_mmap_disabled" {
-		t.Errorf("driverName = %q, want %q", driverName, "sqlite3_mmap_disabled")
-	}
-
-	if standardDriverName != "sqlite3" {
-		t.Errorf("standardDriverName = %q, want %q", standardDriverName, "sqlite3")
-	}
-}
-
-// TestActiveDriverName verifies driver selection based on options.
-func TestActiveDriverName(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		opts     *Options
-		wantName string
-	}{
-		{
-			name:     "nil options uses standard driver",
-			opts:     nil,
-			wantName: standardDriverName,
-		},
-		{
-			name:     "mmap enabled uses standard driver",
-			opts:     &Options{MmapDisabled: false},
-			wantName: standardDriverName,
-		},
-		{
-			name:     "mmap disabled uses custom driver",
-			opts:     &Options{MmapDisabled: true},
-			wantName: driverName,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := activeDriverName(tt.opts)
-			if got != tt.wantName {
-				t.Errorf("activeDriverName(%+v) = %q, want %q", tt.opts, got, tt.wantName)
-			}
-		})
+	if driverName != "sqlite3_custom" {
+		t.Errorf("driverName = %q, want %q", driverName, "sqlite3_custom")
 	}
 }
 
@@ -535,11 +493,11 @@ func TestOptionsStruct(t *testing.T) {
 func TestRegisterDriverIdempotent(t *testing.T) {
 	t.Parallel()
 
-	// registerDriver() was already called by init().
+	// registerDriver() was already called during init or New().
 	// Calling it again should be a no-op via sync.Once.
-	registerDriver()
-	registerDriver()
-	registerDriver()
+	registerDriver(nil)
+	registerDriver(&Options{MmapDisabled: true})
+	registerDriver(nil)
 
 	// If we got here without panicking, the test passes.
 }

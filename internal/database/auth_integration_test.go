@@ -427,7 +427,7 @@ func TestCleanExpiredSessionsIntegration(t *testing.T) {
 
 	// Create an expired session by directly inserting into DB
 	expiredToken := "expired-token-12345678901234567890"
-	_, err := db.db.ExecContext(ctx, `
+	_, err := db.writer.ExecContext(ctx, `
 		INSERT INTO sessions (user_id, token, expires_at)
 		VALUES (?, ?, ?)
 	`, user.ID, expiredToken, time.Now().Add(-1*time.Hour).Unix())
@@ -545,7 +545,7 @@ func TestPasswordHashingIntegration(t *testing.T) {
 
 	// Query the database directly to verify password is hashed
 	var passwordHash string
-	err := db.db.QueryRowContext(ctx, "SELECT password_hash FROM users LIMIT 1").Scan(&passwordHash)
+	err := db.reader.QueryRowContext(ctx, "SELECT password_hash FROM users LIMIT 1").Scan(&passwordHash)
 	if err != nil {
 		t.Fatalf("Failed to query password hash: %v", err)
 	}

@@ -41,7 +41,7 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 	}
 	ctx := context.Background()
 	// Create some test data
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 	for i := 0; i < 100; i++ {
 		file := database.MediaFile{
 			Name:       "test.jpg",
@@ -51,9 +51,9 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		db.UpsertFile(ctx, tx, &file)
+		batch.UpsertFile(ctx, &file)
 	}
-	db.EndBatch(tx, nil)
+	db.EndBatch(batch, nil)
 
 	// Update stats
 	stats := database.IndexStats{
@@ -105,7 +105,7 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 	}
 	ctx := context.Background()
 	// Create test directory structure with many folders
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 
 	// Add 100 folders
 	for i := 0; i < 100; i++ {
@@ -117,7 +117,7 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		db.UpsertFile(ctx, tx, &folder)
+		batch.UpsertFile(ctx, &folder)
 
 		// Add files to each folder
 		for j := 0; j < 50; j++ {
@@ -130,10 +130,10 @@ func BenchmarkListFilesEndpoint(b *testing.B) {
 				ModTime:    time.Now(),
 				MimeType:   "image/jpeg",
 			}
-			db.UpsertFile(ctx, tx, &file)
+			batch.UpsertFile(ctx, &file)
 		}
 	}
-	db.EndBatch(tx, nil)
+	db.EndBatch(batch, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -177,7 +177,7 @@ func BenchmarkGetMediaFilesEndpoint(b *testing.B) {
 
 	// Create test files with tags and favorites
 	ctx := context.Background()
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 
 	for i := 0; i < 1000; i++ {
 		file := database.MediaFile{
@@ -189,9 +189,9 @@ func BenchmarkGetMediaFilesEndpoint(b *testing.B) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		db.UpsertFile(ctx, tx, &file)
+		batch.UpsertFile(ctx, &file)
 	}
-	db.EndBatch(tx, nil)
+	db.EndBatch(batch, nil)
 
 	// Add some tags and favorites
 	tagName := "test"
@@ -249,7 +249,7 @@ func BenchmarkGetMediaFilesEndpoint_LargeDirectory(b *testing.B) {
 
 	// Create 14,000 files to simulate user's use case
 	ctx := context.Background()
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 
 	for i := 0; i < 14000; i++ {
 		file := database.MediaFile{
@@ -261,9 +261,9 @@ func BenchmarkGetMediaFilesEndpoint_LargeDirectory(b *testing.B) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		db.UpsertFile(ctx, tx, &file)
+		batch.UpsertFile(ctx, &file)
 	}
-	db.EndBatch(tx, nil)
+	db.EndBatch(batch, nil)
 
 	// Add some tags and favorites (realistic ratio)
 	tagName := "vacation"

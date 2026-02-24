@@ -61,7 +61,7 @@ func TestNewDatabase(t *testing.T) {
 
 	// Verify we can ping it
 	ctx := context.Background()
-	if err := db.db.PingContext(ctx); err != nil {
+	if err := db.reader.PingContext(ctx); err != nil {
 		t.Errorf("Database ping failed: %v", err)
 	}
 }
@@ -93,7 +93,7 @@ func TestNewDatabaseWithNilOptions(t *testing.T) {
 	}
 
 	// Verify database is functional
-	if err := db.db.PingContext(ctx); err != nil {
+	if err := db.reader.PingContext(ctx); err != nil {
 		t.Errorf("Database ping failed: %v", err)
 	}
 }
@@ -124,7 +124,7 @@ func TestNewDatabaseWithMmapEnabled(t *testing.T) {
 
 	// Verify read/write works
 	ctx := context.Background()
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
@@ -136,10 +136,10 @@ func TestNewDatabaseWithMmapEnabled(t *testing.T) {
 		Size:       1024,
 		ModTime:    time.Now(),
 	}
-	if err := db.UpsertFile(ctx, tx, file); err != nil {
+	if err := batch.UpsertFile(ctx, file); err != nil {
 		t.Fatalf("UpsertFile failed: %v", err)
 	}
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -167,7 +167,7 @@ func TestNewDatabaseWithMmapDisabled(t *testing.T) {
 
 	// Verify mmap is actually disabled
 	var mmapSize int64
-	if err := db.db.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
+	if err := db.reader.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
 		t.Fatalf("Failed to read mmap_size: %v", err)
 	}
 	if mmapSize != 0 {
@@ -185,7 +185,7 @@ func TestNewDatabaseWithMmapDisabled(t *testing.T) {
 	}
 
 	// Verify full read/write cycle works with mmap disabled
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
@@ -198,10 +198,10 @@ func TestNewDatabaseWithMmapDisabled(t *testing.T) {
 		ModTime:    time.Now(),
 		MimeType:   "image/jpeg",
 	}
-	if err := db.UpsertFile(ctx, tx, file); err != nil {
+	if err := batch.UpsertFile(ctx, file); err != nil {
 		t.Fatalf("UpsertFile failed with mmap disabled: %v", err)
 	}
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed with mmap disabled: %v", err)
 	}
 
@@ -332,41 +332,41 @@ func TestUpsertFileIntegration(t *testing.T) {
 	}
 
 	// Insert new file using transaction
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
-	err = db.UpsertFile(ctx, tx, &file)
+	err = batch.UpsertFile(ctx, &file)
 	if err != nil {
 		t.Fatalf("UpsertFile failed on insert: %v", err)
 	}
 
-	err = db.EndBatch(tx, nil)
+	err = db.EndBatch(batch, nil)
 	if err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
 	// Update existing file
 	file.Size = 2048
-	tx, err = db.BeginBatch(ctx)
+	batch, err = db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
-	err = db.UpsertFile(ctx, tx, &file)
+	err = batch.UpsertFile(ctx, &file)
 	if err != nil {
 		t.Fatalf("UpsertFile failed on update: %v", err)
 	}
 
-	err = db.EndBatch(tx, nil)
+	err = db.EndBatch(batch, nil)
 	if err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
 	// Verify file was updated
 	var size int64
-	err = db.db.QueryRowContext(ctx, "SELECT size FROM files WHERE path = ?", file.Path).Scan(&size)
+	err = db.reader.QueryRowContext(ctx, "SELECT size FROM files WHERE path = ?", file.Path).Scan(&size)
 	if err != nil {
 		t.Fatalf("Failed to query file: %v", err)
 	}
@@ -393,18 +393,18 @@ func TestListDirectoryIntegration(t *testing.T) {
 		{Name: "subfolder", Path: "folder1/subfolder", ParentPath: "folder1", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
 	for i := range files {
-		if err := db.UpsertFile(ctx, tx, &files[i]); err != nil {
+		if err := batch.UpsertFile(ctx, &files[i]); err != nil {
 			t.Fatalf("Failed to insert file %s: %v", files[i].Path, err)
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -485,18 +485,18 @@ func TestSearchIntegration(t *testing.T) {
 		{Name: "beach.mp4", Path: "videos/beach.mp4", ParentPath: "videos", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
 	for i := range files {
-		if err := db.UpsertFile(ctx, tx, &files[i]); err != nil {
+		if err := batch.UpsertFile(ctx, &files[i]); err != nil {
 			t.Fatalf("Failed to insert file: %v", err)
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -580,17 +580,17 @@ func TestGetFileByPathIntegration(t *testing.T) {
 		MimeType:   "image/jpeg",
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
-	err = db.UpsertFile(ctx, tx, &file)
+	err = batch.UpsertFile(ctx, &file)
 	if err != nil {
 		t.Fatalf("UpsertFile failed: %v", err)
 	}
 
-	err = db.EndBatch(tx, nil)
+	err = db.EndBatch(batch, nil)
 	if err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
@@ -636,16 +636,16 @@ func TestGetFilesUpdatedSinceIntegration(t *testing.T) {
 		ModTime:    now.Add(-1 * time.Hour),
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
-	if err := db.UpsertFile(ctx, tx, &oldFile); err != nil {
+	if err := batch.UpsertFile(ctx, &oldFile); err != nil {
 		t.Fatalf("Failed to insert old file: %v", err)
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -666,16 +666,16 @@ func TestGetFilesUpdatedSinceIntegration(t *testing.T) {
 		ModTime:    now,
 	}
 
-	tx, err = db.BeginBatch(ctx)
+	batch, err = db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
-	if err := db.UpsertFile(ctx, tx, &newFile); err != nil {
+	if err := batch.UpsertFile(ctx, &newFile); err != nil {
 		t.Fatalf("Failed to insert new file: %v", err)
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -712,18 +712,18 @@ func TestGetSubfoldersIntegration(t *testing.T) {
 		{Name: "grandchild", Path: "parent/child1/grandchild", ParentPath: "parent/child1", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
 	for i := range folders {
-		if err := db.UpsertFile(ctx, tx, &folders[i]); err != nil {
+		if err := batch.UpsertFile(ctx, &folders[i]); err != nil {
 			t.Fatalf("Failed to insert folder: %v", err)
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -761,18 +761,18 @@ func TestGetMediaFilesInFolderIntegration(t *testing.T) {
 		{Name: "video1.mp4", Path: "folder/video1.mp4", ParentPath: "folder", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
 	for i := range files {
-		if err := db.UpsertFile(ctx, tx, &files[i]); err != nil {
+		if err := batch.UpsertFile(ctx, &files[i]); err != nil {
 			t.Fatalf("Failed to insert file: %v", err)
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -840,18 +840,18 @@ func TestCalculateStatsIntegration(t *testing.T) {
 		{Name: "folder", Path: "folder", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
 	for i := range files {
-		if err := db.UpsertFile(ctx, tx, &files[i]); err != nil {
+		if err := batch.UpsertFile(ctx, &files[i]); err != nil {
 			t.Fatalf("Failed to insert file: %v", err)
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -886,7 +886,7 @@ func TestDatabaseConcurrency(t *testing.T) {
 	ctx := context.Background()
 	const numFiles = 100
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
@@ -901,12 +901,12 @@ func TestDatabaseConcurrency(t *testing.T) {
 			ModTime:    time.Now(),
 		}
 
-		if err := db.UpsertFile(ctx, tx, &file); err != nil {
+		if err := batch.UpsertFile(ctx, &file); err != nil {
 			t.Errorf("Insert %d failed: %v", i, err)
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -944,9 +944,9 @@ func BenchmarkUpsertFile(b *testing.B) {
 			ModTime:    now,
 		}
 
-		tx, _ := db.BeginBatch(ctx)
-		_ = db.UpsertFile(ctx, tx, &file)
-		_ = db.EndBatch(tx, nil)
+		batch, _ := db.BeginBatch(ctx)
+		_ = batch.UpsertFile(ctx, &file)
+		_ = db.EndBatch(batch, nil)
 	}
 }
 
@@ -956,7 +956,7 @@ func BenchmarkListDirectory(b *testing.B) {
 
 	ctx := context.Background()
 
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 	for i := 0; i < 100; i++ {
 		file := MediaFile{
 			Name:       filepath.Base(filepath.Join("bench", string(rune('a'+i%26))+".jpg")),
@@ -966,9 +966,9 @@ func BenchmarkListDirectory(b *testing.B) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(ctx, tx, &file)
+		_ = batch.UpsertFile(ctx, &file)
 	}
-	_ = db.EndBatch(tx, nil)
+	_ = db.EndBatch(batch, nil)
 
 	opts := ListOptions{
 		Path:     "bench",
@@ -1000,7 +1000,7 @@ func TestListDirectorySorting(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -1046,7 +1046,7 @@ func TestListDirectoryPagination(t *testing.T) {
 
 	ctx := context.Background()
 
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 	for i := 0; i < 25; i++ {
 		file := MediaFile{
 			Name:       filepath.Base(filepath.Join("page", "file"+string(rune('a'+i%26))+".jpg")),
@@ -1056,9 +1056,9 @@ func TestListDirectoryPagination(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(ctx, tx, &file)
+		_ = batch.UpsertFile(ctx, &file)
 	}
-	_ = db.EndBatch(tx, nil)
+	_ = db.EndBatch(batch, nil)
 
 	tests := []struct {
 		name        string
@@ -1135,7 +1135,7 @@ func TestSearchSuggestions(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -1168,7 +1168,7 @@ func TestGetAllPlaylists(t *testing.T) {
 	}
 
 	tx, _ := db.BeginBatch(ctx)
-	_ = db.UpsertFile(ctx, tx, &playlist)
+	_ = tx.UpsertFile(ctx, &playlist)
 	_ = db.EndBatch(tx, nil)
 
 	playlists, err := db.GetAllPlaylists(ctx)
@@ -1197,11 +1197,11 @@ func TestGetMediaInDirectory(t *testing.T) {
 		{Name: "beta.mp4", Path: "media/beta.mp4", ParentPath: "media", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
 	}
 
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = batch.UpsertFile(ctx, &files[i])
 	}
-	_ = db.EndBatch(tx, nil)
+	_ = db.EndBatch(batch, nil)
 
 	mediaFiles, err := db.GetMediaInDirectory(ctx, "media", SortByName, SortAsc)
 	if err != nil {
@@ -1230,7 +1230,7 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 		WHERE type = 'index'
 		AND name IN ('idx_files_media_directory_name', 'idx_files_media_directory_date', 'idx_files_path')
 	`
-	err := db.db.QueryRowContext(ctx, query).Scan(&indexCount)
+	err := db.reader.QueryRowContext(ctx, query).Scan(&indexCount)
 	if err != nil {
 		t.Fatalf("Failed to check for covering indexes: %v", err)
 	}
@@ -1239,7 +1239,7 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 		t.Errorf("Expected 3 covering indexes, got %d", indexCount)
 	}
 
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 	baseTime := time.Now().Add(-24 * time.Hour)
 	for i := 0; i < 500; i++ {
 		file := MediaFile{
@@ -1251,9 +1251,9 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 			ModTime:    baseTime.Add(time.Duration(i) * time.Minute),
 			MimeType:   "image/jpeg",
 		}
-		_ = db.UpsertFile(ctx, tx, &file)
+		_ = batch.UpsertFile(ctx, &file)
 	}
-	_ = db.EndBatch(tx, nil)
+	_ = db.EndBatch(batch, nil)
 
 	files, err := db.GetMediaInDirectory(ctx, "testdir", SortByName, SortAsc)
 	if err != nil {
@@ -1309,7 +1309,7 @@ func TestGetMediaInDirectory_WithFavoritesAndTags(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range insertFiles {
-		_ = db.UpsertFile(ctx, tx, &insertFiles[i])
+		_ = tx.UpsertFile(ctx, &insertFiles[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -1362,7 +1362,7 @@ func TestGetAllMediaFiles(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -1390,7 +1390,7 @@ func TestGetAllMediaFilesForThumbnails(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -1413,14 +1413,14 @@ func TestGetFoldersWithUpdatedContents(t *testing.T) {
 	folder := MediaFile{Name: "photos", Path: "photos", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()}
 
 	tx, _ := db.BeginBatch(ctx)
-	_ = db.UpsertFile(ctx, tx, &folder)
+	_ = tx.UpsertFile(ctx, &folder)
 	_ = db.EndBatch(tx, nil)
 
 	oldFile := MediaFile{Name: "old.jpg", Path: "photos/old.jpg", ParentPath: "photos", Type: FileTypeImage, Size: 1024, ModTime: time.Now()}
 
-	tx, _ = db.BeginBatch(ctx)
-	_ = db.UpsertFile(ctx, tx, &oldFile)
-	_ = db.EndBatch(tx, nil)
+	batch, _ := db.BeginBatch(ctx)
+	_ = batch.UpsertFile(ctx, &oldFile)
+	_ = db.EndBatch(batch, nil)
 
 	t.Logf("Waiting 11 seconds for timestamp separation...")
 	time.Sleep(11 * time.Second)
@@ -1428,9 +1428,9 @@ func TestGetFoldersWithUpdatedContents(t *testing.T) {
 
 	newFile := MediaFile{Name: "new.jpg", Path: "photos/new.jpg", ParentPath: "photos", Type: FileTypeImage, Size: 1024, ModTime: time.Now()}
 
-	tx, _ = db.BeginBatch(ctx)
-	_ = db.UpsertFile(ctx, tx, &newFile)
-	_ = db.EndBatch(tx, nil)
+	batch, _ = db.BeginBatch(ctx)
+	_ = batch.UpsertFile(ctx, &newFile)
+	_ = db.EndBatch(batch, nil)
 
 	folders, err := db.GetFoldersWithUpdatedContents(ctx, beforeUpdate)
 	if err != nil {
@@ -1463,7 +1463,7 @@ func TestGetAllIndexedPaths(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -1506,7 +1506,7 @@ func TestGetAllIndexedPaths_LargeSet(t *testing.T) {
 	ctx := context.Background()
 
 	fileCount := 1000
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 
 	for i := 0; i < fileCount; i++ {
 		file := MediaFile{
@@ -1517,9 +1517,9 @@ func TestGetAllIndexedPaths_LargeSet(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(ctx, tx, &file)
+		_ = batch.UpsertFile(ctx, &file)
 	}
-	_ = db.EndBatch(tx, nil)
+	_ = db.EndBatch(batch, nil)
 
 	paths, err := db.GetAllIndexedPaths(ctx)
 	if err != nil {
@@ -1629,7 +1629,7 @@ func TestSetupCompleteMigrationIntegration(t *testing.T) {
 	}
 
 	var setupComplete int
-	err = db.db.QueryRowContext(ctx, "SELECT setup_complete FROM users WHERE id = 1").Scan(&setupComplete)
+	err = db.reader.QueryRowContext(ctx, "SELECT setup_complete FROM users WHERE id = 1").Scan(&setupComplete)
 	if err != nil {
 		t.Fatalf("Failed to query setup_complete: %v", err)
 	}
@@ -1650,7 +1650,7 @@ func TestSetupCompleteMigrationIntegration(t *testing.T) {
 	}
 	defer db.Close()
 
-	err = db.db.QueryRowContext(ctx, "SELECT setup_complete FROM users WHERE id = 1").Scan(&setupComplete)
+	err = db.reader.QueryRowContext(ctx, "SELECT setup_complete FROM users WHERE id = 1").Scan(&setupComplete)
 	if err != nil {
 		t.Fatalf("Failed to query setup_complete after reopen: %v", err)
 	}
@@ -1671,7 +1671,7 @@ func TestDatabaseConnectionPoolConcurrency(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
@@ -1681,11 +1681,11 @@ func TestDatabaseConnectionPoolConcurrency(t *testing.T) {
 			Name: "test.jpg", Path: "test/test.jpg", ParentPath: "test",
 			Type: FileTypeImage, Size: 1024, ModTime: now,
 		}
-		if err := db.UpsertFile(ctx, tx, &file); err != nil {
+		if err := batch.UpsertFile(ctx, &file); err != nil {
 			t.Fatalf("UpsertFile failed: %v", err)
 		}
 	}
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -1724,7 +1724,7 @@ func TestBeginBatchNonBlocking(t *testing.T) {
 
 	ctx := context.Background()
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
@@ -1744,7 +1744,7 @@ func TestBeginBatchNonBlocking(t *testing.T) {
 		t.Error("Read blocked by batch transaction lock (should not happen with fix)")
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 }
@@ -1760,7 +1760,7 @@ func TestConnectionPoolUnderLoad(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
@@ -1769,11 +1769,11 @@ func TestConnectionPoolUnderLoad(t *testing.T) {
 			Name: "test.jpg", Path: "test/test.jpg", ParentPath: "test",
 			Type: FileTypeImage, Size: 1024, ModTime: now,
 		}
-		if err := db.UpsertFile(ctx, tx, &file); err != nil {
+		if err := batch.UpsertFile(ctx, &file); err != nil {
 			t.Fatalf("UpsertFile failed: %v", err)
 		}
 	}
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -1807,7 +1807,7 @@ func TestConnectionPoolUnderLoad(t *testing.T) {
 					Size:       1024,
 					ModTime:    now,
 				}
-				if uerr := db.UpsertFile(ctx, wtx, &file); uerr != nil {
+				if uerr := wtx.UpsertFile(ctx, &file); uerr != nil {
 					done <- uerr
 					return
 				}
@@ -1854,7 +1854,7 @@ func TestMmapDisabledOnAllConnections(t *testing.T) {
 	conns := make([]*sql.Conn, 0, numConns)
 
 	for i := 0; i < numConns; i++ {
-		conn, err := db.db.Conn(ctx)
+		conn, err := db.reader.Conn(ctx)
 		if err != nil {
 			t.Fatalf("Failed to get connection %d: %v", i, err)
 		}
@@ -1932,7 +1932,7 @@ func TestMmapDisabledAfterInitialize(t *testing.T) {
 	ctx := context.Background()
 
 	var mmapSize int64
-	err := db.db.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize)
+	err := db.reader.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize)
 	if err != nil {
 		t.Fatalf("Failed to read mmap_size: %v", err)
 	}
@@ -1986,7 +1986,7 @@ func TestNewDatabaseMmapDisabled(t *testing.T) {
 	defer db.Close()
 
 	var mmapSize int64
-	if err := db.db.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
+	if err := db.reader.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
 		t.Fatalf("Failed to read mmap_size: %v", err)
 	}
 
@@ -1994,7 +1994,7 @@ func TestNewDatabaseMmapDisabled(t *testing.T) {
 		t.Errorf("New() database has mmap_size=%d, want 0", mmapSize)
 	}
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
@@ -2004,10 +2004,10 @@ func TestNewDatabaseMmapDisabled(t *testing.T) {
 		Type: FileTypeImage, Size: 1024, ModTime: time.Now(), MimeType: "image/jpeg",
 	}
 
-	if err := db.UpsertFile(ctx, tx, file); err != nil {
+	if err := batch.UpsertFile(ctx, file); err != nil {
 		t.Fatalf("UpsertFile failed with mmap disabled: %v", err)
 	}
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed with mmap disabled: %v", err)
 	}
 
@@ -2055,7 +2055,7 @@ func TestMmapDisabledPersistsAcrossReopen(t *testing.T) {
 		Name: "persist.jpg", Path: "persist/persist.jpg", ParentPath: "persist",
 		Type: FileTypeImage, Size: 1024, ModTime: time.Now(),
 	}
-	if err := db1.UpsertFile(ctx, tx, file); err != nil {
+	if err := tx.UpsertFile(ctx, file); err != nil {
 		t.Fatalf("UpsertFile failed: %v", err)
 	}
 	if err := db1.EndBatch(tx, nil); err != nil {
@@ -2071,7 +2071,7 @@ func TestMmapDisabledPersistsAcrossReopen(t *testing.T) {
 	defer db2.Close()
 
 	var mmapSize int64
-	if err := db2.db.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
+	if err := db2.reader.QueryRowContext(ctx, "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
 		t.Fatalf("Failed to read mmap_size after reopen: %v", err)
 	}
 
@@ -2112,7 +2112,7 @@ func TestMmapModeSwitch(t *testing.T) {
 		Name: "switch.jpg", Path: "switch/switch.jpg", ParentPath: "switch",
 		Type: FileTypeImage, Size: 1024, ModTime: time.Now(),
 	}
-	if err := db1.UpsertFile(ctx, tx, file); err != nil {
+	if err := tx.UpsertFile(ctx, file); err != nil {
 		t.Fatalf("UpsertFile failed: %v", err)
 	}
 	if err := db1.EndBatch(tx, nil); err != nil {
@@ -2255,7 +2255,7 @@ func BenchmarkConnectionPoolAcquisition(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var count int
-		err := db.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM files").Scan(&count)
+		err := db.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM files").Scan(&count)
 		if err != nil {
 			b.Fatalf("Query failed: %v", err)
 		}
@@ -2270,11 +2270,11 @@ func BenchmarkBeginEndBatch(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		tx, err := db.BeginBatch(ctx)
+		batch, err := db.BeginBatch(ctx)
 		if err != nil {
 			b.Fatalf("BeginBatch failed: %v", err)
 		}
-		if err := db.EndBatch(tx, nil); err != nil {
+		if err = db.EndBatch(batch, err); err != nil {
 			b.Fatalf("EndBatch failed: %v", err)
 		}
 	}
