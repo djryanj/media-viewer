@@ -18,10 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Major UI Overhaul ([#331](https://github.com/djryanj/media-viewer/issues/331)): During the work for [#326](https://github.com/djryanj/media-viewer/issues/326), it became apparent that the UI was a contributing factor in many of the problems experienced by users during tagging and general browsing workflows, such as taps removing tags on items in the gallery _through_ the tagging modal. The following were implemented:
     - Desktop and mobile gallery views are now effectively identical. No more extra "select" button or information pane.
     - Tags and filename overlays are now hidden in the gallery. They can still be accessed and used for search in the lightbox.
-    - Tags and favorite icon removed from gallery view. They can still be accessed in the lightbox.
+    - Tags and favorite icon removed from gallery view. They can still be accessed in the lightbox and from the bottom toolbar in selection mode.
     - Select icon moved from lower left to upper left.
     - Spacing reduced on desktop.
     - Click-drag to select multiple items extended to desktop.
+    - Tags in the lightbox have been changed to a drawer system with better copy/paste functionality. [#327](https://github.com/djryanj/media-viewer/issues/327)
       The interface now much more closely resembles proven designs.
 - perf: optimizing some slow database queries [[#322](https://github.com/djryanj/media-viewer/issues/322)]. Performance analysis before/after:
   | Benchmark | Before (ns/op) | After (ns/op) | Change | Notes |

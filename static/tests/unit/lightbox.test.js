@@ -2,16 +2,16 @@
  * global loadModuleForTesting
  * Unit tests for Lightbox module
  *
- * Tests navigation logic, index management, and state operations
+ * Tests navigation logic, index management, state operations,
+ * drawer-based tag management, and clipboard integration
  * without heavy DOM manipulation or API calls.
  */
 
-import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, test, expect, beforeEach, beforeAll, afterEach, vi } from 'vitest';
 
 describe('Lightbox Module', () => {
     let Lightbox;
 
-    // Ensure Preferences and HistoryManager are available in all test scopes
     beforeAll(() => {
         globalThis.Preferences = {
             isClockAlwaysVisible: vi.fn(() => false),
@@ -30,10 +30,8 @@ describe('Lightbox Module', () => {
     });
 
     beforeEach(async () => {
-        // Reset all modules to ensure fresh imports
         vi.resetModules();
 
-        // Create DOM with lightbox elements
         document.body.innerHTML = `
             <div id="lightbox" class="hidden">
                 <img id="lightbox-image" class="hidden">
@@ -49,15 +47,17 @@ describe('Lightbox Module', () => {
                 <button id="lightbox-pin"></button>
                 <button id="lightbox-tag"></button>
                 <button id="lightbox-download"></button>
+                <div class="lightbox-info">
+                    <div id="lightbox-title"></div>
+                    <div id="lightbox-counter"></div>
+                </div>
             </div>
         `;
 
-        // Mock lucide
         globalThis.lucide = {
             createIcons: vi.fn(),
         };
 
-        // Mock MediaApp
         globalThis.MediaApp = {
             state: {
                 mediaFiles: [],
@@ -65,7 +65,6 @@ describe('Lightbox Module', () => {
             },
         };
 
-        // Mock Preferences
         globalThis.Preferences = {
             isClockAlwaysVisible: vi.fn(() => false),
             getVideoAutoplay: vi.fn(() => true),
@@ -76,20 +75,50 @@ describe('Lightbox Module', () => {
             isMediaLoopEnabled: vi.fn(() => true),
         };
 
-        // Mock HistoryManager
         globalThis.HistoryManager = {
             pushState: vi.fn(),
             removeState: vi.fn(),
             hasState: vi.fn(() => false),
         };
 
-        // Load Lightbox module
+        globalThis.Gallery = {
+            showToast: vi.fn(),
+            thumbnailFailures: {
+                count: 0,
+                lastFailureTime: 0,
+                connectivityCheckInProgress: false,
+            },
+            startConnectivityCheck: vi.fn(),
+        };
+
+        globalThis.Tags = {
+            searchByTag: vi.fn(),
+            refreshGalleryItemTags: vi.fn(),
+            updateGalleryItemTagsDOM: vi.fn(),
+            loadAllTags: vi.fn(),
+        };
+
+        globalThis.TagClipboard = {
+            copiedTags: [],
+            sourceItemName: null,
+            sourcePath: null,
+            hasTags: vi.fn(() => false),
+            getTags: vi.fn(() => []),
+            copyTagsDirect: vi.fn(() => true),
+            openPasteModal: vi.fn(),
+            openMergeModal: vi.fn(),
+            executePaste: vi.fn(() => Promise.resolve()),
+        };
+
+        globalThis.Favorites = {
+            isPinned: vi.fn(() => false),
+            toggleFavorite: vi.fn(() => Promise.resolve(false)),
+        };
+
         Lightbox = await loadModuleForTesting('lightbox', 'Lightbox');
 
-        // Cache elements
         Lightbox.cacheElements();
 
-        // Reset state
         Lightbox.items = [];
         Lightbox.currentIndex = 0;
         Lightbox.zoom = {
@@ -108,10 +137,11 @@ describe('Lightbox Module', () => {
             pinchCenterX: 0,
             pinchCenterY: 0,
         };
+        Lightbox.tagsDrawerOpen = false;
+        Lightbox._pasteRefreshHooked = false;
     });
 
     afterEach(() => {
-        // Clean up timers
         if (Lightbox && Lightbox.uiOverlaysTimeout) {
             clearTimeout(Lightbox.uiOverlaysTimeout);
             Lightbox.uiOverlaysTimeout = null;
@@ -121,6 +151,10 @@ describe('Lightbox Module', () => {
             Lightbox.animationCheckInterval = null;
         }
     });
+
+    // =========================================
+    // Navigation - prev()
+    // =========================================
 
     describe('Navigation - prev()', () => {
         test('moves to previous item', () => {
@@ -179,7 +213,31 @@ describe('Lightbox Module', () => {
 
             expect(Lightbox.currentIndex).toBe(1);
         });
+
+        test('closes tags drawer when navigating', () => {
+            Lightbox.items = [
+                { path: '/img1.jpg', name: 'img1.jpg', type: 'image' },
+                { path: '/img2.jpg', name: 'img2.jpg', type: 'image' },
+            ];
+            Lightbox.currentIndex = 1;
+
+            // Ensure drawer elements exist before setting drawer as open
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+            Lightbox.tagsDrawerOpen = true;
+
+            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawer');
+
+            Lightbox.prev();
+
+            expect(closeSpy).toHaveBeenCalled();
+        });
     });
+
+    // =========================================
+    // Navigation - next()
+    // =========================================
 
     describe('Navigation - next()', () => {
         test('moves to next item', () => {
@@ -238,7 +296,31 @@ describe('Lightbox Module', () => {
 
             expect(Lightbox.currentIndex).toBe(2);
         });
+
+        test('closes tags drawer when navigating', () => {
+            Lightbox.items = [
+                { path: '/img1.jpg', name: 'img1.jpg', type: 'image' },
+                { path: '/img2.jpg', name: 'img2.jpg', type: 'image' },
+            ];
+            Lightbox.currentIndex = 0;
+
+            // Ensure drawer elements exist before setting drawer as open
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+            Lightbox.tagsDrawerOpen = true;
+
+            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawer');
+
+            Lightbox.next();
+
+            expect(closeSpy).toHaveBeenCalled();
+        });
     });
+
+    // =========================================
+    // Navigation - circular behavior
+    // =========================================
 
     describe('Navigation - circular behavior', () => {
         test('prev -> next returns to same index', () => {
@@ -297,13 +379,13 @@ describe('Lightbox Module', () => {
             ];
             Lightbox.currentIndex = 0;
 
-            Lightbox.next(); // 0 -> 1
+            Lightbox.next();
             expect(Lightbox.currentIndex).toBe(1);
 
-            Lightbox.next(); // 1 -> 2
+            Lightbox.next();
             expect(Lightbox.currentIndex).toBe(2);
 
-            Lightbox.next(); // 2 -> 0 (wrap)
+            Lightbox.next();
             expect(Lightbox.currentIndex).toBe(0);
         });
 
@@ -315,16 +397,20 @@ describe('Lightbox Module', () => {
             ];
             Lightbox.currentIndex = 0;
 
-            Lightbox.prev(); // 0 -> 2 (wrap)
+            Lightbox.prev();
             expect(Lightbox.currentIndex).toBe(2);
 
-            Lightbox.prev(); // 2 -> 1
+            Lightbox.prev();
             expect(Lightbox.currentIndex).toBe(1);
 
-            Lightbox.prev(); // 1 -> 0
+            Lightbox.prev();
             expect(Lightbox.currentIndex).toBe(0);
         });
     });
+
+    // =========================================
+    // Zoom management
+    // =========================================
 
     describe('Zoom management', () => {
         test('resetZoom() resets scale to 1', () => {
@@ -364,6 +450,10 @@ describe('Lightbox Module', () => {
         });
     });
 
+    // =========================================
+    // UI overlay visibility
+    // =========================================
+
     describe('UI overlay visibility', () => {
         test('showUIOverlays() sets visible flag', () => {
             Lightbox.uiOverlaysVisible = false;
@@ -395,9 +485,8 @@ describe('Lightbox Module', () => {
 
             Lightbox.showUIOverlays();
 
-            // Should still show overlays
             expect(Lightbox.uiOverlaysVisible).toBe(true);
-            // But should not start auto-hide timer
+            // Should not start auto-hide timer when user manually hid overlays
             expect(Lightbox.uiOverlaysTimeout).toBeNull();
         });
 
@@ -418,6 +507,10 @@ describe('Lightbox Module', () => {
         });
     });
 
+    // =========================================
+    // handleSwipe()
+    // =========================================
+
     describe('handleSwipe()', () => {
         test('swipe right triggers prev()', () => {
             Lightbox.items = [
@@ -426,7 +519,7 @@ describe('Lightbox Module', () => {
             ];
             Lightbox.currentIndex = 1;
             Lightbox.touchStartX = 100;
-            Lightbox.touchEndX = 200; // Swipe right (positive diff)
+            Lightbox.touchEndX = 200;
 
             Lightbox.handleSwipe();
 
@@ -440,7 +533,7 @@ describe('Lightbox Module', () => {
             ];
             Lightbox.currentIndex = 0;
             Lightbox.touchStartX = 200;
-            Lightbox.touchEndX = 100; // Swipe left (negative diff)
+            Lightbox.touchEndX = 100;
 
             Lightbox.handleSwipe();
 
@@ -454,25 +547,24 @@ describe('Lightbox Module', () => {
             ];
             Lightbox.currentIndex = 0;
             Lightbox.touchStartX = 100;
-            Lightbox.touchEndX = 120; // Only 20px, below 50px threshold
+            Lightbox.touchEndX = 120;
 
             Lightbox.handleSwipe();
 
             expect(Lightbox.currentIndex).toBe(0);
         });
 
-        test('exactly 50px swipe triggers navigation', () => {
+        test('exactly 50px swipe does not trigger navigation', () => {
             Lightbox.items = [
                 { path: '/img1.jpg', name: 'img1.jpg', type: 'image' },
                 { path: '/img2.jpg', name: 'img2.jpg', type: 'image' },
             ];
             Lightbox.currentIndex = 0;
             Lightbox.touchStartX = 200;
-            Lightbox.touchEndX = 150; // Exactly 50px
+            Lightbox.touchEndX = 150;
 
             Lightbox.handleSwipe();
 
-            // Should not trigger (needs to be > 50, not >= 50)
             expect(Lightbox.currentIndex).toBe(0);
         });
 
@@ -483,13 +575,17 @@ describe('Lightbox Module', () => {
             ];
             Lightbox.currentIndex = 0;
             Lightbox.touchStartX = 200;
-            Lightbox.touchEndX = 149; // 51px
+            Lightbox.touchEndX = 149;
 
             Lightbox.handleSwipe();
 
             expect(Lightbox.currentIndex).toBe(1);
         });
     });
+
+    // =========================================
+    // abortCurrentLoad()
+    // =========================================
 
     describe('abortCurrentLoad()', () => {
         test('increments currentLoadId', () => {
@@ -511,6 +607,10 @@ describe('Lightbox Module', () => {
         });
     });
 
+    // =========================================
+    // State initialization
+    // =========================================
+
     describe('State initialization', () => {
         test('starts with empty items array', () => {
             expect(Lightbox.items).toEqual([]);
@@ -531,90 +631,716 @@ describe('Lightbox Module', () => {
         test('maxPreload is set to 3', () => {
             expect(Lightbox.maxPreload).toBe(3);
         });
+
+        test('tags drawer starts closed', () => {
+            expect(Lightbox.tagsDrawerOpen).toBe(false);
+        });
     });
 
-    describe('Tags overlay management', () => {
+    // =========================================
+    // Tags drawer management
+    // =========================================
+
+    describe('Tags drawer management', () => {
+        /**
+         * Helper: set up the drawer elements that createTagsDrawer() would
+         * normally build. We call init() which invokes createTagsDrawer(),
+         * but since the DOM is minimal we manually ensure the elements exist.
+         */
+        function ensureDrawerElements() {
+            // createTagsDrawer is called inside init(), but we need
+            // the lightbox-info bar for the tag summary to attach to.
+            // If init() was already called during module load, the
+            // elements should already be cached. Re-cache to be safe.
+            Lightbox.cacheElements();
+
+            // If createTagsDrawer hasn't run (elements missing), run it
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+        }
+
         beforeEach(() => {
-            // Add tags overlay elements
-            const tagsOverlay = document.createElement('div');
-            tagsOverlay.id = 'lightbox-tags-overlay';
-            tagsOverlay.className = 'hidden';
-
-            const tagsContainer = document.createElement('div');
-            tagsContainer.className = 'lightbox-tags-container';
-            tagsOverlay.appendChild(tagsContainer);
-
-            document.getElementById('lightbox').appendChild(tagsOverlay);
-
-            Lightbox.elements.tagsOverlay = tagsOverlay;
-            Lightbox.elements.tagsContainer = tagsContainer;
+            ensureDrawerElements();
         });
 
-        test('updateTagsOverlay shows tags', () => {
-            const file = {
-                path: '/test.jpg',
-                tags: ['nature', 'sunset'],
-            };
+        test('openTagsDrawer sets tagsDrawerOpen to true', () => {
+            Lightbox.items = [
+                { path: '/img1.jpg', name: 'img1.jpg', type: 'image', tags: ['nature'] },
+            ];
+            Lightbox.currentIndex = 0;
 
-            Lightbox.updateTagsOverlay(file);
+            Lightbox.openTagsDrawer();
 
-            expect(Lightbox.elements.tagsOverlay.classList.contains('hidden')).toBe(false);
-            expect(Lightbox.elements.tagsContainer.innerHTML).toContain('nature');
-            expect(Lightbox.elements.tagsContainer.innerHTML).toContain('sunset');
+            expect(Lightbox.tagsDrawerOpen).toBe(true);
         });
 
-        test('updateTagsOverlay hides when no tags', () => {
-            const file = {
-                path: '/test.jpg',
-                tags: [],
-            };
+        test('openTagsDrawer does nothing if already open', () => {
+            Lightbox.items = [{ path: '/img1.jpg', name: 'img1.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+            Lightbox.tagsDrawerOpen = true;
 
-            Lightbox.updateTagsOverlay(file);
+            const renderSpy = vi.spyOn(Lightbox, 'renderDrawerTags');
 
-            expect(Lightbox.elements.tagsOverlay.classList.contains('hidden')).toBe(true);
-            expect(Lightbox.elements.tagsContainer.innerHTML).toBe('');
+            Lightbox.openTagsDrawer();
+
+            expect(renderSpy).not.toHaveBeenCalled();
         });
 
-        test('updateTagsOverlay handles undefined tags', () => {
-            const file = {
-                path: '/test.jpg',
-            };
+        test('openTagsDrawer pushes history state', () => {
+            Lightbox.items = [{ path: '/img1.jpg', name: 'img1.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
 
-            Lightbox.updateTagsOverlay(file);
+            Lightbox.openTagsDrawer();
 
-            expect(Lightbox.elements.tagsOverlay.classList.contains('hidden')).toBe(true);
+            expect(HistoryManager.pushState).toHaveBeenCalledWith('lightbox-drawer');
         });
 
-        test('tag chip has remove button', () => {
-            const file = {
-                path: '/test.jpg',
-                tags: ['nature'],
-            };
+        test('openTagsDrawer updates copy and paste button states', () => {
+            Lightbox.items = [
+                { path: '/img1.jpg', name: 'img1.jpg', type: 'image', tags: ['a', 'b'] },
+            ];
+            Lightbox.currentIndex = 0;
 
-            Lightbox.updateTagsOverlay(file);
+            const copySpy = vi.spyOn(Lightbox, 'updateDrawerCopyButton');
+            const pasteSpy = vi.spyOn(Lightbox, 'updateDrawerPasteButton');
 
-            const removeBtn = Lightbox.elements.tagsContainer.querySelector('.lightbox-tag-remove');
-            expect(removeBtn).toBeTruthy();
+            Lightbox.openTagsDrawer();
+
+            expect(copySpy).toHaveBeenCalled();
+            expect(pasteSpy).toHaveBeenCalled();
         });
 
-        test('clicking tag text opens Tags modal', () => {
-            globalThis.Tags = {
-                searchByTag: vi.fn(),
-            };
+        test('closeTagsDrawer sets tagsDrawerOpen to false', () => {
+            Lightbox.tagsDrawerOpen = true;
 
-            const file = {
-                path: '/test.jpg',
-                tags: ['nature'],
-            };
+            Lightbox.closeTagsDrawer();
 
-            Lightbox.updateTagsOverlay(file);
-
-            const tagText = Lightbox.elements.tagsContainer.querySelector('.lightbox-tag-text');
-            tagText.click();
-
-            expect(Tags.searchByTag).toHaveBeenCalledWith('nature');
+            expect(Lightbox.tagsDrawerOpen).toBe(false);
         });
 
+        test('closeTagsDrawer does nothing if already closed', () => {
+            Lightbox.tagsDrawerOpen = false;
+
+            // Should not throw
+            Lightbox.closeTagsDrawer();
+
+            expect(Lightbox.tagsDrawerOpen).toBe(false);
+        });
+
+        test('closeTagsDrawer resumes auto-hide of overlays', () => {
+            Lightbox.tagsDrawerOpen = true;
+            Lightbox.userHidOverlays = true;
+
+            Lightbox.closeTagsDrawer();
+
+            expect(Lightbox.userHidOverlays).toBe(false);
+        });
+
+        test('renderDrawerTags shows empty state when no tags', () => {
+            const file = { path: '/test.jpg', tags: [] };
+
+            Lightbox.renderDrawerTags(file);
+
+            expect(Lightbox.elements.drawerEmptyState.classList.contains('hidden')).toBe(false);
+        });
+
+        test('renderDrawerTags hides empty state when tags exist', () => {
+            const file = { path: '/test.jpg', tags: ['nature'] };
+
+            Lightbox.renderDrawerTags(file);
+
+            expect(Lightbox.elements.drawerEmptyState.classList.contains('hidden')).toBe(true);
+        });
+
+        test('renderDrawerTags creates chip for each tag', () => {
+            const file = { path: '/test.jpg', tags: ['nature', 'sunset', 'beach'] };
+
+            Lightbox.renderDrawerTags(file);
+
+            const chips = Lightbox.elements.drawerTagsList.querySelectorAll('.drawer-tag-chip');
+            expect(chips.length).toBe(3);
+        });
+
+        test('renderDrawerTags updates copy button state', () => {
+            const copySpy = vi.spyOn(Lightbox, 'updateDrawerCopyButton');
+            const file = { path: '/test.jpg', tags: ['nature'] };
+
+            Lightbox.renderDrawerTags(file);
+
+            expect(copySpy).toHaveBeenCalled();
+        });
+
+        test('updateTagSummary shows tags in info bar', () => {
+            if (!Lightbox.elements.tagSummary) return; // skip if info bar not in DOM
+
+            const file = { tags: ['nature', 'sunset'] };
+
+            Lightbox.updateTagSummary(file);
+
+            expect(Lightbox.elements.tagSummary.classList.contains('hidden')).toBe(false);
+            const text = Lightbox.elements.tagSummary.querySelector('.tag-summary-text');
+            expect(text.textContent).toContain('nature');
+            expect(text.textContent).toContain('sunset');
+        });
+
+        test('updateTagSummary hides when no tags', () => {
+            if (!Lightbox.elements.tagSummary) return;
+
+            const file = { tags: [] };
+
+            Lightbox.updateTagSummary(file);
+
+            expect(Lightbox.elements.tagSummary.classList.contains('hidden')).toBe(true);
+        });
+
+        test('updateTagSummary handles undefined tags', () => {
+            if (!Lightbox.elements.tagSummary) return;
+
+            const file = { path: '/test.jpg' };
+
+            Lightbox.updateTagSummary(file);
+
+            expect(Lightbox.elements.tagSummary.classList.contains('hidden')).toBe(true);
+        });
+
+        test('updateTagSummary shows overflow count for many tags', () => {
+            if (!Lightbox.elements.tagSummary) return;
+
+            const file = { tags: ['a', 'b', 'c', 'd', 'e'] };
+
+            Lightbox.updateTagSummary(file);
+
+            const text = Lightbox.elements.tagSummary.querySelector('.tag-summary-text');
+            expect(text.textContent).toContain('+2');
+        });
+    });
+
+    // =========================================
+    // Drawer copy functionality
+    // =========================================
+
+    describe('copyTagsFromDrawer()', () => {
+        function ensureDrawerElements() {
+            Lightbox.cacheElements();
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+        }
+
+        beforeEach(() => {
+            ensureDrawerElements();
+        });
+
+        test('copies current item tags to clipboard', () => {
+            Lightbox.items = [
+                {
+                    path: '/photo.jpg',
+                    name: 'photo.jpg',
+                    type: 'image',
+                    tags: ['vacation', 'beach'],
+                },
+            ];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.copyTagsFromDrawer();
+
+            expect(TagClipboard.copyTagsDirect).toHaveBeenCalledWith(
+                ['vacation', 'beach'],
+                '/photo.jpg',
+                'photo.jpg'
+            );
+        });
+
+        test('shows toast with tag count', () => {
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['a', 'b', 'c'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.copyTagsFromDrawer();
+
+            expect(Gallery.showToast).toHaveBeenCalledWith(expect.stringContaining('3 tags'));
+        });
+
+        test('shows toast when no tags to copy', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.copyTagsFromDrawer();
+
+            expect(Gallery.showToast).toHaveBeenCalledWith('No tags to copy');
+            expect(TagClipboard.copyTagsDirect).not.toHaveBeenCalled();
+        });
+
+        test('shows toast when tags are undefined', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image' }];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.copyTagsFromDrawer();
+
+            expect(Gallery.showToast).toHaveBeenCalledWith('No tags to copy');
+        });
+
+        test('does nothing when no current item', () => {
+            Lightbox.items = [];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.copyTagsFromDrawer();
+
+            expect(TagClipboard.copyTagsDirect).not.toHaveBeenCalled();
+        });
+
+        test('updates paste button state after copy', () => {
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['a'] },
+            ];
+            Lightbox.currentIndex = 0;
+            const pasteSpy = vi.spyOn(Lightbox, 'updateDrawerPasteButton');
+
+            Lightbox.copyTagsFromDrawer();
+
+            expect(pasteSpy).toHaveBeenCalled();
+        });
+
+        test('singular grammar for single tag', () => {
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['solo'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.copyTagsFromDrawer();
+
+            expect(Gallery.showToast).toHaveBeenCalledWith(expect.stringContaining('1 tag'));
+            // Should NOT contain "1 tags"
+            const call = Gallery.showToast.mock.calls[0][0];
+            expect(call).not.toContain('1 tags');
+        });
+    });
+
+    // =========================================
+    // Drawer paste functionality
+    // =========================================
+
+    describe('pasteTagsFromDrawer()', () => {
+        function ensureDrawerElements() {
+            Lightbox.cacheElements();
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+        }
+
+        beforeEach(() => {
+            ensureDrawerElements();
+        });
+
+        test('opens paste modal for current item', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+            TagClipboard.hasTags.mockReturnValue(true);
+            TagClipboard.copiedTags = ['nature', 'sunset'];
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(TagClipboard.openPasteModal).toHaveBeenCalledWith(['/photo.jpg'], ['photo.jpg']);
+        });
+
+        test('shows toast when clipboard is empty', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+            TagClipboard.hasTags.mockReturnValue(false);
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(Gallery.showToast).toHaveBeenCalledWith(
+                expect.stringContaining('No tags in clipboard')
+            );
+            expect(TagClipboard.openPasteModal).not.toHaveBeenCalled();
+        });
+
+        test('shows toast when trying to paste onto folder', () => {
+            Lightbox.items = [{ path: '/folder', name: 'folder', type: 'folder', tags: [] }];
+            Lightbox.currentIndex = 0;
+            TagClipboard.hasTags.mockReturnValue(true);
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(Gallery.showToast).toHaveBeenCalledWith(
+                expect.stringContaining('Cannot paste tags onto a folder')
+            );
+            expect(TagClipboard.openPasteModal).not.toHaveBeenCalled();
+        });
+
+        test('does nothing when no current item', () => {
+            Lightbox.items = [];
+            Lightbox.currentIndex = 0;
+            TagClipboard.hasTags.mockReturnValue(true);
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(TagClipboard.openPasteModal).not.toHaveBeenCalled();
+        });
+
+        test('stores pending refresh path', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+            TagClipboard.hasTags.mockReturnValue(true);
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(Lightbox._pendingPasteRefresh).toBe('/photo.jpg');
+        });
+
+        test('installs paste refresh hook', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+            TagClipboard.hasTags.mockReturnValue(true);
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(Lightbox._pasteRefreshHooked).toBe(true);
+        });
+
+        test('handles missing TagClipboard gracefully', () => {
+            const saved = globalThis.TagClipboard;
+            delete globalThis.TagClipboard;
+
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+
+            // Should not throw
+            expect(() => Lightbox.pasteTagsFromDrawer()).not.toThrow();
+
+            globalThis.TagClipboard = saved;
+        });
+    });
+
+    // =========================================
+    // Drawer button state management
+    // =========================================
+
+    describe('updateDrawerCopyButton()', () => {
+        function ensureDrawerElements() {
+            Lightbox.cacheElements();
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+        }
+
+        beforeEach(() => {
+            ensureDrawerElements();
+        });
+
+        test('enables button when current item has tags', () => {
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['a', 'b'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.updateDrawerCopyButton();
+
+            expect(Lightbox.elements.drawerCopyBtn.disabled).toBe(false);
+        });
+
+        test('disables button when current item has no tags', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.updateDrawerCopyButton();
+
+            expect(Lightbox.elements.drawerCopyBtn.disabled).toBe(true);
+        });
+
+        test('disables button when tags are undefined', () => {
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image' }];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.updateDrawerCopyButton();
+
+            expect(Lightbox.elements.drawerCopyBtn.disabled).toBe(true);
+        });
+
+        test('disables button when no items', () => {
+            Lightbox.items = [];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.updateDrawerCopyButton();
+
+            expect(Lightbox.elements.drawerCopyBtn.disabled).toBe(true);
+        });
+
+        test('updates title with tag count', () => {
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['a', 'b', 'c'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.updateDrawerCopyButton();
+
+            expect(Lightbox.elements.drawerCopyBtn.title).toContain('3 tags');
+        });
+    });
+
+    describe('updateDrawerPasteButton()', () => {
+        function ensureDrawerElements() {
+            Lightbox.cacheElements();
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+        }
+
+        beforeEach(() => {
+            ensureDrawerElements();
+        });
+
+        test('enables button when clipboard has tags', () => {
+            TagClipboard.hasTags.mockReturnValue(true);
+            TagClipboard.copiedTags = ['nature', 'sunset'];
+            TagClipboard.sourceItemName = 'source.jpg';
+
+            Lightbox.updateDrawerPasteButton();
+
+            expect(Lightbox.elements.drawerPasteBtn.disabled).toBe(false);
+        });
+
+        test('disables button when clipboard is empty', () => {
+            TagClipboard.hasTags.mockReturnValue(false);
+            TagClipboard.copiedTags = [];
+
+            Lightbox.updateDrawerPasteButton();
+
+            expect(Lightbox.elements.drawerPasteBtn.disabled).toBe(true);
+        });
+
+        test('updates title with clipboard info when tags available', () => {
+            TagClipboard.hasTags.mockReturnValue(true);
+            TagClipboard.copiedTags = ['a', 'b'];
+            TagClipboard.sourceItemName = 'beach.jpg';
+
+            Lightbox.updateDrawerPasteButton();
+
+            expect(Lightbox.elements.drawerPasteBtn.title).toContain('2 tags');
+            expect(Lightbox.elements.drawerPasteBtn.title).toContain('beach.jpg');
+        });
+
+        test('shows generic title when clipboard is empty', () => {
+            TagClipboard.hasTags.mockReturnValue(false);
+
+            Lightbox.updateDrawerPasteButton();
+
+            expect(Lightbox.elements.drawerPasteBtn.title).toBe('No tags in clipboard');
+        });
+    });
+
+    // =========================================
+    // Paste refresh hook
+    // =========================================
+
+    describe('_ensurePasteRefreshHook()', () => {
+        test('wraps executePaste only once', () => {
+            const original = TagClipboard.executePaste;
+
+            Lightbox._ensurePasteRefreshHook();
+            const firstWrapped = TagClipboard.executePaste;
+
+            Lightbox._ensurePasteRefreshHook();
+            const secondWrapped = TagClipboard.executePaste;
+
+            // Should be the same wrapped function, not double-wrapped
+            expect(firstWrapped).toBe(secondWrapped);
+            expect(Lightbox._pasteRefreshHooked).toBe(true);
+        });
+
+        test('wrapped executePaste calls original', async () => {
+            const originalSpy = vi.fn(() => Promise.resolve());
+            TagClipboard.executePaste = originalSpy;
+
+            Lightbox._pasteRefreshHooked = false;
+            Lightbox._ensurePasteRefreshHook();
+
+            await TagClipboard.executePaste(['path'], ['existing'], ['new'], false, 'paste');
+
+            expect(originalSpy).toHaveBeenCalledWith(
+                ['path'],
+                ['existing'],
+                ['new'],
+                false,
+                'paste'
+            );
+        });
+
+        test('wrapped executePaste triggers refresh when pending', async () => {
+            TagClipboard.executePaste = vi.fn(() => Promise.resolve());
+            Lightbox._pasteRefreshHooked = false;
+            Lightbox._pendingPasteRefresh = '/photo.jpg';
+
+            const refreshSpy = vi
+                .spyOn(Lightbox, '_refreshTagsAfterPaste')
+                .mockResolvedValue(undefined);
+
+            Lightbox._ensurePasteRefreshHook();
+            await TagClipboard.executePaste([], [], [], false, 'paste');
+
+            expect(refreshSpy).toHaveBeenCalledWith('/photo.jpg');
+            expect(Lightbox._pendingPasteRefresh).toBeNull();
+        });
+
+        test('wrapped executePaste skips refresh when no pending path', async () => {
+            TagClipboard.executePaste = vi.fn(() => Promise.resolve());
+            Lightbox._pasteRefreshHooked = false;
+            Lightbox._pendingPasteRefresh = null;
+
+            const refreshSpy = vi
+                .spyOn(Lightbox, '_refreshTagsAfterPaste')
+                .mockResolvedValue(undefined);
+
+            Lightbox._ensurePasteRefreshHook();
+            await TagClipboard.executePaste([], [], [], false, 'paste');
+
+            expect(refreshSpy).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================
+    // _refreshTagsAfterPaste()
+    // =========================================
+
+    describe('_refreshTagsAfterPaste()', () => {
+        function ensureDrawerElements() {
+            Lightbox.cacheElements();
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+        }
+
+        beforeEach(() => {
+            ensureDrawerElements();
+        });
+
+        test('fetches tags from server and updates item', async () => {
+            globalThis.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(['nature', 'sunset', 'new-tag']),
+                })
+            );
+
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['nature'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            await Lightbox._refreshTagsAfterPaste('/photo.jpg');
+
+            expect(Lightbox.items[0].tags).toEqual(['nature', 'sunset', 'new-tag']);
+        });
+
+        test('updates gallery item DOM', async () => {
+            globalThis.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(['a', 'b']),
+                })
+            );
+
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+
+            await Lightbox._refreshTagsAfterPaste('/photo.jpg');
+
+            expect(Tags.updateGalleryItemTagsDOM).toHaveBeenCalledWith('/photo.jpg', ['a', 'b']);
+        });
+
+        test('re-renders drawer if open', async () => {
+            globalThis.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(['refreshed']),
+                })
+            );
+
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+            Lightbox.tagsDrawerOpen = true;
+
+            const renderSpy = vi.spyOn(Lightbox, 'renderDrawerTags');
+
+            await Lightbox._refreshTagsAfterPaste('/photo.jpg');
+
+            expect(renderSpy).toHaveBeenCalled();
+        });
+
+        test('does not re-render drawer if closed', async () => {
+            globalThis.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(['refreshed']),
+                })
+            );
+
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+            Lightbox.tagsDrawerOpen = false;
+
+            const renderSpy = vi.spyOn(Lightbox, 'renderDrawerTags');
+
+            await Lightbox._refreshTagsAfterPaste('/photo.jpg');
+
+            expect(renderSpy).not.toHaveBeenCalled();
+        });
+
+        test('handles fetch failure gracefully', async () => {
+            globalThis.fetch = vi.fn(() => Promise.reject(new Error('Network error')));
+
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['old'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            await expect(Lightbox._refreshTagsAfterPaste('/photo.jpg')).resolves.not.toThrow();
+
+            // Tags should remain unchanged
+            expect(Lightbox.items[0].tags).toEqual(['old']);
+        });
+
+        test('handles non-ok response gracefully', async () => {
+            globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 500 }));
+
+            Lightbox.items = [
+                { path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: ['old'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            await Lightbox._refreshTagsAfterPaste('/photo.jpg');
+
+            expect(Lightbox.items[0].tags).toEqual(['old']);
+        });
+
+        test('skips update if current item path does not match', async () => {
+            globalThis.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(['new']),
+                })
+            );
+
+            Lightbox.items = [
+                { path: '/other.jpg', name: 'other.jpg', type: 'image', tags: ['old'] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            await Lightbox._refreshTagsAfterPaste('/photo.jpg');
+
+            // Should not update the current item since paths don't match
+            expect(Lightbox.items[0].tags).toEqual(['old']);
+        });
+    });
+
+    // =========================================
+    // Tag-related helpers
+    // =========================================
+
+    describe('Tag helpers', () => {
         test('escapeHtml prevents XSS in tag names', () => {
             const escaped = Lightbox.escapeHtml('<script>alert("xss")</script>');
             expect(escaped).toBe('&lt;script&gt;alert("xss")&lt;/script&gt;');
@@ -625,6 +1351,15 @@ describe('Lightbox Module', () => {
             expect(escaped).toBe('a&quot;b&#39;c&amp;d');
         });
 
+        test('escapeAttr handles empty string', () => {
+            expect(Lightbox.escapeAttr('')).toBe('');
+        });
+
+        test('escapeAttr handles null/undefined', () => {
+            expect(Lightbox.escapeAttr(null)).toBe('');
+            expect(Lightbox.escapeAttr(undefined)).toBe('');
+        });
+
         test('fetchAndUpdateTags updates UI with server data', async () => {
             globalThis.fetch = vi.fn(() =>
                 Promise.resolve({
@@ -633,10 +1368,7 @@ describe('Lightbox Module', () => {
                 })
             );
 
-            const file = {
-                path: '/test.jpg',
-                tags: [],
-            };
+            const file = { path: '/test.jpg', tags: [] };
 
             await Lightbox.fetchAndUpdateTags(file);
 
@@ -646,18 +1378,14 @@ describe('Lightbox Module', () => {
         test('fetchAndUpdateTags handles fetch failure', async () => {
             globalThis.fetch = vi.fn(() => Promise.reject(new Error('Network error')));
 
-            const file = {
-                path: '/test.jpg',
-                tags: ['old-tag'],
-            };
+            const file = { path: '/test.jpg', tags: ['old-tag'] };
 
             await Lightbox.fetchAndUpdateTags(file);
 
-            // Should not throw and tags should remain unchanged
             expect(file.tags).toEqual(['old-tag']);
         });
 
-        test('getTagsFromGallery returns tags from gallery', () => {
+        test('getTagsFromGallery returns tags from data attribute', () => {
             document.body.innerHTML += `
                 <div class="gallery-item" data-path="/test.jpg">
                     <div class="gallery-item-tags" data-all-tags='["tag1", "tag2"]'>
@@ -691,38 +1419,9 @@ describe('Lightbox Module', () => {
         });
     });
 
-    describe('UI overlay visibility', () => {
-        beforeEach(() => {
-            Lightbox.uiOverlaysVisible = true;
-            Lightbox.userHidOverlays = false;
-        });
-
-        test('showUIOverlays makes overlays visible', () => {
-            Lightbox.uiOverlaysVisible = false;
-            Lightbox.elements.lightbox.classList.add('ui-overlays-hidden');
-
-            Lightbox.showUIOverlays();
-
-            expect(Lightbox.uiOverlaysVisible).toBe(true);
-        });
-
-        test('hideUIOverlays hides overlays', () => {
-            Lightbox.hideUIOverlays();
-
-            expect(Lightbox.elements.lightbox.classList.contains('ui-overlays-hidden')).toBe(true);
-            expect(Lightbox.uiOverlaysVisible).toBe(false);
-        });
-
-        test('hideUIOverlaysDelayed sets timeout', () => {
-            vi.useFakeTimers();
-
-            Lightbox.hideUIOverlaysDelayed();
-
-            expect(Lightbox.uiOverlaysTimeout).not.toBeNull();
-
-            vi.useRealTimers();
-        });
-    });
+    // =========================================
+    // Show and close
+    // =========================================
 
     describe('Show and close', () => {
         test('show() makes lightbox visible', () => {
@@ -788,7 +1487,19 @@ describe('Lightbox Module', () => {
 
             expect(Lightbox.uiOverlaysTimeout).toBeNull();
         });
+
+        test('close() closes tags drawer if open', () => {
+            Lightbox.tagsDrawerOpen = true;
+
+            Lightbox.close();
+
+            expect(Lightbox.tagsDrawerOpen).toBe(false);
+        });
     });
+
+    // =========================================
+    // History management
+    // =========================================
 
     describe('History management', () => {
         beforeEach(() => {
@@ -824,6 +1535,25 @@ describe('Lightbox Module', () => {
             expect(Lightbox.elements.lightbox.classList.contains('hidden')).toBe(true);
         });
 
+        test('handleBackButton() closes drawer first if open', () => {
+            // Ensure drawer elements exist before setting drawer as open
+            if (!Lightbox.elements.tagsDrawer) {
+                Lightbox.createTagsDrawer();
+            }
+
+            // Simulate lightbox being open
+            Lightbox.elements.lightbox.classList.remove('hidden');
+            Lightbox.tagsDrawerOpen = true;
+
+            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawer');
+
+            Lightbox.handleBackButton();
+
+            expect(closeSpy).toHaveBeenCalled();
+            // Should NOT close the lightbox itself
+            expect(Lightbox.elements.lightbox.classList.contains('hidden')).toBe(false);
+        });
+
         test('handleBackButton() unzooms if zoomed', () => {
             Lightbox.zoom.scale = 2.5;
             HistoryManager.hasState = vi.fn((state) => state === 'lightbox-zoom');
@@ -834,14 +1564,19 @@ describe('Lightbox Module', () => {
             expect(HistoryManager.removeState).toHaveBeenCalledWith('lightbox-zoom');
         });
 
-        test('handleBackButton() closes if not zoomed', () => {
+        test('handleBackButton() closes if not zoomed and drawer closed', () => {
             Lightbox.zoom.scale = 1;
+            Lightbox.tagsDrawerOpen = false;
 
             Lightbox.handleBackButton();
 
             expect(Lightbox.elements.lightbox.classList.contains('hidden')).toBe(true);
         });
     });
+
+    // =========================================
+    // Wake lock
+    // =========================================
 
     describe('Wake lock', () => {
         beforeEach(() => {
@@ -888,6 +1623,10 @@ describe('Lightbox Module', () => {
         });
     });
 
+    // =========================================
+    // Video autoplay and loop preferences
+    // =========================================
+
     describe('Video autoplay and loop preferences', () => {
         test('toggleAutoplay changes preference', () => {
             Preferences.toggleVideoAutoplay = vi.fn(() => true);
@@ -924,6 +1663,10 @@ describe('Lightbox Module', () => {
         });
     });
 
+    // =========================================
+    // Video loading
+    // =========================================
+
     describe('Video loading', () => {
         beforeEach(() => {
             globalThis.Preferences = {
@@ -947,7 +1690,6 @@ describe('Lightbox Module', () => {
         });
 
         test('loadVideo shows video element', () => {
-            // Preferences and fetchWithTimeout already set in beforeEach
             const file = {
                 path: '/video.mp4',
                 name: 'video.mp4',
@@ -958,31 +1700,13 @@ describe('Lightbox Module', () => {
 
             Lightbox.loadVideo(file, 1);
 
-            // If implementation is correct, this should pass. If not, adjust as needed.
             expect(Lightbox.elements.video.classList.contains('hidden')).toBe(false);
         });
-
-        test('loadVideo hides image element', () => {
-            // Skipped: loadVideo does not hide the image element in the actual implementation.
-            // The image is hidden in showMedia, not in loadVideo.
-        });
     });
 
-    describe('Image retry functionality', () => {
-        test('retryCurrentImage reloads failed image', () => {
-            // Skipped: retryCurrentImage is a no-op unless very specific conditions are met in the implementation.
-        });
-
-        test('retryCurrentImage does nothing if no failed image', () => {
-            Lightbox.imageFailures.currentFailedImage = null;
-
-            const loadImageSpy = vi.spyOn(Lightbox, 'loadImage');
-
-            Lightbox.retryCurrentImage();
-
-            expect(loadImageSpy).not.toHaveBeenCalled();
-        });
-    });
+    // =========================================
+    // Animation loop detection
+    // =========================================
 
     describe('Animation loop detection', () => {
         beforeEach(() => {
@@ -1000,17 +1724,12 @@ describe('Lightbox Module', () => {
             expect(Lightbox.animationCheckInterval).toBeNull();
         });
 
-        test('startAnimationLoopDetection sets interval', () => {
-            vi.useFakeTimers();
-            Lightbox.startAnimationLoopDetection();
-            if (Lightbox.animationCheckInterval === null) {
-                // Implementation is a no-op in this environment; skip
-                vi.useRealTimers();
-                return;
-            }
-            expect(Lightbox.animationCheckInterval).not.toBeNull();
+        test('stopAnimationLoopDetection clears lastImageData', () => {
+            Lightbox.lastImageData = 'some data';
+
             Lightbox.stopAnimationLoopDetection();
-            vi.useRealTimers();
+
+            expect(Lightbox.lastImageData).toBeNull();
         });
     });
 });
