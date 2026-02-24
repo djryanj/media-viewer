@@ -25,7 +25,7 @@ const Lightbox = {
 
     // Image failure tracking
     imageFailures: {
-        currentFailedImage: null, // Track current failed image for retry
+        currentFailedImage: null,
         consecutiveFailures: 0,
         lastFailureTime: 0,
     },
@@ -35,6 +35,12 @@ const Lightbox = {
     uiOverlaysTimeout: null,
     userHidOverlays: false,
     lastTouchTime: 0,
+
+    // Tags drawer state
+    tagsDrawerOpen: false,
+    drawerTouchStartY: 0,
+    drawerIsDragging: false,
+    allTagSuggestions: [], // Cached tag list for autocomplete
 
     // Pinch-to-zoom state
     zoom: {
@@ -56,17 +62,15 @@ const Lightbox = {
 
     init() {
         this.cacheElements();
-        // Track external video controls height (populated by VideoControls)
         this.videoControlsHeight = 0;
         this.createHotZones();
         this.createLoadingIndicator();
         this.createAutoplayToggle();
         this.createLoopToggle();
-        this.createTagsOverlay();
+        this.createTagsDrawer();
         this.bindEvents();
         this.bindZoomEvents();
 
-        // Listen for video control size events so hotzones can avoid overlapping controls
         const video = this.elements.video;
         if (video) {
             video.addEventListener('video-controls-size', (e) => {
@@ -124,7 +128,6 @@ const Lightbox = {
 
     updateAutoplayButton(btn = this.elements.autoplayBtn) {
         if (!btn) return;
-
         const isEnabled = Preferences.isVideoAutoplayEnabled();
         btn.classList.toggle('enabled', isEnabled);
         btn.innerHTML = isEnabled
@@ -137,7 +140,6 @@ const Lightbox = {
     toggleAutoplay() {
         const newValue = Preferences.toggleVideoAutoplay();
         this.updateAutoplayButton();
-
         if (typeof Gallery !== 'undefined' && Gallery.showToast) {
             Gallery.showToast(newValue ? 'Autoplay enabled' : 'Autoplay disabled');
         }
@@ -168,7 +170,6 @@ const Lightbox = {
 
     updateLoopButton(btn = this.elements.loopBtn) {
         if (!btn) return;
-
         const isEnabled = Preferences.isMediaLoopEnabled();
         btn.classList.toggle('enabled', isEnabled);
         btn.innerHTML = isEnabled
@@ -181,20 +182,14 @@ const Lightbox = {
     toggleLoop() {
         const newValue = Preferences.toggleMediaLoop();
         this.updateLoopButton();
-
         if (typeof Gallery !== 'undefined' && Gallery.showToast) {
             Gallery.showToast(newValue ? 'Loop enabled' : 'Loop disabled');
         }
-
-        // Apply to current media
         const currentFile = this.items[this.currentIndex];
         if (!currentFile) return;
-
         if (currentFile.type === 'video') {
-            // Apply loop setting to video immediately
             this.elements.video.loop = newValue;
         } else if (this.isAnimatedImageType(currentFile.name)) {
-            // Restart or stop animation loop detection
             if (newValue) {
                 this.startAnimationLoopDetection();
             } else {
@@ -203,73 +198,44 @@ const Lightbox = {
         }
     },
 
-    /**
-     * Check if a file is potentially animated based on extension
-     */
     isAnimatedImageType(filename) {
         if (!filename) return false;
         const ext = filename.toLowerCase().split('.').pop();
         return ['gif', 'webp', 'apng'].includes(ext);
     },
 
-    /**
-     * Parse GIF binary data to extract loop count
-     * @param {Blob} blob - The GIF file blob
-     * @returns {Promise<number|null>} Loop count (0=infinite, N=loop N times, null=no loop info)
-     */
     async parseGifLoopCount(blob) {
         try {
             const buffer = await blob.arrayBuffer();
             const bytes = new Uint8Array(buffer);
-
-            // Verify GIF signature (GIF87a or GIF89a)
             const signature = String.fromCharCode(...bytes.slice(0, 6));
-            if (!signature.startsWith('GIF')) {
-                return null;
-            }
+            if (!signature.startsWith('GIF')) return null;
 
-            // Skip header (6 bytes) and logical screen descriptor (7 bytes)
             let pos = 13;
-
-            // Skip global color table if present
             const packed = bytes[10];
             if (packed & 0x80) {
                 const colorTableSize = 3 * Math.pow(2, (packed & 0x07) + 1);
                 pos += colorTableSize;
             }
 
-            // Search for Netscape Application Extension (21 FF 0B)
             while (pos < bytes.length - 3) {
-                // Look for extension introducer (0x21)
                 if (bytes[pos] !== 0x21) {
                     pos++;
                     continue;
                 }
-
-                // Check for Application Extension (0xFF)
                 if (bytes[pos + 1] === 0xff) {
-                    // Block size should be 11 (0x0B)
                     if (bytes[pos + 2] === 0x0b) {
-                        // Check for "NETSCAPE2.0" identifier
                         const identifier = String.fromCharCode(...bytes.slice(pos + 3, pos + 14));
                         if (identifier === 'NETSCAPE2.0') {
-                            // Sub-block should start at pos + 14
-                            // Format: [sub-block size (3)] [block ID (1)] [loop count low] [loop count high]
                             if (bytes[pos + 14] === 0x03 && bytes[pos + 15] === 0x01) {
-                                // Extract loop count (little-endian 16-bit)
                                 const loopCount = bytes[pos + 16] | (bytes[pos + 17] << 8);
-                                console.debug(`GIF loop count detected: ${loopCount}`);
                                 return loopCount;
                             }
                         }
                     }
                 }
-
                 pos++;
             }
-
-            // No loop extension found - GIF will play once by default
-            console.debug('GIF has no loop extension (will play once)');
             return null;
         } catch (error) {
             console.debug('Error parsing GIF loop count:', error);
@@ -277,58 +243,27 @@ const Lightbox = {
         }
     },
 
-    /**
-     * Check if media should show the loop button
-     */
     shouldShowLoopButton(file) {
         if (!file) return false;
-
-        // Show for videos
         if (file.type === 'video') return true;
-
-        // Show for animated image types
         if (file.type === 'image' && this.isAnimatedImageType(file.name)) return true;
-
         return false;
     },
 
-    /**
-     * Start monitoring for animation end to force loop (for animated images only)
-     */
     startAnimationLoopDetection() {
         this.stopAnimationLoopDetection();
-
         if (!Preferences.isMediaLoopEnabled()) return;
-
         const img = this.elements.image;
         if (!img || img.classList.contains('hidden')) return;
-
         const currentFile = this.items[this.currentIndex];
         if (!currentFile || !this.isAnimatedImageType(currentFile.name)) return;
 
-        // For GIFs, only monitor if loop count is not infinite (0)
-        // null = no loop extension (plays once), N > 0 = loops N times
-        // 0 = loops forever (don't need to monitor)
         if (currentFile.name && currentFile.name.toLowerCase().endsWith('.gif')) {
-            console.debug(
-                `Lightbox: Loop detection check for ${currentFile.name}, loop count: ${currentFile.gifLoopCount}`
-            );
-            if (currentFile.gifLoopCount === 0) {
-                console.debug('Lightbox: GIF loops infinitely, skipping loop detection');
-                return;
-            }
-            console.debug(
-                'Lightbox: GIF needs loop monitoring (non-infinite or no loop extension)'
-            );
+            if (currentFile.gifLoopCount === 0) return;
         }
-
-        console.debug('Lightbox: Starting animation loop detection');
         this.setupAnimationLoopMonitor(img);
     },
 
-    /**
-     * Stop animation loop detection
-     */
     stopAnimationLoopDetection() {
         if (this.animationCheckInterval) {
             clearInterval(this.animationCheckInterval);
@@ -337,24 +272,18 @@ const Lightbox = {
         this.lastImageData = null;
     },
 
-    /**
-     * Monitor image for animation end and restart if needed
-     */
     setupAnimationLoopMonitor(img) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
         const sampleSize = 10;
         canvas.width = sampleSize;
         canvas.height = sampleSize;
-
         let unchangedFrames = 0;
-        const unchangedThreshold = 50; // Increased from 10 to 50 (10 seconds at 200ms intervals)
+        const unchangedThreshold = 50;
         const checkInterval = 200;
 
         this.animationCheckInterval = setInterval(() => {
             if (!img.complete || img.naturalWidth === 0) return;
-
             try {
                 ctx.drawImage(
                     img,
@@ -367,58 +296,726 @@ const Lightbox = {
                     sampleSize,
                     sampleSize
                 );
-
                 const imageData = ctx.getImageData(0, 0, sampleSize, sampleSize);
                 const currentData = Array.from(imageData.data).join(',');
-
                 if (this.lastImageData === currentData) {
                     unchangedFrames++;
-
-                    // Log progress every 10 frames (2 seconds)
-                    if (unchangedFrames % 10 === 0) {
-                        console.debug(
-                            `Lightbox: Animation static for ${unchangedFrames * 0.2}s (threshold: ${unchangedThreshold * 0.2}s)`
-                        );
-                    }
-
-                    // Only restart if frames have been static for a long time (10 seconds)
-                    // This prevents restarting GIFs that have slow animations or brief pauses
                     if (unchangedFrames >= unchangedThreshold) {
-                        console.debug('Lightbox: Animation appears stopped after 10s, restarting');
                         this.restartAnimation(img);
                         unchangedFrames = 0;
                     }
                 } else {
                     unchangedFrames = 0;
                 }
-
                 this.lastImageData = currentData;
-            } catch (e) {
-                console.debug('Animation loop: Cannot monitor image (CORS)', e);
+            } catch {
                 this.stopAnimationLoopDetection();
             }
         }, checkInterval);
     },
 
-    /**
-     * Restart the animation by reloading the image
-     */
     restartAnimation(img) {
         const currentSrc = img.src;
-
         const url = new URL(currentSrc);
         url.searchParams.set('_loop', Date.now().toString());
-
         img.style.opacity = '0.5';
-
         const onLoad = () => {
             img.style.opacity = '1';
             img.removeEventListener('load', onLoad);
         };
-
         img.addEventListener('load', onLoad);
         img.src = url.toString();
     },
+
+    createTagsDrawer() {
+        // Create the tag summary line inside lightbox-info
+        const infoBar = this.elements.lightbox.querySelector('.lightbox-info');
+        if (infoBar) {
+            const tagSummary = document.createElement('div');
+            tagSummary.className = 'lightbox-tag-summary hidden';
+            tagSummary.id = 'lightbox-tag-summary';
+            tagSummary.innerHTML =
+                '<i data-lucide="tag" class="tag-summary-icon"></i><span class="tag-summary-text"></span>';
+            const counter = infoBar.querySelector('#lightbox-counter');
+            if (counter) {
+                infoBar.insertBefore(tagSummary, counter);
+            } else {
+                infoBar.appendChild(tagSummary);
+            }
+            this.elements.tagSummary = tagSummary;
+
+            tagSummary.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.openTagsDrawer();
+            });
+        }
+
+        // Create the drawer backdrop
+        const backdrop = document.createElement('div');
+        backdrop.className = 'lightbox-drawer-backdrop hidden';
+        backdrop.addEventListener('click', () => this.closeTagsDrawer());
+        this.elements.lightbox.appendChild(backdrop);
+        this.elements.drawerBackdrop = backdrop;
+
+        // Create the drawer panel
+        const drawer = document.createElement('div');
+        drawer.className = 'lightbox-tags-drawer hidden';
+        drawer.innerHTML = `
+        <div class="drawer-handle-bar"><div class="drawer-handle"></div></div>
+        <div class="drawer-header">
+            <h3 class="drawer-title"><i data-lucide="tag"></i> Tags</h3>
+            <button class="drawer-close" title="Close"><i data-lucide="x"></i></button>
+        </div>
+        <div class="drawer-body">
+            <div class="drawer-tags-list"></div>
+            <div class="drawer-empty-state hidden">
+                <span class="drawer-empty-text">No tags yet</span>
+            </div>
+        </div>
+        <div class="drawer-footer">
+            <div class="drawer-clipboard-actions">
+                <button class="drawer-copy-btn btn btn-secondary" title="Copy tags to clipboard (Ctrl+C)">
+                    <i data-lucide="copy"></i>
+                    <span>Copy</span>
+                </button>
+                <button class="drawer-paste-btn btn btn-secondary" title="Paste tags from clipboard (Ctrl+V)" disabled>
+                    <i data-lucide="clipboard-paste"></i>
+                    <span>Paste</span>
+                </button>
+            </div>
+            <div class="drawer-add-tag">
+                <input type="text" class="drawer-tag-input" placeholder="Add a tag..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+                <button class="drawer-add-btn btn btn-primary"><i data-lucide="plus"></i></button>
+            </div>
+            <div class="drawer-tag-suggestions hidden"></div>
+        </div>
+    `;
+
+        this.elements.lightbox.appendChild(drawer);
+        this.elements.tagsDrawer = drawer;
+        this.elements.drawerTagsList = drawer.querySelector('.drawer-tags-list');
+        this.elements.drawerEmptyState = drawer.querySelector('.drawer-empty-state');
+        this.elements.drawerTagInput = drawer.querySelector('.drawer-tag-input');
+        this.elements.drawerAddBtn = drawer.querySelector('.drawer-add-btn');
+        this.elements.drawerSuggestions = drawer.querySelector('.drawer-tag-suggestions');
+        this.elements.drawerClose = drawer.querySelector('.drawer-close');
+        this.elements.drawerCopyBtn = drawer.querySelector('.drawer-copy-btn');
+        this.elements.drawerPasteBtn = drawer.querySelector('.drawer-paste-btn');
+
+        // Bind drawer events
+        this.elements.drawerClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeTagsDrawer();
+        });
+
+        this.elements.drawerAddBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.addTagFromDrawer();
+        });
+
+        this.elements.drawerTagInput.addEventListener('input', (e) => {
+            this.showDrawerSuggestions(e.target.value);
+        });
+
+        this.elements.drawerTagInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.addTagFromDrawer();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
+                    this.elements.drawerSuggestions.classList.add('hidden');
+                } else {
+                    this.closeTagsDrawer();
+                }
+            }
+        });
+
+        // Copy button
+        this.elements.drawerCopyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.copyTagsFromDrawer();
+        });
+
+        // Paste button
+        this.elements.drawerPasteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.pasteTagsFromDrawer();
+        });
+
+        // Keyboard shortcuts within the drawer
+        drawer.addEventListener('keydown', (e) => {
+            // Don't intercept if user is typing in the input
+            if (e.target.matches('input, textarea')) {
+                return;
+            }
+
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.copyTagsFromDrawer();
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.pasteTagsFromDrawer();
+            }
+        });
+
+        // Prevent clicks inside drawer from closing lightbox or hiding overlays
+        drawer.addEventListener('click', (e) => e.stopPropagation());
+        drawer.addEventListener(
+            'touchstart',
+            (e) => {
+                if (!e.target.closest('.drawer-handle-bar')) {
+                    e.stopPropagation();
+                }
+            },
+            { passive: true }
+        );
+        drawer.addEventListener(
+            'touchend',
+            (e) => {
+                e.stopPropagation();
+                this.lastTouchTime = Date.now();
+            },
+            { passive: true }
+        );
+
+        // Swipe-down to dismiss on the handle bar
+        const handleBar = drawer.querySelector('.drawer-handle-bar');
+        this.bindDrawerSwipeDismiss(handleBar, drawer);
+
+        lucide.createIcons();
+    },
+
+    /**
+     * Copy the current lightbox item's tags to the TagClipboard.
+     */
+    copyTagsFromDrawer() {
+        const file = this.items[this.currentIndex];
+        if (!file) return;
+
+        const tags = file.tags || [];
+        if (tags.length === 0) {
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('No tags to copy');
+            }
+            return;
+        }
+
+        if (typeof TagClipboard !== 'undefined') {
+            TagClipboard.copyTagsDirect(tags, file.path, file.name);
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast(
+                    `Copied ${tags.length} tag${tags.length !== 1 ? 's' : ''} from "${file.name}"`
+                );
+            }
+            // Update paste button state now that clipboard has content
+            this.updateDrawerPasteButton();
+        }
+    },
+
+    /**
+     * Open the paste confirmation modal targeting the current lightbox item.
+     * Reuses the existing TagClipboard paste modal.
+     */
+    pasteTagsFromDrawer() {
+        const file = this.items[this.currentIndex];
+        if (!file) return;
+
+        if (typeof TagClipboard === 'undefined' || !TagClipboard.hasTags()) {
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('No tags in clipboard. Copy tags first.');
+            }
+            return;
+        }
+
+        // Don't allow pasting onto folders
+        if (file.type === 'folder') {
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('Cannot paste tags onto a folder');
+            }
+            return;
+        }
+
+        // Store a callback so we can refresh after paste completes
+        this._pendingPasteRefresh = file.path;
+
+        // Hook into the paste modal's confirm to refresh drawer afterwards.
+        // We monkey-patch executePaste to add a post-paste refresh. We do this
+        // by wrapping the original if we haven't already.
+        this._ensurePasteRefreshHook();
+
+        // Open the existing paste confirmation modal for this single item
+        TagClipboard.openPasteModal([file.path], [file.name]);
+    },
+
+    /**
+     * Ensures a one-time hook on TagClipboard.executePaste so that after
+     * a paste completes, we refresh the drawer tags if it's still open.
+     */
+    _ensurePasteRefreshHook() {
+        if (this._pasteRefreshHooked) return;
+        this._pasteRefreshHooked = true;
+
+        const originalExecutePaste = TagClipboard.executePaste.bind(TagClipboard);
+        TagClipboard.executePaste = async (...args) => {
+            await originalExecutePaste(...args);
+
+            // After paste completes, refresh the current lightbox item's tags
+            if (this._pendingPasteRefresh) {
+                const refreshPath = this._pendingPasteRefresh;
+                this._pendingPasteRefresh = null;
+
+                await this._refreshTagsAfterPaste(refreshPath);
+            }
+        };
+    },
+
+    /**
+     * Refresh tags for the given path after a paste/merge operation.
+     * Updates the lightbox item data, drawer, summary, and gallery.
+     */
+    async _refreshTagsAfterPaste(path) {
+        try {
+            const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
+            if (!response.ok) return;
+
+            const tags = await response.json();
+
+            // Update the item in our items array
+            const file = this.items[this.currentIndex];
+            if (file && file.path === path) {
+                file.tags = tags || [];
+                this.updateTagButton(file);
+                this.updateTagSummary(file);
+
+                // If the drawer is still open, re-render it
+                if (this.tagsDrawerOpen) {
+                    this.renderDrawerTags(file);
+                    this.updateDrawerPasteButton();
+                }
+            }
+
+            // Also refresh the gallery item's tag display
+            if (typeof Tags !== 'undefined') {
+                Tags.updateGalleryItemTagsDOM(path, tags || []);
+            }
+        } catch (error) {
+            console.debug('Lightbox: failed to refresh tags after paste', error);
+        }
+    },
+
+    /**
+     * Update the paste button's disabled state based on clipboard contents.
+     */
+    updateDrawerPasteButton() {
+        if (!this.elements.drawerPasteBtn) return;
+
+        const hasClipboard = typeof TagClipboard !== 'undefined' && TagClipboard.hasTags();
+        this.elements.drawerPasteBtn.disabled = !hasClipboard;
+
+        if (hasClipboard) {
+            const count = TagClipboard.copiedTags.length;
+            const source = TagClipboard.sourceItemName || 'clipboard';
+            this.elements.drawerPasteBtn.title = `Paste ${count} tag${count !== 1 ? 's' : ''} from "${source}" (Ctrl+V)`;
+        } else {
+            this.elements.drawerPasteBtn.title = 'No tags in clipboard';
+        }
+    },
+
+    /**
+     * Update the copy button's disabled state based on current item's tags.
+     */
+    updateDrawerCopyButton() {
+        if (!this.elements.drawerCopyBtn) return;
+
+        const file = this.items[this.currentIndex];
+        const hasTags = file && file.tags && file.tags.length > 0;
+        this.elements.drawerCopyBtn.disabled = !hasTags;
+
+        if (hasTags) {
+            this.elements.drawerCopyBtn.title = `Copy ${file.tags.length} tag${file.tags.length !== 1 ? 's' : ''} to clipboard (Ctrl+C)`;
+        } else {
+            this.elements.drawerCopyBtn.title = 'No tags to copy';
+        }
+    },
+
+    bindDrawerSwipeDismiss(handleBar, drawer) {
+        let startY = 0;
+        let currentY = 0;
+        let isDragging = false;
+
+        handleBar.addEventListener(
+            'touchstart',
+            (e) => {
+                startY = e.touches[0].clientY;
+                isDragging = true;
+                drawer.style.transition = 'none';
+                e.stopPropagation();
+            },
+            { passive: true }
+        );
+
+        handleBar.addEventListener(
+            'touchmove',
+            (e) => {
+                if (!isDragging) return;
+                currentY = e.touches[0].clientY;
+                const deltaY = currentY - startY;
+                if (deltaY > 0) {
+                    drawer.style.transform = `translateY(${deltaY}px)`;
+                }
+                e.stopPropagation();
+            },
+            { passive: true }
+        );
+
+        handleBar.addEventListener(
+            'touchend',
+            (e) => {
+                if (!isDragging) return;
+                isDragging = false;
+                drawer.style.transition = '';
+                drawer.style.transform = '';
+                const deltaY = currentY - startY;
+                if (deltaY > 80) {
+                    this.closeTagsDrawer();
+                }
+                currentY = 0;
+                e.stopPropagation();
+            },
+            { passive: true }
+        );
+    },
+
+    openTagsDrawer() {
+        if (this.tagsDrawerOpen) return;
+        this.tagsDrawerOpen = true;
+
+        const file = this.items[this.currentIndex];
+        if (!file) return;
+
+        // Show drawer and backdrop
+        this.elements.tagsDrawer.classList.remove('hidden');
+        this.elements.drawerBackdrop.classList.remove('hidden');
+
+        // Trigger animation
+        requestAnimationFrame(() => {
+            this.elements.tagsDrawer.classList.add('open');
+            this.elements.drawerBackdrop.classList.add('open');
+        });
+
+        // Populate drawer tags
+        this.renderDrawerTags(file);
+
+        // Update clipboard button states
+        this.updateDrawerCopyButton();
+        this.updateDrawerPasteButton();
+
+        // Load suggestions cache
+        this.loadTagSuggestionsCache();
+
+        // Clear input
+        this.elements.drawerTagInput.value = '';
+        this.elements.drawerSuggestions.classList.add('hidden');
+
+        // Show overlays while drawer is open
+        this.userHidOverlays = true;
+        this.showUIOverlays();
+
+        // Re-initialize Lucide icons now that drawer is visible
+        lucide.createIcons({ nodes: [this.elements.tagsDrawer] });
+
+        // Push history state
+        if (typeof HistoryManager !== 'undefined') {
+            HistoryManager.pushState('lightbox-drawer');
+        }
+    },
+
+    closeTagsDrawer() {
+        if (!this.tagsDrawerOpen) return;
+        this.tagsDrawerOpen = false;
+
+        this.elements.tagsDrawer.classList.remove('open');
+        this.elements.drawerBackdrop.classList.remove('open');
+
+        // After animation, hide
+        setTimeout(() => {
+            if (!this.tagsDrawerOpen) {
+                this.elements.tagsDrawer.classList.add('hidden');
+                this.elements.drawerBackdrop.classList.add('hidden');
+            }
+        }, 300);
+
+        // Resume auto-hide
+        this.userHidOverlays = false;
+        this.hideUIOverlaysDelayed();
+
+        // Remove history state
+        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox-drawer')) {
+            HistoryManager.removeState('lightbox-drawer');
+        }
+    },
+
+    closeTagsDrawerWithHistory() {
+        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox-drawer')) {
+            history.back();
+        } else {
+            this.closeTagsDrawer();
+        }
+    },
+
+    renderDrawerTags(file) {
+        const tags = file.tags || [];
+        const container = this.elements.drawerTagsList;
+        container.innerHTML = '';
+
+        if (tags.length === 0) {
+            this.elements.drawerEmptyState.classList.remove('hidden');
+            this.updateDrawerCopyButton();
+            return;
+        }
+
+        this.elements.drawerEmptyState.classList.add('hidden');
+
+        tags.forEach((tag) => {
+            const chip = document.createElement('div');
+            chip.className = 'drawer-tag-chip';
+            chip.dataset.tag = tag;
+            chip.innerHTML = `
+            <button class="drawer-tag-remove" title="Remove tag">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+            <span class="drawer-tag-divider"></span>
+            <span class="drawer-tag-text">${this.escapeHtml(tag)}</span>
+        `;
+
+            const removeBtn = chip.querySelector('.drawer-tag-remove');
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.removeTagFromDrawer(file.path, tag);
+            });
+
+            const tagText = chip.querySelector('.drawer-tag-text');
+            tagText.addEventListener('click', (e) => {
+                e.stopPropagation();
+
+                const searchTag = tag;
+
+                this.tagsDrawerOpen = false;
+                this.elements.tagsDrawer.classList.remove('open');
+                this.elements.drawerBackdrop.classList.remove('open');
+                setTimeout(() => {
+                    this.elements.tagsDrawer.classList.add('hidden');
+                    this.elements.drawerBackdrop.classList.add('hidden');
+                }, 300);
+
+                if (
+                    typeof HistoryManager !== 'undefined' &&
+                    HistoryManager.hasState('lightbox-drawer')
+                ) {
+                    HistoryManager.removeState('lightbox-drawer');
+                }
+
+                this.close();
+
+                if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox')) {
+                    HistoryManager.removeState('lightbox');
+                }
+
+                if (typeof Tags !== 'undefined') {
+                    Tags.searchByTag(searchTag);
+                }
+            });
+
+            container.appendChild(chip);
+        });
+
+        // Update copy button state after rendering tags
+        this.updateDrawerCopyButton();
+    },
+
+    async removeTagFromDrawer(path, tagName) {
+        try {
+            const response = await fetch('/api/tags/file', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path, tag: tagName }),
+            });
+
+            if (response.ok) {
+                const file = this.items[this.currentIndex];
+                if (file && file.path === path) {
+                    file.tags = file.tags.filter((t) => t !== tagName);
+                    this.renderDrawerTags(file);
+                    this.updateTagSummary(file);
+                    this.updateTagButton(file);
+                }
+
+                if (typeof Tags !== 'undefined') {
+                    Tags.refreshGalleryItemTags(path);
+                    Tags.loadAllTags();
+                }
+
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(`Removed tag "${tagName}"`);
+                }
+            }
+        } catch (error) {
+            console.error('Error removing tag:', error);
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('Failed to remove tag');
+            }
+        }
+    },
+
+    async addTagFromDrawer() {
+        const input = this.elements.drawerTagInput;
+        const tagName = input.value.trim();
+        if (!tagName) return;
+
+        const file = this.items[this.currentIndex];
+        if (!file) return;
+
+        // Check if tag already exists
+        if (file.tags && file.tags.includes(tagName)) {
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast(`Tag "${tagName}" already exists`);
+            }
+            input.value = '';
+            this.elements.drawerSuggestions.classList.add('hidden');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/tags/file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: file.path, tag: tagName }),
+            });
+
+            if (response.ok) {
+                if (!file.tags) file.tags = [];
+                file.tags.push(tagName);
+                this.renderDrawerTags(file);
+                this.updateTagSummary(file);
+                this.updateTagButton(file);
+
+                input.value = '';
+                this.elements.drawerSuggestions.classList.add('hidden');
+
+                if (typeof Tags !== 'undefined') {
+                    Tags.refreshGalleryItemTags(file.path);
+                    Tags.loadAllTags();
+                }
+            }
+        } catch (error) {
+            console.error('Error adding tag:', error);
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('Failed to add tag');
+            }
+        }
+    },
+
+    async loadTagSuggestionsCache() {
+        if (this.allTagSuggestions.length > 0) return;
+        try {
+            const response = await fetch('/api/tags');
+            if (response.ok) {
+                this.allTagSuggestions = await response.json();
+            }
+        } catch (error) {
+            console.debug('Failed to load tag suggestions:', error);
+        }
+    },
+
+    showDrawerSuggestions(query) {
+        query = query.trim().toLowerCase();
+        if (query.length === 0) {
+            this.elements.drawerSuggestions.classList.add('hidden');
+            return;
+        }
+
+        const file = this.items[this.currentIndex];
+        const existingTags = file?.tags || [];
+
+        const matches = this.allTagSuggestions
+            .filter(
+                (tag) => tag.name.toLowerCase().includes(query) && !existingTags.includes(tag.name)
+            )
+            .slice(0, 5);
+
+        if (matches.length === 0) {
+            this.elements.drawerSuggestions.classList.add('hidden');
+            return;
+        }
+
+        this.elements.drawerSuggestions.innerHTML = matches
+            .map(
+                (tag) => `
+                <div class="drawer-suggestion" data-tag="${this.escapeAttr(tag.name)}">
+                    ${this.highlightMatch(tag.name, query)}
+                    <span class="drawer-suggestion-count">(${tag.itemCount})</span>
+                </div>
+            `
+            )
+            .join('');
+
+        this.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion').forEach((el) => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.elements.drawerTagInput.value = el.dataset.tag;
+                this.addTagFromDrawer();
+            });
+        });
+
+        this.elements.drawerSuggestions.classList.remove('hidden');
+    },
+
+    highlightMatch(text, query) {
+        if (!query || query.length === 0) return this.escapeHtml(text);
+        const lowerText = text.toLowerCase();
+        const idx = lowerText.indexOf(query);
+        if (idx === -1) return this.escapeHtml(text);
+        return (
+            this.escapeHtml(text.substring(0, idx)) +
+            '<mark>' +
+            this.escapeHtml(text.substring(idx, idx + query.length)) +
+            '</mark>' +
+            this.escapeHtml(text.substring(idx + query.length))
+        );
+    },
+
+    updateTagSummary(file) {
+        if (!this.elements.tagSummary) return;
+        const tags = file.tags || [];
+
+        if (tags.length === 0) {
+            this.elements.tagSummary.classList.add('hidden');
+            return;
+        }
+
+        this.elements.tagSummary.classList.remove('hidden');
+        const textEl = this.elements.tagSummary.querySelector('.tag-summary-text');
+        if (!textEl) return;
+
+        // Show first 2-3 tags as plain text + overflow count
+        const maxVisible = 3;
+        const visible = tags.slice(0, maxVisible);
+        const overflow = tags.length - maxVisible;
+
+        let summaryText = visible.join(', ');
+        if (overflow > 0) {
+            summaryText += ` +${overflow}`;
+        }
+        textEl.textContent = summaryText;
+    },
+
+    // =========================================
+    // END TAGS DRAWER
+    // =========================================
 
     createHotZones() {
         const leftZone = document.createElement('div');
@@ -439,10 +1036,8 @@ const Lightbox = {
 
         this.elements.content.appendChild(leftZone);
         this.elements.content.appendChild(rightZone);
-
         this.elements.hotZoneLeft = leftZone;
         this.elements.hotZoneRight = rightZone;
-
         lucide.createIcons();
     },
 
@@ -450,47 +1045,29 @@ const Lightbox = {
         const video = this.elements.video;
         const leftZone = this.elements.hotZoneLeft;
         const rightZone = this.elements.hotZoneRight;
-
         if (!leftZone || !rightZone) return;
 
-        // Reset to default for non-video mode
         if (!this.elements.lightbox.classList.contains('video-mode')) {
             leftZone.style.bottom = '';
             rightZone.style.bottom = '';
             return;
         }
 
-        // Calculate bottom position based on video size and actual controls height
         if (video && !video.classList.contains('hidden')) {
-            // Check if video metadata has loaded
-            if (!video.videoHeight || !video.videoWidth) {
-                return;
-            }
-
+            if (!video.videoHeight || !video.videoWidth) return;
             const videoRect = video.getBoundingClientRect();
             const viewportHeight = window.innerHeight;
-
-            // Calculate distance from bottom of viewport to bottom of video
             const videoBottom = viewportHeight - videoRect.bottom;
-
-            // Measure the actual rendered height of the video controls bottom bar
             const controlsBottom =
                 this.elements.videoWrapper?.querySelector('.video-controls-bottom');
             let controlsHeight;
-
             if (controlsBottom) {
-                const controlsRect = controlsBottom.getBoundingClientRect();
-                controlsHeight = controlsRect.height;
+                controlsHeight = controlsBottom.getBoundingClientRect().height;
             } else {
-                // Fallback if controls haven't rendered yet
                 controlsHeight = 60;
             }
-
-            // Add padding so hotzones don't butt up against the controls
             const padding = 12;
-
             const bottomPosition = videoBottom + controlsHeight + padding;
-
             leftZone.style.bottom = `${bottomPosition}px`;
             rightZone.style.bottom = `${bottomPosition}px`;
         }
@@ -504,51 +1081,6 @@ const Lightbox = {
         this.elements.loader = loader;
     },
 
-    createTagsOverlay() {
-        const overlay = document.createElement('div');
-        overlay.className = 'lightbox-tags-overlay hidden';
-        overlay.innerHTML = '<div class="lightbox-tags-container"></div>';
-        this.elements.lightbox.appendChild(overlay);
-        this.elements.tagsOverlay = overlay;
-        this.elements.tagsContainer = overlay.querySelector('.lightbox-tags-container');
-
-        // Toggle expanded state when clicking on tags container
-        this.elements.tagsContainer.addEventListener('click', (e) => {
-            // Don't toggle if clicking on tag remove buttons or tag text
-            if (
-                e.target.closest('.lightbox-tag-remove') ||
-                e.target.closest('.lightbox-tag-text')
-            ) {
-                return;
-            }
-
-            this.elements.tagsOverlay.classList.toggle('expanded');
-
-            // Show UI overlays and prevent auto-hide (user is interacting with tags)
-            this.userHidOverlays = true;
-            this.showUIOverlays();
-
-            e.stopPropagation();
-        });
-
-        // Handle touch on tags overlay to show/keep UI overlays visible
-        this.elements.tagsOverlay.addEventListener(
-            'touchend',
-            () => {
-                // Update last touch time to prevent mousemove from interfering
-                this.lastTouchTime = Date.now();
-
-                // Cancel any pending auto-hide timer
-                clearTimeout(this.uiOverlaysTimeout);
-
-                // Show UI overlays and prevent auto-hide (user is interacting with tags)
-                this.userHidOverlays = true;
-                this.showUIOverlays();
-            },
-            { passive: true }
-        );
-    },
-
     bindEvents() {
         this.elements.closeBtn.addEventListener('click', () => this.closeWithHistory());
         this.elements.prevBtn.addEventListener('click', () => this.prev());
@@ -560,6 +1092,15 @@ const Lightbox = {
 
             if (e.target.matches('input, textarea, [contenteditable="true"]')) {
                 if (e.key === 'Escape') {
+                    // Close drawer first if open
+                    if (this.tagsDrawerOpen) {
+                        if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
+                            this.elements.drawerSuggestions.classList.add('hidden');
+                        } else {
+                            this.closeTagsDrawerWithHistory();
+                        }
+                        return;
+                    }
                     if (!document.getElementById('tag-modal')?.classList.contains('hidden')) {
                         Tags.closeModalWithHistory();
                         return;
@@ -571,18 +1112,21 @@ const Lightbox = {
 
             switch (e.key) {
                 case 'Escape':
-                    this.closeWithHistory();
+                    if (this.tagsDrawerOpen) {
+                        this.closeTagsDrawerWithHistory();
+                    } else {
+                        this.closeWithHistory();
+                    }
                     break;
                 case 'ArrowLeft':
-                    this.prev();
+                    if (!this.tagsDrawerOpen) this.prev();
                     break;
                 case 'ArrowRight':
-                    this.next();
+                    if (!this.tagsDrawerOpen) this.next();
                     break;
-                case ' ': // Spacebar
-                    // Toggle play/pause for video
+                case ' ':
                     if (this.elements.video && !this.elements.video.classList.contains('hidden')) {
-                        e.preventDefault(); // Prevent page scroll
+                        e.preventDefault();
                         if (this.elements.video.paused) {
                             this.elements.video.play();
                         } else {
@@ -596,18 +1140,20 @@ const Lightbox = {
                     break;
                 case 't':
                 case 'T':
-                    this.openTagModal();
+                    if (this.tagsDrawerOpen) {
+                        this.closeTagsDrawerWithHistory();
+                    } else {
+                        this.openTagsDrawer();
+                    }
                     break;
                 case 'a':
                 case 'A':
-                    // Only toggle autoplay if viewing a video
                     if (!this.elements.autoplayBtn?.classList.contains('hidden')) {
                         this.toggleAutoplay();
                     }
                     break;
                 case 'l':
                 case 'L':
-                    // Toggle loop if button is visible
                     if (!this.elements.loopBtn?.classList.contains('hidden')) {
                         this.toggleLoop();
                     }
@@ -619,17 +1165,14 @@ const Lightbox = {
             }
         });
 
-        // Swipe handling - attach to lightbox element so swipes work anywhere
-        // Swipe handling - attach to lightbox element so swipes work anywhere
+        // Swipe handling
         this.elements.lightbox.addEventListener(
             'touchstart',
             (e) => {
-                // Ignore touches on video controls
                 if (e.target.closest('.video-controls')) return;
-
-                // Ignore if zoomed or multi-touch
+                if (e.target.closest('.lightbox-tags-drawer')) return;
+                if (e.target.closest('.lightbox-drawer-backdrop')) return;
                 if (this.zoom.scale > 1 || e.touches.length > 1) return;
-
                 this.touchStartX = e.changedTouches[0].screenX;
                 this.touchStartY = e.changedTouches[0].screenY;
                 this.isSwiping = false;
@@ -641,20 +1184,14 @@ const Lightbox = {
         this.elements.lightbox.addEventListener(
             'touchmove',
             (e) => {
-                // Ignore touches on video controls
                 if (e.target.closest('.video-controls')) return;
-
-                // Ignore if zoomed or pinching
+                if (e.target.closest('.lightbox-tags-drawer')) return;
                 if (this.zoom.scale > 1 || this.zoom.isPinching || this.zoom.isPanning) return;
-
                 const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
                 const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
-
                 if (deltaX > deltaY && deltaX > 10) {
                     this.isSwiping = true;
                 }
-
-                // Track when the finger last moved
                 this.lastTouchMoveTime = Date.now();
             },
             { passive: true }
@@ -663,17 +1200,14 @@ const Lightbox = {
         this.elements.lightbox.addEventListener(
             'touchend',
             (e) => {
-                // Don't swipe if zoomed
                 if (this.zoom.scale > 1) return;
-
+                if (e.target.closest('.lightbox-tags-drawer')) return;
                 if (this.isSwiping) {
-                    // Cancel swipe if the finger stopped moving for 300ms+ before lifting
                     const timeSinceLastMove = Date.now() - this.lastTouchMoveTime;
                     if (this.lastTouchMoveTime > 0 && timeSinceLastMove > 300) {
                         this.isSwiping = false;
                         return;
                     }
-
                     this.touchEndX = e.changedTouches[0].screenX;
                     this.handleSwipe();
                 }
@@ -687,38 +1221,39 @@ const Lightbox = {
             }
         });
 
+        // Tag button now opens the drawer instead of the modal
         if (this.elements.tagBtn) {
-            this.elements.tagBtn.addEventListener('click', () => this.openTagModal());
+            this.elements.tagBtn.addEventListener('click', () => {
+                if (this.tagsDrawerOpen) {
+                    this.closeTagsDrawerWithHistory();
+                } else {
+                    this.openTagsDrawer();
+                }
+            });
         }
 
         if (this.elements.downloadBtn) {
             this.elements.downloadBtn.addEventListener('click', () => this.downloadCurrent());
         }
 
-        // Update hotzone positions when window resizes
         window.addEventListener('resize', () => {
             if (this.elements.lightbox.classList.contains('video-mode')) {
-                requestAnimationFrame(() => {
-                    this.updateHotZonePositions();
-                });
+                requestAnimationFrame(() => this.updateHotZonePositions());
             }
         });
 
-        // Update hotzone positions when video metadata loads
         this.elements.video.addEventListener('loadedmetadata', () => {
-            // Use RAF to ensure browser has finished layout after metadata loads
-            requestAnimationFrame(() => {
-                this.updateHotZonePositions();
-            });
+            requestAnimationFrame(() => this.updateHotZonePositions());
         });
 
-        // UI overlay hide/show functionality
-        // Track touch start time for tap detection
+        // UI overlay hide/show
         let uiTouchStartTime = 0;
 
         this.elements.lightbox.addEventListener('touchstart', (e) => {
-            // Only track if not touching controls
-            if (!e.target.closest('.video-controls')) {
+            if (
+                !e.target.closest('.video-controls') &&
+                !e.target.closest('.lightbox-tags-drawer')
+            ) {
                 uiTouchStartTime = Date.now();
                 this.lastTouchTime = Date.now();
             }
@@ -726,27 +1261,21 @@ const Lightbox = {
 
         this.elements.lightbox.addEventListener('touchend', (e) => {
             const touchDuration = Date.now() - uiTouchStartTime;
-
-            // Only respond to quick taps (not drags/swipes)
-            // Also skip if this was a swipe navigation gesture or if zoomed
-            if (touchDuration >= 300 || this.isSwiping || this.zoom.scale > 1) {
-                return;
-            }
-
-            // Ignore if tapping on controls, buttons, tags area, or hotzones
+            if (touchDuration >= 300 || this.isSwiping || this.zoom.scale > 1) return;
             if (
                 e.target.closest('button') ||
                 e.target.closest('input') ||
                 e.target.closest('.video-controls') ||
-                e.target.closest('.lightbox-tags-overlay') ||
+                e.target.closest('.lightbox-tags-drawer') ||
+                e.target.closest('.lightbox-drawer-backdrop') ||
+                e.target.closest('.lightbox-tag-summary') ||
                 e.target.closest('.lightbox-info') ||
                 e.target.closest('.lightbox-hot-zone') ||
-                e.target === this.elements.lightbox // Background click should close
+                e.target === this.elements.lightbox
             ) {
                 return;
             }
 
-            // Tap on image/video content toggles UI overlays
             if (
                 e.target === this.elements.image ||
                 e.target === this.elements.video ||
@@ -754,30 +1283,20 @@ const Lightbox = {
                 e.target.closest('.lightbox-content')
             ) {
                 e.stopPropagation();
-
                 if (this.uiOverlaysVisible) {
-                    // User manually hid overlays
                     this.userHidOverlays = true;
                     this.hideUIOverlays();
                 } else {
-                    // User is showing overlays again
                     this.userHidOverlays = false;
                     this.showUIOverlays();
                 }
             }
         });
 
-        // Desktop: show UI overlays on mouse movement
         this.elements.lightbox.addEventListener('mousemove', () => {
             if (!this.elements.lightbox.classList.contains('hidden')) {
-                // Ignore mousemove if touch happened recently (within 500ms)
-                // This prevents mousemove events fired after touch from overriding touch actions
                 const timeSinceTouch = Date.now() - this.lastTouchTime;
-                if (timeSinceTouch < 500) {
-                    return;
-                }
-
-                // Reset user-hid flag on mouse movement
+                if (timeSinceTouch < 500) return;
                 this.userHidOverlays = false;
                 this.showUIOverlays();
             }
@@ -785,18 +1304,13 @@ const Lightbox = {
     },
 
     bindZoomEvents() {
-        // Pinch-to-zoom and pan handlers
         this.elements.image.addEventListener(
             'touchstart',
             (e) => {
-                // Detect double-tap to reset zoom
                 const now = Date.now();
                 const timeSinceLastTap = now - this.zoom.lastTapTime;
-
                 if (timeSinceLastTap < 300 && timeSinceLastTap > 0 && e.touches.length === 1) {
-                    // Double tap detected
                     if (this.zoom.scale > 1) {
-                        // Only prevent default and reset if we're actually zoomed in
                         e.preventDefault();
                         e.stopPropagation();
                         this.resetZoom();
@@ -804,24 +1318,17 @@ const Lightbox = {
                         return;
                     }
                 }
-
-                if (e.touches.length === 1) {
-                    this.zoom.lastTapTime = now;
-                }
+                if (e.touches.length === 1) this.zoom.lastTapTime = now;
 
                 if (e.touches.length === 2) {
-                    // Pinch gesture starting
                     e.preventDefault();
                     e.stopPropagation();
                     this.zoom.isPinching = true;
                     this.zoom.initialDistance = this.getTouchDistance(e.touches);
                     this.zoom.initialScale = this.zoom.scale;
-
-                    // Calculate pinch center point in viewport coordinates
                     this.zoom.pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
                     this.zoom.pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
                 } else if (e.touches.length === 1 && this.zoom.scale > 1) {
-                    // Single touch while zoomed - prepare for panning
                     e.preventDefault();
                     e.stopPropagation();
                     this.zoom.isPanning = true;
@@ -841,8 +1348,6 @@ const Lightbox = {
                     const currentDistance = this.getTouchDistance(e.touches);
                     const scale =
                         (currentDistance / this.zoom.initialDistance) * this.zoom.initialScale;
-
-                    // Clamp scale between min and max
                     this.zoom.scale = Math.min(
                         Math.max(scale, this.zoom.minScale),
                         this.zoom.maxScale
@@ -853,16 +1358,11 @@ const Lightbox = {
                     e.stopPropagation();
                     const deltaX = e.touches[0].clientX - this.zoom.lastTouchX;
                     const deltaY = e.touches[0].clientY - this.zoom.lastTouchY;
-
                     this.zoom.translateX += deltaX;
                     this.zoom.translateY += deltaY;
-
-                    // Constrain panning to image bounds
                     this.constrainPan();
-
                     this.zoom.lastTouchX = e.touches[0].clientX;
                     this.zoom.lastTouchY = e.touches[0].clientY;
-
                     this.applyZoomTransform();
                 }
             },
@@ -874,11 +1374,8 @@ const Lightbox = {
             (e) => {
                 if (this.zoom.isPinching) {
                     this.zoom.isPinching = false;
-
-                    // If scale is close to minimum, reset zoom
                     if (this.zoom.scale < 1.1) {
                         this.resetZoom();
-                        // Remove zoom history state if exists
                         if (
                             typeof HistoryManager !== 'undefined' &&
                             HistoryManager.hasState('lightbox-zoom')
@@ -886,7 +1383,6 @@ const Lightbox = {
                             HistoryManager.removeState('lightbox-zoom');
                         }
                     } else if (this.zoom.scale > 1 && this.zoom.initialScale <= 1) {
-                        // Just zoomed in from 1x, push history state for zoom
                         if (
                             typeof HistoryManager !== 'undefined' &&
                             !HistoryManager.hasState('lightbox-zoom')
@@ -895,7 +1391,6 @@ const Lightbox = {
                         }
                     }
                 }
-
                 if (this.zoom.isPanning && e.touches.length === 0) {
                     this.zoom.isPanning = false;
                 }
@@ -932,40 +1427,27 @@ const Lightbox = {
             this.zoom.translateY = 0;
             return;
         }
-
         const img = this.elements.image;
         const parent = img.parentElement.getBoundingClientRect();
-
-        // Get the natural (untransformed) dimensions
         const naturalWidth = img.naturalWidth;
         const naturalHeight = img.naturalHeight;
-
         if (!naturalWidth || !naturalHeight) return;
 
-        // Calculate how the image is displayed (object-fit: contain)
         const containerAspect = parent.width / parent.height;
         const imageAspect = naturalWidth / naturalHeight;
-
         let displayWidth, displayHeight;
         if (imageAspect > containerAspect) {
-            // Image is wider - constrained by width
             displayWidth = parent.width;
             displayHeight = parent.width / imageAspect;
         } else {
-            // Image is taller - constrained by height
             displayHeight = parent.height;
             displayWidth = parent.height * imageAspect;
         }
 
-        // Calculate the scaled dimensions
         const scaledWidth = displayWidth * this.zoom.scale;
         const scaledHeight = displayHeight * this.zoom.scale;
-
-        // Calculate maximum pan distances (how far we can move before showing white space)
         const maxX = Math.max(0, (scaledWidth - parent.width) / 2);
         const maxY = Math.max(0, (scaledHeight - parent.height) / 2);
-
-        // Constrain translation
         this.zoom.translateX = Math.min(Math.max(this.zoom.translateX, -maxX), maxX);
         this.zoom.translateY = Math.min(Math.max(this.zoom.translateY, -maxY), maxY);
     },
@@ -977,8 +1459,6 @@ const Lightbox = {
         this.zoom.isPinching = false;
         this.zoom.isPanning = false;
         this.applyZoomTransform();
-
-        // Remove zoom history state if exists
         if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox-zoom')) {
             HistoryManager.removeState('lightbox-zoom');
         }
@@ -987,7 +1467,6 @@ const Lightbox = {
     handleSwipe() {
         const swipeThreshold = 50;
         const diff = this.touchStartX - this.touchEndX;
-
         if (Math.abs(diff) > swipeThreshold) {
             if (diff > 0) {
                 this.next();
@@ -1015,27 +1494,20 @@ const Lightbox = {
         this.useAppMedia = false;
         this.items = items;
         this.currentIndex = index;
-
         this.clearPreloadCache();
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
-
-        // Reset UI overlay state
         this.uiOverlaysVisible = true;
         this.userHidOverlays = false;
         this.elements.lightbox.classList.remove('ui-overlays-hidden');
-
-        // Apply clock always visible preference
         if (typeof Preferences !== 'undefined') {
             this.elements.lightbox.classList.toggle(
                 'clock-always-visible',
                 Preferences.isClockAlwaysVisible()
             );
         }
-
         this.showMedia();
         this.updateNavigation();
-
         if (typeof HistoryManager !== 'undefined') {
             HistoryManager.pushState('lightbox');
         }
@@ -1043,52 +1515,48 @@ const Lightbox = {
 
     show() {
         this.clearPreloadCache();
-
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
-
-        // Reset UI overlay state
         this.uiOverlaysVisible = true;
         this.userHidOverlays = false;
         this.elements.lightbox.classList.remove('ui-overlays-hidden');
-
-        // Apply clock always visible preference
         if (typeof Preferences !== 'undefined') {
             this.elements.lightbox.classList.toggle(
                 'clock-always-visible',
                 Preferences.isClockAlwaysVisible()
             );
         }
-
         this.showMedia();
         this.updateNavigation();
-
         if (typeof HistoryManager !== 'undefined') {
             HistoryManager.pushState('lightbox');
         }
-
         this.acquireWakeLock();
     },
 
     close() {
+        // Close drawer if open
+        if (this.tagsDrawerOpen) {
+            this.tagsDrawerOpen = false;
+            this.elements.tagsDrawer?.classList.remove('open');
+            this.elements.tagsDrawer?.classList.add('hidden');
+            this.elements.drawerBackdrop?.classList.remove('open');
+            this.elements.drawerBackdrop?.classList.add('hidden');
+        }
+
         this.elements.lightbox.classList.add('hidden');
         document.body.style.overflow = '';
-
         this.abortCurrentLoad();
         this.clearPreloadCache();
         this.stopAnimationLoopDetection();
         this.releaseWakeLock();
-
-        // Clean up zoom state and history
         this.resetZoom();
 
-        // Clean up UI overlay timeout
         if (this.uiOverlaysTimeout) {
             clearTimeout(this.uiOverlaysTimeout);
             this.uiOverlaysTimeout = null;
         }
 
-        // Clean up video player
         if (this.videoPlayer) {
             this.videoPlayer.destroy();
             this.videoPlayer = null;
@@ -1106,10 +1574,7 @@ const Lightbox = {
             const playerOpen =
                 typeof Playlist !== 'undefined' &&
                 !Playlist.elements?.modal?.classList.contains('hidden');
-
-            if (!playerOpen) {
-                WakeLock.release();
-            }
+            if (!playerOpen) WakeLock.release();
         }
     },
 
@@ -1121,71 +1586,55 @@ const Lightbox = {
         }
     },
 
-    /**
-     * Handle back button press - unzoom if zoomed, otherwise close
-     */
     handleBackButton() {
-        if (this.zoom.scale > 1) {
-            // Unzoom instead of closing
+        if (this.tagsDrawerOpen) {
+            this.closeTagsDrawer();
+        } else if (this.zoom.scale > 1) {
             this.resetZoom();
-            // Remove the zoom history state that was pushed
             if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox-zoom')) {
                 HistoryManager.removeState('lightbox-zoom');
             }
         } else {
-            // Not zoomed, close normally
             this.close();
         }
     },
 
-    /**
-     * Show UI overlays (controls, buttons, clock, tags)
-     */
     showUIOverlays() {
         if (!this.uiOverlaysVisible) {
             this.uiOverlaysVisible = true;
             this.elements.lightbox.classList.remove('ui-overlays-hidden');
         }
-
-        // If user manually hid overlays, don't start auto-hide timer
         if (!this.userHidOverlays) {
             this.hideUIOverlaysDelayed();
         }
     },
 
-    /**
-     * Hide UI overlays immediately
-     */
     hideUIOverlays() {
         this.uiOverlaysVisible = false;
         this.elements.lightbox.classList.add('ui-overlays-hidden');
-
-        // Clear any pending auto-hide timer
         if (this.uiOverlaysTimeout) {
             clearTimeout(this.uiOverlaysTimeout);
             this.uiOverlaysTimeout = null;
         }
     },
 
-    /**
-     * Hide UI overlays after a delay (3 seconds)
-     */
     hideUIOverlaysDelayed() {
-        // Clear any existing timeout
         if (this.uiOverlaysTimeout) {
             clearTimeout(this.uiOverlaysTimeout);
             this.uiOverlaysTimeout = null;
         }
-
-        // Set new timeout
         this.uiOverlaysTimeout = setTimeout(() => {
-            this.hideUIOverlays();
+            // Don't auto-hide if drawer is open
+            if (!this.tagsDrawerOpen) {
+                this.hideUIOverlays();
+            }
             this.uiOverlaysTimeout = null;
         }, 3000);
     },
 
     prev() {
         if (this.items.length === 0) return;
+        if (this.tagsDrawerOpen) this.closeTagsDrawer();
         this.currentIndex = (this.currentIndex - 1 + this.items.length) % this.items.length;
         this.showMedia();
         this.updateNavigation();
@@ -1193,6 +1642,7 @@ const Lightbox = {
 
     next() {
         if (this.items.length === 0) return;
+        if (this.tagsDrawerOpen) this.closeTagsDrawer();
         this.currentIndex = (this.currentIndex + 1) % this.items.length;
         this.showMedia();
         this.updateNavigation();
@@ -1200,37 +1650,24 @@ const Lightbox = {
 
     updateNavigation() {
         const hasMultiple = this.items.length > 1;
-
-        if (this.elements.hotZoneLeft) {
+        if (this.elements.hotZoneLeft)
             this.elements.hotZoneLeft.style.display = hasMultiple ? '' : 'none';
-        }
-        if (this.elements.hotZoneRight) {
+        if (this.elements.hotZoneRight)
             this.elements.hotZoneRight.style.display = hasMultiple ? '' : 'none';
-        }
-        if (this.elements.prevBtn) {
-            this.elements.prevBtn.style.display = hasMultiple ? '' : 'none';
-        }
-        if (this.elements.nextBtn) {
-            this.elements.nextBtn.style.display = hasMultiple ? '' : 'none';
-        }
+        if (this.elements.prevBtn) this.elements.prevBtn.style.display = hasMultiple ? '' : 'none';
+        if (this.elements.nextBtn) this.elements.nextBtn.style.display = hasMultiple ? '' : 'none';
     },
 
     abortCurrentLoad() {
         this.currentLoadId++;
-
         const video = this.elements.video;
-        if (video && !video.paused) {
-            video.pause();
-        }
+        if (video && !video.paused) video.pause();
         if (video && video.src) {
             video.removeAttribute('src');
             video.load();
         }
-
         const image = this.elements.image;
-        if (image) {
-            image.removeAttribute('src');
-        }
+        if (image) image.removeAttribute('src');
     },
 
     showLoading() {
@@ -1245,14 +1682,10 @@ const Lightbox = {
         this.elements.loader?.classList.add('hidden');
         this.elements.image.classList.remove('loading');
         this.elements.video.classList.remove('loading');
-
-        // Clear transcoding check timeout
         if (this.transcodingCheckTimeout) {
             clearTimeout(this.transcodingCheckTimeout);
             this.transcodingCheckTimeout = null;
         }
-
-        // Hide any persistent toast
         const toast = document.getElementById('toast-notification');
         if (toast && toast.classList.contains('show')) {
             toast.classList.remove('show');
@@ -1261,14 +1694,10 @@ const Lightbox = {
 
     showMedia() {
         if (this.items.length === 0) return;
-
         const file = this.items[this.currentIndex];
         if (!file) return;
 
-        // Reset zoom when changing images
-        // This also removes the zoom history state
         this.resetZoom();
-
         this.stopAnimationLoopDetection();
         this.abortCurrentLoad();
 
@@ -1276,16 +1705,19 @@ const Lightbox = {
 
         this.elements.counter.textContent = `${this.currentIndex + 1} / ${this.items.length}`;
         this.elements.title.textContent = file.name;
-
         this.updatePinButton(file);
 
-        // Get tags from gallery if not already on the file
         if (file.tags === undefined) {
             file.tags = this.getTagsFromGallery(file.path) || [];
         }
 
         this.updateTagButton(file);
-        this.updateTagsOverlay(file);
+        this.updateTagSummary(file);
+
+        // Update drawer if it's open
+        if (this.tagsDrawerOpen) {
+            this.renderDrawerTags(file);
+        }
 
         this.elements.image.classList.add('hidden');
         this.elements.video.classList.add('hidden');
@@ -1293,7 +1725,6 @@ const Lightbox = {
         const isVideo = file.type === 'video';
         const showLoopButton = this.shouldShowLoopButton(file);
 
-        // Clean up video player when switching to image
         if (!isVideo && this.videoPlayer) {
             this.videoPlayer.destroy();
             this.videoPlayer = null;
@@ -1301,19 +1732,15 @@ const Lightbox = {
 
         this.elements.lightbox.classList.toggle('video-mode', isVideo);
 
-        // Update hotzone positions for video mode
         if (isVideo) {
-            // Will be updated again when video loads, but set initial position
             this.updateHotZonePositions();
         } else {
-            // Reset hotzone positions for image mode
             this.updateHotZonePositions();
         }
 
         if (this.elements.autoplayBtn) {
             this.elements.autoplayBtn.classList.toggle('hidden', !isVideo);
         }
-
         if (this.elements.loopBtn) {
             this.elements.loopBtn.classList.toggle('hidden', !showLoopButton);
             this.updateLoopButton();
@@ -1327,165 +1754,52 @@ const Lightbox = {
 
         this.preloadAdjacent();
 
-        // Start auto-hide timer for UI overlays (unless user manually hid them)
         if (!this.userHidOverlays) {
             this.hideUIOverlaysDelayed();
         }
     },
 
-    /**
-     * Get tags from gallery item if available
-     */
     getTagsFromGallery(path) {
         const galleryItem = document.querySelector(
             `.gallery-item[data-path="${CSS.escape(path)}"]`
         );
         if (!galleryItem) return null;
-
         const tagsContainer = galleryItem.querySelector('.gallery-item-tags');
-        if (!tagsContainer && !galleryItem.querySelector('.tag-button.has-tags')) {
-            return []; // No tags container and no has-tags indicator = no tags
-        }
+        if (!tagsContainer && !galleryItem.querySelector('.tag-button.has-tags')) return [];
+        if (!tagsContainer) return null;
 
-        if (!tagsContainer) return null; // Has indicator but no container, unknown state
-
-        // Try to get from data attribute first (if we store it there)
         const allTagsData = tagsContainer.dataset.allTags;
         if (allTagsData) {
             try {
                 return JSON.parse(allTagsData);
             } catch {
-                // Fall through to DOM parsing
+                /* fall through */
             }
         }
 
-        // Parse from DOM
         const tagElements = tagsContainer.querySelectorAll('.item-tag:not(.more)');
         const tags = [];
         tagElements.forEach((el) => {
             const tagText = el.dataset.tag || el.textContent?.trim();
-            if (tagText) {
-                tags.push(tagText);
-            }
+            if (tagText) tags.push(tagText);
         });
-
         return tags.length > 0 ? tags : [];
     },
 
-    /**
-     * Fetch tags from server and update UI
-     */
     async fetchAndUpdateTags(file) {
-        // Show current cached tags immediately (if any)
         this.updateTagButton(file);
-        this.updateTagsOverlay(file);
-
+        this.updateTagSummary(file);
         try {
             const response = await fetch(`/api/tags/file?path=${encodeURIComponent(file.path)}`);
             if (response.ok) {
                 const tags = await response.json();
-
-                // Update the file object with fresh tags
                 file.tags = tags || [];
-
-                // Update UI with fresh data
                 this.updateTagButton(file);
-                this.updateTagsOverlay(file);
+                this.updateTagSummary(file);
+                if (this.tagsDrawerOpen) this.renderDrawerTags(file);
             }
         } catch (error) {
             console.debug('Lightbox: failed to fetch tags for', file.path, error);
-        }
-    },
-
-    updateTagsOverlay(file) {
-        if (!this.elements.tagsContainer) return;
-
-        const tags = file.tags || [];
-
-        if (tags.length === 0) {
-            this.elements.tagsOverlay.classList.add('hidden');
-            this.elements.tagsContainer.innerHTML = '';
-            return;
-        }
-
-        this.elements.tagsOverlay.classList.remove('hidden');
-        this.elements.tagsOverlay.classList.remove('expanded'); // Reset to collapsed when switching files
-
-        this.elements.tagsContainer.innerHTML = tags
-            .map(
-                (tag) => `
-            <span class="lightbox-tag-chip" data-tag="${this.escapeAttr(tag)}" data-path="${this.escapeAttr(file.path)}">
-                <button class="lightbox-tag-remove" title="Remove tag">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
-                <span class="lightbox-tag-divider"></span>
-                <span class="lightbox-tag-text">${this.escapeHtml(tag)}</span>
-            </span>
-        `
-            )
-            .join('');
-
-        // Check if content overflows and add class
-        requestAnimationFrame(() => {
-            const container = this.elements.tagsContainer;
-            const hasOverflow = container.scrollHeight > container.clientHeight;
-            this.elements.tagsOverlay.classList.toggle('has-overflow', hasOverflow);
-        });
-
-        this.elements.tagsContainer.querySelectorAll('.lightbox-tag-chip').forEach((chip) => {
-            const removeBtn = chip.querySelector('.lightbox-tag-remove');
-            const tagText = chip.querySelector('.lightbox-tag-text');
-
-            tagText.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const tagName = chip.dataset.tag;
-                if (tagName && typeof Tags !== 'undefined') {
-                    this.closeWithHistory();
-                    Tags.searchByTag(tagName);
-                }
-            });
-
-            removeBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const tagName = chip.dataset.tag;
-                const path = chip.dataset.path;
-                if (tagName && path) {
-                    this.removeTag(path, tagName);
-                }
-            });
-        });
-    },
-
-    async removeTag(path, tagName) {
-        try {
-            const response = await fetch('/api/tags/file', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, tag: tagName }),
-            });
-
-            if (response.ok) {
-                const file = this.items[this.currentIndex];
-                if (file && file.path === path) {
-                    file.tags = file.tags.filter((t) => t !== tagName);
-                    this.updateTagsOverlay(file);
-                    this.updateTagButton(file);
-                }
-
-                if (typeof Tags !== 'undefined') {
-                    Tags.refreshGalleryItemTags(path);
-                    Tags.loadAllTags();
-                }
-
-                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                    Gallery.showToast(`Removed tag "${tagName}"`);
-                }
-            }
-        } catch (error) {
-            console.error('Error removing tag:', error);
-            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                Gallery.showToast('Failed to remove tag');
-            }
         }
     },
 
@@ -1507,14 +1821,12 @@ const Lightbox = {
 
     loadImage(file, loadId) {
         const imageUrl = `/api/file/${file.path}`;
-
         if (this.preloadCache.has(imageUrl)) {
             const cachedImg = this.preloadCache.get(imageUrl);
             if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
                 this.elements.image.src = cachedImg.src;
                 this.elements.image.classList.remove('hidden');
                 this.hideLoading();
-
                 if (this.isAnimatedImageType(file.name)) {
                     setTimeout(() => this.startAnimationLoopDetection(), 100);
                 }
@@ -1523,7 +1835,6 @@ const Lightbox = {
         }
 
         this.showLoading();
-
         const controller = new AbortController();
         let loadComplete = false;
 
@@ -1531,27 +1842,16 @@ const Lightbox = {
             if (loadComplete) return;
             loadComplete = true;
             controller.abort();
-
-            if (loadId !== this.currentLoadId) {
-                return;
-            }
-
+            if (loadId !== this.currentLoadId) return;
             this.hideLoading();
 
-            // Track consecutive failures
             const now = Date.now();
             if (now - this.imageFailures.lastFailureTime > 15000) {
                 this.imageFailures.consecutiveFailures = 0;
             }
             this.imageFailures.consecutiveFailures++;
             this.imageFailures.lastFailureTime = now;
-
-            // Store current failed image for retry
-            this.imageFailures.currentFailedImage = {
-                file,
-                loadId,
-                imageUrl,
-            };
+            this.imageFailures.currentFailedImage = { file, loadId, imageUrl };
 
             if (isTimeout) {
                 console.error('Image load timeout:', file.path);
@@ -1560,128 +1860,84 @@ const Lightbox = {
                 }
             } else {
                 console.error('Failed to load image:', file.path);
-                // Check if this might be an auth error (image returns 401)
                 this.checkImageAuthError(imageUrl);
             }
 
-            // After 2 consecutive failures, trigger connectivity check via Gallery
             if (this.imageFailures.consecutiveFailures >= 2) {
                 if (typeof Gallery !== 'undefined' && Gallery.thumbnailFailures) {
-                    // Increment Gallery's failure count so it knows to show warning
                     Gallery.thumbnailFailures.count = Math.max(Gallery.thumbnailFailures.count, 2);
                     Gallery.thumbnailFailures.lastFailureTime = Date.now();
-
-                    // Piggyback on Gallery's connectivity check
                     if (!Gallery.thumbnailFailures.connectivityCheckInProgress) {
-                        console.debug('Lightbox: triggering connectivity check');
                         Gallery.startConnectivityCheck();
                     }
                 }
             }
-
             this.elements.image.classList.remove('hidden');
             this.elements.image.src = '';
         };
 
-        // Use fetch with timeout to load the image
         const timeoutId = setTimeout(() => handleError(true), 5000);
 
         fetch(imageUrl, { signal: controller.signal })
             .then((response) => {
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return response.blob();
             })
             .then(async (blob) => {
-                if (loadComplete || loadId !== this.currentLoadId) {
-                    return;
-                }
-
+                if (loadComplete || loadId !== this.currentLoadId) return;
                 loadComplete = true;
                 clearTimeout(timeoutId);
-
-                // Reset failure tracking on success
                 this.imageFailures.consecutiveFailures = 0;
                 this.imageFailures.currentFailedImage = null;
 
-                // Parse GIF loop count if this is a GIF file
                 if (file.name && file.name.toLowerCase().endsWith('.gif')) {
-                    console.debug(`Lightbox: Parsing GIF loop metadata for ${file.name}`);
                     file.gifLoopCount = await this.parseGifLoopCount(blob);
-                    console.debug(`Lightbox: GIF loop count for ${file.name}:`, file.gifLoopCount);
                 }
 
                 const blobUrl = URL.createObjectURL(blob);
                 const img = new Image();
-
                 img.onload = () => {
                     if (loadId !== this.currentLoadId) {
                         URL.revokeObjectURL(blobUrl);
                         return;
                     }
-
                     this.elements.image.src = blobUrl;
                     this.elements.image.classList.remove('hidden');
                     this.hideLoading();
-
                     this.preloadCache.set(imageUrl, img);
-
                     if (this.isAnimatedImageType(file.name)) {
                         setTimeout(() => this.startAnimationLoopDetection(), 100);
                     }
                 };
-
                 img.src = blobUrl;
             })
             .catch((error) => {
                 if (loadComplete) return;
-
                 const isTimeout = error.name === 'AbortError';
                 handleError(isTimeout);
             });
     },
 
-    /**
-     * Retry loading the current failed image (called when connectivity is restored)
-     */
     retryCurrentImage() {
         if (!this.imageFailures.currentFailedImage) return;
-
         const { file, loadId } = this.imageFailures.currentFailedImage;
-
-        // Only retry if we're still on the same image
         if (loadId === this.currentLoadId) {
-            console.debug('Lightbox: retrying failed image', file.path);
-
-            // Show retry message
             if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                 Gallery.showToast('Connection restored. Retrying image...');
             }
-
-            // Clear the preload cache for this image to force reload
             const imageUrl = `/api/file/${file.path}`;
             this.preloadCache.delete(imageUrl);
-
-            // Clear the failed image tracking (will be set again if retry fails)
             this.imageFailures.currentFailedImage = null;
-
-            // Retry by calling showMedia() which properly handles the load
             this.showMedia();
         } else {
-            // User has navigated away, clear the failed image
             this.imageFailures.currentFailedImage = null;
         }
     },
 
-    /**
-     * Check if an image load failure was due to authentication
-     */
     async checkImageAuthError(imageUrl) {
         try {
             const response = await fetch(imageUrl, { method: 'HEAD' });
             if (response.status === 401) {
-                console.debug('Lightbox: image auth error detected');
                 if (typeof SessionManager !== 'undefined') {
                     SessionManager.handleSessionExpired();
                 } else {
@@ -1689,33 +1945,18 @@ const Lightbox = {
                 }
             }
         } catch (e) {
-            // Network error, not auth related
             console.debug('Lightbox: image check failed', e);
         }
     },
 
-    /**
-     * Check if video is being transcoded and show progress
-     * @param {string} filePath - The path of the video file
-     * @param {number} loadId - The load ID to check if still current
-     */
     checkVideoTranscodingStatus(filePath, loadId) {
-        // After 3 seconds, if still loading, show message (likely transcoding)
         this.transcodingCheckTimeout = setTimeout(() => {
-            if (loadId !== this.currentLoadId || !this.loading) {
-                return; // Not current or already loaded
-            }
-
+            if (loadId !== this.currentLoadId || !this.loading) return;
             if (typeof Gallery !== 'undefined' && typeof Gallery.showToast === 'function') {
                 Gallery.showToast(
                     'Preparing video for playback. Large files may take a few minutes...',
                     'info',
-                    0 // No auto-dismiss
-                );
-                console.debug('Lightbox: Gallery.showToast called successfully');
-            } else {
-                console.error(
-                    'Lightbox: Cannot show toast - Gallery or Gallery.showToast not available'
+                    0
                 );
             }
         }, 3000);
@@ -1723,18 +1964,11 @@ const Lightbox = {
 
     loadVideo(file, loadId) {
         this.showLoading();
-
         const video = this.elements.video;
         const videoUrl = `/api/stream/${file.path}`;
-
-        // Apply loop setting BEFORE loading
         video.loop = Preferences.isMediaLoopEnabled();
-
-        // Initialize VideoPlayer component BEFORE loading so controls exist
-        // when loadedmetadata fires
         this.initVideoPlayer();
 
-        // Add timeout for video loading (long timeout for transcoding)
         const loadTimeout = setTimeout(
             () => {
                 if (loadId === this.currentLoadId) {
@@ -1742,7 +1976,6 @@ const Lightbox = {
                     this.hideLoading();
                     video.removeEventListener('canplay', onCanPlay);
                     video.removeEventListener('error', onError);
-
                     if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                         Gallery.showToast(
                             'Video load timeout. Server may be transcoding a large file or experiencing issues.',
@@ -1752,54 +1985,36 @@ const Lightbox = {
                 }
             },
             5 * 60 * 1000
-        ); // 5 minutes for transcoding
+        );
 
         const onCanPlay = () => {
-            if (loadId !== this.currentLoadId) {
-                return;
-            }
+            if (loadId !== this.currentLoadId) return;
             clearTimeout(loadTimeout);
             video.classList.remove('hidden');
             this.hideLoading();
-
-            // Update hotzone positions after video is visible and browser has laid it out
-            requestAnimationFrame(() => {
-                this.updateHotZonePositions();
-            });
-
+            requestAnimationFrame(() => this.updateHotZonePositions());
             if (Preferences.isVideoAutoplayEnabled()) {
-                video.play().catch((err) => {
-                    console.debug('Autoplay prevented by browser:', err);
-                });
+                video.play().catch((err) => console.debug('Autoplay prevented:', err));
             }
-
             video.removeEventListener('canplay', onCanPlay);
             video.removeEventListener('error', onError);
         };
 
         const onError = async (e) => {
-            if (loadId !== this.currentLoadId) {
-                return;
-            }
+            if (loadId !== this.currentLoadId) return;
             clearTimeout(loadTimeout);
             console.error('Error loading video:', e);
             this.hideLoading();
-
-            // Check if this is an auth error or other server error
             try {
                 const response = await fetchWithTimeout(videoUrl, {
                     method: 'HEAD',
                     timeout: 3000,
                 });
                 if (response.status === 401) {
-                    console.debug('Lightbox: video auth error detected');
-                    if (typeof SessionManager !== 'undefined') {
+                    if (typeof SessionManager !== 'undefined')
                         SessionManager.handleSessionExpired();
-                    } else {
-                        window.location.replace('/login.html');
-                    }
+                    else window.location.replace('/login.html');
                 } else if (response.status === 500) {
-                    console.error('Lightbox: server error loading video');
                     if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                         Gallery.showToast(
                             'Failed to load video. The file may be corrupted or incompatible with transcoding.',
@@ -1808,7 +2023,6 @@ const Lightbox = {
                         );
                     }
                 } else if (response.status >= 400) {
-                    console.error('Lightbox: HTTP error', response.status);
                     if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                         Gallery.showToast(
                             `Failed to load video (Error ${response.status})`,
@@ -1820,31 +2034,23 @@ const Lightbox = {
             } catch (err) {
                 console.debug('Lightbox: video auth check failed', err);
             }
-
             video.removeEventListener('canplay', onCanPlay);
             video.removeEventListener('error', onError);
         };
 
         video.addEventListener('canplay', onCanPlay);
         video.addEventListener('error', onError);
-
-        console.debug('Lightbox: About to call checkVideoTranscodingStatus for', file.path);
         this.checkVideoTranscodingStatus(file.path, loadId);
-        console.debug('Lightbox: checkVideoTranscodingStatus called');
-
         video.src = videoUrl;
         video.classList.remove('hidden');
         video.load();
     },
 
     initVideoPlayer() {
-        // Clean up previous video player instance
         if (this.videoPlayer) {
             this.videoPlayer.destroy();
             this.videoPlayer = null;
         }
-
-        // Create new VideoPlayer instance with navigation
         if (typeof VideoPlayer !== 'undefined') {
             this.videoPlayer = new VideoPlayer({
                 video: this.elements.video,
@@ -1863,42 +2069,29 @@ const Lightbox = {
 
     preloadAdjacent() {
         if (this.items.length <= 1) return;
-
         const indicesToPreload = [];
-
         for (let i = 1; i <= this.maxPreload; i++) {
             const nextIndex = (this.currentIndex + i) % this.items.length;
             indicesToPreload.push({ index: nextIndex, distance: i, direction: 'next' });
-
             const prevIndex = (this.currentIndex - i + this.items.length) % this.items.length;
             if (prevIndex !== nextIndex) {
                 indicesToPreload.push({ index: prevIndex, distance: i, direction: 'prev' });
             }
         }
-
         indicesToPreload.sort((a, b) => {
-            if (a.direction !== b.direction) {
-                return a.direction === 'next' ? -1 : 1;
-            }
+            if (a.direction !== b.direction) return a.direction === 'next' ? -1 : 1;
             return a.distance - b.distance;
         });
 
-        // Collect paths that need tag fetching
         const pathsNeedingTags = [];
-
         indicesToPreload.forEach((entry, index) => {
             const item = this.items[entry.index];
             if (!item) return;
-
-            // Preload image
             if (item.type === 'image') {
                 const priority = index < 2 ? 'high' : 'low';
                 this.preloadImage(item, priority);
             }
-
-            // Queue tag fetch if not already loaded
             if (item.tags === undefined) {
-                // Try gallery first
                 const galleryTags = this.getTagsFromGallery(item.path);
                 if (galleryTags !== null) {
                     item.tags = galleryTags;
@@ -1908,34 +2101,22 @@ const Lightbox = {
             }
         });
 
-        // Batch fetch tags for items not in gallery
-        if (pathsNeedingTags.length > 0) {
-            this.preloadTags(pathsNeedingTags);
-        }
-
+        if (pathsNeedingTags.length > 0) this.preloadTags(pathsNeedingTags);
         this.cleanPreloadCache();
     },
 
-    /**
-     * Preload tags for multiple paths
-     */
     async preloadTags(paths) {
         try {
             const response = await fetchWithTimeout('/api/tags/batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths: paths }),
+                body: JSON.stringify({ paths }),
                 timeout: 5000,
             });
-
             if (response.ok) {
                 const tagsData = await response.json();
-
-                // Update items with fetched tags
-                // Note: backend only returns paths that have tags
                 for (const item of this.items) {
                     if (paths.includes(item.path)) {
-                        // If path is in response, use those tags; otherwise empty array
                         item.tags = tagsData[item.path] || [];
                     }
                 }
@@ -1947,49 +2128,35 @@ const Lightbox = {
 
     preloadImage(file, _ = 'low') {
         const imageUrl = `/api/file/${file.path}`;
+        if (this.preloadCache.has(imageUrl)) return;
 
-        if (this.preloadCache.has(imageUrl)) {
-            return;
-        }
-
-        // Use fetch with AbortController for proper timeout handling
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
             controller.abort();
             this.preloadCache.delete(imageUrl);
         }, 5000);
-
-        // Add placeholder to cache to prevent duplicate preloads
         this.preloadCache.set(imageUrl, null);
 
         fetch(imageUrl, { signal: controller.signal })
             .then((response) => {
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return response.blob();
             })
             .then((blob) => {
                 clearTimeout(timeoutId);
-
                 const blobUrl = URL.createObjectURL(blob);
                 const img = new Image();
-
                 img.onload = () => {
-                    // Store the loaded image in cache
                     this.preloadCache.set(imageUrl, img);
-                    // Clean up blob URL
                     setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
                 };
-
                 img.onerror = () => {
                     this.preloadCache.delete(imageUrl);
                     URL.revokeObjectURL(blobUrl);
                 };
-
                 img.src = blobUrl;
             })
-            .catch((_) => {
+            .catch(() => {
                 clearTimeout(timeoutId);
                 this.preloadCache.delete(imageUrl);
             });
@@ -1997,33 +2164,20 @@ const Lightbox = {
 
     cleanPreloadCache() {
         const maxCacheSize = this.maxPreload * 2 + 5;
-
-        if (this.preloadCache.size <= maxCacheSize) {
-            return;
-        }
+        if (this.preloadCache.size <= maxCacheSize) return;
 
         const keepUrls = new Set();
-
         const currentItem = this.items[this.currentIndex];
-        if (currentItem) {
-            keepUrls.add(`/api/file/${currentItem.path}`);
-        }
-
+        if (currentItem) keepUrls.add(`/api/file/${currentItem.path}`);
         for (let i = 1; i <= this.maxPreload; i++) {
-            const nextIndex = (this.currentIndex + i) % this.items.length;
-            const prevIndex = (this.currentIndex - i + this.items.length) % this.items.length;
-
-            const nextItem = this.items[nextIndex];
-            const prevItem = this.items[prevIndex];
-
+            const nextItem = this.items[(this.currentIndex + i) % this.items.length];
+            const prevItem =
+                this.items[(this.currentIndex - i + this.items.length) % this.items.length];
             if (nextItem) keepUrls.add(`/api/file/${nextItem.path}`);
             if (prevItem) keepUrls.add(`/api/file/${prevItem.path}`);
         }
-
         for (const url of this.preloadCache.keys()) {
-            if (!keepUrls.has(url)) {
-                this.preloadCache.delete(url);
-            }
+            if (!keepUrls.has(url)) this.preloadCache.delete(url);
         }
     },
 
@@ -2040,10 +2194,8 @@ const Lightbox = {
 
     togglePin() {
         if (this.items.length === 0) return;
-
         const file = this.items[this.currentIndex];
         if (!file) return;
-
         if (typeof Favorites !== 'undefined') {
             Favorites.toggleFavorite(file.path, file.name, file.type).then((isPinned) => {
                 file.isFavorite = isPinned;
@@ -2056,36 +2208,25 @@ const Lightbox = {
         const item = this.items.find((i) => i.path === path);
         if (item) {
             item.isFavorite = isPinned;
-            if (this.items[this.currentIndex]?.path === path) {
-                this.updatePinButton(item);
-            }
+            if (this.items[this.currentIndex]?.path === path) this.updatePinButton(item);
         }
     },
 
     openTagModal() {
-        if (this.items.length === 0) return;
-        const file = this.items[this.currentIndex];
-        if (!file) return;
-        if (typeof Tags !== 'undefined') {
-            Tags.openModal(file.path, file.name);
-        }
+        // Now opens the drawer instead
+        this.openTagsDrawer();
     },
 
-    /**
-     * Refresh tags for the current item from the gallery
-     * Called when tags are updated via the tag modal
-     */
     refreshCurrentItemTags() {
         if (this.items.length === 0) return;
         const file = this.items[this.currentIndex];
         if (!file) return;
-
-        // Get updated tags from gallery
         const updatedTags = this.getTagsFromGallery(file.path);
         if (updatedTags !== null) {
             file.tags = updatedTags;
             this.updateTagButton(file);
-            this.updateTagsOverlay(file);
+            this.updateTagSummary(file);
+            if (this.tagsDrawerOpen) this.renderDrawerTags(file);
         }
     },
 
@@ -2102,21 +2243,18 @@ const Lightbox = {
         if (this.items.length === 0) return;
         const file = this.items[this.currentIndex];
         if (!file || file.type === 'folder') return;
-
         const link = document.createElement('a');
         link.href = `/api/file/${file.path}?download=true`;
         link.download = file.name;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-
         if (typeof Gallery !== 'undefined' && Gallery.showToast) {
             Gallery.showToast(`Downloading ${file.name}`);
         }
     },
 };
 
-// Export for testing
 window.Lightbox = Lightbox;
 
 document.addEventListener('DOMContentLoaded', () => {

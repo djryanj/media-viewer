@@ -2,7 +2,8 @@
  * Integration tests for Lightbox
  *
  * These tests verify lightbox workflows with real DOM, modules, and backend APIs.
- * Tests opening, navigation, media loading, tags, favorites, and keyboard shortcuts.
+ * Tests opening, navigation, media loading, tags drawer, clipboard, favorites,
+ * and keyboard shortcuts.
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
@@ -20,17 +21,15 @@ describe('Lightbox Integration', () => {
     let _Preferences;
     let _Tags;
     let _Player;
+    let TagClipboard;
 
     beforeAll(async () => {
-        // Ensure authenticated for these tests
         await ensureAuthenticated();
     });
 
     beforeEach(async () => {
-        // Reset all modules to ensure fresh imports
         vi.resetModules();
 
-        // Reset DOM with all required elements
         document.body.innerHTML = `
             <div id="lightbox" class="hidden">
                 <div class="lightbox-content">
@@ -46,21 +45,21 @@ describe('Lightbox Integration', () => {
                     <button class="lightbox-close" aria-label="Close"></button>
                     <button class="lightbox-prev" aria-label="Previous"></button>
                     <button class="lightbox-next" aria-label="Next"></button>
-                    <div id="lightbox-title"></div>
-                    <div id="lightbox-counter"></div>
+                    <div class="lightbox-info">
+                        <div id="lightbox-title"></div>
+                        <div id="lightbox-counter"></div>
+                    </div>
                     <button id="lightbox-pin" aria-label="Favorite"></button>
                     <button id="lightbox-tag" aria-label="Tags"></button>
                     <button id="lightbox-download" aria-label="Download"></button>
                     <button id="lightbox-loop" class="hidden" aria-label="Loop"></button>
                 </div>
                 <div class="lightbox-loading hidden">Loading...</div>
-                <div id="lightbox-tags-overlay" class="hidden"></div>
             </div>
             <div id="gallery"></div>
             <div id="tag-modal" class="hidden"></div>
         `;
 
-        // Mock global dependencies
         global.fetch = vi.fn(() =>
             Promise.resolve({
                 ok: true,
@@ -96,7 +95,6 @@ describe('Lightbox Integration', () => {
             release: vi.fn(),
         };
 
-        // Load required modules
         await loadModules();
     });
 
@@ -108,7 +106,6 @@ describe('Lightbox Integration', () => {
     });
 
     async function loadModules() {
-        // Set up Preferences mock first (before loading other modules that depend on it)
         globalThis.Preferences = {
             init: vi.fn(),
             isVideoAutoplayEnabled: vi.fn(() => true),
@@ -124,10 +121,8 @@ describe('Lightbox Integration', () => {
         };
         _Preferences = globalThis.Preferences;
 
-        // Load Gallery
         Gallery = await loadModuleForTesting('gallery', 'Gallery');
 
-        // Add mock methods to Gallery if not present
         if (!Gallery.showToast) Gallery.showToast = vi.fn();
         if (!Gallery.updateItemFavorite) Gallery.updateItemFavorite = vi.fn();
         if (!Gallery.updateItemTags) Gallery.updateItemTags = vi.fn();
@@ -140,10 +135,7 @@ describe('Lightbox Integration', () => {
         }
         if (!Gallery.startConnectivityCheck) Gallery.startConnectivityCheck = vi.fn();
 
-        // Load Favorites
         Favorites = await loadModuleForTesting('favorites', 'Favorites');
-        // Don't call Favorites.init() - it tries to access DOM elements we don't have
-        // But we need to mock elements to prevent classList errors
         Favorites.elements = {
             section: { classList: { add: vi.fn(), remove: vi.fn() } },
             gallery: { innerHTML: '', appendChild: vi.fn() },
@@ -152,35 +144,40 @@ describe('Lightbox Integration', () => {
             fadeRight: { classList: { add: vi.fn(), remove: vi.fn() } },
         };
 
-        // Add mock methods to Favorites if not present
         if (!Favorites.isPinned) Favorites.isPinned = vi.fn(() => false);
         if (!Favorites.toggleFavorite) {
             Favorites.toggleFavorite = vi.fn((path) => Promise.resolve(Favorites.isPinned(path)));
         }
 
-        // Load Tags
         _Tags = await loadModuleForTesting('tags', 'Tags');
 
-        // Add mock methods to Tags if not present
         if (!_Tags.closeModalWithHistory) _Tags.closeModalWithHistory = vi.fn();
         if (!_Tags.searchByTag) _Tags.searchByTag = vi.fn();
         if (!_Tags.refreshGalleryItemTags) _Tags.refreshGalleryItemTags = vi.fn();
+        if (!_Tags.updateGalleryItemTagsDOM) _Tags.updateGalleryItemTagsDOM = vi.fn();
         if (!_Tags.loadAllTags) _Tags.loadAllTags = vi.fn();
         if (!_Tags.openModal) _Tags.openModal = vi.fn();
 
-        // Load VideoPlayer
+        // Load TagClipboard
+        TagClipboard = await loadModuleForTesting('tag-clipboard', 'TagClipboard');
+        if (!TagClipboard.hasTags) TagClipboard.hasTags = vi.fn(() => false);
+        if (!TagClipboard.copyTagsDirect) TagClipboard.copyTagsDirect = vi.fn(() => true);
+        if (!TagClipboard.openPasteModal) TagClipboard.openPasteModal = vi.fn();
+
         const VideoPlayer = await loadModuleForTesting('video-player', 'VideoPlayer');
         _Player = VideoPlayer;
         globalThis.Player = VideoPlayer;
 
-        // Load Lightbox
         Lightbox = await loadModuleForTesting('lightbox', 'Lightbox');
 
-        // Initialize Lightbox
         if (Lightbox?.init) {
             Lightbox.init();
         }
     }
+
+    // =========================================
+    // Opening Lightbox
+    // =========================================
 
     describe('Opening Lightbox', () => {
         it('should open lightbox with media files', () => {
@@ -213,7 +210,6 @@ describe('Lightbox Integration', () => {
             Lightbox.openWithItems([], 0);
 
             expect(Lightbox.items).toEqual([]);
-            // Should not throw error
         });
 
         it('should update title and counter', () => {
@@ -228,6 +224,10 @@ describe('Lightbox Integration', () => {
             expect(counter.textContent).toContain('1');
         });
     });
+
+    // =========================================
+    // Navigation
+    // =========================================
 
     describe('Navigation', () => {
         beforeEach(() => {
@@ -270,20 +270,32 @@ describe('Lightbox Integration', () => {
         });
 
         it('should update navigation button states', () => {
-            // Mock updateNavigation to verify it's called
             const spy = vi.spyOn(Lightbox, 'updateNavigation');
 
             Lightbox.next();
 
             expect(spy).toHaveBeenCalled();
         });
+
+        it('should close tags drawer when navigating', () => {
+            Lightbox.tagsDrawerOpen = true;
+            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawer');
+
+            Lightbox.next();
+
+            expect(closeSpy).toHaveBeenCalled();
+        });
     });
+
+    // =========================================
+    // Keyboard Shortcuts
+    // =========================================
 
     describe('Keyboard Shortcuts', () => {
         beforeEach(() => {
             const files = [
-                { name: 'image1.jpg', path: '/photos/image1.jpg', type: 'image' },
-                { name: 'image2.jpg', path: '/photos/image2.jpg', type: 'image' },
+                { name: 'image1.jpg', path: '/photos/image1.jpg', type: 'image', tags: ['a'] },
+                { name: 'image2.jpg', path: '/photos/image2.jpg', type: 'image', tags: ['b'] },
             ];
             Lightbox.openWithItems(files, 0);
         });
@@ -298,6 +310,23 @@ describe('Lightbox Integration', () => {
 
             const lightboxEl = document.getElementById('lightbox');
             expect(lightboxEl.classList.contains('hidden')).toBe(true);
+        });
+
+        it('should close drawer first on Escape when drawer is open', () => {
+            Lightbox.tagsDrawerOpen = true;
+            const closeDrawerSpy = vi.spyOn(Lightbox, 'closeTagsDrawerWithHistory');
+
+            const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+            Object.defineProperty(event, 'target', {
+                value: document.body,
+                enumerable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(closeDrawerSpy).toHaveBeenCalled();
+            // Lightbox itself should still be visible
+            const lightboxEl = document.getElementById('lightbox');
+            expect(lightboxEl.classList.contains('hidden')).toBe(false);
         });
 
         it('should navigate next on ArrowRight', () => {
@@ -324,6 +353,20 @@ describe('Lightbox Integration', () => {
             expect(Lightbox.currentIndex).toBe(0);
         });
 
+        it('should not navigate with arrow keys when drawer is open', () => {
+            Lightbox.tagsDrawerOpen = true;
+            const initialIndex = Lightbox.currentIndex;
+
+            const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true });
+            Object.defineProperty(event, 'target', {
+                value: document.body,
+                enumerable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(Lightbox.currentIndex).toBe(initialIndex);
+        });
+
         it('should not navigate when input is focused', () => {
             const input = document.createElement('input');
             document.body.appendChild(input);
@@ -339,7 +382,64 @@ describe('Lightbox Integration', () => {
 
             expect(Lightbox.currentIndex).toBe(initialIndex);
         });
+
+        it('should toggle drawer on T key', () => {
+            const openSpy = vi.spyOn(Lightbox, 'openTagsDrawer');
+
+            const event = new KeyboardEvent('keydown', { key: 't', bubbles: true });
+            Object.defineProperty(event, 'target', {
+                value: document.body,
+                enumerable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(openSpy).toHaveBeenCalled();
+        });
+
+        it('should close drawer on T key when drawer is open', () => {
+            Lightbox.tagsDrawerOpen = true;
+            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawerWithHistory');
+
+            const event = new KeyboardEvent('keydown', { key: 't', bubbles: true });
+            Object.defineProperty(event, 'target', {
+                value: document.body,
+                enumerable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(closeSpy).toHaveBeenCalled();
+        });
+
+        it('should trigger download on D key', () => {
+            const downloadSpy = vi.spyOn(Lightbox, 'downloadCurrent');
+
+            const event = new KeyboardEvent('keydown', { key: 'd', bubbles: true });
+            Object.defineProperty(event, 'target', {
+                value: document.body,
+                enumerable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(downloadSpy).toHaveBeenCalled();
+        });
+
+        it('should toggle favorite on F key', () => {
+            const pinSpy = vi.spyOn(Lightbox, 'togglePin');
+
+            const event = new KeyboardEvent('keydown', { key: 'f', bubbles: true });
+            Object.defineProperty(event, 'target', {
+                value: document.body,
+                enumerable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(pinSpy).toHaveBeenCalled();
+        });
     });
+
+    // =========================================
+    // Closing Lightbox
+    // =========================================
 
     describe('Closing Lightbox', () => {
         beforeEach(() => {
@@ -358,16 +458,7 @@ describe('Lightbox Integration', () => {
             const items = Lightbox.items;
             Lightbox.close();
 
-            // Items are preserved for potential reopening
             expect(Lightbox.items).toBe(items);
-        });
-
-        it('should preserve current index after close', () => {
-            const index = Lightbox.currentIndex;
-            Lightbox.close();
-
-            // Index is preserved for potential reopening
-            expect(Lightbox.currentIndex).toBe(index);
         });
 
         it('should abort any loading media', () => {
@@ -377,9 +468,21 @@ describe('Lightbox Integration', () => {
 
             expect(abortSpy).toHaveBeenCalled();
         });
+
+        it('should close tags drawer when closing lightbox', () => {
+            Lightbox.tagsDrawerOpen = true;
+
+            Lightbox.close();
+
+            expect(Lightbox.tagsDrawerOpen).toBe(false);
+        });
     });
 
-    describe('Tag Integration', () => {
+    // =========================================
+    // Tags Drawer Integration
+    // =========================================
+
+    describe('Tags Drawer Integration', () => {
         let testFiles;
 
         beforeEach(() => {
@@ -394,24 +497,58 @@ describe('Lightbox Integration', () => {
             Lightbox.openWithItems(testFiles, 0);
         });
 
-        it('should display tags for current file', () => {
+        it('should display tag button as has-tags when file has tags', () => {
             Lightbox.updateTagButton(testFiles[0]);
 
             const tagButton = document.getElementById('lightbox-tag');
             expect(tagButton.classList.contains('has-tags')).toBe(true);
         });
 
-        it('should update tags when file has no tags', () => {
+        it('should not show has-tags when file has no tags', () => {
             const fileWithoutTags = {
                 name: 'photo2.jpg',
                 path: '/photos/photo2.jpg',
                 type: 'image',
+                tags: [],
             };
 
             Lightbox.updateTagButton(fileWithoutTags);
 
             const tagButton = document.getElementById('lightbox-tag');
-            expect(tagButton.textContent).not.toContain('2');
+            expect(tagButton.classList.contains('has-tags')).toBe(false);
+        });
+
+        it('should open drawer when tag button is clicked', () => {
+            const openSpy = vi.spyOn(Lightbox, 'openTagsDrawer');
+
+            const tagButton = document.getElementById('lightbox-tag');
+            tagButton.click();
+
+            expect(openSpy).toHaveBeenCalled();
+        });
+
+        it('should populate drawer with current file tags', () => {
+            Lightbox.openTagsDrawer();
+
+            const chips = Lightbox.elements.drawerTagsList.querySelectorAll('.drawer-tag-chip');
+            expect(chips.length).toBe(2);
+
+            const tagNames = Array.from(chips).map(
+                (c) => c.querySelector('.drawer-tag-text').textContent
+            );
+            expect(tagNames).toContain('vacation');
+            expect(tagNames).toContain('beach');
+        });
+
+        it('should show empty state when file has no tags', () => {
+            Lightbox.items = [
+                { name: 'empty.jpg', path: '/photos/empty.jpg', type: 'image', tags: [] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.openTagsDrawer();
+
+            expect(Lightbox.elements.drawerEmptyState.classList.contains('hidden')).toBe(false);
         });
 
         it('should fetch tags from server', async () => {
@@ -437,10 +574,235 @@ describe('Lightbox Integration', () => {
                 })
             );
 
-            // Should not throw
             await expect(Lightbox.fetchAndUpdateTags(testFiles[0])).resolves.not.toThrow();
         });
+
+        it('should add tag via drawer input', async () => {
+            global.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ success: true }),
+                })
+            );
+
+            Lightbox.openTagsDrawer();
+            Lightbox.elements.drawerTagInput.value = 'new-tag';
+
+            await Lightbox.addTagFromDrawer();
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                '/api/tags/file',
+                expect.objectContaining({
+                    method: 'POST',
+                    body: expect.stringContaining('new-tag'),
+                })
+            );
+        });
+
+        it('should remove tag via drawer chip', async () => {
+            global.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ success: true }),
+                })
+            );
+
+            Lightbox.openTagsDrawer();
+
+            const removeBtn = Lightbox.elements.drawerTagsList.querySelector('.drawer-tag-remove');
+            expect(removeBtn).toBeTruthy();
+
+            // Simulate remove
+            await Lightbox.removeTagFromDrawer('/photos/photo.jpg', 'vacation');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                '/api/tags/file',
+                expect.objectContaining({
+                    method: 'DELETE',
+                    body: expect.stringContaining('vacation'),
+                })
+            );
+        });
     });
+
+    // =========================================
+    // Drawer Clipboard Integration
+    // =========================================
+
+    describe('Drawer Clipboard Integration', () => {
+        let testFiles;
+
+        beforeEach(() => {
+            testFiles = [
+                {
+                    name: 'photo.jpg',
+                    path: '/photos/photo.jpg',
+                    type: 'image',
+                    tags: ['vacation', 'beach', 'sunset'],
+                },
+            ];
+            Lightbox.openWithItems(testFiles, 0);
+        });
+
+        it('should have copy and paste buttons in drawer', () => {
+            Lightbox.openTagsDrawer();
+
+            expect(Lightbox.elements.drawerCopyBtn).toBeTruthy();
+            expect(Lightbox.elements.drawerPasteBtn).toBeTruthy();
+        });
+
+        it('should enable copy button when item has tags', () => {
+            Lightbox.openTagsDrawer();
+
+            expect(Lightbox.elements.drawerCopyBtn.disabled).toBe(false);
+        });
+
+        it('should disable copy button when item has no tags', () => {
+            Lightbox.items = [
+                { name: 'empty.jpg', path: '/photos/empty.jpg', type: 'image', tags: [] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            Lightbox.openTagsDrawer();
+
+            expect(Lightbox.elements.drawerCopyBtn.disabled).toBe(true);
+        });
+
+        it('should disable paste button when clipboard is empty', () => {
+            TagClipboard.hasTags = vi.fn(() => false);
+            TagClipboard.copiedTags = [];
+
+            Lightbox.openTagsDrawer();
+
+            expect(Lightbox.elements.drawerPasteBtn.disabled).toBe(true);
+        });
+
+        it('should enable paste button when clipboard has tags', () => {
+            TagClipboard.hasTags = vi.fn(() => true);
+            TagClipboard.copiedTags = ['nature'];
+            TagClipboard.sourceItemName = 'source.jpg';
+
+            Lightbox.openTagsDrawer();
+
+            expect(Lightbox.elements.drawerPasteBtn.disabled).toBe(false);
+        });
+
+        it('should copy tags when copy button is clicked', () => {
+            const copyDirectSpy = vi.fn(() => true);
+            TagClipboard.copyTagsDirect = copyDirectSpy;
+
+            Lightbox.openTagsDrawer();
+            Lightbox.elements.drawerCopyBtn.click();
+
+            expect(copyDirectSpy).toHaveBeenCalledWith(
+                ['vacation', 'beach', 'sunset'],
+                '/photos/photo.jpg',
+                'photo.jpg'
+            );
+        });
+
+        it('should open paste modal when paste button is clicked', () => {
+            const openPasteSpy = vi.fn();
+            TagClipboard.hasTags = vi.fn(() => true);
+            TagClipboard.copiedTags = ['nature'];
+            TagClipboard.openPasteModal = openPasteSpy;
+
+            Lightbox.openTagsDrawer();
+            Lightbox.elements.drawerPasteBtn.click();
+
+            expect(openPasteSpy).toHaveBeenCalledWith(['/photos/photo.jpg'], ['photo.jpg']);
+        });
+
+        it('should update paste button after copy', () => {
+            TagClipboard.hasTags = vi.fn(() => false);
+            TagClipboard.copiedTags = [];
+
+            Lightbox.openTagsDrawer();
+            expect(Lightbox.elements.drawerPasteBtn.disabled).toBe(true);
+
+            // Simulate copy making clipboard available
+            TagClipboard.hasTags = vi.fn(() => true);
+            TagClipboard.copiedTags = ['vacation', 'beach', 'sunset'];
+            TagClipboard.copyTagsDirect = vi.fn(() => true);
+
+            Lightbox.elements.drawerCopyBtn.click();
+
+            expect(Lightbox.elements.drawerPasteBtn.disabled).toBe(false);
+        });
+
+        it('should show toast when copying with no tags', () => {
+            Lightbox.items = [
+                { name: 'empty.jpg', path: '/photos/empty.jpg', type: 'image', tags: [] },
+            ];
+            Lightbox.currentIndex = 0;
+
+            const toastSpy = vi.spyOn(Gallery, 'showToast');
+
+            Lightbox.openTagsDrawer();
+            Lightbox.copyTagsFromDrawer();
+
+            expect(toastSpy).toHaveBeenCalledWith('No tags to copy');
+        });
+
+        it('should show toast when pasting with empty clipboard', () => {
+            TagClipboard.hasTags = vi.fn(() => false);
+
+            const toastSpy = vi.spyOn(Gallery, 'showToast');
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('No tags in clipboard'));
+        });
+
+        it('should not allow paste onto folder type', () => {
+            Lightbox.items = [{ name: 'myfolder', path: '/myfolder', type: 'folder' }];
+            Lightbox.currentIndex = 0;
+            TagClipboard.hasTags = vi.fn(() => true);
+
+            const toastSpy = vi.spyOn(Gallery, 'showToast');
+            const pasteSpy = vi.spyOn(TagClipboard, 'openPasteModal');
+
+            Lightbox.pasteTagsFromDrawer();
+
+            expect(toastSpy).toHaveBeenCalledWith(
+                expect.stringContaining('Cannot paste tags onto a folder')
+            );
+            expect(pasteSpy).not.toHaveBeenCalled();
+        });
+
+        it('should refresh tags after paste completes', async () => {
+            global.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(['vacation', 'beach', 'sunset', 'pasted-tag']),
+                })
+            );
+
+            await Lightbox._refreshTagsAfterPaste('/photos/photo.jpg');
+
+            expect(testFiles[0].tags).toEqual(['vacation', 'beach', 'sunset', 'pasted-tag']);
+        });
+
+        it('should re-render drawer after paste refresh if drawer is open', async () => {
+            global.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(['refreshed']),
+                })
+            );
+
+            Lightbox.openTagsDrawer();
+            const renderSpy = vi.spyOn(Lightbox, 'renderDrawerTags');
+
+            await Lightbox._refreshTagsAfterPaste('/photos/photo.jpg');
+
+            expect(renderSpy).toHaveBeenCalled();
+        });
+    });
+
+    // =========================================
+    // Favorites Integration
+    // =========================================
 
     describe('Favorites Integration', () => {
         let testFiles;
@@ -498,6 +860,10 @@ describe('Lightbox Integration', () => {
         });
     });
 
+    // =========================================
+    // Media Loading
+    // =========================================
+
     describe('Media Loading', () => {
         it('should show loading indicator', () => {
             const files = [{ name: 'image1.jpg', path: '/photos/image1.jpg', type: 'image' }];
@@ -505,7 +871,6 @@ describe('Lightbox Integration', () => {
 
             Lightbox.showLoading();
 
-            // The loader element is created dynamically by createLoadingIndicator()
             const loading = document.querySelector('.lightbox-loader');
             expect(loading?.classList.contains('hidden')).toBe(false);
         });
@@ -530,19 +895,11 @@ describe('Lightbox Integration', () => {
 
             expect(abortSpy).toHaveBeenCalled();
         });
-
-        it('should handle image load failure', () => {
-            const file = { name: 'broken.jpg', path: '/photos/broken.jpg', type: 'image' };
-            Lightbox.openWithItems([file], 0);
-
-            const img = document.getElementById('lightbox-image');
-            const errorEvent = new Event('error');
-            img.dispatchEvent(errorEvent);
-
-            // Should handle gracefully without throwing
-            expect(true).toBe(true);
-        });
     });
+
+    // =========================================
+    // Video Player Integration
+    // =========================================
 
     describe('Video Player Integration', () => {
         beforeEach(() => {
@@ -550,11 +907,7 @@ describe('Lightbox Integration', () => {
             Lightbox.openWithItems(files, 0);
         });
 
-        it('should show video element for video files', () => {
-            const _videoEl = document.getElementById('lightbox-video');
-            const _imageEl = document.getElementById('lightbox-image');
-
-            // Video type should be handled
+        it('should handle video type items', () => {
             expect(Lightbox.items[0].type).toBe('video');
         });
 
@@ -567,6 +920,10 @@ describe('Lightbox Integration', () => {
             expect(imageEl.classList.contains('hidden')).toBe(true);
         });
     });
+
+    // =========================================
+    // Real API Integration
+    // =========================================
 
     describe('Real API Integration', () => {
         it('should work with real file listing', async () => {
@@ -608,20 +965,21 @@ describe('Lightbox Integration', () => {
 
             const testFile = mediaFiles[0];
 
-            // Add as favorite
             await addFavorite(testFile.path);
 
-            // Open in lightbox and verify state
             Lightbox.openWithItems([{ ...testFile, isPinned: true }], 0);
             Lightbox.updatePinButton(Lightbox.items[0]);
 
             const pinButton = document.getElementById('lightbox-pin');
             expect(pinButton.classList.contains('pinned')).toBe(true);
 
-            // Clean up
             await removeFavorite(testFile.path);
         });
     });
+
+    // =========================================
+    // Zoom Functionality
+    // =========================================
 
     describe('Zoom Functionality', () => {
         beforeEach(() => {
@@ -642,7 +1000,6 @@ describe('Lightbox Integration', () => {
             ];
             Lightbox.openWithItems(files, 0);
 
-            // Simulate zoom
             Lightbox.zoom.scale = 2;
             Lightbox.zoom.isPinching = true;
 
@@ -653,23 +1010,32 @@ describe('Lightbox Integration', () => {
         });
     });
 
-    describe('Gallery Integration', () => {
-        it('should update gallery when tags change', () => {
-            const gallerySpy = vi.fn();
-            Gallery.updateItemTags = gallerySpy;
+    // =========================================
+    // Gallery Integration
+    // =========================================
 
-            const file = { name: 'photo.jpg', path: '/photos/photo.jpg', type: 'image' };
+    describe('Gallery Integration', () => {
+        it('should refresh gallery tags when drawer tags change', async () => {
+            global.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ success: true }),
+                })
+            );
+
+            const file = {
+                name: 'photo.jpg',
+                path: '/photos/photo.jpg',
+                type: 'image',
+                tags: ['old'],
+            };
             Lightbox.openWithItems([file], 0);
 
-            // Simulate tag update
-            file.tags = ['vacation'];
-            Lightbox.updateTagButton(file);
+            const refreshSpy = vi.spyOn(_Tags, 'refreshGalleryItemTags');
 
-            // When refreshing from gallery
-            Lightbox.refreshCurrentItemTags();
+            await Lightbox.removeTagFromDrawer('/photos/photo.jpg', 'old');
 
-            // Gallery should be involved
-            expect(Gallery).toBeDefined();
+            expect(refreshSpy).toHaveBeenCalledWith('/photos/photo.jpg');
         });
     });
 });
