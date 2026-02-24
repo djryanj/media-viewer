@@ -18,19 +18,15 @@ func (d *Database) GetOrCreateTag(ctx context.Context, name string) (*Tag, error
 		return nil, errors.New("tag name cannot be empty")
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Try to get existing tag
+	// Try reader first
 	var tag Tag
 	var createdAt int64
 	var color sql.NullString
 
-	err := d.db.QueryRowContext(ctx,
+	err := d.reader.QueryRowContext(ctx,
 		"SELECT id, name, color, created_at FROM tags WHERE name = ? COLLATE NOCASE",
 		name,
 	).Scan(&tag.ID, &tag.Name, &color, &createdAt)
@@ -43,8 +39,8 @@ func (d *Database) GetOrCreateTag(ctx context.Context, name string) (*Tag, error
 		return &tag, nil
 	}
 
-	// Create new tag
-	result, err := d.db.ExecContext(ctx,
+	// Create via writer
+	result, err := d.writer.ExecContext(ctx,
 		"INSERT INTO tags (name) VALUES (?)",
 		name,
 	)
@@ -70,23 +66,24 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 		return err
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Get or create tag within the same lock
+	tx, err := d.writer.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	var tagID int64
-	err := d.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
 		tagName,
 	).Scan(&tagID)
 
 	if err != nil {
-		// Create new tag
-		result, createErr := d.db.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
+		result, createErr := tx.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
 		if createErr != nil {
 			err = fmt.Errorf("failed to create tag: %w", createErr)
 			done(err)
@@ -95,26 +92,32 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 		tagID, _ = result.LastInsertId()
 	}
 
-	_, err = d.db.ExecContext(ctx,
+	_, err = tx.ExecContext(ctx,
 		"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
 		filePath, tagID,
 	)
-	done(err)
-	return err
+	if err != nil {
+		done(err)
+		return err
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		done(commitErr)
+		return commitErr
+	}
+
+	done(nil)
+	return nil
 }
 
 // RemoveTagFromFile removes a tag from a file.
 func (d *Database) RemoveTagFromFile(ctx context.Context, filePath, tagName string) error {
 	done := observeQuery("remove_tag_from_file")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, `
+	_, err := d.writer.ExecContext(ctx, `
 		DELETE FROM file_tags
 		WHERE file_path = ? AND tag_id = (SELECT id FROM tags WHERE name = ? COLLATE NOCASE)
 	`, filePath, tagName)
@@ -125,20 +128,10 @@ func (d *Database) RemoveTagFromFile(ctx context.Context, filePath, tagName stri
 
 // GetFileTags returns all tags for a file.
 func (d *Database) GetFileTags(ctx context.Context, filePath string) ([]string, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	return d.getFileTagsUnlocked(ctx, filePath)
-}
-
-// getFileTagsUnlocked returns tags without acquiring lock.
-// Caller must hold at least a read lock.
-func (d *Database) getFileTagsUnlocked(ctx context.Context, filePath string) ([]string, error) {
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reader.QueryContext(ctx, `
 		SELECT t.name
 		FROM tags t
 		INNER JOIN file_tags ft ON t.id = ft.tag_id
@@ -169,14 +162,10 @@ func (d *Database) getFileTagsUnlocked(ctx context.Context, filePath string) ([]
 func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []string) error {
 	done := observeQuery("set_file_tags")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.writer.BeginTx(ctx, nil)
 	if err != nil {
 		done(err)
 		return err
@@ -191,25 +180,21 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 		}
 	}()
 
-	// Remove existing tags
 	_, err = tx.ExecContext(ctx, "DELETE FROM file_tags WHERE file_path = ?", filePath)
 	if err != nil {
 		done(err)
 		return err
 	}
 
-	// Add new tags
 	for _, tagName := range tagNames {
 		tagName = strings.TrimSpace(tagName)
 		if tagName == "" {
 			continue
 		}
 
-		// Get or create tag
 		var tagID int64
 		err = tx.QueryRowContext(ctx, "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", tagName).Scan(&tagID)
 		if err != nil {
-			// Create tag
 			result, createErr := tx.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", tagName)
 			if createErr != nil {
 				err = createErr
@@ -219,7 +204,6 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 			tagID, _ = result.LastInsertId()
 		}
 
-		// Add relationship
 		_, err = tx.ExecContext(ctx,
 			"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
 			filePath, tagID,
@@ -243,14 +227,10 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 func (d *Database) GetAllTags(ctx context.Context) ([]Tag, error) {
 	done := observeQuery("get_all_tags")
 
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reader.QueryContext(ctx, `
 		SELECT t.id, t.name, t.color, t.created_at, COUNT(ft.id) as item_count
 		FROM tags t
 		LEFT JOIN file_tags ft ON t.id = ft.tag_id
@@ -303,16 +283,11 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 		pageSize = 200
 	}
 
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Get total count
 	var totalItems int
-	err := d.db.QueryRowContext(ctx, `
+	err := d.reader.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT ft.file_path)
 		FROM file_tags ft
 		INNER JOIN tags t ON ft.tag_id = t.id
@@ -329,9 +304,13 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 	}
 	offset := (page - 1) * pageSize
 
-	// Get files
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type
+	rows, err := d.reader.QueryContext(ctx, `
+		SELECT f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+		       EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+		       (SELECT GROUP_CONCAT(t2.name, ',')
+		        FROM file_tags ft2
+		        JOIN tags t2 ON ft2.tag_id = t2.id
+		        WHERE ft2.file_path = f.path) AS tags
 		FROM files f
 		INNER JOIN file_tags ft ON f.path = ft.file_path
 		INNER JOIN tags t ON ft.tag_id = t.id
@@ -354,10 +333,13 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 		var file MediaFile
 		var modTime int64
 		var mimeType sql.NullString
+		var isFavorite int
+		var tagsString sql.NullString
 
 		if err := rows.Scan(
 			&file.ID, &file.Name, &file.Path, &file.ParentPath,
 			&file.Type, &file.Size, &modTime, &mimeType,
+			&isFavorite, &tagsString,
 		); err != nil {
 			continue
 		}
@@ -371,10 +353,11 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 			file.ThumbnailURL = "/api/thumbnail/" + file.Path
 		}
 
-		// Use unlocked versions since we already hold the lock
-		tags, _ := d.getFileTagsUnlocked(ctx, file.Path)
-		file.Tags = tags
-		file.IsFavorite = d.isFavoriteUnlocked(ctx, file.Path)
+		file.IsFavorite = isFavorite == 1
+
+		if tagsString.Valid && tagsString.String != "" {
+			file.Tags = strings.Split(tagsString.String, ",")
+		}
 
 		items = append(items, file)
 	}
@@ -394,14 +377,10 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 func (d *Database) DeleteTag(ctx context.Context, tagName string) error {
 	done := observeQuery("delete_tag")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
+	_, err := d.writer.ExecContext(ctx, "DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName)
 	done(err)
 	return err
 }
@@ -417,15 +396,10 @@ func (d *Database) RenameTag(ctx context.Context, oldName, newName string) error
 		return err
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(
-		ctx,
+	_, err := d.writer.ExecContext(ctx,
 		"UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE",
 		newName, oldName,
 	)
@@ -435,15 +409,10 @@ func (d *Database) RenameTag(ctx context.Context, oldName, newName string) error
 
 // SetTagColor sets the color for a tag.
 func (d *Database) SetTagColor(ctx context.Context, tagName, color string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Use passed context with timeout
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(
-		ctx,
+	_, err := d.writer.ExecContext(ctx,
 		"UPDATE tags SET color = ? WHERE name = ? COLLATE NOCASE",
 		color, tagName,
 	)
@@ -452,14 +421,11 @@ func (d *Database) SetTagColor(ctx context.Context, tagName, color string) error
 
 // GetTagCount returns the total number of tags.
 func (d *Database) GetTagCount(ctx context.Context) int {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var count int
-	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&count); err != nil {
+	if err := d.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&count); err != nil {
 		return 0
 	}
 	return count
@@ -476,21 +442,16 @@ type TagWithCount struct {
 func (d *Database) GetAllTagsWithCounts(ctx context.Context) ([]TagWithCount, error) {
 	done := observeQuery("get_all_tags_with_counts")
 
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	query := `
+	rows, err := d.reader.QueryContext(ctx, `
 		SELECT t.name, COALESCE(t.color, ''), COUNT(ft.id) as count
 		FROM tags t
 		LEFT JOIN file_tags ft ON t.id = ft.tag_id
 		GROUP BY t.id, t.name, t.color
 		ORDER BY count DESC, t.name COLLATE NOCASE
-	`
-
-	rows, err := d.db.QueryContext(ctx, query)
+	`)
 	if err != nil {
 		done(err)
 		return nil, err
@@ -520,21 +481,16 @@ func (d *Database) GetAllTagsWithCounts(ctx context.Context) ([]TagWithCount, er
 func (d *Database) GetUnusedTags(ctx context.Context) ([]string, error) {
 	done := observeQuery("get_unused_tags")
 
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	query := `
+	rows, err := d.reader.QueryContext(ctx, `
 		SELECT t.name
 		FROM tags t
 		LEFT JOIN file_tags ft ON t.id = ft.tag_id
 		WHERE ft.id IS NULL
 		ORDER BY t.name COLLATE NOCASE
-	`
-
-	rows, err := d.db.QueryContext(ctx, query)
+	`)
 	if err != nil {
 		done(err)
 		return nil, err
@@ -573,40 +529,31 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 		return 0, err
 	}
 
-	// Allow case-only changes, only skip if names are exactly identical
 	if oldName == newName {
 		done(nil)
-		return 0, nil // No change needed
+		return 0, nil
 	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Start transaction
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.writer.BeginTx(ctx, nil)
 	if err != nil {
 		done(err)
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Check if new tag name already exists
 	var existingID int64
 	err = tx.QueryRowContext(ctx,
-		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
-		newName,
+		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE", newName,
 	).Scan(&existingID)
 
 	switch {
 	case err == nil:
-		// Target tag exists, check if it's the same tag (case-only change)
 		var oldID int64
 		err = tx.QueryRowContext(ctx,
-			"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
-			oldName,
+			"SELECT id FROM tags WHERE name = ? COLLATE NOCASE", oldName,
 		).Scan(&oldID)
 		if err != nil {
 			err = fmt.Errorf("old tag not found: %w", err)
@@ -615,24 +562,16 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 		}
 
 		if existingID == oldID {
-			// Same tag, just update the case
-			_, err = tx.ExecContext(ctx,
-				"UPDATE tags SET name = ? WHERE id = ?",
-				newName, oldID,
-			)
+			_, err = tx.ExecContext(ctx, "UPDATE tags SET name = ? WHERE id = ?", newName, oldID)
 			if err != nil {
 				err = fmt.Errorf("failed to update tag case: %w", err)
 				done(err)
 				return 0, err
 			}
 		} else {
-			// Different tags, we need to merge
-			// Move all file_tags from old tag to new tag (skip duplicates)
 			_, err = tx.ExecContext(ctx, `
 				INSERT OR IGNORE INTO file_tags (file_path, tag_id, created_at)
-				SELECT file_path, ?, created_at
-				FROM file_tags
-				WHERE tag_id = ?
+				SELECT file_path, ?, created_at FROM file_tags WHERE tag_id = ?
 			`, existingID, oldID)
 			if err != nil {
 				err = fmt.Errorf("failed to merge file tags: %w", err)
@@ -640,11 +579,7 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 				return 0, err
 			}
 
-			// Delete old tag (cascade will remove old file_tags)
-			_, err = tx.ExecContext(ctx,
-				"DELETE FROM tags WHERE id = ?",
-				oldID,
-			)
+			_, err = tx.ExecContext(ctx, "DELETE FROM tags WHERE id = ?", oldID)
 			if err != nil {
 				err = fmt.Errorf("failed to delete old tag: %w", err)
 				done(err)
@@ -652,10 +587,8 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 			}
 		}
 	case errors.Is(err, sql.ErrNoRows):
-		// Target tag doesn't exist, simple rename
 		_, err = tx.ExecContext(ctx,
-			"UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE",
-			newName, oldName,
+			"UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE", newName, oldName,
 		)
 		if err != nil {
 			err = fmt.Errorf("failed to rename tag: %w", err)
@@ -667,7 +600,6 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 		return 0, err
 	}
 
-	// Get count of affected files
 	var count int
 	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT ft.file_path)
@@ -681,7 +613,6 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 		return 0, err
 	}
 
-	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		done(err)
 		return 0, err
@@ -703,21 +634,16 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 		return 0, err
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Start transaction
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.writer.BeginTx(ctx, nil)
 	if err != nil {
 		done(err)
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Get count of affected files before deletion
 	var count int
 	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT ft.file_path)
@@ -731,10 +657,8 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 		return 0, err
 	}
 
-	// Delete the tag (CASCADE will remove file_tags)
 	result, err := tx.ExecContext(ctx,
-		"DELETE FROM tags WHERE name = ? COLLATE NOCASE",
-		tagName,
+		"DELETE FROM tags WHERE name = ? COLLATE NOCASE", tagName,
 	)
 	if err != nil {
 		err = fmt.Errorf("failed to delete tag: %w", err)
@@ -749,7 +673,6 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 		return 0, err
 	}
 
-	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		done(err)
 		return 0, err
@@ -760,10 +683,7 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 	return count, nil
 }
 
-// BulkAddTagsToFiles adds one or more tags to multiple files in a single transaction.
-// This replaces the previous pattern of calling AddTagToFile in a loop per path per tag,
-// reducing N*M individual lock/transaction cycles to a single transaction with prepared
-// statements.
+// BulkAddTagsToFiles adds tags to multiple files in a single transaction.
 func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
 	done := observeQuery("bulk_add_tags_to_files")
 
@@ -772,13 +692,10 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames [
 		return 0, nil, nil
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.writer.BeginTx(ctx, nil)
 	if err != nil {
 		done(err)
 		return 0, nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -793,14 +710,12 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames [
 		}
 	}()
 
-	// Resolve all tag IDs upfront — create any that don't exist.
 	tagIDs, err := resolveTagIDs(ctx, tx, tagNames, true)
 	if err != nil {
 		done(err)
 		return 0, nil, err
 	}
 
-	// Prepare the association insert once — reused for all path×tag combinations
 	assocStmt, err := tx.PrepareContext(ctx,
 		"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
 	)
@@ -810,7 +725,6 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames [
 	}
 	defer func() { _ = assocStmt.Close() }()
 
-	// Apply all tags to all files
 	successCount := 0
 	var errs []error
 
@@ -841,7 +755,7 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames [
 	return successCount, errs, nil
 }
 
-// BulkRemoveTagsFromFiles removes one or more tags from multiple files in a single transaction.
+// BulkRemoveTagsFromFiles removes tags from multiple files in a single transaction.
 func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
 	done := observeQuery("bulk_remove_tags_from_files")
 
@@ -850,13 +764,10 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNa
 		return 0, nil, nil
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.writer.BeginTx(ctx, nil)
 	if err != nil {
 		done(err)
 		return 0, nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -871,7 +782,6 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNa
 		}
 	}()
 
-	// Resolve tag IDs — don't create missing tags
 	tagIDs, err := resolveTagIDs(ctx, tx, tagNames, false)
 	if err != nil {
 		done(err)
@@ -879,12 +789,10 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNa
 	}
 
 	if len(tagIDs) == 0 {
-		// None of the tags exist — nothing to do
 		done(nil)
 		return 0, nil, nil
 	}
 
-	// Prepare the delete statement
 	deleteStmt, err := tx.PrepareContext(ctx,
 		"DELETE FROM file_tags WHERE file_path = ? AND tag_id = ?",
 	)
@@ -927,18 +835,12 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNa
 }
 
 // GetBatchFileTags returns tags for multiple files in a single query.
-// Replaces the pattern of calling GetFileTags N times in a loop,
-// reducing N lock/query cycles to 1.
 func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (map[string][]string, error) {
 	done := observeQuery("get_batch_file_tags")
-
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	// Initialize result with empty slices for all requested paths
 	result := make(map[string][]string, len(filePaths))
 	for _, path := range filePaths {
 		if path != "" {
@@ -951,14 +853,13 @@ func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (ma
 		return result, nil
 	}
 
-	// Build parameterized IN clause safely (placeholders are only "?" literals)
 	inClause, args := buildPlaceholders(filePaths)
 	if inClause == "" {
 		done(nil)
 		return result, nil
 	}
 
-	//nolint:gosec // inClause contains only "?" placeholders generated by buildPlaceholders; no user input is interpolated
+	//nolint:gosec
 	query := `
 		SELECT ft.file_path, t.name
 		FROM file_tags ft
@@ -967,7 +868,7 @@ func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (ma
 		ORDER BY ft.file_path, t.name COLLATE NOCASE
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		done(err)
 		return nil, fmt.Errorf("batch file tags query failed: %w", err)
@@ -996,9 +897,6 @@ func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (ma
 	return result, nil
 }
 
-// resolveTagIDs looks up or creates tags within an existing transaction,
-// returning their IDs. This is extracted to reduce cognitive complexity
-// of the bulk operation callers.
 func resolveTagIDs(ctx context.Context, tx *sql.Tx, tagNames []string, createMissing bool) ([]int64, error) {
 	selectStmt, err := tx.PrepareContext(ctx,
 		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
@@ -1030,13 +928,10 @@ func resolveTagIDs(ctx context.Context, tx *sql.Tx, tagNames []string, createMis
 		err = selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID)
 		if err != nil {
 			if !createMissing {
-				// Tag doesn't exist — skip it
 				continue
 			}
-			// Tag doesn't exist — create it
 			result, createErr := insertStmt.ExecContext(ctx, tagName)
 			if createErr != nil {
-				// Might be a race with UNIQUE constraint; try select again
 				if err2 := selectStmt.QueryRowContext(ctx, tagName).Scan(&tagID); err2 != nil {
 					return nil, fmt.Errorf("failed to create tag %q: %w", tagName, createErr)
 				}
@@ -1050,9 +945,6 @@ func resolveTagIDs(ctx context.Context, tx *sql.Tx, tagNames []string, createMis
 	return tagIDs, nil
 }
 
-// buildPlaceholders generates a parameterized IN clause with the given
-// string values. It returns the placeholder string (e.g. "?,?,?") and
-// the corresponding args. Empty strings are skipped.
 func buildPlaceholders(values []string) (clause string, args []interface{}) {
 	placeholders := make([]string, 0, len(values))
 	args = make([]interface{}, 0, len(values))

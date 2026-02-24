@@ -96,7 +96,7 @@ func setupGetAllFilesBenchmark(b *testing.B, fileCount int) (db *Database, clean
 	filesPerDir := fileCount / dirCount
 
 	ctx := context.Background()
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		b.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -118,13 +118,13 @@ func setupGetAllFilesBenchmark(b *testing.B, fileCount int) (db *Database, clean
 				MimeType:   "image/jpeg",
 			}
 
-			if err := db.UpsertFile(ctx, tx, &file); err != nil {
+			if err := batch.UpsertFile(ctx, &file); err != nil {
 				b.Fatalf("Failed to upsert file: %v", err)
 			}
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		b.Fatalf("Failed to end batch: %v", err)
 	}
 

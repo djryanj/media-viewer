@@ -122,7 +122,7 @@ func TestGetFavoritesIntegration(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(ctx, tx, file)
+		_ = tx.UpsertFile(ctx, file)
 	}
 	_ = db.EndBatch(tx, nil)
 

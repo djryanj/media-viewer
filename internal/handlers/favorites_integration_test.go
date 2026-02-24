@@ -62,7 +62,7 @@ func setupFavoritesIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 func addTestFile(t *testing.T, db *database.Database, path, name string, fileType database.FileType) {
 	t.Helper()
 	ctx := context.Background()
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -76,13 +76,13 @@ func addTestFile(t *testing.T, db *database.Database, path, name string, fileTyp
 		ModTime:    time.Now(),
 	}
 
-	err = db.UpsertFile(ctx, tx, file)
+	err = batch.UpsertFile(ctx, file)
 	if err != nil {
-		tx.Rollback()
+		db.EndBatch(batch, err)
 		t.Fatalf("Failed to upsert test file: %v", err)
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("Failed to end batch: %v", err)
 	}
 }

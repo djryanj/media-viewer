@@ -133,15 +133,15 @@ func addExistingFileToDatabase(t *testing.T, h *Handlers, relativePath string, f
 		t.Fatalf("failed to stat file: %v", err)
 	}
 
-	// Determine parent path
 	parentPath := filepath.Dir(relativePath)
 	if parentPath == "." {
 		parentPath = ""
 	}
+
 	ctx := context.Background()
-	tx, err := h.db.BeginBatch(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin batch: %v", err)
+	batch, terr := h.db.BeginBatch(ctx)
+	if terr != nil {
+		t.Fatalf("failed to begin batch: %v", terr)
 	}
 
 	file := &database.MediaFile{
@@ -153,14 +153,9 @@ func addExistingFileToDatabase(t *testing.T, h *Handlers, relativePath string, f
 		ModTime:    fileInfo.ModTime(),
 	}
 
-	err = h.db.UpsertFile(ctx, tx, file)
-	if err != nil {
-		tx.Rollback()
-		t.Fatalf("failed to upsert file: %v", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("failed to commit batch: %v", err)
+	upsertErr := batch.UpsertFile(ctx, file)
+	if endErr := h.db.EndBatch(batch, upsertErr); endErr != nil {
+		t.Fatalf("failed to end batch: %v", endErr)
 	}
 }
 
@@ -190,9 +185,9 @@ func addTestMediaFile(t *testing.T, h *Handlers, relativePath string, fileType d
 
 	ctx := context.Background()
 
-	tx, err := h.db.BeginBatch(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin batch: %v", err)
+	batch, terr := h.db.BeginBatch(ctx)
+	if terr != nil {
+		t.Fatalf("failed to begin batch: %v", terr)
 	}
 
 	file := &database.MediaFile{
@@ -204,13 +199,13 @@ func addTestMediaFile(t *testing.T, h *Handlers, relativePath string, fileType d
 		ModTime:    fileInfo.ModTime(),
 	}
 
-	err = h.db.UpsertFile(ctx, tx, file)
+	err = batch.UpsertFile(ctx, file)
 	if err != nil {
-		tx.Rollback()
+		h.db.EndBatch(batch, err)
 		t.Fatalf("failed to upsert test file: %v", err)
 	}
 
-	if err := h.db.EndBatch(tx, nil); err != nil {
+	if err := h.db.EndBatch(batch, nil); err != nil {
 		t.Fatalf("failed to end batch: %v", err)
 	}
 
@@ -1191,17 +1186,17 @@ func TestListFilesFilterWithFoldersIntegration(t *testing.T) {
 		Type:       database.FileTypeFolder,
 	}
 
-	tx, err := h.db.BeginBatch(ctx)
+	batch, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch: %v", err)
 	}
-	if err := h.db.UpsertFile(ctx, tx, folder1); err != nil {
+	if err := batch.UpsertFile(ctx, folder1); err != nil {
 		t.Fatalf("failed to upsert folder1: %v", err)
 	}
-	if err := h.db.UpsertFile(ctx, tx, folder2); err != nil {
+	if err := batch.UpsertFile(ctx, folder2); err != nil {
 		t.Fatalf("failed to upsert folder2: %v", err)
 	}
-	if err := h.db.EndBatch(tx, nil); err != nil {
+	if err := h.db.EndBatch(batch, nil); err != nil {
 		t.Fatalf("failed to end batch: %v", err)
 	}
 
@@ -1864,7 +1859,7 @@ func TestGetThumbnailSuccessFolderIntegration(t *testing.T) {
 	}
 	ctx := context.Background()
 	// Add folder to database
-	tx, err := h.db.BeginBatch(ctx)
+	batch, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch: %v", err)
 	}
@@ -1877,11 +1872,11 @@ func TestGetThumbnailSuccessFolderIntegration(t *testing.T) {
 		Size:     0,
 	}
 
-	if err := h.db.UpsertFile(ctx, tx, &file); err != nil {
+	if err := batch.UpsertFile(ctx, &file); err != nil {
 		t.Fatalf("failed to insert folder: %v", err)
 	}
 
-	if err := h.db.EndBatch(tx, nil); err != nil {
+	if err := h.db.EndBatch(batch, nil); err != nil {
 		t.Fatalf("failed to end batch: %v", err)
 	}
 
@@ -3197,29 +3192,29 @@ func addTestTag(t *testing.T, h *Handlers, name string) int64 {
 	t.Helper()
 
 	ctx := context.Background()
-	tx, err := h.db.BeginBatch(ctx)
+	batch, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch for tag creation: %v", err)
 	}
 
-	result, err := tx.ExecContext(ctx,
+	result, err := batch.Tx().ExecContext(ctx,
 		"INSERT INTO tags (name, created_at) VALUES (?, strftime('%s', 'now'))", name)
 	if err != nil {
-		if rbErr := tx.Rollback(); rbErr != nil {
+		if rbErr := batch.Tx().Rollback(); rbErr != nil {
 			t.Errorf("rollback failed: %v", rbErr)
 		}
 		// Unlock the mutex that BeginBatch locked
-		h.db.EndBatch(tx, err)
+		h.db.EndBatch(batch, err)
 		t.Fatalf("failed to insert tag: %v", err)
 	}
 
 	tagID, err := result.LastInsertId()
 	if err != nil {
-		h.db.EndBatch(tx, err)
+		h.db.EndBatch(batch, err)
 		t.Fatalf("failed to get tag ID: %v", err)
 	}
 
-	if err := h.db.EndBatch(tx, nil); err != nil {
+	if err := h.db.EndBatch(batch, nil); err != nil {
 		t.Fatalf("failed to commit tag creation: %v", err)
 	}
 
@@ -3231,20 +3226,20 @@ func addTagToFile(t *testing.T, h *Handlers, filePath string, tagID int64) {
 	t.Helper()
 
 	ctx := context.Background()
-	tx, err := h.db.BeginBatch(ctx)
+	batch, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch for file tag: %v", err)
 	}
 
-	_, err = tx.ExecContext(ctx,
+	_, err = batch.Tx().ExecContext(ctx,
 		"INSERT INTO file_tags (file_path, tag_id, created_at) VALUES (?, ?, strftime('%s', 'now'))",
 		filePath, tagID)
 	if err != nil {
-		h.db.EndBatch(tx, err)
+		h.db.EndBatch(batch, err)
 		t.Fatalf("failed to add tag to file: %v", err)
 	}
 
-	if err := h.db.EndBatch(tx, nil); err != nil {
+	if err := h.db.EndBatch(batch, nil); err != nil {
 		t.Fatalf("failed to commit file tag: %v", err)
 	}
 }
@@ -3419,18 +3414,18 @@ func TestGetMediaFilesETagChangesWhenTagRemovedIntegration(t *testing.T) {
 
 	// Remove the tag
 	ctx := context.Background()
-	tx, err := h.db.BeginBatch(ctx)
+	batch, err := h.db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("failed to begin batch: %v", err)
 	}
-	_, err = tx.ExecContext(ctx,
+	_, err = batch.Tx().ExecContext(ctx,
 		"DELETE FROM file_tags WHERE file_path = ? AND tag_id = ?",
 		"photo.jpg", tagID)
 	if err != nil {
-		h.db.EndBatch(tx, err)
+		h.db.EndBatch(batch, err)
 		t.Fatalf("failed to remove tag: %v", err)
 	}
-	if err := h.db.EndBatch(tx, nil); err != nil {
+	if err := h.db.EndBatch(batch, nil); err != nil {
 		t.Fatalf("failed to commit tag removal: %v", err)
 	}
 

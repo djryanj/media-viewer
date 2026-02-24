@@ -30,16 +30,16 @@ func TestGetMediaInDirectoryWithFavoritesAndTags(t *testing.T) {
 	}
 
 	// Insert files
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 	for i := range files {
-		if err := db.UpsertFile(ctx, tx, &files[i]); err != nil {
+		if err := batch.UpsertFile(ctx, &files[i]); err != nil {
 			t.Fatalf("UpsertFile failed: %v", err)
 		}
 	}
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestGetMediaInDirectorySorting(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -297,7 +297,7 @@ func TestGetMediaInDirectoryOnlyFolders(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -334,9 +334,9 @@ func TestGetMediaInDirectoryManyTags(t *testing.T) {
 		MimeType:   "image/jpeg",
 	}
 
-	tx, _ := db.BeginBatch(ctx)
-	_ = db.UpsertFile(ctx, tx, &file)
-	_ = db.EndBatch(tx, nil)
+	batch, _ := db.BeginBatch(ctx)
+	_ = batch.UpsertFile(ctx, &file)
+	_ = db.EndBatch(batch, nil)
 
 	// Add many tags (10 tags)
 	tagNames := []string{"tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10"}
@@ -388,7 +388,7 @@ func TestGetMediaInDirectoryLargeDataset(t *testing.T) {
 
 	// Create 1000 files with varying favorites and tags
 	fileCount := 1000
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 
 	for i := 0; i < fileCount; i++ {
 		file := MediaFile{
@@ -400,9 +400,9 @@ func TestGetMediaInDirectoryLargeDataset(t *testing.T) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		_ = db.UpsertFile(ctx, tx, &file)
+		_ = batch.UpsertFile(ctx, &file)
 	}
-	_ = db.EndBatch(tx, nil)
+	_ = db.EndBatch(batch, nil)
 
 	// Add some favorites and tags
 	tag1, _ := db.GetOrCreateTag(ctx, "test-tag")
@@ -470,7 +470,7 @@ func TestGetMediaInDirectoryDefaultParameters(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 

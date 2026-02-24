@@ -2357,12 +2357,12 @@ func TestProcessFilesForGenerationIncrementalIntegration(t *testing.T) {
 // to insert a single file using the real database API.
 func upsertTestFile(ctx context.Context, t *testing.T, db *database.Database, file database.MediaFile) {
 	t.Helper()
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
-	upsertErr := db.UpsertFile(ctx, tx, &file)
-	if err := db.EndBatch(tx, upsertErr); err != nil {
+	upsertErr := batch.UpsertFile(ctx, &file)
+	if err := db.EndBatch(batch, upsertErr); err != nil {
 		t.Fatalf("UpsertFile failed: %v", err)
 	}
 }
@@ -2385,20 +2385,20 @@ func deleteTestFile(ctx context.Context, t *testing.T, db *database.Database, ke
 	// original inserts, causing DeleteMissingFiles to find nothing to delete.
 	cutoff := time.Now()
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
 
 	for i := range keepFiles {
-		if upsertErr := db.UpsertFile(ctx, tx, &keepFiles[i]); upsertErr != nil {
-			_ = db.EndBatch(tx, upsertErr)
+		if upsertErr := batch.UpsertFile(ctx, &keepFiles[i]); upsertErr != nil {
+			_ = db.EndBatch(batch, upsertErr)
 			t.Fatalf("UpsertFile failed: %v", upsertErr)
 		}
 	}
 
-	deleted, deleteErr := db.DeleteMissingFiles(ctx, tx, cutoff)
-	if err := db.EndBatch(tx, deleteErr); err != nil {
+	deleted, deleteErr := batch.DeleteMissingFiles(ctx, cutoff)
+	if err := db.EndBatch(batch, deleteErr); err != nil {
 		t.Fatalf("EndBatch failed: %v", err)
 	}
 	t.Logf("DeleteMissingFiles removed %d rows", deleted)

@@ -34,7 +34,6 @@ type Session struct {
 // DefaultSessionDuration is the default session length if not configured.
 const DefaultSessionDuration = 5 * time.Minute
 
-// sessionDuration is the configured session duration (set via SetSessionDuration).
 var sessionDuration = DefaultSessionDuration
 
 // SetSessionDuration configures the session duration.
@@ -53,32 +52,26 @@ func GetSessionDuration() time.Duration {
 }
 
 // IsSetupComplete checks if initial setup has been completed.
-// This is more efficient than HasUsers() as it avoids COUNT(*) queries.
+// IsSetupComplete checks if initial setup has been completed.
 func (d *Database) IsSetupComplete(ctx context.Context) bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var setupComplete int
-	err := d.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(setup_complete), 0) FROM users").Scan(&setupComplete)
+	err := d.reader.QueryRowContext(ctx, "SELECT COALESCE(MAX(setup_complete), 0) FROM users").Scan(&setupComplete)
 	if err != nil {
 		return false
 	}
 	return setupComplete == 1
 }
 
-// HasUsers checks if a user exists (single-user app).
+// HasUsers checks if a user exists.
 func (d *Database) HasUsers(ctx context.Context) bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var count int
-	err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+	err := d.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
 	if err != nil {
 		return false
 	}
@@ -89,15 +82,12 @@ func (d *Database) HasUsers(ctx context.Context) bool {
 func (d *Database) CreateUser(ctx context.Context, password string) error {
 	done := observeQuery("create_user")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Check if a user already exists (single-user system)
+	// Check via reader (fast, no write lock needed)
 	var count int
-	err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+	err := d.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
 	if err != nil {
 		err = fmt.Errorf("failed to check existing users: %w", err)
 		done(err)
@@ -109,7 +99,6 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 		return err
 	}
 
-	// Hash the password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		err = fmt.Errorf("failed to hash password: %w", err)
@@ -117,7 +106,7 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 		return err
 	}
 
-	_, err = d.db.ExecContext(ctx,
+	_, err = d.writer.ExecContext(ctx,
 		"INSERT INTO users (password_hash, setup_complete) VALUES (?, 1)",
 		string(hash),
 	)
@@ -135,16 +124,13 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 func (d *Database) ValidatePassword(ctx context.Context, password string) (*User, error) {
 	done := observeQuery("validate_password")
 
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var user User
 	var createdAt, updatedAt int64
 
-	err := d.db.QueryRowContext(ctx,
+	err := d.reader.QueryRowContext(ctx,
 		"SELECT id, password_hash, created_at, updated_at FROM users LIMIT 1",
 	).Scan(&user.ID, &user.PasswordHash, &createdAt, &updatedAt)
 
@@ -154,7 +140,6 @@ func (d *Database) ValidatePassword(ctx context.Context, password string) (*User
 		return nil, err
 	}
 
-	// Check password
 	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		err = fmt.Errorf("invalid password")
 		done(err)
@@ -172,13 +157,9 @@ func (d *Database) ValidatePassword(ctx context.Context, password string) (*User
 func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, error) {
 	done := observeQuery("create_session")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Generate random token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		err = fmt.Errorf("failed to generate token: %w", err)
@@ -186,14 +167,13 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 		return nil, err
 	}
 
-	// Hash the token for storage
 	hash := sha256.Sum256(tokenBytes)
 	tokenHash := hex.EncodeToString(hash[:])
 	token := hex.EncodeToString(tokenBytes)
 
 	expiresAt := time.Now().Add(sessionDuration)
 
-	result, err := d.db.ExecContext(ctx,
+	result, err := d.writer.ExecContext(ctx,
 		"INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)",
 		userID, tokenHash, expiresAt.Unix(),
 	)
@@ -205,14 +185,14 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 
 	id, _ := result.LastInsertId()
 
-	//nolint:contextcheck // Metrics update uses background context for reliability
+	//nolint:contextcheck
 	d.updateActiveSessionsMetric()
 
 	done(nil)
 	return &Session{
 		ID:        id,
 		UserID:    userID,
-		Token:     token, // Return unhashed token to client
+		Token:     token,
 		ExpiresAt: expiresAt,
 		CreatedAt: time.Now(),
 	}, nil
@@ -222,13 +202,9 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 func (d *Database) ValidateSession(ctx context.Context, token string) (*User, error) {
 	done := observeQuery("validate_session")
 
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Hash the token for lookup
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
 		err = fmt.Errorf("invalid token format")
@@ -241,7 +217,7 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 	var userID int64
 	var expiresAt int64
 
-	err = d.db.QueryRowContext(ctx,
+	err = d.reader.QueryRowContext(ctx,
 		"SELECT user_id, expires_at FROM sessions WHERE token = ?",
 		tokenHash,
 	).Scan(&userID, &expiresAt)
@@ -252,10 +228,8 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 		return nil, err
 	}
 
-	// Check expiration
 	if time.Now().Unix() > expiresAt {
-		// Clean up expired session in background
-		//nolint:contextcheck // Intentionally using background context for fire-and-forget cleanup
+		//nolint:contextcheck
 		go func() {
 			bgCtx, bgCancel := context.WithTimeout(context.Background(), defaultTimeout)
 			defer bgCancel()
@@ -268,10 +242,9 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 		return nil, err
 	}
 
-	// Get user
 	var user User
 	var createdAtU, updatedAtU int64
-	err = d.db.QueryRowContext(ctx,
+	err = d.reader.QueryRowContext(ctx,
 		"SELECT id, created_at, updated_at FROM users WHERE id = ?",
 		userID,
 	).Scan(&user.ID, &createdAtU, &updatedAtU)
@@ -293,13 +266,9 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 func (d *Database) ExtendSession(ctx context.Context, token string) error {
 	done := observeQuery("extend_session")
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Hash the token for lookup
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
 		done(err)
@@ -310,7 +279,7 @@ func (d *Database) ExtendSession(ctx context.Context, token string) error {
 
 	newExpiresAt := time.Now().Add(sessionDuration)
 
-	result, err := d.db.ExecContext(ctx,
+	result, err := d.writer.ExecContext(ctx,
 		"UPDATE sessions SET expires_at = ? WHERE token = ? AND expires_at > ?",
 		newExpiresAt.Unix(), tokenHash, time.Now().Unix(),
 	)
@@ -331,15 +300,11 @@ func (d *Database) ExtendSession(ctx context.Context, token string) error {
 	return nil
 }
 
-// deleteSessionByHash removes a session by its hashed token.
 func (d *Database) deleteSessionByHash(ctx context.Context, tokenHash string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	result, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", tokenHash)
+	result, err := d.writer.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", tokenHash)
 	if err != nil {
 		return err
 	}
@@ -352,7 +317,7 @@ func (d *Database) deleteSessionByHash(ctx context.Context, tokenHash string) er
 	return nil
 }
 
-// DeleteSession removes a session.
+// DeleteSession deletes a session by token.
 func (d *Database) DeleteSession(ctx context.Context, token string) error {
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
@@ -363,40 +328,34 @@ func (d *Database) DeleteSession(ctx context.Context, token string) error {
 
 	err = d.deleteSessionByHash(ctx, tokenHash)
 	if err == nil {
-		//nolint:contextcheck // Metrics update uses background context for reliability
+		//nolint:contextcheck
 		d.updateActiveSessionsMetric()
 	}
 	return err
 }
 
-// DeleteAllSessions removes all sessions (used when password is changed).
+// DeleteAllSessions removes all sessions from the database.
 func (d *Database) DeleteAllSessions(ctx context.Context) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx, "DELETE FROM sessions")
+	_, err := d.writer.ExecContext(ctx, "DELETE FROM sessions")
 	return err
 }
 
-// CleanExpiredSessions removes all expired sessions.
+// CleanExpiredSessions removes expired sessions from the database.
 func (d *Database) CleanExpiredSessions(ctx context.Context) error {
 	done := observeQuery("clean_expired_sessions")
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	result, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
+	result, err := d.writer.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
 	if err == nil {
 		if rows, _ := result.RowsAffected(); rows > 0 {
 			logging.Debug("Cleaned %d expired sessions", rows)
 		}
-		//nolint:contextcheck // Metrics update uses background context for reliability
+		//nolint:contextcheck
 		d.updateActiveSessionsMetric()
 	}
 	done(err)
@@ -406,9 +365,6 @@ func (d *Database) CleanExpiredSessions(ctx context.Context) error {
 // UpdatePassword updates the user's password and invalidates all sessions.
 func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error {
 	done := observeQuery("update_password")
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -420,8 +376,14 @@ func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error
 		return err
 	}
 
-	// Update the single user's password
-	result, err := d.db.ExecContext(ctx,
+	tx, err := d.writer.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	result, err := tx.ExecContext(ctx,
 		"UPDATE users SET password_hash = ?, updated_at = strftime('%s', 'now')",
 		string(hash),
 	)
@@ -438,22 +400,26 @@ func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error
 		return err
 	}
 
-	// Invalidate all sessions
-	if _, delErr := d.db.ExecContext(ctx, "DELETE FROM sessions"); delErr != nil {
+	if _, delErr := tx.ExecContext(ctx, "DELETE FROM sessions"); delErr != nil {
 		logging.Warn("failed to invalidate sessions: %v", delErr)
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		done(commitErr)
+		return fmt.Errorf("failed to commit password update: %w", commitErr)
 	}
 
 	done(nil)
 	return nil
 }
 
-// updateActiveSessionsMetric updates the active sessions gauge.
+// updateActiveSessionsMetric updates the active session metric.
 func (d *Database) updateActiveSessionsMetric() {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var count int
-	err := d.db.QueryRowContext(ctx,
+	err := d.reader.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM sessions WHERE expires_at > ?",
 		time.Now().Unix(),
 	).Scan(&count)

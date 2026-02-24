@@ -743,18 +743,18 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 	ctx := context.Background()
 
 	start := time.Now()
-	tx, err := idx.db.BeginBatch(ctx)
+	batch, err := idx.db.BeginBatch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin batch transaction: %w", err)
 	}
 
 	for i := range files {
-		if err := idx.db.UpsertFile(ctx, tx, &files[i]); err != nil {
+		if err := batch.UpsertFile(ctx, &files[i]); err != nil {
 			logging.Warn("Error upserting file %s: %v", files[i].Path, err)
 		}
 	}
 
-	if err := idx.db.EndBatch(tx, nil); err != nil {
+	if err := idx.db.EndBatch(batch, nil); err != nil {
 		return fmt.Errorf("failed to commit batch: %w", err)
 	}
 
@@ -765,20 +765,20 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 // cleanupMissingFiles removes files from the database that no longer exist on disk.
 func (idx *Indexer) cleanupMissingFiles(indexTime time.Time) error {
 	ctx := context.Background()
-	tx, err := idx.db.BeginBatch(ctx)
+	batch, err := idx.db.BeginBatch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin cleanup transaction: %w", err)
 	}
 
-	deleted, err := idx.db.DeleteMissingFiles(ctx, tx, indexTime)
+	deleted, err := batch.DeleteMissingFiles(ctx, indexTime)
 	if err != nil {
-		if endErr := idx.db.EndBatch(tx, err); endErr != nil {
+		if endErr := idx.db.EndBatch(batch, err); endErr != nil {
 			logging.Error("failed to end batch after cleanup error: %v", endErr)
 		}
 		return err
 	}
 
-	if err := idx.db.EndBatch(tx, nil); err != nil {
+	if err := idx.db.EndBatch(batch, nil); err != nil {
 		return fmt.Errorf("failed to commit cleanup: %w", err)
 	}
 

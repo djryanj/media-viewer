@@ -36,7 +36,7 @@ func TestSearchSuggestionsTagQueries(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -178,7 +178,7 @@ func TestSearchSuggestionsLimitRespected(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -255,7 +255,7 @@ func TestSearchSuggestionsMixedResults(t *testing.T) {
 
 	tx, _ := db.BeginBatch(ctx)
 	for i := range files {
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 
@@ -402,7 +402,7 @@ func TestPerformRegularSearchDistribution(t *testing.T) {
 			Size:       1024,
 			ModTime:    time.Now(),
 		}
-		_ = db.UpsertFile(ctx, tx, &files[i])
+		_ = tx.UpsertFile(ctx, &files[i])
 	}
 	_ = db.EndBatch(tx, nil)
 

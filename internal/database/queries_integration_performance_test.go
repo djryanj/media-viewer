@@ -33,7 +33,7 @@ func TestListDirectory_FolderCountPerformanceIntegration(t *testing.T) {
 	// - Each folder has different number of files (0 to 1000)
 	// - Total: ~50,000 files
 	t.Log("Creating test data...")
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestListDirectory_FolderCountPerformanceIntegration(t *testing.T) {
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		if err := db.UpsertFile(ctx, tx, &folder); err != nil {
+		if err := batch.UpsertFile(ctx, &folder); err != nil {
 			t.Fatalf("Failed to upsert folder: %v", err)
 		}
 
@@ -65,13 +65,13 @@ func TestListDirectory_FolderCountPerformanceIntegration(t *testing.T) {
 				ModTime:    time.Now(),
 				MimeType:   "image/jpeg",
 			}
-			if err := db.UpsertFile(ctx, tx, &file); err != nil {
+			if err := batch.UpsertFile(ctx, &file); err != nil {
 				t.Fatalf("Failed to upsert file: %v", err)
 			}
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("Failed to end batch: %v", err)
 	}
 
@@ -173,7 +173,7 @@ func TestGetMediaInDirectory_PerformanceIntegration(t *testing.T) {
 
 	// Create a large directory with many tagged files
 	t.Log("Creating 5000 files with tags and favorites...")
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -189,12 +189,12 @@ func TestGetMediaInDirectory_PerformanceIntegration(t *testing.T) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		if err := db.UpsertFile(ctx, tx, &file); err != nil {
+		if err := batch.UpsertFile(ctx, &file); err != nil {
 			t.Fatalf("Failed to upsert file: %v", err)
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("Failed to end batch: %v", err)
 	}
 
@@ -289,7 +289,7 @@ func TestPerformanceOptimizations_EndToEnd(t *testing.T) {
 	// Simulate realistic usage: 40,000 files across multiple directories
 	t.Log("Setting up realistic test scenario (40,000 files)...")
 
-	tx, err := db.BeginBatch(ctx)
+	batch, err := db.BeginBatch(ctx)
 	if err != nil {
 		t.Fatalf("Failed to begin batch: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestPerformanceOptimizations_EndToEnd(t *testing.T) {
 			Size:       0,
 			ModTime:    time.Now(),
 		}
-		if err := db.UpsertFile(ctx, tx, &folder); err != nil {
+		if err := batch.UpsertFile(ctx, &folder); err != nil {
 			t.Fatalf("Failed to upsert folder: %v", err)
 		}
 
@@ -331,13 +331,13 @@ func TestPerformanceOptimizations_EndToEnd(t *testing.T) {
 				ModTime:    time.Now(),
 				MimeType:   "image/jpeg",
 			}
-			if err := db.UpsertFile(ctx, tx, &file); err != nil {
+			if err := batch.UpsertFile(ctx, &file); err != nil {
 				t.Fatalf("Failed to upsert file: %v", err)
 			}
 		}
 	}
 
-	if err := db.EndBatch(tx, nil); err != nil {
+	if err = db.EndBatch(batch, err); err != nil {
 		t.Fatalf("Failed to end batch: %v", err)
 	}
 
@@ -455,7 +455,7 @@ func TestSlowQueryLogging_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create enough data to make query take > 1ms
-	tx, _ := db.BeginBatch(ctx)
+	batch, _ := db.BeginBatch(ctx)
 	for i := 0; i < 1000; i++ {
 		file := MediaFile{
 			Name:       fmt.Sprintf("file%d.jpg", i),
@@ -466,9 +466,9 @@ func TestSlowQueryLogging_Integration(t *testing.T) {
 			ModTime:    time.Now(),
 			MimeType:   "image/jpeg",
 		}
-		db.UpsertFile(ctx, tx, &file)
+		batch.UpsertFile(ctx, &file)
 	}
-	db.EndBatch(tx, nil)
+	db.EndBatch(batch, nil)
 
 	// This should trigger slow query logging
 	_, err = db.ListDirectory(ctx, ListOptions{

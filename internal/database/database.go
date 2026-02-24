@@ -17,66 +17,72 @@ import (
 	"media-viewer/internal/metrics"
 )
 
-// Default timeout for database operations
 const defaultTimeout = 5 * time.Second
-
-// driverName is the custom SQLite driver name with mmap disabled.
-// Used only when mmap protection is requested.
-const driverName = "sqlite3_mmap_disabled"
-
-// standardDriverName is the default go-sqlite3 driver.
-const standardDriverName = "sqlite3"
-
-// unknownStr is a constant string to satisfy goconst
+const driverName = "sqlite3_custom"
 const unknownStr = "unknown"
 
-// registerOnce ensures the custom driver is registered exactly once.
 var registerOnce sync.Once
 
-// registerDriver registers our custom SQLite driver with mmap disabled.
-func registerDriver() {
+func registerDriver(opts *Options) {
 	registerOnce.Do(func() {
+		mmapDisabled := opts != nil && opts.MmapDisabled
+
 		sql.Register(driverName, &sqlite3.SQLiteDriver{
 			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-				_, err := conn.Exec("PRAGMA mmap_size = 0", nil)
-				return err
+				pragmas := []string{
+					"PRAGMA journal_mode=WAL",
+					"PRAGMA synchronous=NORMAL",
+					"PRAGMA cache_size=10000",
+					"PRAGMA temp_store=MEMORY",
+					"PRAGMA busy_timeout=5000",
+				}
+				if mmapDisabled {
+					pragmas = append(pragmas, "PRAGMA mmap_size=0")
+				}
+				for _, p := range pragmas {
+					if _, err := conn.Exec(p, nil); err != nil {
+						return fmt.Errorf("failed to exec %s: %w", p, err)
+					}
+				}
+				return nil
 			},
 		})
 	})
 }
 
-func init() {
-	registerDriver()
-}
-
-// getSlowQueryThreshold returns the threshold for logging slow queries.
-// Can be configured via SLOW_QUERY_THRESHOLD_MS environment variable.
 func getSlowQueryThreshold() float64 {
 	if thresholdStr := os.Getenv("SLOW_QUERY_THRESHOLD_MS"); thresholdStr != "" {
 		if threshold, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
 			return threshold / 1000.0
 		}
 	}
-	return 0.1 // Default 100ms
+	return 0.1
+}
+
+// preparedStmts holds pre-compiled SQL statements for hot-path queries.
+// These are prepared once during initialization against the reader pool
+// and reused for every call, eliminating repeated query parsing.
+type preparedStmts struct {
+	getFileByPath       *sql.Stmt
+	isFavorite          *sql.Stmt
+	calcStats           *sql.Stmt
+	countDirItems       *sql.Stmt
+	countDirItemsFilter *sql.Stmt
 }
 
 // Database manages all database operations for the media viewer.
 type Database struct {
-	db           *sql.DB
+	reader       *sql.DB
+	writer       *sql.DB
 	dbPath       string
-	mu           sync.RWMutex
 	stats        IndexStats
 	statsMu      sync.RWMutex
-	txStart      time.Time
 	mmapDisabled bool
+	stmts        preparedStmts
 }
 
 // Options holds configuration options for database initialization.
 type Options struct {
-	// MmapDisabled disables memory-mapped I/O for SQLite.
-	// This prevents SIGBUS crashes on unreliable storage backends
-	// (e.g., Longhorn, NFS, network-attached volumes).
-	// Default: false (mmap enabled — standard SQLite behavior).
 	MmapDisabled bool
 }
 
@@ -89,18 +95,6 @@ type Info struct {
 	MmapWarning       string
 }
 
-// ---------------------------------------------------------------------------
-// observeQuery replaces the old recordQuery pattern with an ergonomic helper.
-//
-// Usage:
-//
-//	done := observeQuery("upsert_file")
-//	result, err := tx.ExecContext(ctx, query, args...)
-//	done(err)
-//
-// It records DBQueryTotal (counter), DBQueryDuration (histogram), and logs
-// slow queries — all in one place when done() is called.
-// ---------------------------------------------------------------------------
 func observeQuery(operation string) func(error) {
 	start := time.Now()
 	return func(err error) {
@@ -120,14 +114,6 @@ func observeQuery(operation string) func(error) {
 	}
 }
 
-// activeDriverName returns the SQLite driver name to use based on options.
-func activeDriverName(opts *Options) string {
-	if opts != nil && opts.MmapDisabled {
-		return driverName
-	}
-	return standardDriverName
-}
-
 // New creates a new Database instance and returns diagnostic info for logging.
 func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, error) {
 	info := &Info{Path: dbPath}
@@ -136,8 +122,8 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 		info.PermissionWarning = err.Error()
 	}
 
-	// Determine which driver to use based on mmap configuration
-	driver := activeDriverName(opts)
+	registerDriver(opts)
+
 	isMmapDisabled := opts != nil && opts.MmapDisabled
 	if isMmapDisabled {
 		logging.Info("SQLite mmap disabled (SIGBUS protection active for unreliable storage)")
@@ -145,38 +131,72 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 		logging.Debug("SQLite mmap enabled (default — standard performance mode)")
 	}
 
-	connStr := fmt.Sprintf("%s?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=10000&_temp_store=MEMORY&_busy_timeout=5000", dbPath)
-
-	db, err := sql.Open(driver, connStr)
+	writer, err := sql.Open(driverName, dbPath)
 	if err != nil {
-		return nil, info, fmt.Errorf("failed to open database: %w", err)
+		return nil, info, fmt.Errorf("failed to open writer database: %w", err)
 	}
+	writer.SetMaxOpenConns(1)
+	writer.SetMaxIdleConns(1)
+	writer.SetConnMaxLifetime(0)
+
+	reader, err := sql.Open(driverName, dbPath)
+	if err != nil {
+		if cerr := writer.Close(); cerr != nil {
+			logging.Warn("failed to close writer after reader open failure: %v", cerr)
+		}
+		return nil, info, fmt.Errorf("failed to open reader database: %w", err)
+	}
+	reader.SetMaxOpenConns(16)
+	reader.SetMaxIdleConns(8)
+	reader.SetConnMaxLifetime(time.Hour)
 
 	pingCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	if err := db.PingContext(pingCtx); err != nil {
-		if cerr := db.Close(); cerr != nil {
-			logging.Warn("failed to close db after ping failure: %v", cerr)
+	if err := writer.PingContext(pingCtx); err != nil {
+		if cerr := writer.Close(); cerr != nil {
+			logging.Warn("failed to close writer: %v", cerr)
 		}
-		return nil, info, fmt.Errorf("failed to connect to database: %w", err)
+		if cerr := reader.Close(); cerr != nil {
+			logging.Warn("failed to close reader: %v", cerr)
+		}
+		return nil, info, fmt.Errorf("failed to ping writer database: %w", err)
+	}
+	if err := reader.PingContext(pingCtx); err != nil {
+		if cerr := writer.Close(); cerr != nil {
+			logging.Warn("failed to close writer: %v", cerr)
+		}
+		if cerr := reader.Close(); cerr != nil {
+			logging.Warn("failed to close reader: %v", cerr)
+		}
+		return nil, info, fmt.Errorf("failed to ping reader database: %w", err)
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(10)
-	db.SetConnMaxLifetime(time.Hour)
-
 	d := &Database{
-		db:           db,
+		reader:       reader,
+		writer:       writer,
 		dbPath:       dbPath,
 		mmapDisabled: isMmapDisabled,
 	}
 
 	if err := d.initialize(ctx); err != nil {
-		if cerr := db.Close(); cerr != nil {
-			logging.Warn("failed to close db after initialize failure: %v", cerr)
+		if cerr := writer.Close(); cerr != nil {
+			logging.Warn("failed to close writer: %v", cerr)
+		}
+		if cerr := reader.Close(); cerr != nil {
+			logging.Warn("failed to close reader: %v", cerr)
 		}
 		return nil, info, fmt.Errorf("failed to initialize database schema: %w", err)
+	}
+
+	if err := d.prepareStatements(ctx); err != nil {
+		if cerr := writer.Close(); cerr != nil {
+			logging.Warn("failed to close writer: %v", cerr)
+		}
+		if cerr := reader.Close(); cerr != nil {
+			logging.Warn("failed to close reader: %v", cerr)
+		}
+		return nil, info, fmt.Errorf("failed to prepare statements: %w", err)
 	}
 
 	version, mmapStatus, mmapWarning := d.getSQLiteDiagnostics(ctx)
@@ -187,16 +207,84 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 	return d, info, nil
 }
 
-// getSQLiteDiagnostics returns SQLite version, mmap status, and any mmap warnings.
+// prepareStatements pre-compiles frequently used queries against the reader pool.
+func (d *Database) prepareStatements(ctx context.Context) error {
+	var err error
+
+	d.stmts.getFileByPath, err = d.reader.PrepareContext(ctx, `
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
+		FROM files WHERE path = ?
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare getFileByPath: %w", err)
+	}
+
+	d.stmts.isFavorite, err = d.reader.PrepareContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM favorites WHERE path = ?)",
+	)
+	if err != nil {
+		return fmt.Errorf("prepare isFavorite: %w", err)
+	}
+
+	d.stmts.calcStats, err = d.reader.PrepareContext(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN type != 'folder' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'folder' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'image' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'playlist' THEN 1 ELSE 0 END), 0),
+			(SELECT COUNT(*) FROM favorites),
+			(SELECT COUNT(*) FROM tags)
+		FROM files
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare calcStats: %w", err)
+	}
+
+	d.stmts.countDirItems, err = d.reader.PrepareContext(ctx,
+		"SELECT COUNT(*) FROM files WHERE parent_path = ?",
+	)
+	if err != nil {
+		return fmt.Errorf("prepare countDirItems: %w", err)
+	}
+
+	d.stmts.countDirItemsFilter, err = d.reader.PrepareContext(ctx,
+		"SELECT COUNT(*) FROM files WHERE parent_path = ? AND (type = 'folder' OR type = ?)",
+	)
+	if err != nil {
+		return fmt.Errorf("prepare countDirItemsFilter: %w", err)
+	}
+
+	return nil
+}
+
+// closeStatements closes all prepared statements.
+func (d *Database) closeStatements() {
+	stmts := []*sql.Stmt{
+		d.stmts.getFileByPath,
+		d.stmts.isFavorite,
+		d.stmts.calcStats,
+		d.stmts.countDirItems,
+		d.stmts.countDirItemsFilter,
+	}
+	for _, s := range stmts {
+		if s != nil {
+			if cerr := s.Close(); cerr != nil {
+				logging.Warn("failed to close prepared statement: %v", cerr)
+			}
+		}
+	}
+}
+
 func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatus, mmapWarning string) {
 	queryCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	if err := d.db.QueryRowContext(queryCtx, "SELECT sqlite_version()").Scan(&version); err != nil {
+	if err := d.reader.QueryRowContext(queryCtx, "SELECT sqlite_version()").Scan(&version); err != nil {
 		version = unknownStr
 	}
 
-	rows, err := d.db.QueryContext(queryCtx, "PRAGMA compile_options")
+	rows, err := d.reader.QueryContext(queryCtx, "PRAGMA compile_options")
 	if err == nil {
 		defer func() {
 			if cerr := rows.Close(); cerr != nil {
@@ -218,9 +306,8 @@ func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatu
 	}
 
 	var mmapSize int64
-	if err := d.db.QueryRowContext(queryCtx, "PRAGMA mmap_size").Scan(&mmapSize); err == nil {
+	if err := d.reader.QueryRowContext(queryCtx, "PRAGMA mmap_size").Scan(&mmapSize); err == nil {
 		if d.mmapDisabled {
-			// We intended to disable mmap
 			if mmapSize != 0 {
 				mmapStatus = fmt.Sprintf("CRITICAL: mmap_size is %d but should be 0 — SIGBUS protection is NOT active!", mmapSize)
 				metrics.DBMmapStatus.Set(float64(mmapSize))
@@ -229,7 +316,6 @@ func (d *Database) getSQLiteDiagnostics(ctx context.Context) (version, mmapStatu
 				metrics.DBMmapStatus.Set(0)
 			}
 		} else {
-			// mmap is intentionally enabled (default)
 			mmapStatus = fmt.Sprintf("mmap_size = %d (standard mode — set DB_MMAP_DISABLED=true if on unreliable storage)", mmapSize)
 			metrics.DBMmapStatus.Set(float64(mmapSize))
 		}
@@ -299,7 +385,6 @@ func (d *Database) initialize(ctx context.Context) error {
 	done := observeQuery("initialize_schema")
 
 	schema := `
-	-- Main files table
 	CREATE TABLE IF NOT EXISTS files (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
@@ -328,9 +413,7 @@ func (d *Database) initialize(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_files_parent_type_size ON files(parent_path, type, size);
 
 	CREATE INDEX IF NOT EXISTS idx_files_path_type ON files(path, type);
-
 	CREATE INDEX IF NOT EXISTS idx_files_type_path ON files(type, path);
-
 	CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 
 	CREATE INDEX IF NOT EXISTS idx_files_media_directory_name ON files(
@@ -342,9 +425,6 @@ func (d *Database) initialize(ctx context.Context) error {
 		id, path, size, mime_type
 	);
 
-	-- Optimized for GetMediaInDirectory: covers the IN ('image','video') filter
-	-- with parent_path, and includes columns for all three sort options so SQLite
-	-- can satisfy ORDER BY directly from the index (for single-type scans).
 	CREATE INDEX IF NOT EXISTS idx_files_parent_media_name ON files(
 		parent_path, name COLLATE NOCASE
 	) WHERE type IN ('image', 'video');
@@ -356,7 +436,6 @@ func (d *Database) initialize(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_files_parent_media_size ON files(
 		parent_path, size
 	) WHERE type IN ('image', 'video');
-
 
 	CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
 		name,
@@ -436,7 +515,7 @@ func (d *Database) initialize(ctx context.Context) error {
 	);
 	`
 
-	_, err := d.db.ExecContext(ctx, schema)
+	_, err := d.writer.ExecContext(ctx, schema)
 	done(err)
 	if err != nil {
 		return err
@@ -445,11 +524,9 @@ func (d *Database) initialize(ctx context.Context) error {
 	return d.runMigrations(ctx)
 }
 
-// runMigrations applies database schema migrations
 func (d *Database) runMigrations(ctx context.Context) error {
-	// Migration 1: Add content_updated_at column if it doesn't exist
 	var columnExists bool
-	err := d.db.QueryRowContext(ctx, `
+	err := d.writer.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('files')
 		WHERE name='content_updated_at'
@@ -463,7 +540,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		logging.Info("Migrating database: adding content_updated_at column to files table")
 
 		done := observeQuery("migrate_add_content_updated_at")
-		_, err = d.db.ExecContext(ctx, `
+		_, err = d.writer.ExecContext(ctx, `
 			ALTER TABLE files ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT 0
 		`)
 		done(err)
@@ -472,7 +549,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		}
 
 		done = observeQuery("migrate_init_content_updated_at")
-		_, err = d.db.ExecContext(ctx, `
+		_, err = d.writer.ExecContext(ctx, `
 			UPDATE files SET content_updated_at = updated_at
 		`)
 		done(err)
@@ -483,9 +560,8 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		logging.Info("Migration complete: content_updated_at column added and initialized")
 	}
 
-	// Migration 2: Add setup_complete column to users table if it doesn't exist
 	var setupCompleteExists bool
-	err = d.db.QueryRowContext(ctx, `
+	err = d.writer.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('users')
 		WHERE name='setup_complete'
@@ -499,7 +575,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		logging.Info("Migrating database: adding setup_complete column to users table")
 
 		done := observeQuery("migrate_add_setup_complete")
-		_, err = d.db.ExecContext(ctx, `
+		_, err = d.writer.ExecContext(ctx, `
 			ALTER TABLE users ADD COLUMN setup_complete INTEGER NOT NULL DEFAULT 0
 		`)
 		done(err)
@@ -508,7 +584,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		}
 
 		done = observeQuery("migrate_init_setup_complete")
-		_, err = d.db.ExecContext(ctx, `
+		_, err = d.writer.ExecContext(ctx, `
 			UPDATE users SET setup_complete = 1 WHERE id IS NOT NULL
 		`)
 		done(err)
@@ -522,62 +598,24 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	return err
 }
 
-// Close closes the database connection.
+// Close closes prepared statements and both database connection pools.
 func (d *Database) Close() error {
-	return d.db.Close()
+	d.closeStatements()
+	rErr := d.reader.Close()
+	wErr := d.writer.Close()
+	return errors.Join(rErr, wErr)
 }
 
-// BeginBatch starts a transaction for batch operations.
-func (d *Database) BeginBatch(ctx context.Context) (*sql.Tx, error) {
-	d.mu.Lock()
-
-	done := observeQuery("begin_transaction")
-	tx, err := d.db.BeginTx(ctx, nil)
-	done(err)
-
-	if err != nil {
-		d.mu.Unlock()
-		return nil, err
-	}
-
-	d.txStart = time.Now()
-
-	return tx, nil
+// BatchInserter wraps a write transaction with pre-prepared statements
+// for efficient batch indexing operations.
+type BatchInserter struct {
+	tx        *sql.Tx
+	upsert    *sql.Stmt
+	del       *sql.Stmt
+	startTime time.Time
 }
 
-// EndBatch commits or rolls back a transaction.
-func (d *Database) EndBatch(tx *sql.Tx, err error) error {
-	defer d.mu.Unlock()
-
-	duration := time.Since(d.txStart).Seconds()
-
-	if err != nil {
-		metrics.DBTransactionDuration.WithLabelValues("rollback").Observe(duration)
-
-		done := observeQuery("rollback")
-		rbErr := tx.Rollback()
-		done(rbErr)
-
-		if rbErr != nil {
-			return errors.Join(err, fmt.Errorf("rollback also failed: %w", rbErr))
-		}
-		return err
-	}
-
-	metrics.DBTransactionDuration.WithLabelValues("commit").Observe(duration)
-
-	done := observeQuery("commit")
-	commitErr := tx.Commit()
-	done(commitErr)
-
-	return commitErr
-}
-
-// UpsertFile inserts or updates a file record within a transaction.
-func (d *Database) UpsertFile(ctx context.Context, tx *sql.Tx, file *MediaFile) error {
-	done := observeQuery("upsert_file")
-
-	query := `
+const upsertQuery = `
 	INSERT INTO files (name, path, parent_path, type, size, mod_time, mime_type, file_hash, updated_at, content_updated_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
 	ON CONFLICT(path) DO UPDATE SET
@@ -596,9 +634,61 @@ func (d *Database) UpsertFile(ctx context.Context, tx *sql.Tx, file *MediaFile) 
 			THEN strftime('%s', 'now')
 			ELSE COALESCE(files.content_updated_at, strftime('%s', 'now'))
 		END
-	`
+`
 
-	result, err := tx.ExecContext(ctx, query,
+const deleteQuery = `DELETE FROM files WHERE updated_at < ?`
+
+// BeginBatch starts a batch indexing transaction with pre-prepared statements.
+func (d *Database) BeginBatch(ctx context.Context) (*BatchInserter, error) {
+	done := observeQuery("begin_transaction")
+	tx, err := d.writer.BeginTx(ctx, nil)
+	done(err)
+	if err != nil {
+		return nil, err
+	}
+
+	upsertStmt, err := tx.PrepareContext(ctx, upsertQuery)
+	if err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			logging.Warn("failed to rollback transaction: %v", rbErr)
+		}
+		return nil, fmt.Errorf("prepare upsert: %w", err)
+	}
+
+	delStmt, err := tx.PrepareContext(ctx, deleteQuery)
+	if err != nil {
+		if cerr := upsertStmt.Close(); cerr != nil { //nolint:errcheck,sqlclosecheck // cleanup on prepare failure; stmt not returned
+			logging.Warn("failed to close upsert statement: %v", cerr)
+		}
+		if rbErr := tx.Rollback(); rbErr != nil {
+			logging.Warn("failed to rollback transaction: %v", rbErr)
+		}
+		return nil, fmt.Errorf("prepare delete: %w", err)
+	}
+
+	return &BatchInserter{
+		tx:        tx,
+		upsert:    upsertStmt,
+		del:       delStmt,
+		startTime: time.Now(),
+	}, nil
+}
+
+// Tx returns the underlying transaction for direct access.
+func (b *BatchInserter) Tx() *sql.Tx {
+	return b.tx
+}
+
+// StartTime returns the batch start time for external metrics.
+func (b *BatchInserter) StartTime() time.Time {
+	return b.startTime
+}
+
+// UpsertFile inserts or updates a file record using the pre-prepared statement.
+func (b *BatchInserter) UpsertFile(ctx context.Context, file *MediaFile) error {
+	done := observeQuery("upsert_file")
+
+	result, err := b.upsert.ExecContext(ctx,
 		file.Name,
 		file.Path,
 		file.ParentPath,
@@ -619,13 +709,10 @@ func (d *Database) UpsertFile(ctx context.Context, tx *sql.Tx, file *MediaFile) 
 }
 
 // DeleteMissingFiles removes files that weren't seen during indexing.
-func (d *Database) DeleteMissingFiles(ctx context.Context, tx *sql.Tx, cutoffTime time.Time) (int64, error) {
+func (b *BatchInserter) DeleteMissingFiles(ctx context.Context, cutoffTime time.Time) (int64, error) {
 	done := observeQuery("delete_missing_files")
 
-	result, err := tx.ExecContext(ctx,
-		"DELETE FROM files WHERE updated_at < ?",
-		cutoffTime.Unix(),
-	)
+	result, err := b.del.ExecContext(ctx, cutoffTime.Unix())
 	done(err)
 
 	if err != nil {
@@ -639,25 +726,50 @@ func (d *Database) DeleteMissingFiles(ctx context.Context, tx *sql.Tx, cutoffTim
 	return rowsAffected, err
 }
 
-// GetFileByPath retrieves a single file by path.
-func (d *Database) GetFileByPath(ctx context.Context, path string) (*MediaFile, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+// EndBatch closes prepared statements and commits or rolls back the transaction.
+func (d *Database) EndBatch(b *BatchInserter, err error) error {
+	if cerr := b.upsert.Close(); cerr != nil {
+		logging.Warn("failed to close upsert statement: %v", cerr)
+	}
+	if cerr := b.del.Close(); cerr != nil {
+		logging.Warn("failed to close delete statement: %v", cerr)
+	}
 
+	duration := time.Since(b.startTime).Seconds()
+
+	if err != nil {
+		metrics.DBTransactionDuration.WithLabelValues("rollback").Observe(duration)
+
+		done := observeQuery("rollback")
+		rbErr := b.tx.Rollback()
+		done(rbErr)
+
+		if rbErr != nil {
+			return errors.Join(err, fmt.Errorf("rollback also failed: %w", rbErr))
+		}
+		return err
+	}
+
+	metrics.DBTransactionDuration.WithLabelValues("commit").Observe(duration)
+
+	done := observeQuery("commit")
+	commitErr := b.tx.Commit()
+	done(commitErr)
+
+	return commitErr
+}
+
+// GetFileByPath retrieves a single file by path using a prepared statement.
+func (d *Database) GetFileByPath(ctx context.Context, path string) (*MediaFile, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	done := observeQuery("get_file_by_path")
 
-	query := `
-	SELECT id, name, path, parent_path, type, size, mod_time, mime_type
-	FROM files WHERE path = ?
-	`
-
 	var file MediaFile
 	var modTime int64
 
-	err := d.db.QueryRowContext(ctx, query, path).Scan(
+	err := d.stmts.getFileByPath.QueryRowContext(ctx, path).Scan(
 		&file.ID, &file.Name, &file.Path, &file.ParentPath,
 		&file.Type, &file.Size, &modTime, &file.MimeType,
 	)
@@ -687,14 +799,11 @@ func (d *Database) GetStats() IndexStats {
 
 // RebuildFTS rebuilds the full-text search index.
 func (d *Database) RebuildFTS() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	done := observeQuery("rebuild_fts")
-	_, err := d.db.ExecContext(ctx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
+	_, err := d.writer.ExecContext(ctx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
 	done(err)
 
 	return err
@@ -702,26 +811,23 @@ func (d *Database) RebuildFTS() error {
 
 // Vacuum optimizes the database.
 func (d *Database) Vacuum() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	done := observeQuery("vacuum")
-	_, err := d.db.ExecContext(ctx, "VACUUM")
+	_, err := d.writer.ExecContext(ctx, "VACUUM")
 	done(err)
 
 	return err
 }
 
-// UpdateDBMetrics updates database connection metrics
+// UpdateDBMetrics updates database connection metrics.
 func (d *Database) UpdateDBMetrics() {
-	stats := d.db.Stats()
-	metrics.DBConnectionsOpen.Set(float64(stats.OpenConnections))
+	rStats := d.reader.Stats()
+	wStats := d.writer.Stats()
+	metrics.DBConnectionsOpen.Set(float64(rStats.OpenConnections + wStats.OpenConnections))
 }
 
-// diagnoseDatabasePermissions checks database directory and file permissions
 func diagnoseDatabasePermissions(dbPath string) error {
 	dir := filepath.Dir(dbPath)
 
