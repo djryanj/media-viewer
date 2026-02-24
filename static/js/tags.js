@@ -950,9 +950,6 @@ const Tags = {
                     tooltipTag.dataset.tag ||
                     tooltipTag.querySelector('.item-tag-text')?.textContent?.trim();
                 if (tagName) {
-                    if (typeof TagTooltip !== 'undefined') {
-                        TagTooltip.hide();
-                    }
                     this.searchByTag(tagName);
                 }
                 return;
@@ -987,18 +984,6 @@ const Tags = {
 
             if (response.ok) {
                 this.refreshGalleryItemTags(itemPath);
-
-                if (typeof TagTooltip !== 'undefined' && TagTooltip.currentTarget) {
-                    const galleryItem = TagTooltip.currentTarget.closest('.gallery-item');
-                    if (galleryItem?.dataset.path === itemPath) {
-                        const allTags = TagTooltip.getTagsForItem(galleryItem);
-                        if (allTags && allTags.length > 3) {
-                            TagTooltip.show(TagTooltip.currentTarget);
-                        } else {
-                            TagTooltip.hide();
-                        }
-                    }
-                }
 
                 await this.loadAllTags();
 

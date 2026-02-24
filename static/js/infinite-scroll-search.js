@@ -231,7 +231,7 @@ const InfiniteScrollSearch = {
 
         // Re-apply selection mode if active
         if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
-            ItemSelection.addCheckboxesToNewItems(fragment);
+            ItemSelection.applySelectionStateToNewItems(fragment);
         }
     },
 

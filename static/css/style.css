@@ -715,25 +715,7 @@ select:focus {
 
 /* Tag button */
 .tag-button {
-    position: absolute;
-    top: 0.25rem;
-    left: 0.25rem;
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: 50%;
-    background: rgb(0 0 0 / 50%);
-    color: var(--text-secondary);
-    font-size: 0.625rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-        opacity var(--transition),
-        background var(--transition);
-    z-index: 10;
-    opacity: 0%;
+    display: none;
 }
 
 .gallery-item-thumb:active .tag-button,
@@ -750,8 +732,8 @@ select:focus {
 /* Download button */
 .download-button {
     position: absolute;
-    bottom: 0.25rem;
-    right: 0.25rem;
+    bottom: 0.375rem;
+    right: 0.375rem;
     width: 24px;
     height: 24px;
     border: none;
@@ -769,6 +751,16 @@ select:focus {
         color var(--transition);
     z-index: 10;
     opacity: 0%;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .download-button {
+        opacity: 0%;
+    }
+
+    .gallery-item-thumb:active .download-button {
+        opacity: 100%;
+    }
 }
 
 .gallery-item-thumb:active .download-button {
@@ -818,11 +810,6 @@ select:focus {
     }
 }
 
-/* Desktop select area - hidden on mobile */
-.gallery-item-select {
-    display: none;
-}
-
 /* Gallery Responsive */
 @media (width >= 480px) {
     .gallery {
@@ -845,16 +832,14 @@ select:focus {
         gap: 4px;
     }
 
-    .pin-button,
-    .tag-button,
+    .selection-checkbox {
+        width: 28px;
+        height: 28px;
+    }
+
     .download-button {
         width: 28px;
         height: 28px;
-        font-size: 0.875rem;
-    }
-
-    .tag-button,
-    .download-button {
         font-size: 0.75rem;
     }
 
@@ -868,23 +853,18 @@ select:focus {
 @media (width >= 900px) {
     .gallery {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 1rem;
+        gap: 0.375rem;
     }
 
     .gallery-item {
         border-radius: var(--radius);
         border: 1px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
+        display: block;
+        overflow: hidden;
     }
 
     .gallery-item-thumb {
-        aspect-ratio: 1;
-        border-radius: var(--radius) var(--radius) 0 0;
-        overflow: hidden;
-        transition:
-            transform var(--transition),
-            box-shadow var(--transition);
+        border-radius: var(--radius);
     }
 
     .gallery-item-thumb:active {
@@ -908,190 +888,23 @@ select:focus {
         display: none;
     }
 
-    /* Show desktop info section */
-    .gallery-item-info {
-        display: flex;
-        flex-direction: column;
-        padding: 0.5rem;
-        border-top: 1px solid var(--border-color);
-        background: var(--bg-secondary);
-        min-height: 5rem;
-        height: 5rem;
-    }
-
-    .gallery-item-info .gallery-item-name {
-        font-size: 0.8125rem;
-        font-weight: 500;
-        color: var(--text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        margin-bottom: 0.25rem;
-        flex-shrink: 0;
-    }
-
-    .gallery-item-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 0.6875rem;
-        color: var(--text-secondary);
-        flex-shrink: 0;
-    }
-
-    .gallery-item-type {
-        text-transform: uppercase;
-        font-size: 0.5625rem;
-        padding: 0.125rem 0.375rem;
-        background: var(--bg-tertiary);
-        border-radius: 3px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-    }
-
-    .gallery-item-type.folder {
-        color: var(--type-folder);
-        border-left: 2px solid var(--type-folder);
-    }
-
-    .gallery-item-type.image {
-        color: var(--type-image);
-        border-left: 2px solid var(--type-image);
-    }
-
-    .gallery-item-type.video {
-        color: var(--type-video);
-        border-left: 2px solid var(--type-video);
-    }
-
-    .gallery-item-type.playlist {
-        color: var(--type-playlist);
-        border-left: 2px solid var(--type-playlist);
-    }
-
-    .gallery-item-info .gallery-item-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem;
-        margin-top: auto;
-        padding-top: 0.25rem;
-        min-height: 1.5rem;
-        align-content: flex-start;
-        flex-shrink: 0;
-    }
-
-    .gallery-item-info .item-tag {
-        display: inline-flex;
-        align-items: stretch;
-        background: var(--bg-tertiary);
-        border-radius: 4px;
-        font-size: 0.5625rem;
-        color: var(--text-primary);
-        overflow: hidden;
-        line-height: 1;
-    }
-
-    .gallery-item-info .item-tag.more {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.25rem 0.375rem;
-        background: var(--bg-tertiary);
-        color: var(--accent);
-        cursor: pointer;
-    }
-
-    .gallery-item-info .item-tag.more:hover {
-        background: var(--accent);
-        color: white;
-    }
-
-    .gallery-item-info .item-tag-remove {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 1.125rem;
-        padding: 0.1875rem;
-        background: rgb(0 0 0 / 20%);
-        border: none;
-        color: var(--text-secondary);
-        cursor: pointer;
-        transition:
-            background var(--transition),
-            color var(--transition);
-        flex-shrink: 0;
-    }
-
-    .gallery-item-info .item-tag-remove:hover,
-    .gallery-item-info .item-tag-remove:active {
-        background: var(--error);
-        color: white;
-    }
-
-    .gallery-item-info .item-tag-remove svg {
-        width: 0.5rem;
-        height: 0.5rem;
-        stroke-width: 2.5;
-    }
-
-    .gallery-item-info .item-tag-divider {
-        width: 1px;
-        background: var(--border-color);
-        align-self: stretch;
-    }
-
-    .gallery-item-info .item-tag-text {
-        padding: 0.25rem 0.375rem;
-        cursor: pointer;
-        transition:
-            background var(--transition),
-            color var(--transition);
-        white-space: nowrap;
-    }
-
-    .gallery-item-info .item-tag-text:hover,
-    .gallery-item-info .item-tag-text:active {
-        background: var(--accent);
-        color: white;
-    }
-
-    /* Pin/tag buttons - show on hover */
-    .pin-button,
-    .tag-button,
-    .download-button {
-        opacity: 0%;
-        width: 32px;
-        height: 32px;
-    }
-
-    .gallery-item-thumb:hover .pin-button,
-    .gallery-item-thumb:hover .tag-button,
     .gallery-item-thumb:hover .download-button {
         opacity: 100%;
     }
 
-    .pin-button.pinned,
-    .tag-button.has-tags {
-        opacity: 100%;
-    }
-
-    .pin-button:hover,
-    .tag-button:hover,
-    .download-button:hover {
-        background: rgb(0 0 0 / 80%);
-        color: var(--text-primary);
+    .download-button {
+        width: 32px;
+        height: 32px;
     }
 
     /* Desktop select area */
     .gallery-item-select {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        background: var(--bg-tertiary);
-        border-top: 1px solid var(--border-color);
-        border-radius: 0 0 var(--radius) var(--radius);
-        cursor: pointer;
-        transition: background var(--transition);
+        display: none;
+    }
+
+    .download-button:hover {
+        background: rgb(0 0 0 / 80%);
+        color: var(--text-primary);
     }
 
     .gallery-item-select:hover {
@@ -1123,10 +936,9 @@ select:focus {
         display: none;
     }
 
-    .gallery-item.selected .select-checkbox-custom,
-    .select-checkbox:checked + .select-checkbox-custom {
-        background: var(--accent);
-        border-color: var(--accent);
+    .gallery-item.selected .gallery-item-thumb {
+        outline: 3px solid var(--accent);
+        outline-offset: -3px;
     }
 
     .gallery-item.selected .select-checkbox-custom::after,
@@ -1148,9 +960,11 @@ select:focus {
         color: var(--text-primary);
     }
 
-    /* Hide mobile selection checkbox on desktop */
     .selection-checkbox {
-        display: none !important;
+        width: 32px;
+        height: 32px;
+        top: 0.5rem;
+        left: 0.5rem;
     }
 }
 
@@ -1590,7 +1404,7 @@ select:focus {
 @media (width >= 900px) {
     .search-results-gallery {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 1.5rem;
+        gap: 0.375rem;
         padding: 2rem;
         max-width: 1800px;
         margin: 0 auto;
@@ -5520,11 +5334,11 @@ select:focus {
 /* Selection checkbox on gallery items */
 .selection-checkbox {
     position: absolute;
-    bottom: 0.375rem;
+    top: 0.375rem;
     left: 0.375rem;
     width: 24px;
     height: 24px;
-    background: rgb(0 0 0 / 60%);
+    background: rgb(0 0 0 / 50%);
     border: 2px solid rgb(255 255 255 / 50%);
     border-radius: 50%;
     display: flex;
@@ -5532,7 +5346,13 @@ select:focus {
     justify-content: center;
     z-index: 15;
     transition: all 0.15s ease;
-    pointer-events: none;
+    cursor: pointer;
+    opacity: 0%;
+    pointer-events: auto;
+}
+
+.gallery-item-thumb:hover .selection-checkbox {
+    opacity: 100%;
 }
 
 .selection-checkbox .checkbox-icon {
@@ -5546,11 +5366,17 @@ select:focus {
     background: var(--accent);
     border-color: var(--accent);
     box-shadow: 0 0 0 2px white;
+    opacity: 100%;
     animation: selection-pulse 0.2s ease;
 }
 
 .gallery-item.selected .selection-checkbox .checkbox-icon {
     color: white;
+}
+
+/* Pin button - REMOVED from gallery, kept for favorites section */
+.gallery-item-thumb > .pin-button {
+    display: none;
 }
 
 @keyframes selection-pulse {
@@ -5579,12 +5405,6 @@ body.selection-mode .gallery-item.selected {
 .gallery-item.selected .gallery-item-thumb {
     outline: 3px solid var(--accent);
     outline-offset: -3px;
-}
-
-body.selection-mode .pin-button,
-body.selection-mode .tag-button {
-    opacity: 0% !important;
-    pointer-events: none;
 }
 
 body.selection-mode .main-content {
@@ -5645,12 +5465,29 @@ body.selection-mode .stats-bar {
     }
 
     .selection-checkbox {
-        width: 28px;
-        height: 28px;
+        opacity: 60%;
     }
 
     .selection-checkbox .checkbox-icon {
         font-size: 0.875rem;
+    }
+}
+
+/* Always show checkbox in selection mode */
+body.selection-mode .selection-checkbox {
+    opacity: 100%;
+}
+
+/* Ensure clicks on the icon pass through to the checkbox container */
+.selection-checkbox .checkbox-icon,
+.selection-checkbox [data-lucide],
+.selection-checkbox svg {
+    pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .gallery-item-thumb:hover .selection-checkbox {
+        opacity: 100%;
     }
 }
 
@@ -5837,170 +5674,6 @@ body.selection-mode .stats-bar {
 @media (width >= 1200px) {
     .skeleton-container {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    }
-}
-
-/* ===========================================
-   TAG TOOLTIP
-   =========================================== */
-
-.tag-tooltip-zone {
-    position: fixed;
-    z-index: 4000;
-    pointer-events: none;
-}
-
-.tag-tooltip-zone.visible {
-    pointer-events: auto;
-}
-
-.tag-tooltip {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 0.75rem;
-    box-shadow: 0 4px 12px rgb(0 0 0 / 40%);
-    max-width: 280px;
-    opacity: 0%;
-    transform: translateY(4px);
-    transition:
-        opacity 0.15s ease,
-        transform 0.15s ease;
-}
-
-.tag-tooltip-zone.visible .tag-tooltip {
-    opacity: 100%;
-    transform: translateY(0);
-}
-
-.tag-tooltip-title {
-    font-size: 0.6875rem;
-    color: var(--text-secondary);
-    margin-bottom: 0.5rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.tag-tooltip-hint {
-    font-size: 0.5625rem;
-    font-weight: normal;
-    opacity: 70%;
-    text-transform: none;
-    letter-spacing: normal;
-}
-
-.tag-tooltip-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-}
-
-.tag-tooltip-tag {
-    display: inline-flex;
-    align-items: stretch;
-    background: var(--bg-tertiary);
-    border-radius: calc(var(--radius) - 2px);
-    font-size: 0.75rem;
-    color: var(--text-primary);
-    overflow: hidden;
-}
-
-.tag-tooltip-remove {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    padding: 0.25rem;
-    background: rgb(0 0 0 / 20%);
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition:
-        background var(--transition),
-        color var(--transition);
-    flex-shrink: 0;
-}
-
-.tag-tooltip-remove:hover,
-.tag-tooltip-remove:active {
-    background: var(--error);
-    color: white;
-}
-
-.tag-tooltip-remove svg {
-    width: 0.625rem;
-    height: 0.625rem;
-    stroke-width: 2.5;
-}
-
-.tag-tooltip-divider {
-    width: 1px;
-    background: var(--border-color);
-    align-self: stretch;
-}
-
-.tag-tooltip-text {
-    padding: 0.375rem 0.5rem;
-    cursor: pointer;
-    transition:
-        background var(--transition),
-        color var(--transition);
-    white-space: nowrap;
-}
-
-.tag-tooltip-text:hover,
-.tag-tooltip-text:active {
-    background: var(--accent);
-    color: white;
-}
-
-.item-tag.more {
-    cursor: pointer;
-    transition:
-        background var(--transition),
-        color var(--transition);
-}
-
-.item-tag.more:hover {
-    background: var(--accent);
-    color: white;
-}
-
-@media (hover: none) and (pointer: coarse) {
-    .tag-tooltip-tag {
-        font-size: 0.8125rem;
-    }
-
-    .tag-tooltip-remove {
-        width: 2rem;
-        padding: 0.375rem;
-    }
-
-    .tag-tooltip-remove svg {
-        width: 0.75rem;
-        height: 0.75rem;
-    }
-
-    .tag-tooltip-text {
-        padding: 0.5rem 0.625rem;
-        min-height: 2.25rem;
-        display: flex;
-        align-items: center;
-    }
-
-    .tag-tooltip-tags {
-        gap: 0.5rem;
-    }
-
-    .tag-tooltip {
-        padding: 1rem;
-        max-width: 300px;
-        pointer-events: auto;
-    }
-
-    .item-tag.more:active {
-        background: var(--accent);
-        color: white;
     }
 }
 
@@ -6206,6 +5879,14 @@ body.selection-mode .stats-bar {
 }
 
 @media (hover: none) and (pointer: coarse) {
+    .selection-checkbox {
+        opacity: 50%;
+    }
+
+    .selection-checkbox:active {
+        opacity: 100%;
+    }
+
     .selection-checkbox [data-lucide] {
         width: 0.875rem;
         height: 0.875rem;

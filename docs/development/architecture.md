@@ -188,7 +188,6 @@ The frontend is organized into independent modules:
 | SettingsManager      | `settings.js`               | Settings modal and management      |
 | SessionManager       | `session.js`                | Session keepalive                  |
 | WakeLockManager      | `wake-lock.js`              | Screen wake lock                   |
-| TagTooltip           | `tag-tooltip.js`            | Tag overflow tooltip               |
 | PreferencesManager   | `preferences.js`            | User preferences storage           |
 
 ### State Management

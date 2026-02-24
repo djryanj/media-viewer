@@ -678,7 +678,7 @@ describe('InfiniteScrollSearch Integration Tests', () => {
         it('should integrate with ItemSelection when active', async () => {
             global.ItemSelection = {
                 isActive: true,
-                addCheckboxesToNewItems: vi.fn(),
+                applySelectionStateToNewItems: vi.fn(),
             };
 
             await InfiniteScrollSearch.startSearch('test', {
@@ -694,7 +694,7 @@ describe('InfiniteScrollSearch Integration Tests', () => {
 
             await InfiniteScrollSearch.loadMore();
 
-            expect(global.ItemSelection.addCheckboxesToNewItems).toHaveBeenCalled();
+            expect(global.ItemSelection.applySelectionStateToNewItems).toHaveBeenCalled();
         });
 
         it('should handle items without Search.createSearchResultItem', async () => {

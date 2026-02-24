@@ -3,11 +3,12 @@ const ItemSelection = {
     selectedPaths: new Set(),
     selectedData: new Map(), // path -> {name, type}
 
-    // NEW: Track if "all" items are selected (for applying to newly loaded items)
+    // Track if "all" items are selected (for applying to newly loaded items)
     isAllSelected: false,
     allSelectablePaths: null, // Cache of all paths when "select all" is used
 
     isDragging: false,
+    isMouseDragging: false,
     lastTouchedElement: null,
     dragStartElement: null,
     // Performance optimization: cache items array during drag
@@ -20,11 +21,12 @@ const ItemSelection = {
     longPressDuration: 500,
     touchStartX: 0,
     touchStartY: 0,
-
+    mouseStartX: 0,
+    mouseStartY: 0,
+    mouseLongPressTimer: null,
     selectableTypes: ['image', 'video', 'folder', 'playlist'],
 
-    // Batch DOM update settings
-    batchUpdateDelay: 16,
+    // Batch DOM update state
     pendingUpdates: new Set(),
     updateScheduled: false,
 
@@ -161,6 +163,7 @@ const ItemSelection = {
     },
 
     setupLongPress() {
+        // --- TOUCH LONG PRESS ---
         document.addEventListener(
             'touchstart',
             (e) => {
@@ -168,9 +171,8 @@ const ItemSelection = {
                 if (!galleryItem) return;
 
                 if (
-                    e.target.closest('.pin-button') ||
-                    e.target.closest('.tag-button') ||
                     e.target.closest('.selection-checkbox') ||
+                    e.target.closest('.download-button') ||
                     e.target.closest('.gallery-item-select')
                 ) {
                     return;
@@ -235,6 +237,56 @@ const ItemSelection = {
             },
             { passive: true }
         );
+
+        // --- MOUSE LONG PRESS (desktop) ---
+        document.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+
+            const galleryItem = e.target.closest('.gallery-item');
+            if (!galleryItem) return;
+
+            if (
+                e.target.closest('.selection-checkbox') ||
+                e.target.closest('.download-button') ||
+                e.target.closest('.gallery-item-select')
+            ) {
+                return;
+            }
+
+            const type = galleryItem.dataset.type;
+            if (!this.isSelectableType(type)) return;
+            if (this.isActive) return;
+
+            this.longPressTriggered = false;
+            this.mouseStartX = e.clientX;
+            this.mouseStartY = e.clientY;
+
+            this.mouseLongPressTimer = setTimeout(() => {
+                this.longPressTriggered = true;
+                this.enterSelectionMode(galleryItem);
+                this.startDragSelection(galleryItem);
+                this.isMouseDragging = true;
+            }, this.longPressDuration);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (this.mouseLongPressTimer) {
+                const deltaX = Math.abs(e.clientX - this.mouseStartX);
+                const deltaY = Math.abs(e.clientY - this.mouseStartY);
+
+                if (deltaX > 5 || deltaY > 5) {
+                    clearTimeout(this.mouseLongPressTimer);
+                    this.mouseLongPressTimer = null;
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (this.mouseLongPressTimer) {
+                clearTimeout(this.mouseLongPressTimer);
+                this.mouseLongPressTimer = null;
+            }
+        });
     },
 
     wasLongPressTriggered() {
@@ -246,12 +298,12 @@ const ItemSelection = {
     },
 
     setupDragSelection() {
+        // --- TOUCH DRAG ---
         document.addEventListener(
             'touchmove',
             (e) => {
                 if (!this.isActive || !this.isDragging) return;
 
-                // Prevent scrolling during drag selection
                 e.preventDefault();
 
                 const touch = e.touches[0];
@@ -261,13 +313,12 @@ const ItemSelection = {
                 if (galleryItem && galleryItem !== this.lastTouchedElement) {
                     this.lastTouchedElement = galleryItem;
 
-                    // Select all items in the rectangular region between start and current
                     if (this.dragStartElement) {
                         this.selectRectangularRegion(this.dragStartElement, galleryItem);
                     }
                 }
             },
-            { passive: false } // Non-passive to allow preventDefault
+            { passive: false }
         );
 
         document.addEventListener(
@@ -297,6 +348,33 @@ const ItemSelection = {
             },
             { passive: true }
         );
+
+        // --- MOUSE DRAG (desktop) ---
+        document.addEventListener('mousemove', (e) => {
+            if (!this.isActive || !this.isMouseDragging) return;
+
+            const element = document.elementFromPoint(e.clientX, e.clientY);
+            const galleryItem = element?.closest('.gallery-item');
+
+            if (galleryItem && galleryItem !== this.lastTouchedElement) {
+                this.lastTouchedElement = galleryItem;
+
+                if (this.dragStartElement) {
+                    this.selectRectangularRegion(this.dragStartElement, galleryItem);
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (this.isMouseDragging) {
+                this.isMouseDragging = false;
+                this.isDragging = false;
+                this.lastTouchedElement = null;
+                this.dragStartElement = null;
+                this.dragCachedItems = null;
+                this.dragStartIndex = -1;
+            }
+        });
     },
 
     enterSelectionMode(initialElement = null) {
@@ -307,19 +385,18 @@ const ItemSelection = {
         this.selectedData.clear();
         this.isAllSelected = false;
         this.allSelectablePaths = null;
-        this._taggableCount = 0; // PERF: reset counter
+        this._taggableCount = 0;
 
         document.body.classList.add('selection-mode');
         this.elements.toolbar.classList.remove('hidden');
 
-        this.addCheckboxesToVisibleItems();
+        this.applySelectionStateToVisibleItems();
 
         if (initialElement) {
             this.selectItem(initialElement);
         }
 
-        // PERF: Immediate toolbar update here is intentional — this is a
-        // one-time call when entering selection mode, not a hot path.
+        // Immediate toolbar update — one-time call when entering selection mode
         this.updateToolbar();
 
         if (typeof HistoryManager !== 'undefined') {
@@ -339,11 +416,12 @@ const ItemSelection = {
         this.selectedData.clear();
         this.isAllSelected = false;
         this.allSelectablePaths = null;
-        this._taggableCount = 0; // PERF: reset counter
+        this._taggableCount = 0;
         this.isDragging = false;
+        this.isMouseDragging = false;
+        this.longPressTriggered = false;
         this.pendingUpdates.clear();
 
-        // PERF: Cancel any pending toolbar update
         if (this._toolbarUpdateRAFId) {
             cancelAnimationFrame(this._toolbarUpdateRAFId);
             this._toolbarUpdateRAFId = null;
@@ -352,8 +430,8 @@ const ItemSelection = {
 
         document.body.classList.remove('selection-mode');
         this.elements.toolbar.classList.add('hidden');
-        this.removeCheckboxesFromGallery();
 
+        // Clear selected state from all items (checkboxes are permanent)
         document.querySelectorAll('.gallery-item.selected').forEach((item) => {
             item.classList.remove('selected');
         });
@@ -373,85 +451,39 @@ const ItemSelection = {
         }
     },
 
-    addCheckboxesToVisibleItems() {
+    /**
+     * Apply selection state (CSS class) to all visible gallery items.
+     * Called when entering selection mode to sync DOM with internal state.
+     */
+    applySelectionStateToVisibleItems() {
+        if (!this.isActive) return;
+
         const gallery = this.elements.gallery;
         const items = gallery.querySelectorAll('.gallery-item:not(.skeleton)');
 
-        const itemsToUpdate = [];
-        const viewportHeight = window.innerHeight;
-        const immediateThreshold = viewportHeight + 400;
-
         items.forEach((item) => {
-            const type = item.dataset.type;
-            if (!this.isSelectableType(type)) return;
-
-            const rect = item.getBoundingClientRect();
-            const isImmediate = rect.top < immediateThreshold && rect.bottom > -400;
-
-            if (isImmediate) {
-                const thumbArea = item.querySelector('.gallery-item-thumb');
-                if (thumbArea && !thumbArea.querySelector('.selection-checkbox')) {
-                    const checkbox = document.createElement('div');
-                    checkbox.className = 'selection-checkbox';
-                    checkbox.innerHTML = '<i data-lucide="check"></i>';
-                    thumbArea.appendChild(checkbox);
-
-                    const path = item.dataset.path;
-                    if (this.selectedPaths.has(path)) {
-                        item.classList.add('selected');
-                    }
-
-                    itemsToUpdate.push(checkbox);
-                }
-            } else {
-                if (!this._checkboxObserver) {
-                    this._checkboxObserver = new IntersectionObserver(
-                        (entries) => {
-                            entries.forEach((entry) => {
-                                if (entry.isIntersecting) {
-                                    this.addCheckboxToItem(entry.target);
-                                    this._checkboxObserver.unobserve(entry.target);
-                                }
-                            });
-                        },
-                        { rootMargin: '400px' }
-                    );
-                }
-                this._checkboxObserver.observe(item);
-            }
-        });
-
-        if (itemsToUpdate.length > 0) {
-            requestAnimationFrame(() => {
-                lucide.createIcons({ nodes: itemsToUpdate });
-            });
-        }
-    },
-
-    addCheckboxToItem(item) {
-        const thumbArea = item.querySelector('.gallery-item-thumb');
-        if (thumbArea && !thumbArea.querySelector('.selection-checkbox')) {
-            const checkbox = document.createElement('div');
-            checkbox.className = 'selection-checkbox';
-            checkbox.innerHTML = '<i data-lucide="check"></i>';
-            thumbArea.appendChild(checkbox);
-
             const path = item.dataset.path;
             if (this.selectedPaths.has(path)) {
                 item.classList.add('selected');
             }
+        });
+    },
 
-            requestAnimationFrame(() => {
-                lucide.createIcons({ nodes: [checkbox] });
-            });
+    /**
+     * Apply selection state to a single item.
+     * Called when a new gallery item is rendered.
+     */
+    applySelectionState(item) {
+        const path = item.dataset.path;
+        if (this.selectedPaths.has(path)) {
+            item.classList.add('selected');
         }
     },
 
     /**
-     * Add checkboxes to newly loaded items (called by InfiniteScroll)
-     * Also applies selection state if item is in selectedPaths
+     * Apply selection state to newly loaded items (called by InfiniteScroll).
      */
-    addCheckboxesToNewItems(container) {
+    applySelectionStateToNewItems(container) {
         if (!this.isActive) return;
 
         const items = container.querySelectorAll
@@ -459,30 +491,11 @@ const ItemSelection = {
             : [];
 
         items.forEach((item) => {
-            const type = item.dataset.type;
-            if (this.isSelectableType(type)) {
-                this.addCheckboxToItem(item);
-
-                // Apply selection state if this item should be selected
-                const path = item.dataset.path;
-                if (this.selectedPaths.has(path)) {
-                    item.classList.add('selected');
-                }
+            const path = item.dataset.path;
+            if (this.selectedPaths.has(path)) {
+                item.classList.add('selected');
             }
         });
-    },
-
-    addCheckboxesToGallery() {
-        this.addCheckboxesToVisibleItems();
-    },
-
-    removeCheckboxesFromGallery() {
-        if (this._checkboxObserver) {
-            this._checkboxObserver.disconnect();
-            this._checkboxObserver = null;
-        }
-
-        document.querySelectorAll('.selection-checkbox').forEach((cb) => cb.remove());
     },
 
     /**
@@ -503,32 +516,30 @@ const ItemSelection = {
 
         if (!this.isSelectableType(type)) return;
 
-        // PERF: Early return if already selected — avoids redundant work
-        // during drag selection where selectRectangularRegion may revisit items.
-        if (this.selectedPaths.has(path)) return;
-
-        this.selectedPaths.add(path);
-        this.selectedData.set(path, { name, type });
-        this._adjustTaggableCount(type, 1); // PERF: incremental count
-
-        this.scheduleDOMUpdate(path, true);
-        this.scheduleToolbarUpdate(); // PERF: debounced instead of immediate
-    },
-
-    /**
-     * Select an item by data (without DOM element) - used for select all
-     */
-    selectItemByData(path, name, type) {
-        if (!this.isSelectableType(type)) return;
-
         // PERF: Early return if already selected
         if (this.selectedPaths.has(path)) return;
 
         this.selectedPaths.add(path);
         this.selectedData.set(path, { name, type });
-        this._adjustTaggableCount(type, 1); // PERF: incremental count
+        this._adjustTaggableCount(type, 1);
 
-        // Schedule DOM update only if element exists
+        this.scheduleDOMUpdate(path, true);
+        this.scheduleToolbarUpdate();
+    },
+
+    /**
+     * Select an item by data (without DOM element) - used for select all.
+     */
+    selectItemByData(path, name, type) {
+        if (!this.isSelectableType(type)) return;
+
+        if (this.selectedPaths.has(path)) return;
+
+        this.selectedPaths.add(path);
+        this.selectedData.set(path, { name, type });
+        this._adjustTaggableCount(type, 1);
+
+        // Schedule DOM update only if element exists in the viewport
         const element = document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
         if (element) {
             this.scheduleDOMUpdate(path, true);
@@ -537,10 +548,7 @@ const ItemSelection = {
 
     /**
      * PERF: Select multiple items from DOM elements in a single batch.
-     * Defers the toolbar update until the entire batch is processed,
-     * reducing N updateToolbar() calls to 1.
-     *
-     * Used by selectRectangularRegion() for drag selection.
+     * Defers the toolbar update until the entire batch is processed.
      */
     selectItemBatch(elements) {
         for (const element of elements) {
@@ -563,19 +571,18 @@ const ItemSelection = {
 
     deselectItem(element, autoExit = true) {
         const path = element.dataset.path;
-        const data = this.selectedData.get(path); // PERF: grab before deleting
+        const data = this.selectedData.get(path);
 
         this.selectedPaths.delete(path);
         this.selectedData.delete(path);
-        this.isAllSelected = false; // No longer "all" selected
+        this.isAllSelected = false;
 
-        // PERF: decrement taggable count
         if (data) {
             this._adjustTaggableCount(data.type, -1);
         }
 
         this.scheduleDOMUpdate(path, false);
-        this.scheduleToolbarUpdate(); // PERF: debounced
+        this.scheduleToolbarUpdate();
 
         if (autoExit && this.selectedPaths.size === 0) {
             this.exitSelectionModeWithHistory();
@@ -583,16 +590,15 @@ const ItemSelection = {
     },
 
     /**
-     * Deselect an item by path (without DOM element)
+     * Deselect an item by path (without DOM element).
      */
     deselectItemByPath(path, autoExit = true) {
-        const data = this.selectedData.get(path); // PERF: grab before deleting
+        const data = this.selectedData.get(path);
 
         this.selectedPaths.delete(path);
         this.selectedData.delete(path);
         this.isAllSelected = false;
 
-        // PERF: decrement taggable count
         if (data) {
             this._adjustTaggableCount(data.type, -1);
         }
@@ -602,7 +608,7 @@ const ItemSelection = {
             this.scheduleDOMUpdate(path, false);
         }
 
-        this.scheduleToolbarUpdate(); // PERF: debounced
+        this.scheduleToolbarUpdate();
 
         if (autoExit && this.selectedPaths.size === 0) {
             this.exitSelectionModeWithHistory();
@@ -648,7 +654,7 @@ const ItemSelection = {
     },
 
     /**
-     * Fetch all selectable item paths from the server
+     * Fetch all selectable item paths from the server.
      */
     async fetchAllSelectablePaths() {
         try {
@@ -675,7 +681,6 @@ const ItemSelection = {
 
             const data = await response.json();
 
-            // Filter to only selectable types
             return data.items.filter((item) => this.isSelectableType(item.type));
         } catch (error) {
             console.error('Error fetching all selectable paths:', error);
@@ -684,7 +689,7 @@ const ItemSelection = {
     },
 
     /**
-     * Select all - fetches all paths from server if needed
+     * Select all - fetches all paths from server if needed.
      */
     async selectAll() {
         // If already all selected, deselect all
@@ -702,20 +707,16 @@ const ItemSelection = {
         lucide.createIcons({ nodes: [selectAllBtn] });
 
         try {
-            // Fetch all paths from server
             const allItems = await this.fetchAllSelectablePaths();
 
             if (!allItems) {
-                // Fallback to loaded items only
                 Gallery.showToast('Could not fetch all items, selecting loaded items only');
                 this.selectLoadedItems();
                 return;
             }
 
-            // Store for future reference
             this.allSelectablePaths = allItems;
 
-            // PERF: Select all items via selectItemByData (no per-item toolbar update)
             for (const item of allItems) {
                 this.selectItemByData(item.path, item.name, item.type);
             }
@@ -730,7 +731,7 @@ const ItemSelection = {
                 }
             });
 
-            // Immediate toolbar update — this is a one-time call after bulk operation
+            // Immediate toolbar update — one-time call after bulk operation
             this.updateToolbar();
 
             Gallery.showToast(`Selected ${allItems.length} items`);
@@ -738,7 +739,6 @@ const ItemSelection = {
             console.error('Error selecting all:', error);
             Gallery.showToast('Failed to select all items');
         } finally {
-            // Restore button
             selectAllBtn.innerHTML = originalContent;
             selectAllBtn.disabled = false;
             lucide.createIcons({ nodes: [selectAllBtn] });
@@ -747,7 +747,7 @@ const ItemSelection = {
     },
 
     /**
-     * Fallback: select only loaded items
+     * Fallback: select only loaded items.
      */
     selectLoadedItems() {
         let allItems;
@@ -769,20 +769,18 @@ const ItemSelection = {
             if (!this.selectedPaths.has(item.path)) {
                 this.selectedPaths.add(item.path);
                 this.selectedData.set(item.path, { name: item.name, type: item.type });
-                this._adjustTaggableCount(item.type, 1); // PERF: incremental count
+                this._adjustTaggableCount(item.type, 1);
                 this.scheduleDOMUpdate(item.path, true);
             }
         });
 
-        // PERF: Single toolbar update after bulk operation
         this.scheduleToolbarUpdate();
     },
 
     /**
-     * Deselect all items
+     * Deselect all items.
      */
     deselectAll() {
-        // Clear all selections
         this.selectedPaths.forEach((path) => {
             const element = document.querySelector(
                 `.gallery-item[data-path="${CSS.escape(path)}"]`
@@ -796,7 +794,7 @@ const ItemSelection = {
         this.selectedData.clear();
         this.isAllSelected = false;
         this.allSelectablePaths = null;
-        this._taggableCount = 0; // PERF: reset counter
+        this._taggableCount = 0;
 
         this.updateToolbar();
     },
@@ -804,9 +802,6 @@ const ItemSelection = {
     /**
      * PERF: Schedule a toolbar update for the next animation frame.
      * Multiple calls within the same frame are coalesced into one update.
-     * This is the key optimization — selectItem/deselectItem/selectItemBatch
-     * all call this instead of updateToolbar() directly, so N rapid
-     * selections produce at most 1 toolbar DOM update per frame.
      */
     scheduleToolbarUpdate() {
         if (this._toolbarUpdateScheduled) return;
@@ -822,23 +817,12 @@ const ItemSelection = {
     /**
      * Update the selection toolbar UI.
      *
-     * PERF: Uses the incrementally maintained _taggableCount instead of
-     * iterating over selectedData on every call.
-     *
-     * Before fix:
-     *   - Array.from(selectedData.values()).some(...)   → O(n)
-     *   - Array.from(selectedData.values()).filter(...) → O(n)
-     *   - Array.from(selectedPaths).filter(...)         → O(n)
-     *   Total: O(3n) per call, called N times = O(3n²)
-     *
-     * After fix:
-     *   - this._taggableCount                          → O(1)
-     *   - this.selectedPaths.has(sourcePath)            → O(1)
-     *   Total: O(1) per call
+     * PERF: Uses the incrementally maintained _taggableCount (O(1))
+     * instead of iterating over selectedData on every call.
      */
     updateToolbar() {
         const count = this.selectedPaths.size;
-        const taggableCount = this._taggableCount; // PERF: O(1) lookup
+        const taggableCount = this._taggableCount;
         const hasTaggableItems = taggableCount > 0;
 
         this.elements.count.textContent = `${count} selected`;
@@ -855,7 +839,6 @@ const ItemSelection = {
         }
 
         // Paste tags
-        // PERF: O(1) computation instead of Array.from().filter().length
         const sourcePath = TagClipboard.sourcePath;
         const destinationCount = sourcePath
             ? count - (this.selectedPaths.has(sourcePath) ? 1 : 0)
@@ -901,42 +884,32 @@ const ItemSelection = {
         this.lastTouchedElement = element;
         this.dragStartElement = element;
 
-        // Cache items array and start index for performance in large libraries
         this.dragCachedItems = Array.from(document.querySelectorAll('.gallery-item'));
         this.dragStartIndex = this.dragCachedItems.indexOf(element);
     },
 
     /**
-     * Select all items in the range between two gallery items (in reading order).
-     * Uses cached items array for performance in large libraries.
+     * Select all items in the range between two gallery items (reading order).
      *
-     * PERF: Collects all unselected items in the range first, then calls
-     * selectItemBatch() once — replacing the old loop that called
-     * selectItem() (and thus updateToolbar()) for each individual item.
-     *
-     * Before fix: O(n) selectItem calls × O(n) updateToolbar each = O(n²)
-     * After fix:  O(n) collect + O(1) batch toolbar update = O(n)
+     * PERF: Collects unselected items first, then calls selectItemBatch()
+     * once — O(n) collect + O(1) batch toolbar update instead of O(n²).
      */
     selectRectangularRegion(startElement, endElement) {
         if (!startElement || !endElement) return;
 
-        // Use cached items array if available (performance optimization)
         const allItems =
             this.dragCachedItems || Array.from(document.querySelectorAll('.gallery-item'));
         if (allItems.length === 0) return;
 
-        // Use cached start index if available (performance optimization)
         const startIndex =
             this.dragStartIndex !== -1 ? this.dragStartIndex : allItems.indexOf(startElement);
         const endIndex = allItems.indexOf(endElement);
 
         if (startIndex === -1 || endIndex === -1) return;
 
-        // Determine the range (handle dragging backwards)
         const minIndex = Math.min(startIndex, endIndex);
         const maxIndex = Math.max(startIndex, endIndex);
 
-        // PERF: Collect elements to select, then batch them
         const toSelect = [];
         for (let i = minIndex; i <= maxIndex; i++) {
             const item = allItems[i];
@@ -950,7 +923,6 @@ const ItemSelection = {
             }
         }
 
-        // PERF: Single batch operation — one toolbar update for the entire range
         if (toSelect.length > 0) {
             this.selectItemBatch(toSelect);
         }

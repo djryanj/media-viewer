@@ -51,7 +51,9 @@ describe('Gallery Module', () => {
         globalThis.ItemSelection = {
             isActive: false,
             selectedItems: new Map(),
-            addCheckboxesToGallery: vi.fn(),
+            selectedData: new Map(),
+            selectedPaths: new Set(),
+            applySelectionStateToVisibleItems: vi.fn(),
             isItemSelected: vi.fn(() => false),
             deselectItem: vi.fn(),
             enterSelectionMode: vi.fn(),
@@ -713,12 +715,15 @@ describe('Gallery Module', () => {
 
             Gallery.render([{ name: 'test.jpg', path: 'test.jpg', type: 'image' }]);
 
-            expect(globalThis.ItemSelection.addCheckboxesToGallery).toHaveBeenCalled();
+            expect(globalThis.ItemSelection.applySelectionStateToVisibleItems).toHaveBeenCalled();
         });
 
         test('restores selected items when ItemSelection is active', () => {
             globalThis.ItemSelection.isActive = true;
-            globalThis.ItemSelection.selectedItems.set('test.jpg', {});
+            globalThis.ItemSelection.selectedData.set('test.jpg', {
+                name: 'test.jpg',
+                type: 'image',
+            });
 
             Gallery.render([{ name: 'test.jpg', path: 'test.jpg', type: 'image' }]);
 
@@ -799,13 +804,14 @@ describe('Gallery Module', () => {
             expect(thumbArea).toBeTruthy();
         });
 
-        test('creates info area', () => {
+        // Info area is no longer rendered in createGalleryItem (commented out)
+        test('does not create info area (removed from layout)', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
 
             const element = Gallery.createGalleryItem(item);
 
             const info = element.querySelector('.gallery-item-info');
-            expect(info).toBeTruthy();
+            expect(info).toBeNull();
         });
 
         test('creates video item correctly', () => {
@@ -907,23 +913,24 @@ describe('Gallery Module', () => {
             expect(iconWrapper).toBeTruthy();
         });
 
-        test('creates pin button', () => {
+        // Pin button was removed from createThumbArea
+        test('does not create pin button (removed from layout)', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
 
             const pinButton = thumbArea.querySelector('.pin-button');
-            expect(pinButton).toBeTruthy();
-            expect(pinButton.title).toBe('Add to favorites');
+            expect(pinButton).toBeNull();
         });
 
-        test('creates tag button for non-folder items', () => {
+        // Tag button was removed from createThumbArea
+        test('does not create tag button (removed from layout)', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
 
             const tagButton = thumbArea.querySelector('.tag-button');
-            expect(tagButton).toBeTruthy();
+            expect(tagButton).toBeNull();
         });
 
         test('does not create tag button for folders', () => {
@@ -935,185 +942,60 @@ describe('Gallery Module', () => {
             expect(tagButton).toBeNull();
         });
 
-        test('creates mobile info section', () => {
+        // Mobile info section was removed from createThumbArea
+        test('does not create mobile info section (removed from layout)', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
 
             const mobileInfo = thumbArea.querySelector('.gallery-item-mobile-info');
-            expect(mobileInfo).toBeTruthy();
+            expect(mobileInfo).toBeNull();
         });
 
-        test('displays item name in mobile info', () => {
+        test('creates selection checkbox', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
 
-            const name = thumbArea.querySelector('.gallery-item-name');
-            expect(name.textContent).toBe('test.jpg');
+            const selectionCheckbox = thumbArea.querySelector('.selection-checkbox');
+            expect(selectionCheckbox).toBeTruthy();
         });
 
-        test('displays tags in mobile info', () => {
-            const item = {
-                name: 'test.jpg',
-                path: 'test.jpg',
-                type: 'image',
-                tags: ['nature', 'landscape'],
-            };
-
-            const thumbArea = Gallery.createThumbArea(item);
-
-            const tagsContainer = thumbArea.querySelector('.gallery-item-tags');
-            expect(tagsContainer).toBeTruthy();
-
-            const tags = tagsContainer.querySelectorAll('.item-tag:not(.more)');
-            expect(tags).toHaveLength(2);
-            expect(tags[0].textContent).toBe('nature');
-            expect(tags[1].textContent).toBe('landscape');
-        });
-
-        test('shows +N for more than 3 tags', () => {
-            const item = {
-                name: 'test.jpg',
-                path: 'test.jpg',
-                type: 'image',
-                tags: ['tag1', 'tag2', 'tag3', 'tag4', 'tag5'],
-            };
-
-            const thumbArea = Gallery.createThumbArea(item);
-
-            const tagsContainer = thumbArea.querySelector('.gallery-item-tags');
-            const more = tagsContainer.querySelector('.item-tag.more');
-            expect(more).toBeTruthy();
-            expect(more.textContent).toBe('+2');
-        });
-
-        test('does not show tags when item has no tags', () => {
+        test('creates download button for images', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
 
-            const tagsContainer = thumbArea.querySelector('.gallery-item-tags');
-            expect(tagsContainer).toBeNull();
-        });
-    });
-
-    describe('createInfo()', () => {
-        test('creates info element', () => {
-            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image', size: 1024 };
-
-            const info = Gallery.createInfo(item);
-
-            expect(info.tagName.toLowerCase()).toBe('div');
-            expect(info.classList.contains('gallery-item-info')).toBe(true);
+            const downloadButton = thumbArea.querySelector('.download-button');
+            expect(downloadButton).toBeTruthy();
+            expect(downloadButton.title).toBe('Download');
         });
 
-        test('displays item name', () => {
-            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image', size: 1024 };
+        test('creates download button for videos', () => {
+            const item = { name: 'video.mp4', path: 'video.mp4', type: 'video' };
 
-            const info = Gallery.createInfo(item);
+            const thumbArea = Gallery.createThumbArea(item);
 
-            const name = info.querySelector('.gallery-item-name');
-            expect(name.textContent).toBe('test.jpg');
-            expect(name.title).toBe('test.jpg');
+            const downloadButton = thumbArea.querySelector('.download-button');
+            expect(downloadButton).toBeTruthy();
         });
 
-        test('creates meta section', () => {
-            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image', size: 1024 };
+        test('does not create download button for folders', () => {
+            const item = { name: 'folder', path: 'folder', type: 'folder' };
 
-            const info = Gallery.createInfo(item);
+            const thumbArea = Gallery.createThumbArea(item);
 
-            const meta = info.querySelector('.gallery-item-meta');
-            expect(meta).toBeTruthy();
-        });
-    });
-
-    describe('createRemovableTag()', () => {
-        test('creates tag element', () => {
-            const tag = Gallery.createRemovableTag('nature', 'test.jpg');
-
-            expect(tag.tagName.toLowerCase()).toBe('span');
-            expect(tag.classList.contains('item-tag')).toBe(true);
+            const downloadButton = thumbArea.querySelector('.download-button');
+            expect(downloadButton).toBeNull();
         });
 
-        test('sets tag data attributes', () => {
-            const tag = Gallery.createRemovableTag('nature', 'test.jpg');
+        test('does not create download button for playlists', () => {
+            const item = { name: 'playlist.m3u', path: 'playlist.m3u', type: 'playlist' };
 
-            expect(tag.dataset.tag).toBe('nature');
-            expect(tag.dataset.path).toBe('test.jpg');
-        });
+            const thumbArea = Gallery.createThumbArea(item);
 
-        test('creates remove button', () => {
-            const tag = Gallery.createRemovableTag('nature', 'test.jpg');
-
-            const removeBtn = tag.querySelector('.item-tag-remove');
-            expect(removeBtn).toBeTruthy();
-            expect(removeBtn.title).toBe('Remove "nature" tag');
-        });
-
-        test('displays tag text', () => {
-            const tag = Gallery.createRemovableTag('nature', 'test.jpg');
-
-            const tagText = tag.querySelector('.item-tag-text');
-            expect(tagText.textContent).toBe('nature');
-            expect(tagText.title).toBe('Search for "nature"');
-        });
-
-        test('includes divider', () => {
-            const tag = Gallery.createRemovableTag('nature', 'test.jpg');
-
-            const divider = tag.querySelector('.item-tag-divider');
-            expect(divider).toBeTruthy();
-        });
-
-        test('handles special characters in tag name', () => {
-            const tag = Gallery.createRemovableTag('tag<script>alert("xss")</script>', 'test.jpg');
-
-            const tagText = tag.querySelector('.item-tag-text');
-            expect(tagText.textContent).toBe('tag<script>alert("xss")</script>');
-        });
-    });
-
-    describe('createSelectArea()', () => {
-        test('creates select area element', () => {
-            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
-
-            const selectArea = Gallery.createSelectArea(item);
-
-            expect(selectArea.tagName.toLowerCase()).toBe('div');
-            expect(selectArea.classList.contains('gallery-item-select')).toBe(true);
-        });
-
-        test('creates checkbox input', () => {
-            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
-
-            const selectArea = Gallery.createSelectArea(item);
-
-            const checkbox = selectArea.querySelector('.select-checkbox');
-            expect(checkbox).toBeTruthy();
-            expect(checkbox.type).toBe('checkbox');
-            expect(checkbox.tabIndex).toBe(-1);
-        });
-
-        test('creates custom checkbox with icon', () => {
-            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
-
-            const selectArea = Gallery.createSelectArea(item);
-
-            const custom = selectArea.querySelector('.select-checkbox-custom');
-            expect(custom).toBeTruthy();
-
-            const icon = custom.querySelector('[data-lucide="check"]');
-            expect(icon).toBeTruthy();
-        });
-
-        test('creates select label', () => {
-            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
-
-            const selectArea = Gallery.createSelectArea(item);
-
-            const label = selectArea.querySelector('.select-checkbox-text');
-            expect(label.textContent).toBe('Select');
+            const downloadButton = thumbArea.querySelector('.download-button');
+            expect(downloadButton).toBeNull();
         });
     });
 
@@ -1376,8 +1258,7 @@ describe('Gallery Module', () => {
             thumbArea = galleryItem.querySelector('.gallery-item-thumb');
         });
 
-        test('handles double tap to open lightbox', () => {
-            const openSpy = vi.spyOn(Lightbox, 'open');
+        test('handles double tap to toggle favorite', () => {
             const favSpy = vi.spyOn(Favorites, 'toggleFavorite');
 
             const thumbArea = document.createElement('div');
@@ -1397,9 +1278,8 @@ describe('Gallery Module', () => {
                 thumbArea.dispatchEvent(touchEnd);
             }
 
-            // Double tap toggles favorite, not open lightbox
+            // Double tap toggles favorite
             expect(favSpy).toHaveBeenCalledWith(item.path, item.name, item.type);
-            // No assertion for Lightbox.open(0)
             vi.useRealTimers();
         });
 
@@ -1549,25 +1429,25 @@ describe('Gallery Module', () => {
             expect(Lightbox.open).toHaveBeenCalledWith(0);
         });
 
-        test('handles double click to open lightbox', () => {
-            const dblClickEvent = new MouseEvent('dblclick', {
+        // dblclick handler was removed; double-tap favorite is touch-only now
+        test('single click opens lightbox (no dblclick handler on desktop)', () => {
+            const clickEvent = new MouseEvent('click', {
                 bubbles: true,
                 cancelable: true,
             });
-            thumbArea.dispatchEvent(dblClickEvent);
+            thumbArea.dispatchEvent(clickEvent);
 
-            // Double click triggers favorites, not lightbox open with 3 args
-            expect(Favorites.toggleFavorite).toHaveBeenCalled();
+            expect(Lightbox.open).toHaveBeenCalledWith(0);
         });
 
-        test('ignores click on pin button', () => {
-            const pinButton = thumbArea.querySelector('.pin-button');
+        test('ignores click on selection checkbox', () => {
+            const selectionCheckbox = thumbArea.querySelector('.selection-checkbox');
             const clickEvent = new MouseEvent('click', {
                 bubbles: true,
                 cancelable: true,
             });
             Object.defineProperty(clickEvent, 'target', {
-                value: pinButton,
+                value: selectionCheckbox,
                 enumerable: true,
             });
             thumbArea.dispatchEvent(clickEvent);
@@ -1575,14 +1455,14 @@ describe('Gallery Module', () => {
             expect(Lightbox.open).not.toHaveBeenCalled();
         });
 
-        test('ignores click on tag button', () => {
-            const tagButton = thumbArea.querySelector('.tag-button');
+        test('ignores click on download button', () => {
+            const downloadButton = thumbArea.querySelector('.download-button');
             const clickEvent = new MouseEvent('click', {
                 bubbles: true,
                 cancelable: true,
             });
             Object.defineProperty(clickEvent, 'target', {
-                value: tagButton,
+                value: downloadButton,
                 enumerable: true,
             });
             thumbArea.dispatchEvent(clickEvent);
@@ -1645,32 +1525,6 @@ describe('Gallery Module', () => {
         });
     });
 
-    describe('Tag element creation', () => {
-        test('createRemovableTag creates tag element', () => {
-            const tagEl = Gallery.createRemovableTag('nature', '/test.jpg');
-
-            expect(tagEl.className).toBe('item-tag');
-            expect(tagEl.dataset.tag).toBe('nature');
-            expect(tagEl.dataset.path).toBe('/test.jpg');
-        });
-
-        test('tag has remove button', () => {
-            const tagEl = Gallery.createRemovableTag('nature', '/test.jpg');
-            const removeBtn = tagEl.querySelector('.item-tag-remove');
-
-            expect(removeBtn).toBeTruthy();
-            expect(removeBtn.title).toContain('nature');
-        });
-
-        test('tag has text span', () => {
-            const tagEl = Gallery.createRemovableTag('nature', '/test.jpg');
-            const textSpan = tagEl.querySelector('.item-tag-text');
-
-            expect(textSpan).toBeTruthy();
-            expect(textSpan.textContent).toBe('nature');
-        });
-    });
-
     describe('Thumbnail failure tracking', () => {
         test('has thumbnail failures structure', () => {
             expect(Gallery.thumbnailFailures).toBeDefined();
@@ -1680,130 +1534,6 @@ describe('Gallery Module', () => {
 
         test('retryThumbnailBatch exists', () => {
             expect(typeof Gallery.retryThumbnailBatch).toBe('function');
-        });
-    });
-
-    describe('createInfo()', () => {
-        test('creates info for folder with item count', () => {
-            const item = {
-                name: 'My Folder',
-                path: '/my-folder',
-                type: 'folder',
-                itemCount: 5,
-            };
-
-            const info = Gallery.createInfo(item);
-
-            expect(info.className).toBe('gallery-item-info');
-            expect(info.textContent).toContain('My Folder');
-            expect(info.textContent).toContain('5 items');
-        });
-
-        test('creates info for folder with 1 item (singular)', () => {
-            const item = {
-                name: 'My Folder',
-                path: '/my-folder',
-                type: 'folder',
-                itemCount: 1,
-            };
-
-            const info = Gallery.createInfo(item);
-
-            expect(info.textContent).toContain('1 item');
-        });
-
-        test('creates info for playlist', () => {
-            const item = {
-                name: 'My Playlist',
-                path: '/playlist.m3u',
-                type: 'playlist',
-            };
-
-            const info = Gallery.createInfo(item);
-
-            expect(info.textContent).toContain('Playlist');
-        });
-
-        test('creates info for image with size', () => {
-            const item = {
-                name: 'photo.jpg',
-                path: '/photo.jpg',
-                type: 'image',
-                size: 1024000,
-            };
-
-            globalThis.MediaApp.formatFileSize = vi.fn(() => '1.0 MB');
-
-            const info = Gallery.createInfo(item);
-
-            expect(info.textContent).toContain('photo.jpg');
-            expect(info.textContent).toContain('1.0 MB');
-        });
-
-        test('creates info with tags displayed', () => {
-            const item = {
-                name: 'photo.jpg',
-                path: '/photo.jpg',
-                type: 'image',
-                size: 1024,
-                tags: ['nature', 'sunset', 'beach'],
-            };
-
-            const info = Gallery.createInfo(item);
-            const tagsContainer = info.querySelector('.gallery-item-tags');
-
-            expect(tagsContainer).toBeTruthy();
-            expect(tagsContainer.querySelectorAll('.item-tag').length).toBe(3);
-        });
-
-        test('shows "+N" for more than 3 tags', () => {
-            const item = {
-                name: 'photo.jpg',
-                path: '/photo.jpg',
-                type: 'image',
-                size: 1024,
-                tags: ['tag1', 'tag2', 'tag3', 'tag4', 'tag5'],
-            };
-
-            const info = Gallery.createInfo(item);
-            const moreEl = info.querySelector('.item-tag.more');
-
-            expect(moreEl).toBeTruthy();
-            expect(moreEl.textContent).toBe('+2');
-            expect(moreEl.title).toBe('Click to see all tags');
-        });
-
-        test('creates empty tags container when no tags', () => {
-            const item = {
-                name: 'photo.jpg',
-                path: '/photo.jpg',
-                type: 'image',
-                size: 1024,
-                tags: [],
-            };
-
-            const info = Gallery.createInfo(item);
-            const tagsContainer = info.querySelector('.gallery-item-tags');
-
-            expect(tagsContainer).toBeTruthy();
-            expect(tagsContainer.querySelectorAll('.item-tag').length).toBe(0);
-        });
-
-        test('stores all tags in data attribute', () => {
-            const item = {
-                name: 'photo.jpg',
-                path: '/photo.jpg',
-                type: 'image',
-                size: 1024,
-                tags: ['tag1', 'tag2', 'tag3', 'tag4'],
-            };
-
-            const info = Gallery.createInfo(item);
-            const tagsContainer = info.querySelector('.gallery-item-tags');
-
-            expect(tagsContainer.dataset.allTags).toBe(
-                JSON.stringify(['tag1', 'tag2', 'tag3', 'tag4'])
-            );
         });
     });
 });
