@@ -552,7 +552,7 @@ const InfiniteScroll = {
             const newItems = Array.from(gallery.children).slice(-items.length);
             newItems.forEach((item) => {
                 if (!item.classList.contains('skeleton')) {
-                    ItemSelection.addCheckboxToItem(item);
+                    ItemSelection.applySelectionState(item);
                 }
             });
         }

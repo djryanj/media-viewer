@@ -51,7 +51,9 @@ describe('Gallery Module', () => {
         globalThis.ItemSelection = {
             isActive: false,
             selectedItems: new Map(),
-            addCheckboxesToGallery: vi.fn(),
+            selectedData: new Map(),
+            selectedPaths: new Set(),
+            applySelectionStateToVisibleItems: vi.fn(),
             isItemSelected: vi.fn(() => false),
             deselectItem: vi.fn(),
             enterSelectionMode: vi.fn(),
@@ -713,12 +715,15 @@ describe('Gallery Module', () => {
 
             Gallery.render([{ name: 'test.jpg', path: 'test.jpg', type: 'image' }]);
 
-            expect(globalThis.ItemSelection.addCheckboxesToGallery).toHaveBeenCalled();
+            expect(globalThis.ItemSelection.applySelectionStateToVisibleItems).toHaveBeenCalled();
         });
 
         test('restores selected items when ItemSelection is active', () => {
             globalThis.ItemSelection.isActive = true;
-            globalThis.ItemSelection.selectedItems.set('test.jpg', {});
+            globalThis.ItemSelection.selectedData.set('test.jpg', {
+                name: 'test.jpg',
+                type: 'image',
+            });
 
             Gallery.render([{ name: 'test.jpg', path: 'test.jpg', type: 'image' }]);
 

@@ -944,12 +944,11 @@ describe('ItemSelection Integration', () => {
             ItemSelection.enterSelectionMode();
             ItemSelection.exitSelectionMode();
 
-            // Checkboxes are permanent — removeCheckboxesFromGallery is a no-op
             const checkboxes = document.querySelectorAll('.selection-checkbox');
             expect(checkboxes.length).toBe(4);
         });
 
-        it('should apply selection state to new items via addCheckboxesToNewItems', () => {
+        it('should apply selection state to new items via applySelectionStateToNewItems', () => {
             ItemSelection.enterSelectionMode();
 
             // Simulate selecting an item by data (e.g., from select all)
@@ -964,7 +963,7 @@ describe('ItemSelection Integration', () => {
             `;
             document.getElementById('gallery').appendChild(container);
 
-            ItemSelection.addCheckboxesToNewItems(container);
+            ItemSelection.applySelectionStateToNewItems(container);
 
             const newItem = container.querySelector('.gallery-item');
             expect(newItem.classList.contains('selected')).toBe(true);

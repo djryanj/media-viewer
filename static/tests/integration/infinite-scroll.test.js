@@ -99,7 +99,7 @@ describe('InfiniteScroll Integration', () => {
 
         // Load ItemSelection mock/stub
         globalThis.ItemSelection = {
-            addCheckboxToItem: vi.fn(),
+            applySelectionState: vi.fn(),
             isActive: false,
             selectedPaths: new Set(),
         };
@@ -650,7 +650,7 @@ describe('InfiniteScroll Integration', () => {
 
             await InfiniteScroll.startForDirectory('/test', initialData);
 
-            expect(_ItemSelection.addCheckboxToItem).toHaveBeenCalled();
+            expect(_ItemSelection.applySelectionState).toHaveBeenCalled();
         });
     });
 

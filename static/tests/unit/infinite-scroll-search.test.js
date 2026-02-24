@@ -66,7 +66,7 @@ describe('InfiniteScrollSearch Module', () => {
         // Mock ItemSelection module
         mockItemSelection = {
             isActive: false,
-            addCheckboxesToNewItems: vi.fn(),
+            applySelectionStateToNewItems: vi.fn(),
         };
         globalThis.ItemSelection = mockItemSelection;
 
@@ -428,7 +428,7 @@ describe('InfiniteScrollSearch Module', () => {
 
             InfiniteScrollSearch.renderItems(items, false);
 
-            expect(mockItemSelection.addCheckboxesToNewItems).toHaveBeenCalled();
+            expect(mockItemSelection.applySelectionStateToNewItems).toHaveBeenCalled();
         });
 
         test('handles null items gracefully', () => {
