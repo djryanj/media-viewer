@@ -82,10 +82,14 @@ jobs:
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
-                  lookup-only: true
+                  # Fall back to any previous version of the cache.
+                  # Files are preserved/skipped by the download script,
+                  # so a stale cache just means fewer downloads.
+                  restore-keys: |
+                      sample-media-
 
             - name: Download sample media
-              if: steps.cache-check.outputs.cache-hit != 'true'
+              if: steps.cache-restore.outputs.cache-hit != 'true'
               run: |
                   chmod +x ./hack/download-sample-media.sh
                   ./hack/download-sample-media.sh

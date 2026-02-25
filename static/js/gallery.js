@@ -188,7 +188,8 @@ const Gallery = {
                 }
             };
 
-            const thumbnailUrl = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
+            // we ignore the thumbnailUrl provided by the backend because it doesn't escape certain characters properly.
+            const thumbnailUrl = `/api/thumbnail/${item.path.split('/').map(encodeURIComponent).join('/')}`;
             const timeoutId = setTimeout(() => {
                 controller.abort();
                 handleFailure();
@@ -444,7 +445,7 @@ const Gallery = {
         if (!item || item.type === 'folder' || item.type === 'playlist') return;
 
         const link = document.createElement('a');
-        link.href = `/api/file/${item.path}?download=true`;
+        link.href = `/api/file/${item.path.split('/').map(encodeURIComponent).join('/')}?download=true`;
         link.download = item.name;
         document.body.appendChild(link);
         link.click();
@@ -748,7 +749,8 @@ const Gallery = {
                 }
             };
 
-            const originalSrc = item.thumbnailUrl || `/api/thumbnail/${item.path}`;
+            // we ignore the thumbnailUrl provided by the backend because it doesn't escape certain characters properly.
+            const originalSrc = `/api/thumbnail/${item.path.split('/').map(encodeURIComponent).join('/')}`;
             const cacheBuster = `t=${Date.now()}`;
             const retryUrl = originalSrc + (originalSrc.includes('?') ? '&' : '?') + cacheBuster;
 

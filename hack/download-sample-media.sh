@@ -10,7 +10,7 @@ MEDIA_DIR="${MEDIA_DIR:-${SCRIPT_DIR}/../sample-media}"
 
 # Configuration
 NUM_IMAGES=${NUM_IMAGES:-250}
-NUM_VIDEOS=${NUM_VIDEOS:-15}
+NUM_VIDEOS=${NUM_VIDEOS:-7}
 PEXELS_API_KEY="${PEXELS_API_KEY:-}"
 
 # Path to the sample.wpl file (same directory as this script)
@@ -45,7 +45,7 @@ if [ ! -d "$MEDIA_DIR" ]; then
 fi
 
 # Count existing files
-existing_count=$(find "$MEDIA_DIR" -type f $ -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" $ | wc -l)
+existing_count=$(find "$MEDIA_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" \) | wc -l)
 echo -e "${GREEN}Existing files in sample-media: $existing_count (will be preserved)${NC}"
 echo ""
 
@@ -196,20 +196,21 @@ download_sample_videos() {
     echo -e "${YELLOW}[INFO] Downloading $count sample videos...${NC}"
 
     # Sample video URLs (creative commons / free to use)
+    # Commented out videos are large and caused timeouts in CI, but can be re-enabled for local testing.
     local video_urls=(
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4"
+
     )
 
     local downloaded=0
@@ -395,6 +396,241 @@ create_subfolders_and_copy() {
     echo "  [OK] Subfolder setup complete"
 }
 
+# ============================================================
+# Function to create test files with special filenames
+# needed by path-encoding integration tests.
+# ============================================================
+create_special_filename_files() {
+    echo -e "${YELLOW}[INFO] Creating files with special filenames for path-encoding tests...${NC}"
+
+    # Find a source image and video to copy from
+    local src_image=$(find "$MEDIA_DIR" -maxdepth 1 -name "picsum_001.jpg" -type f | head -1)
+    local src_video=$(find "$MEDIA_DIR" -maxdepth 1 -name "sample_video_01.mp4" -type f | head -1)
+
+    if [ -z "$src_image" ]; then
+        src_image=$(find "$MEDIA_DIR" -maxdepth 1 -name "*.jpg" -type f | head -1)
+    fi
+    if [ -z "$src_video" ]; then
+        src_video=$(find "$MEDIA_DIR" -maxdepth 1 -name "*.mp4" -type f | head -1)
+    fi
+
+    if [ -z "$src_image" ]; then
+        echo -e "${RED}  [ERROR] No source image found to create special filename copies${NC}"
+        return 1
+    fi
+
+    local created=0
+
+    # --- Files with spaces ---
+    local space_names=(
+        "photo with spaces.jpg"
+        "my vacation photo.jpg"
+        "summer 2024 trip.jpg"
+    )
+    for name in "${space_names[@]}"; do
+        local dest="$MEDIA_DIR/$name"
+        if [ ! -f "$dest" ]; then
+            cp "$src_image" "$dest"
+            echo "  [OK] Created: '$name'"
+            ((created++))
+        else
+            echo "  [SKIP] '$name' (already exists)"
+        fi
+    done
+
+    # --- Files with special characters ---
+    # Note: Some characters (like ?) are invalid in filenames on certain
+    # filesystems, so we use ones that are broadly safe on Linux/macOS
+    # but still exercise URL encoding.
+    local special_names=(
+        "photo#tagged.jpg"
+        "file with spaces & ampersand.jpg"
+        "price=100\$.jpg"
+        "photo@home.jpg"
+        "comma,separated.jpg"
+        "semi;colon.jpg"
+        "plus+sign.jpg"
+        "percent%20literal.jpg"
+    )
+    for name in "${special_names[@]}"; do
+        local dest="$MEDIA_DIR/$name"
+        if [ ! -f "$dest" ]; then
+            cp "$src_image" "$dest"
+            echo "  [OK] Created: '$name'"
+            ((created++))
+        else
+            echo "  [SKIP] '$name' (already exists)"
+        fi
+    done
+
+    # --- Files with unicode characters ---
+    local unicode_names=(
+        "café photo.jpg"
+        "日本語テスト.jpg"
+        "фото дома.jpg"
+        "naïve résumé.jpg"
+        "über cool.jpg"
+    )
+    for name in "${unicode_names[@]}"; do
+        local dest="$MEDIA_DIR/$name"
+        if [ ! -f "$dest" ]; then
+            cp "$src_image" "$dest"
+            echo "  [OK] Created: '$name'"
+            ((created++))
+        else
+            echo "  [SKIP] '$name' (already exists)"
+        fi
+    done
+
+    # --- Videos with special filenames ---
+    if [ -n "$src_video" ]; then
+        local video_special_names=(
+            "video with spaces.mp4"
+            "clip#1 final.mp4"
+            "über video.mp4"
+        )
+        for name in "${video_special_names[@]}"; do
+            local dest="$MEDIA_DIR/$name"
+            if [ ! -f "$dest" ]; then
+                cp "$src_video" "$dest"
+                echo "  [OK] Created: '$name'"
+                ((created++))
+            else
+                echo "  [SKIP] '$name' (already exists)"
+            fi
+        done
+    else
+        echo -e "${YELLOW}  [WARN] No source video found, skipping special video filenames${NC}"
+    fi
+
+        # --- Files with URL-path-safe characters that caused thumbnail lookup failures ---
+    # These characters are valid in URL paths (not encoded by Go's url.PathEscape)
+    # but need special handling in the backend's reEncodePath/encodePathSegment.
+    # The + sign was the specific production bug (issue #329).
+    local pathsafe_names=(
+        "Beached+Whales.jpg"
+        "photo+extra.jpg"
+        "Big_N'_Tall_1.jpg"
+        "it's a test.jpg"
+        "photo (1).jpg"
+        "photo (2).jpg"
+        "wow!.jpg"
+        "bang!bang.jpg"
+        "star*rating.jpg"
+        "file (1) + extra!.jpg"
+        "file@extra!.jpg"
+    )
+    for name in "${pathsafe_names[@]}"; do
+        local dest="$MEDIA_DIR/$name"
+        if [ ! -f "$dest" ]; then
+            cp "$src_image" "$dest"
+            echo "  [OK] Created: '$name'"
+            ((created++))
+        else
+            echo "  [SKIP] '$name' (already exists)"
+        fi
+    done
+
+    # --- Videos with URL-path-safe special characters ---
+    if [ -n "$src_video" ]; then
+        local video_pathsafe_names=(
+            "clip+bonus.mp4"
+            "director's cut.mp4"
+            "take (1).mp4"
+        )
+        for name in "${video_pathsafe_names[@]}"; do
+            local dest="$MEDIA_DIR/$name"
+            if [ ! -f "$dest" ]; then
+                cp "$src_video" "$dest"
+                echo "  [OK] Created: '$name'"
+                ((created++))
+            else
+                echo "  [SKIP] '$name' (already exists)"
+            fi
+        done
+    fi
+
+    # --- Subdirectory with path-safe special characters ---
+    local special_subfolder="$MEDIA_DIR/folder (1)"
+    mkdir -p "$special_subfolder"
+    if [ -d "$special_subfolder" ]; then
+        local subfolder_names=(
+            "nested+plus.jpg"
+            "it's nested.jpg"
+            "photo (1).jpg"
+        )
+        for name in "${subfolder_names[@]}"; do
+            local dest="$special_subfolder/$name"
+            if [ ! -f "$dest" ]; then
+                cp "$src_image" "$dest"
+                echo "  [OK] Created: 'folder (1)/$name'"
+                ((created++))
+            fi
+        done
+
+        if [ -n "$src_video" ]; then
+            dest="$special_subfolder/clip+extra.mp4"
+            if [ ! -f "$dest" ]; then
+                cp "$src_video" "$dest"
+                echo "  [OK] Created: 'folder (1)/clip+extra.mp4'"
+                ((created++))
+            fi
+        fi
+    fi
+
+    # --- Subdirectory with spaces in folder name ---
+    local special_folder="$MEDIA_DIR/folder with spaces"
+    mkdir -p "$special_folder"
+    if [ -d "$special_folder" ]; then
+        local dest="$special_folder/nested image.jpg"
+        if [ ! -f "$dest" ]; then
+            cp "$src_image" "$dest"
+            echo "  [OK] Created: 'folder with spaces/nested image.jpg'"
+            ((created++))
+        fi
+
+        dest="$special_folder/simple.jpg"
+        if [ ! -f "$dest" ]; then
+            cp "$src_image" "$dest"
+            echo "  [OK] Created: 'folder with spaces/simple.jpg'"
+            ((created++))
+        fi
+
+        if [ -n "$src_video" ]; then
+            dest="$special_folder/video clip.mp4"
+            if [ ! -f "$dest" ]; then
+                cp "$src_video" "$dest"
+                echo "  [OK] Created: 'folder with spaces/video clip.mp4'"
+                ((created++))
+            fi
+        fi
+    fi
+
+    # --- Files with URL-delimiter characters that cause silent truncation ---
+    # These are the most dangerous: # and ? silently truncate the URL
+    # if not percent-encoded, causing the server to receive a completely
+    # different path with no error indication.
+    local delimiter_names=(
+        "clip#1 final.jpg"
+        "file#tagged.jpg"
+        "what?really.jpg"
+        "how?why#both.jpg"
+    )
+    for name in "${delimiter_names[@]}"; do
+        local dest="$MEDIA_DIR/$name"
+        if [ ! -f "$dest" ]; then
+            cp "$src_image" "$dest"
+            echo "  [OK] Created: '$name'"
+            ((created++))
+        else
+            echo "  [SKIP] '$name' (already exists)"
+        fi
+    done
+
+    echo "  [OK] Created $created files with special filenames"
+}
+
+
 # Main download process
 echo -e "${BLUE}[INFO] Starting downloads...${NC}"
 echo ""
@@ -421,12 +657,16 @@ fi
 create_subfolders_and_copy
 echo ""
 
+# Create files with special filenames for path-encoding tests
+create_special_filename_files
+echo ""
+
 # Summary
 echo -e "${BLUE}========================================${NC}"
 echo -e "${GREEN}Download Complete!${NC}"
 echo -e "${BLUE}========================================${NC}"
 
-new_files=$(find "$MEDIA_DIR" -type f $ -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" $ | wc -l)
+new_files=$(find "$MEDIA_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" \) | wc -l)
 total_size=$(du -sh "$MEDIA_DIR" 2>/dev/null | cut -f1)
 
 echo ""

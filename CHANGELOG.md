@@ -7,12 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.14.1] - Unreleased
+
+### Fixed
+
+- fix(backend): `StreamVideo` now short-circuits on `HEAD` requests when transcoding is required, returning `200 OK` with `Content-Type: video/mp4` headers without invoking `ffmpeg`. Previously a `HEAD` request to any video that needed transcoding would trigger a full transcode, causing CI failures. [#345](https://github.com/djryanj/media-viewer/issues/345)
+- fix(backend): resolve URL-encoded path handling for files with special characters in filenames. Filenames containing characters like `!`, `#`, `&`, spaces, and other URL-sensitive characters were not loading properly (thumbnails, file serving, video streaming) because gorilla/mux's automatic path decoding would transform literal percent-encoded characters in filenames (e.g. `file%21.jpg` on disk became `file!.jpg`), causing mismatches against both the database and filesystem. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- fix(backend): add `pathForFS` helper that tries the mux-decoded path first, then falls back to re-encoding for files with literal percent characters in their names. This ensures both normal filenames and percent-encoded filenames are resolved correctly on disk. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- fix(backend): add `reEncodePath` fallback for database lookups in `GetThumbnail` when the mux-decoded path doesn't match the indexed filename. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- fix(backend): `GetThumbnail` now updates both `filePath` and `fullPath` after a successful re-encoded DB lookup fallback. Previously the DB lookup would succeed via re-encoding but subsequent filesystem validation and thumbnail generation still used the original mux-decoded path, causing "file not found" errors. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- fix(backend): `encodePathSegment` now encodes `+`, `'`, `!`, `(`, `)`, `*`, and `@` in addition to characters already handled by `url.PathEscape`. These characters are valid in URL paths (so Go's `url.PathEscape` leaves them alone) but may appear as literal percent-encoded sequences in filenames on disk (e.g., `%2B` decoded to `+` by mux). [#329](https://github.com/djryanj/media-viewer/issues/329)
+- fix(backend): remove redundant `url.QueryUnescape` call from `validateThumbnailPath` that was causing double-decode issues for thumbnail requests. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- fix(frontend): thumbnail URLs now always constructed using `encodeURIComponent` path encoding instead of using the backend-provided `thumbnailUrl` field, which contained raw unencoded paths. Filenames containing `#` or `?` would silently truncate the URL (e.g., `clip#1 final.mp4` sent only `/api/thumbnail/clip` to the server). [#329](https://github.com/djryanj/media-viewer/issues/329)
+- fix(frontend): ensured consistency across all API endpoints (`/api/file/`, `/api/thumbnail/`, `/api/stream/`, `/api/stream-info/`), using the `path.split('/').map(encodeURIComponent).join('/')` pattern to ensure round-trips through the backend for files with spaces, special characters, and unicode in their names succeed. [#329](https://github.com/djryanj/media-viewer/issues/329)
+
+### Changed
+
+- refactor(backend): introduced `decodePath` helper to centralize path extraction from mux vars across all file-serving handlers (`GetFile`, `GetThumbnail`, `StreamVideo`, `GetStreamInfo`, `InvalidateThumbnail`), replacing inconsistent inline `mux.Vars(r)["path"]` usage. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- refactor(backend): downgraded `pathForFS` and `GetThumbnail` re-encode fallback log messages from `Warn` to `Debug`, since this is expected behavior for files with percent-decoded characters in their names. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- ci: added scheduled weekly workflow to warm the sample media cache on the default branch, preventing GitHub Actions' 7-day cache eviction. Added `restore-keys` fallback so PR workflows can restore stale caches when the download script changes, minimizing re-downloads. [#329](https://github.com/djryanj/media-viewer/issues/329)
+
+### Tests
+
+- test(backend): added `TestStreamVideoHEADRequestNeedsTranscodeIntegration` to verify that `HEAD` requests on videos requiring transcoding return `200 OK` with `Content-Type` set, an empty body, and no `ffmpeg` invocation. [#345](https://github.com/djryanj/media-viewer/issues/345)
+- test(backend): added unit tests for `pathForFS` covering normal filenames, literal percent filenames, subdirectories, file-not-found, and priority when both decoded and encoded forms exist on disk. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): added unit tests for `reEncodePath` covering plain paths, special characters, nested paths, and already-encoded percent sequences. Added cases for `+`, `'`, `*`, and combined folder+file paths. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): added unit tests for `encodePathSegment` covering `+`, `'`, `!`, `(`, `)`, `*`, `@`, and round-trip encode/decode verification. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): added regression tests to verify `decodePath` preserves the mux var without double-decoding. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): added end-to-end regression tests for `GetFile`, `StreamVideo`, `GetThumbnail`, `GetStreamInfo`, and `InvalidateThumbnail` with both normal filenames and literal percent-encoded filenames. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): added `pathForFS` regression tests for literal `%2B` (plus), `%27` (apostrophe), and `%2A` (asterisk) in filenames on disk. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): added `GetThumbnail` DB lookup fallback regression tests for files with literal `%2B` and `%27` in their names, verifying the re-encode fallback resolves both the database lookup and filesystem path. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): added tests verifying both single-encoded and double-encoded frontend requests are handled correctly for the same file. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(backend): fixed existing tests to correctly simulate gorilla/mux behavior by passing decoded paths via `mux.SetURLVars` instead of URL-encoded paths. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): added integration tests for frontend path encoding consistency across all API endpoints (`/api/file/`, `/api/thumbnail/`, `/api/stream/`, `/api/stream-info/`), verifying that the `path.split('/').map(encodeURIComponent).join('/')` pattern used in the frontend correctly round-trips through the backend for files with spaces, special characters, and unicode in their names. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): added unit tests verifying `encodePath` correctly encodes `#` and `?` (URL fragment/query delimiters that cause silent path truncation) and `+` (misinterpreted as space by some servers). [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): added thumbnail-specific integration tests for files with `#`, `+`, `'`, `(`, `)`, `!`, and `?` in their names. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): added cross-endpoint consistency tests verifying both `/api/file/` and `/api/thumbnail/` serve the same files with fragment-unsafe and path-safe special characters. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): fixed path-encoding integration test helpers to use shared authenticated session (`apiRequest`) instead of raw `fetch` with unpopulated `globalThis.__TEST_AUTH_COOKIE__`, which caused all file-serving requests to be unauthenticated. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): fixed path traversal test to accept 404 (in addition to 400) as a valid rejection response, matching actual server behavior where resolved traversal paths are treated as not found. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): fixed cross-endpoint consistency tests to use GET instead of HEAD requests, matching actual frontend behavior in `gallery.js` and `lightbox.js`. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): updated sample media download script to generate test files with spaces, special characters (`#`, `+`, `'`, `(`, `)`, `!`, `*`, `?`), and unicode in filenames, including a subdirectory `folder (1)/` with nested special-character files. [#329](https://github.com/djryanj/media-viewer/issues/329)
+- test(frontend): fixed `find` command grouping syntax in sample media download script (replaced erroneous `$` with `$` / `$` for proper `-o` operator grouping). [#329](https://github.com/djryanj/media-viewer/issues/329)
+
 ## [0.14.0] - 02-24-2026
 
 
 ### Changed
 
 - build(deps): bump actions/cache from 4 to 5 ([#342](https://github.com/djryanj/media-viewer/pull/342))
+- build(deps): bump renovatebot/github-action from 46.1.1 to 46.1.2 ([#343](https://github.com/djryanj/media-viewer/pull/343))
 ### Added
 
 - test: added basic playwright tests. Not all working yet. [#289](https://github.com/djryanj/media-viewer/issues/289)
