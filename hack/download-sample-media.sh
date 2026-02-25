@@ -10,7 +10,7 @@ MEDIA_DIR="${MEDIA_DIR:-${SCRIPT_DIR}/../sample-media}"
 
 # Configuration
 NUM_IMAGES=${NUM_IMAGES:-250}
-NUM_VIDEOS=${NUM_VIDEOS:-15}
+NUM_VIDEOS=${NUM_VIDEOS:-7}
 PEXELS_API_KEY="${PEXELS_API_KEY:-}"
 
 # Path to the sample.wpl file (same directory as this script)
@@ -196,20 +196,21 @@ download_sample_videos() {
     echo -e "${YELLOW}[INFO] Downloading $count sample videos...${NC}"
 
     # Sample video URLs (creative commons / free to use)
+    # Commented out videos are large and caused timeouts in CI, but can be re-enabled for local testing.
     local video_urls=(
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4"
+
     )
 
     local downloaded=0
