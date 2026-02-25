@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.0] - 02-24-2026
 
+
+### Changed
+
+- build(deps): bump actions/setup-node from 4 to 6 ([#341](https://github.com/djryanj/media-viewer/pull/341))
 ### Added
 
 - test: added basic playwright tests. Not all working yet. [#289](https://github.com/djryanj/media-viewer/issues/289)
