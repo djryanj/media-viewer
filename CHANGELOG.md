@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- fix(backend): `StreamVideo` now short-circuits on `HEAD` requests when transcoding is required, returning `200 OK` with `Content-Type: video/mp4` headers without invoking `ffmpeg`. Previously a `HEAD` request to any video that needed transcoding would trigger a full transcode, causing CI failures. [#345](https://github.com/djryanj/media-viewer/issues/345)
 - fix(backend): resolve URL-encoded path handling for files with special characters in filenames. Filenames containing characters like `!`, `#`, `&`, spaces, and other URL-sensitive characters were not loading properly (thumbnails, file serving, video streaming) because gorilla/mux's automatic path decoding would transform literal percent-encoded characters in filenames (e.g. `file%21.jpg` on disk became `file!.jpg`), causing mismatches against both the database and filesystem. [#329](https://github.com/djryanj/media-viewer/issues/329)
 - fix(backend): add `pathForFS` helper that tries the mux-decoded path first, then falls back to re-encoding for files with literal percent characters in their names. This ensures both normal filenames and percent-encoded filenames are resolved correctly on disk. [#329](https://github.com/djryanj/media-viewer/issues/329)
 - fix(backend): add `reEncodePath` fallback for database lookups in `GetThumbnail` when the mux-decoded path doesn't match the indexed filename. [#329](https://github.com/djryanj/media-viewer/issues/329)
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- test(backend): added `TestStreamVideoHEADRequestNeedsTranscodeIntegration` to verify that `HEAD` requests on videos requiring transcoding return `200 OK` with `Content-Type` set, an empty body, and no `ffmpeg` invocation. [#345](https://github.com/djryanj/media-viewer/issues/345)
 - test(backend): added unit tests for `pathForFS` covering normal filenames, literal percent filenames, subdirectories, file-not-found, and priority when both decoded and encoded forms exist on disk. [#329](https://github.com/djryanj/media-viewer/issues/329)
 - test(backend): added unit tests for `reEncodePath` covering plain paths, special characters, nested paths, and already-encoded percent sequences. Added cases for `+`, `'`, `*`, and combined folder+file paths. [#329](https://github.com/djryanj/media-viewer/issues/329)
 - test(backend): added unit tests for `encodePathSegment` covering `+`, `'`, `!`, `(`, `)`, `*`, `@`, and round-trip encode/decode verification. [#329](https://github.com/djryanj/media-viewer/issues/329)

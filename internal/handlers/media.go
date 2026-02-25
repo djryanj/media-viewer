@@ -593,6 +593,13 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 
 	logging.Info("StreamVideo: Transcoding required for %s", fullPath)
 
+	// For HEAD requests, return headers without triggering transcoding
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	cachePath, err := h.transcoder.GetOrStartTranscodeAndWait(ctx, fullPath, targetWidth, info)
 	if err != nil {
 		logging.Error("Failed to prepare transcode %s: %v", filePath, err)

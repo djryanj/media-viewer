@@ -2065,6 +2065,103 @@ func TestStreamVideoHEADRequestIntegration(t *testing.T) {
 	}
 }
 
+// TestStreamVideoHEADRequestNeedsTranscodeIntegration tests that a HEAD request on a video
+// that requires transcoding returns 200 OK with appropriate headers and does NOT trigger
+// the transcoder (no ffmpeg invocation, no cache files written).
+func TestStreamVideoHEADRequestNeedsTranscodeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	// Create temporary directories
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	mediaDir := filepath.Join(tempDir, "media")
+	cacheDir := filepath.Join(tempDir, "cache")
+
+	for _, d := range []string{mediaDir, cacheDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", d, err)
+		}
+	}
+
+	// Create a fake video file that won't transcode natively
+	testVideoPath := filepath.Join(mediaDir, "needs-transcode.flv")
+	if err := os.WriteFile(testVideoPath, []byte("fake flv data"), 0o644); err != nil {
+		t.Fatalf("failed to create test video: %v", err)
+	}
+
+	// Mock ffprobe to report an incompatible codec so NeedsTranscode=true
+	mockFFProbe := filepath.Join(tempDir, "ffprobe")
+	const ffprobeScript = `#!/bin/bash
+cat << 'EOF'
+{
+  "streams": [{"codec_name": "vp6f", "width": 640, "height": 480}],
+  "format": {"duration": "10.0"}
+}
+EOF
+`
+	if err := os.WriteFile(mockFFProbe, []byte(ffprobeScript), 0o755); err != nil {
+		t.Fatalf("failed to create mock ffprobe: %v", err)
+	}
+
+	// Mock ffmpeg that records invocations — it should NOT be called for HEAD
+	mockFFmpeg := filepath.Join(tempDir, "ffmpeg")
+	ffmpegMarker := filepath.Join(tempDir, "ffmpeg_called")
+	ffmpegScript := "#!/bin/bash\ntouch " + ffmpegMarker + "\nexit 1\n"
+	if err := os.WriteFile(mockFFmpeg, []byte(ffmpegScript), 0o755); err != nil {
+		t.Fatalf("failed to create mock ffmpeg: %v", err)
+	}
+
+	// Prepend tempDir to PATH so our mocks are found first
+	oldPath := os.Getenv("PATH")
+	t.Cleanup(func() { _ = os.Setenv("PATH", oldPath) })
+	_ = os.Setenv("PATH", tempDir+":"+oldPath)
+
+	// Set up real DB / handlers with transcoding enabled
+	dbOpts := &database.Options{MmapDisabled: false}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
+	if err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("failed to close database: %v", err)
+		}
+	})
+
+	idx := indexer.New(db, mediaDir, 0)
+	trans := transcoder.New(cacheDir, "", true, "none")
+	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
+	config := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
+	h := New(db, idx, trans, thumbGen, config)
+
+	// Issue a HEAD request
+	req := httptest.NewRequest(http.MethodHead, "/api/stream/needs-transcode.flv", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": "needs-transcode.flv"})
+	w := httptest.NewRecorder()
+
+	h.StreamVideo(w, req)
+
+	// Must return 200 OK — not 500 from a failed transcode attempt
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200 for HEAD+transcode, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// HEAD response must carry Content-Type but no body
+	if ct := w.Header().Get("Content-Type"); ct == "" {
+		t.Error("HEAD response missing Content-Type header")
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("HEAD response must have no body, got %d bytes", w.Body.Len())
+	}
+
+	// ffmpeg must NOT have been invoked
+	if _, err := os.Stat(ffmpegMarker); err == nil {
+		t.Error("ffmpeg was invoked for a HEAD request — transcoding should be skipped")
+	}
+}
+
 // TestGetStreamInfoSuccessIntegration tests successful stream info retrieval
 func TestGetStreamInfoSuccessIntegration(t *testing.T) {
 	if testing.Short() {
