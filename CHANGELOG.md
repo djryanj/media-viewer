@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.0] - 02-24-2026
 
+
+### Changed
+
+- build(deps): bump renovatebot/github-action from 46.1.1 to 46.1.2 ([#343](https://github.com/djryanj/media-viewer/pull/343))
 ### Added
 
 - test: added basic playwright tests. Not all working yet. [#289](https://github.com/djryanj/media-viewer/issues/289)
