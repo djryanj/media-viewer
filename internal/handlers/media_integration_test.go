@@ -1,3 +1,4 @@
+// media_integration_test.go
 package handlers
 
 import (
@@ -451,6 +452,7 @@ func TestGetFileInvalidPathIntegration(t *testing.T) {
 	}{
 		{"path traversal", "../../../etc/passwd"},
 		{"absolute path", "/etc/passwd"},
+		{"encoded path traversal", "../../../etc/passwd"},
 	}
 
 	for _, tt := range tests {
@@ -589,7 +591,10 @@ func TestGetFileDownloadWithSpecialCharactersIntegration(t *testing.T) {
 			testContent := "test content"
 			addTestMediaFile(t, h, tt.filename, database.FileTypeImage, testContent)
 
-			// URL encode the filename for the request path
+			// In production, gorilla/mux decodes the URL path before populating
+			// vars. So mux.Vars(r)["path"] contains the decoded filename, not
+			// the percent-encoded form. We simulate that here by passing the
+			// raw filename directly.
 			encodedFilename := url.PathEscape(tt.filename)
 			req := httptest.NewRequest(http.MethodGet, "/api/file/"+encodedFilename+"?download=true", http.NoBody)
 			req = mux.SetURLVars(req, map[string]string{"path": tt.filename})
@@ -774,6 +779,7 @@ func TestStreamVideoInvalidPathIntegration(t *testing.T) {
 	}{
 		{"path traversal", "../../../etc/passwd"},
 		{"absolute path", "/etc/passwd"},
+		{"encoded path traversal", "../../../etc/passwd"},
 	}
 
 	for _, tt := range tests {
@@ -1288,7 +1294,6 @@ func TestListFilesFilterWithFoldersIntegration(t *testing.T) {
 	}
 }
 
-// TestGetMediaFilesSortingIntegration tests sorting of media files
 // TestGetMediaFilesSortingIntegration tests sorting of media files
 func TestGetMediaFilesSortingIntegration(t *testing.T) {
 	if testing.Short() {
@@ -2088,6 +2093,7 @@ func TestGetStreamInfoSuccessIntegration(t *testing.T) {
 	addExistingFileToDatabase(t, h, "info.mp4", database.FileTypeVideo)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/stream-info?path=info.mp4", http.NoBody)
+	req = mux.SetURLVars(req, map[string]string{"path": "info.mp4"})
 	w := httptest.NewRecorder()
 
 	h.GetStreamInfo(w, req)
@@ -2147,6 +2153,7 @@ func TestInvalidateThumbnailSuccessIntegration(t *testing.T) {
 
 	// Now invalidate the thumbnail
 	req2 := httptest.NewRequest(http.MethodPost, "/api/thumbnail/invalidate?path=invalidate.png", http.NoBody)
+	req2 = mux.SetURLVars(req2, map[string]string{"path": "invalidate.png"})
 	w2 := httptest.NewRecorder()
 
 	h.InvalidateThumbnail(w2, req2)
@@ -2752,7 +2759,7 @@ exit 187
 
 	// Create real database
 	dbOpts := &database.Options{
-		MmapDisabled: false, // Set to true if you want to disable mmap
+		MmapDisabled: false,
 	}
 	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
@@ -2821,9 +2828,6 @@ func TestStreamVideo_CorruptedVideoErrorIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-
-	// This test simulates the exact error from the issue:
-	// [libx264 @ 0x7f180d406040] height not divisible by 2 (648x459)
 
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
@@ -2901,7 +2905,7 @@ exit 187
 
 	// Create dependencies
 	dbOpts := &database.Options{
-		MmapDisabled: false, // Set to true if you want to disable mmap
+		MmapDisabled: false,
 	}
 	db, _, err := database.New(context.Background(), dbPath, dbOpts)
 	if err != nil {
@@ -2942,9 +2946,6 @@ exit 187
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("Expected status 500 for incompatible video, got %d", resp.StatusCode)
 	}
-
-	// Verify response is timely (not waiting for 5 minute timeout)
-	// The test itself completing quickly proves this
 
 	body := w.Body.String()
 	t.Logf("Response body: %s", body)
@@ -3186,8 +3187,7 @@ func TestGetMediaFilesETagStableForSameState(t *testing.T) {
 	}
 }
 
-// addTestTag creates a tag and returns its ID. Uses a transaction for direct SQL insert
-// since tag management methods may not be available on the Database type.
+// addTestTag creates a tag and returns its ID.
 func addTestTag(t *testing.T, h *Handlers, name string) int64 {
 	t.Helper()
 
@@ -3203,7 +3203,6 @@ func addTestTag(t *testing.T, h *Handlers, name string) int64 {
 		if rbErr := batch.Tx().Rollback(); rbErr != nil {
 			t.Errorf("rollback failed: %v", rbErr)
 		}
-		// Unlock the mutex that BeginBatch locked
 		h.db.EndBatch(batch, err)
 		t.Fatalf("failed to insert tag: %v", err)
 	}
@@ -3253,10 +3252,8 @@ func TestListFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
-	// Add test file
 	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo content")
 
-	// First request — capture ETag
 	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 	w1 := httptest.NewRecorder()
 	h.ListFiles(w1, req1)
@@ -3270,11 +3267,9 @@ func TestListFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
 		t.Fatal("expected ETag header on first response")
 	}
 
-	// Add a tag to the file — no file metadata changes
 	tagID := addTestTag(t, h, "landscape")
 	addTagToFile(t, h, "photo.jpg", tagID)
 
-	// Second request — ETag must differ
 	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 	w2 := httptest.NewRecorder()
 	h.ListFiles(w2, req2)
@@ -3292,7 +3287,6 @@ func TestListFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
 		t.Errorf("ETag did not change after adding tag: both are %s", etag1)
 	}
 
-	// Verify the old ETag now returns 200, not 304
 	req3 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 	req3.Header.Set("If-None-Match", etag1)
 	w3 := httptest.NewRecorder()
@@ -3303,8 +3297,7 @@ func TestListFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
 	}
 }
 
-// TestListFilesETagStableWhenTagsUnchangedIntegration verifies that 304 still
-// works correctly — the ETag fix must not break conditional request support.
+// TestListFilesETagStableWhenTagsUnchangedIntegration verifies that 304 still works correctly.
 func TestListFilesETagStableWhenTagsUnchangedIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -3312,12 +3305,10 @@ func TestListFilesETagStableWhenTagsUnchangedIntegration(t *testing.T) {
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
-	// Add file with a tag already present
 	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo content")
 	tagID := addTestTag(t, h, "nature")
 	addTagToFile(t, h, "photo.jpg", tagID)
 
-	// First request
 	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 	w1 := httptest.NewRecorder()
 	h.ListFiles(w1, req1)
@@ -3327,7 +3318,6 @@ func TestListFilesETagStableWhenTagsUnchangedIntegration(t *testing.T) {
 		t.Fatal("expected ETag header")
 	}
 
-	// Second request with If-None-Match — no changes, expect 304
 	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 	req2.Header.Set("If-None-Match", etag1)
 	w2 := httptest.NewRecorder()
@@ -3347,11 +3337,9 @@ func TestGetMediaFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
-	// Add test files
 	addTestMediaFile(t, h, "image1.jpg", database.FileTypeImage, "image1")
 	addTestMediaFile(t, h, "image2.jpg", database.FileTypeImage, "image2")
 
-	// First request — capture ETag
 	req1 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
 	w1 := httptest.NewRecorder()
 	h.GetMediaFiles(w1, req1)
@@ -3365,11 +3353,9 @@ func TestGetMediaFilesETagChangesWhenTagsChangeIntegration(t *testing.T) {
 		t.Fatal("expected ETag header on first response")
 	}
 
-	// Add a tag — no file metadata changes
 	tagID := addTestTag(t, h, "vacation")
 	addTagToFile(t, h, "image1.jpg", tagID)
 
-	// Second request — ETag must differ
 	req2 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
 	w2 := httptest.NewRecorder()
 	h.GetMediaFiles(w2, req2)
@@ -3397,12 +3383,10 @@ func TestGetMediaFilesETagChangesWhenTagRemovedIntegration(t *testing.T) {
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
-	// Add file with tag
 	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo")
 	tagID := addTestTag(t, h, "portrait")
 	addTagToFile(t, h, "photo.jpg", tagID)
 
-	// First request — capture ETag with tag present
 	req1 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
 	w1 := httptest.NewRecorder()
 	h.GetMediaFiles(w1, req1)
@@ -3412,7 +3396,6 @@ func TestGetMediaFilesETagChangesWhenTagRemovedIntegration(t *testing.T) {
 		t.Fatal("expected ETag header")
 	}
 
-	// Remove the tag
 	ctx := context.Background()
 	batch, err := h.db.BeginBatch(ctx)
 	if err != nil {
@@ -3429,7 +3412,6 @@ func TestGetMediaFilesETagChangesWhenTagRemovedIntegration(t *testing.T) {
 		t.Fatalf("failed to commit tag removal: %v", err)
 	}
 
-	// Second request — ETag must differ
 	req2 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
 	w2 := httptest.NewRecorder()
 	h.GetMediaFiles(w2, req2)
@@ -3449,12 +3431,10 @@ func TestListFilesETagChangesWithMultipleTagsIntegration(t *testing.T) {
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
-	// Add file with one tag
 	addTestMediaFile(t, h, "photo.jpg", database.FileTypeImage, "photo")
 	tag1ID := addTestTag(t, h, "landscape")
 	addTagToFile(t, h, "photo.jpg", tag1ID)
 
-	// Capture ETag with one tag
 	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 	w1 := httptest.NewRecorder()
 	h.ListFiles(w1, req1)
@@ -3464,11 +3444,9 @@ func TestListFilesETagChangesWithMultipleTagsIntegration(t *testing.T) {
 		t.Fatal("expected ETag header")
 	}
 
-	// Add a second tag
 	tag2ID := addTestTag(t, h, "sunset")
 	addTagToFile(t, h, "photo.jpg", tag2ID)
 
-	// ETag must differ
 	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 	w2 := httptest.NewRecorder()
 	h.ListFiles(w2, req2)
@@ -3476,5 +3454,91 @@ func TestListFilesETagChangesWithMultipleTagsIntegration(t *testing.T) {
 	etag2 := w2.Header().Get("ETag")
 	if etag1 == etag2 {
 		t.Errorf("ETag did not change after adding second tag: both are %s", etag1)
+	}
+}
+
+// TestPathForFS_LiteralPercentPlusSign verifies that pathForFS handles
+// filenames with literal %2B on disk, where mux decoded %2B to +.
+// This was the specific bug: url.PathEscape considers + safe in paths,
+// so the original reEncodePath did not re-encode it.
+func TestPathForFS_LiteralPercentPlusSign(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	mediaDir := t.TempDir()
+
+	literalName := "207803-Beached%2BWhales.jpg"
+	if err := os.WriteFile(filepath.Join(mediaDir, literalName), []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Mux decoded %2B → +
+	muxDecoded := "207803-Beached+Whales.jpg"
+
+	result := pathForFS(mediaDir, muxDecoded)
+	expected := filepath.Join(mediaDir, literalName)
+
+	if result != expected {
+		t.Errorf("REGRESSION: pathForFS did not find file with literal %%2B in name.\n"+
+			"  mux-decoded input: %q\n"+
+			"  expected path:     %q\n"+
+			"  got:               %q", muxDecoded, expected, result)
+	}
+}
+
+// TestPathForFS_LiteralPercentApostrophe verifies that pathForFS handles
+// filenames with literal %27 on disk, where mux decoded %27 to '.
+func TestPathForFS_LiteralPercentApostrophe(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	mediaDir := t.TempDir()
+
+	literalName := "Big_N%27_Tall_1.jpg"
+	if err := os.WriteFile(filepath.Join(mediaDir, literalName), []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Mux decoded %27 → '
+	muxDecoded := "Big_N'_Tall_1.jpg"
+
+	result := pathForFS(mediaDir, muxDecoded)
+	expected := filepath.Join(mediaDir, literalName)
+
+	if result != expected {
+		t.Errorf("REGRESSION: pathForFS did not find file with literal %%27 in name.\n"+
+			"  mux-decoded input: %q\n"+
+			"  expected path:     %q\n"+
+			"  got:               %q", muxDecoded, expected, result)
+	}
+}
+
+// TestPathForFS_LiteralPercentAsterisk verifies that pathForFS handles
+// filenames with literal %2A on disk, where mux decoded %2A to *.
+func TestPathForFS_LiteralPercentAsterisk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	mediaDir := t.TempDir()
+
+	literalName := "star%2Arating.jpg"
+	if err := os.WriteFile(filepath.Join(mediaDir, literalName), []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Mux decoded %2A → *
+	muxDecoded := "star*rating.jpg"
+
+	result := pathForFS(mediaDir, muxDecoded)
+	expected := filepath.Join(mediaDir, literalName)
+
+	if result != expected {
+		t.Errorf("REGRESSION: pathForFS did not find file with literal %%2A in name.\n"+
+			"  mux-decoded input: %q\n"+
+			"  expected path:     %q\n"+
+			"  got:               %q", muxDecoded, expected, result)
 	}
 }
