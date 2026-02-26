@@ -326,6 +326,11 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/playlist/{name}", h.GetPlaylist).Methods("GET")
 	api.HandleFunc("/stream/{path:.*}", h.StreamVideo).Methods("GET", "HEAD")
 	api.HandleFunc("/stream-info/{path:.*}", h.GetStreamInfo).Methods("GET")
+
+	// HLS streaming routes (for videos requiring transcoding; served via hls.js on the frontend)
+	api.HandleFunc("/hls/session", h.CreateHLSSession).Methods("POST")
+	api.HandleFunc("/hls/{sessionId:[0-9a-f]+}/playlist.m3u8", h.GetHLSPlaylist).Methods("GET")
+	api.HandleFunc("/hls/{sessionId:[0-9a-f]+}/seg{index:[0-9]+}.ts", h.GetHLSSegment).Methods("GET")
 	api.HandleFunc("/search", h.Search).Methods("GET")
 	api.HandleFunc("/search/suggestions", h.SearchSuggestions).Methods("GET")
 	api.HandleFunc("/stats", h.GetStats).Methods("GET")
