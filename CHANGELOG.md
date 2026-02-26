@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - chore(deps): update dependency eslint-plugin-jsdoc to v62 ([#351](https://github.com/djryanj/media-viewer/pull/351))
 - chore(deps): update dependency eslint-config-prettier to v10 ([#350](https://github.com/djryanj/media-viewer/pull/350))
 - chore(deps): update all non-major dependencies ([#349](https://github.com/djryanj/media-viewer/pull/349))
+- chore(deps): update ghcr.io/djryanj/media-viewer docker tag to v0.14.2 ([#360](https://github.com/djryanj/media-viewer/pull/360))
+- chore(deps): pin dependencies ([#359](https://github.com/djryanj/media-viewer/pull/359))
+- chore(deps): update node.js to v24.14.0# ([#361](https://github.com/djryanj/media-viewer/pull/361))
+- chore(deps): update actions/cache action to v5 ([#362](https://github.com/djryanj/media-viewer/pull/362))
+- chore(deps): update dependency stylelint to v17 ([#366](https://github.com/djryanj/media-viewer/pull/366)) #366
+- chore(deps): update dependency stylelint-config-standard to v40 ([#363](https://github.com/djryanj/media-viewer/pull/363)) #363
+- chore(deps): update eslint monorepo to v10 (major) ([#364](https://github.com/djryanj/media-viewer/pull/364))
+- chore(deps): update vitest monorepo to v4 (major) ([#365](https://github.com/djryanj/media-viewer/pull/365))
 
 ## [0.14.1] - 02-25-2026
 
