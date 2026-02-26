@@ -154,8 +154,8 @@ const Tags = {
         }
 
         if (typeof TagClipboard !== 'undefined') {
-            let sourcePath = null;
-            let sourceName = null;
+            let sourcePath;
+            let sourceName;
 
             if (this.isBulkMode && this.bulkPaths.length > 1) {
                 sourceName = `${this.bulkPaths.length} items`;
