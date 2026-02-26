@@ -473,6 +473,10 @@ func TestHTTPRouteStructure(t *testing.T) {
 			category:    "Cache routes",
 			description: "Should have cache management endpoints",
 		},
+		{
+			category:    "HLS routes",
+			description: "Should have POST /api/hls/session, GET /api/hls/{id}/playlist.m3u8, GET /api/hls/{id}/seg{n}.ts",
+		},
 	}
 
 	for _, tt := range tests {
