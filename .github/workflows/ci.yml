@@ -26,12 +26,12 @@ jobs:
             docker-related: ${{ steps.filter.outputs.docker-related }}
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
               with:
                   fetch-depth: 0
 
             - name: Check for changes
-              uses: dorny/paths-filter@v3
+              uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
               id: filter
               with:
                   filters: |
@@ -74,11 +74,11 @@ jobs:
             needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Check if sample media cache exists
               id: cache-check
-              uses: actions/cache/restore@v5
+              uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -98,7 +98,7 @@ jobs:
 
             - name: Save sample media cache
               if: steps.cache-check.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v5
+              uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -113,7 +113,7 @@ jobs:
             needs.changes.outputs.go == 'false'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Install libvips
               run: |
@@ -121,7 +121,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@v6
+              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -131,7 +131,7 @@ jobs:
                   make build
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -148,20 +148,20 @@ jobs:
         if: needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Install libvips
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev
             - name: Set up Go
-              uses: actions/setup-go@v6
+              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
               with:
                   go-version-file: go.mod
                   cache: true
 
             - name: Run golangci-lint
-              uses: golangci/golangci-lint-action@v9
+              uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
               with:
                   version: v2.10.1
                   args: --config=.golangci.yml --timeout=5m
@@ -173,12 +173,12 @@ jobs:
         if: needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Set up Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
               with:
-                  node-version: '24.13.1'
+                  node-version: '24.14.0'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
@@ -213,7 +213,7 @@ jobs:
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Install libvips
               run: |
@@ -221,7 +221,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@v6
+              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -235,7 +235,7 @@ jobs:
                   make resetpw
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -251,14 +251,14 @@ jobs:
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Install libvips
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev
             - name: Set up Go
-              uses: actions/setup-go@v6
+              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -276,7 +276,7 @@ jobs:
                   echo '```' >> $GITHUB_STEP_SUMMARY
             - name: Upload test results
               if: always()
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: unit-test-results
                   path: |
@@ -294,12 +294,12 @@ jobs:
             needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Set up Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
               with:
-                  node-version: '24.13.1'
+                  node-version: '24.14.0'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
@@ -325,7 +325,7 @@ jobs:
                   fi
             - name: Upload frontend unit coverage
               if: always()
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: frontend-unit-test-results
                   path: static/coverage/
@@ -345,14 +345,14 @@ jobs:
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Install system dependencies
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg
             - name: Set up Go
-              uses: actions/setup-go@v6
+              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -377,7 +377,7 @@ jobs:
                   echo '```' >> $GITHUB_STEP_SUMMARY
             - name: Upload coverage
               if: always()
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: integration-test-results
                   path: |
@@ -393,14 +393,14 @@ jobs:
             needs.changes.outputs.go == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Install libvips and ffmpeg
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg
             - name: Set up Go
-              uses: actions/setup-go@v6
+              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -425,16 +425,16 @@ jobs:
             needs.changes.outputs.frontend == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Install system dependencies
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg
             - name: Set up Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
               with:
-                  node-version: '24.13.1'
+                  node-version: '24.14.0'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
@@ -443,7 +443,7 @@ jobs:
               run: npm ci
 
             - name: Download backend binary
-              uses: actions/download-artifact@v7
+              uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
               with:
                   name: media-viewer-binary
                   path: .
@@ -452,7 +452,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@v5
+              uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -521,7 +521,7 @@ jobs:
                   fi
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: backend-server-logs
                   path: /tmp/backend-logs/
@@ -529,7 +529,7 @@ jobs:
 
             - name: Upload frontend integration results
               if: always()
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: frontend-integration-test-results
                   path: |
@@ -537,7 +537,7 @@ jobs:
                       static/e2e/test-results/
             - name: Upload Playwright report
               if: always()
-              uses: actions/upload-artifact@v6
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
                   name: playwright-report
                   path: static/e2e/playwright-report/
