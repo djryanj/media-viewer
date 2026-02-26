@@ -412,6 +412,21 @@ func (idx *Indexer) Index() error {
 	}()
 	defer close(heartbeatDone)
 
+	// Disable FTS triggers for the duration of the index run.
+	// Each upsert normally fires an AFTER UPDATE trigger that deletes + re-inserts
+	// the row into files_fts (trigram tokenisation).  For a 40 k-file library this
+	// produces ~80 000 FTS write operations that bloat the SQLite WAL and make
+	// concurrent read queries crawl even in WAL mode.  By dropping the triggers now
+	// and doing a single bulk rebuild at the end we reduce write amplification from
+	// O(n) to O(1) for FTS.
+	bulkCtx := context.Background()
+	if err := idx.db.BulkIndexBegin(bulkCtx); err != nil {
+		// Non-fatal: log and continue.  Indexing will still work, just slower.
+		logging.Warn("Failed to disable FTS triggers for bulk index — FTS overhead not reduced: %v", err)
+	} else {
+		logging.Debug("FTS triggers disabled for bulk index run")
+	}
+
 	indexTime := time.Now()
 
 	var result indexResult
@@ -425,6 +440,10 @@ func (idx *Indexer) Index() error {
 
 	if err != nil {
 		metrics.IndexerErrors.Inc()
+		// Restore FTS triggers even on walk failure so incremental changes still land.
+		if endErr := idx.db.BulkIndexEnd(bulkCtx); endErr != nil {
+			logging.Error("Failed to restore FTS after walk error: %v", endErr)
+		}
 		return err
 	}
 
@@ -432,6 +451,15 @@ func (idx *Indexer) Index() error {
 	if err := idx.cleanupMissingFiles(indexTime); err != nil {
 		logging.Error("Error cleaning up missing files: %v", err)
 		metrics.IndexerErrors.Inc()
+	}
+
+	// Rebuild FTS index in one pass and restore per-row triggers.
+	logging.Info("Rebuilding FTS index after bulk insert...")
+	if err := idx.db.BulkIndexEnd(bulkCtx); err != nil {
+		logging.Error("FTS bulk rebuild/trigger restore failed: %v", err)
+		// Non-fatal: search will be degraded until next index run.
+	} else {
+		logging.Debug("FTS index rebuilt and triggers restored")
 	}
 
 	idx.finalizeIndex(startTime, result.totalFiles, result.totalFolders)

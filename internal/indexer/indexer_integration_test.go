@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1156,5 +1157,232 @@ func TestParallelWalkerVeryDeepNestingIntegration(t *testing.T) {
 
 	if !found {
 		t.Error("Deep file was not found")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BulkIndex / FTS regression tests
+// ---------------------------------------------------------------------------
+
+// TestIndexerFTSSearchableAfterIndex verifies that after a complete Index() run
+// the FTS table is fully populated and db.Search() returns results.
+// This exercises the BulkIndexBegin → batch upserts → BulkIndexEnd path,
+// including the one-pass FTS rebuild that replaced the per-row trigger updates.
+func TestIndexerFTSSearchableAfterIndex(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	files := map[string]string{
+		"nature/sunset.jpg":   "img",
+		"nature/mountain.png": "img",
+		"clips/adventure.mp4": "vid",
+	}
+	for rel, content := range files {
+		full := filepath.Join(tempDir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	db, _, err := database.New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("database.New: %v", err)
+	}
+	defer db.Close()
+
+	idx := New(db, tempDir, time.Hour)
+	if err := idx.Index(); err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// FTS must find each filename; trigram tokenisation makes substring matches work.
+	for _, query := range []string{"sunset", "mountain", "adventure"} {
+		results, err := db.Search(ctx, database.SearchOptions{Query: query, Page: 1, PageSize: 10})
+		if err != nil {
+			t.Fatalf("Search(%q): %v", query, err)
+		}
+		if len(results.Items) == 0 {
+			t.Errorf("Search(%q) returned no results — FTS rebuild may not have run", query)
+		}
+	}
+}
+
+// TestIndexerFTSTriggersRestoredAfterIndex verifies that the per-row FTS insert
+// trigger (files_ai) is back after Index() completes.  The test inserts a file
+// directly via BeginBatch/UpsertFile/EndBatch *after* the index run and then
+// confirms Search() returns it — proving the incremental trigger is active.
+func TestIndexerFTSTriggersRestoredAfterIndex(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	// One seed file so the initial index is non-trivial.
+	seed := filepath.Join(tempDir, "seed.jpg")
+	if err := os.WriteFile(seed, []byte("seed"), 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+
+	db, _, err := database.New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("database.New: %v", err)
+	}
+	defer db.Close()
+
+	idx := New(db, tempDir, time.Hour)
+	if err := idx.Index(); err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Insert a new file directly — bypassing the indexer — so we exercise only
+	// the per-row trigger (not a full FTS rebuild).
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	if err := batch.UpsertFile(ctx, &database.MediaFile{
+		Name:       "uniquefilename.jpg",
+		Path:       "uniquefilename.jpg",
+		ParentPath: "",
+		Type:       database.FileTypeImage,
+		Size:       1,
+		ModTime:    time.Now(),
+	}); err != nil {
+		t.Fatalf("UpsertFile: %v", err)
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	// If the INSERT trigger was restored, the file must appear in FTS immediately.
+	results, err := db.Search(ctx, database.SearchOptions{Query: "uniquefilename", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results.Items) == 0 {
+		t.Error("Search('uniquefilename') returned nothing — FTS insert trigger was not restored after Index()")
+	}
+}
+
+// TestIndexerFTSTriggersRestoredOnIndexError verifies that even when Index()
+// fails early (non-existent media directory), BulkIndexEnd is still called so
+// the FTS triggers are left in a valid state for subsequent operations.
+func TestIndexerFTSTriggersRestoredOnIndexError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Use a real DB but point the indexer at a non-existent directory.
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, _, err := database.New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("database.New: %v", err)
+	}
+	defer db.Close()
+
+	idx := New(db, "/nonexistent/path/that/does/not/exist", time.Hour)
+	// Index will fail because the media directory doesn't exist.
+	indexErr := idx.Index()
+	if indexErr == nil {
+		t.Skip("Index() did not return an error for a non-existent directory; skipping trigger-restore check")
+	}
+
+	ctx := context.Background()
+
+	// After the error path, triggers must be restored so incremental inserts
+	// still land in FTS.  Insert a file and confirm it's searchable.
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch after failed index: %v", err)
+	}
+	if err := batch.UpsertFile(ctx, &database.MediaFile{
+		Name: "aftererror.jpg", Path: "aftererror.jpg", ParentPath: "",
+		Type: database.FileTypeImage, Size: 1, ModTime: time.Now(),
+	}); err != nil {
+		t.Fatalf("UpsertFile: %v", err)
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	results, err := db.Search(ctx, database.SearchOptions{Query: "aftererror", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search after failed index: %v", err)
+	}
+	if len(results.Items) == 0 {
+		t.Error("Search('aftererror') found nothing — FTS triggers were not restored after Index() error")
+	}
+}
+
+// TestIndexerFTSHandlesRepeatedIndexRuns verifies that running Index() multiple
+// times (as the periodic re-index does) does not corrupt FTS.  Each run drops
+// and restores triggers; the rebuild must be correct after every cycle.
+func TestIndexerFTSHandlesRepeatedIndexRuns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	// Create a small initial set of files.
+	for i := 0; i < 3; i++ {
+		p := filepath.Join(tempDir, "photos", fmt.Sprintf("img%d.jpg", i))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte("data"), 0o644)
+	}
+
+	db, _, err := database.New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("database.New: %v", err)
+	}
+	defer db.Close()
+
+	idx := New(db, tempDir, time.Hour)
+
+	// Three consecutive full index runs must all succeed.
+	for run := 1; run <= 3; run++ {
+		if err := idx.Index(); err != nil {
+			t.Fatalf("Index() run %d: %v", run, err)
+		}
+	}
+
+	ctx := context.Background()
+	// FTS must still be queryable after 3 runs.
+	results, err := db.Search(ctx, database.SearchOptions{Query: "img", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search after 3 runs: %v", err)
+	}
+	if len(results.Items) == 0 {
+		t.Error("FTS returned no results after repeated Index() runs")
+	}
+
+	// Incremental insert must also still work (triggers are live).
+	batch, _ := db.BeginBatch(ctx)
+	_ = batch.UpsertFile(ctx, &database.MediaFile{
+		Name: "newfile.jpg", Path: "newfile.jpg", ParentPath: "",
+		Type: database.FileTypeImage, Size: 1, ModTime: time.Now(),
+	})
+	_ = db.EndBatch(batch, nil)
+
+	results, err = db.Search(ctx, database.SearchOptions{Query: "newfile", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search(newfile): %v", err)
+	}
+	if len(results.Items) == 0 {
+		t.Error("FTS insert trigger not active after repeated Index() runs")
 	}
 }

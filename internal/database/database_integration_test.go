@@ -2234,6 +2234,308 @@ func TestLogSQLiteConfig(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// =============================================================================
+// BulkIndex and busy_timeout tests
+// =============================================================================
+
+// ftsTriggersPresent returns the names of the three FTS maintenance triggers
+// that are currently defined on the files table.
+func ftsTriggersPresent(t *testing.T, db *Database) map[string]bool {
+	t.Helper()
+	const q = `
+		SELECT name FROM sqlite_master
+		WHERE type = 'trigger'
+		  AND tbl_name = 'files'
+		  AND name IN ('files_ai', 'files_au', 'files_ad')
+	`
+	rows, err := db.reader.QueryContext(context.Background(), q)
+	if err != nil {
+		t.Fatalf("ftsTriggersPresent query failed: %v", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("ftsTriggersPresent scan: %v", err)
+		}
+		result[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("ftsTriggersPresent rows: %v", err)
+	}
+	return result
+}
+
+// TestBulkIndexBeginDropsFTSTriggers verifies that BulkIndexBegin removes
+// all three FTS maintenance triggers so that per-row FTS updates are skipped
+// during batch upserts.
+func TestBulkIndexBeginDropsFTSTriggers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// Triggers should be present after schema creation.
+	triggers := ftsTriggersPresent(t, db)
+	for _, name := range []string{"files_ai", "files_au", "files_ad"} {
+		if !triggers[name] {
+			t.Errorf("expected trigger %s to exist before BulkIndexBegin", name)
+		}
+	}
+
+	// Drop them.
+	if err := db.BulkIndexBegin(context.Background()); err != nil {
+		t.Fatalf("BulkIndexBegin failed: %v", err)
+	}
+	defer db.BulkIndexEnd(context.Background()) //nolint:errcheck // cleanup
+
+	// All three must be absent.
+	triggers = ftsTriggersPresent(t, db)
+	for _, name := range []string{"files_ai", "files_au", "files_ad"} {
+		if triggers[name] {
+			t.Errorf("expected trigger %s to be absent after BulkIndexBegin, but it is still present", name)
+		}
+	}
+}
+
+// TestBulkIndexEndRestoresTriggersAndRebuilds verifies that BulkIndexEnd
+// recreates the three FTS triggers and that the FTS table is queryable after
+// the rebuild.
+func TestBulkIndexEndRestoresTriggersAndRebuilds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// Insert a file before disabling triggers so FTS is not empty.
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	_ = batch.UpsertFile(ctx, &MediaFile{
+		Name: "sunset.jpg", Path: "bulk/sunset.jpg", ParentPath: "bulk",
+		Type: FileTypeImage, Size: 512, ModTime: time.Now(),
+	})
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	if err := db.BulkIndexBegin(ctx); err != nil {
+		t.Fatalf("BulkIndexBegin: %v", err)
+	}
+
+	// Insert another file while triggers are absent (FTS won't auto-update).
+	batch, err = db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch (bulk): %v", err)
+	}
+	_ = batch.UpsertFile(ctx, &MediaFile{
+		Name: "mountain.jpg", Path: "bulk/mountain.jpg", ParentPath: "bulk",
+		Type: FileTypeImage, Size: 1024, ModTime: time.Now(),
+	})
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch (bulk): %v", err)
+	}
+
+	// Restore — triggers must come back and FTS must include both files.
+	if err := db.BulkIndexEnd(ctx); err != nil {
+		t.Fatalf("BulkIndexEnd: %v", err)
+	}
+
+	// All three triggers must be present again.
+	triggers := ftsTriggersPresent(t, db)
+	for _, name := range []string{"files_ai", "files_au", "files_ad"} {
+		if !triggers[name] {
+			t.Errorf("expected trigger %s to be restored by BulkIndexEnd", name)
+		}
+	}
+
+	// FTS rebuild should have picked up both files.
+	results, err := db.Search(ctx, SearchOptions{Query: "sunset", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search(sunset): %v", err)
+	}
+	if len(results.Items) == 0 {
+		t.Error("expected FTS to find 'sunset' after BulkIndexEnd rebuild")
+	}
+
+	results, err = db.Search(ctx, SearchOptions{Query: "mountain", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search(mountain): %v", err)
+	}
+	if len(results.Items) == 0 {
+		t.Error("expected FTS to find 'mountain' after BulkIndexEnd rebuild")
+	}
+}
+
+// TestBulkIndexBeginIsIdempotent verifies that calling BulkIndexBegin twice
+// (i.e. when triggers are already absent) does not return an error — the DROP
+// TRIGGER IF EXISTS statements are no-ops the second time.
+func TestBulkIndexBeginIsIdempotent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	if err := db.BulkIndexBegin(ctx); err != nil {
+		t.Fatalf("first BulkIndexBegin: %v", err)
+	}
+	defer db.BulkIndexEnd(ctx) //nolint:errcheck // cleanup
+
+	// Second call must not error.
+	if err := db.BulkIndexBegin(ctx); err != nil {
+		t.Errorf("second BulkIndexBegin (idempotent) returned error: %v", err)
+	}
+}
+
+// TestBulkIndexEndRestoresTriggersIsIdempotent verifies that calling
+// BulkIndexEnd without a preceding BulkIndexBegin (triggers already present)
+// is safe — CREATE TRIGGER IF NOT EXISTS is a no-op.
+func TestBulkIndexEndRestoresTriggersIsIdempotent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// Triggers are already present. BulkIndexEnd should not error.
+	if err := db.BulkIndexEnd(context.Background()); err != nil {
+		t.Errorf("BulkIndexEnd without prior BulkIndexBegin returned error: %v", err)
+	}
+
+	// Triggers must still be present.
+	triggers := ftsTriggersPresent(t, db)
+	for _, name := range []string{"files_ai", "files_au", "files_ad"} {
+		if !triggers[name] {
+			t.Errorf("trigger %s unexpectedly absent after no-op BulkIndexEnd", name)
+		}
+	}
+}
+
+// TestBulkIndexFTSNotUpdatedDuringBatch verifies the core optimisation:
+// while FTS triggers are disabled, inserting files does NOT update the FTS
+// index — so db.Search() returns no results for the inserted filenames until
+// BulkIndexEnd() performs the one-pass rebuild.
+//
+// NOTE: files_fts is an FTS5 external-content table (content='files'), so
+// SELECT COUNT(*) FROM files_fts proxies through to the underlying content
+// table and would show new rows even when triggers are disabled.  The correct
+// observable is whether the FTS *index* has been updated, which is what
+// db.Search() tests.
+func TestBulkIndexFTSNotUpdatedDuringBatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// Use names long enough for trigram tokenisation to produce tokens.
+	// "bulkbatch0" … "bulkbatch4" are each ≥ 3 chars so trigrams are generated.
+	names := make([]string, 5)
+	for i := range names {
+		names[i] = fmt.Sprintf("bulkbatch%d.jpg", i)
+	}
+
+	// Pre-condition: none of these names are in the FTS index yet.
+	for _, name := range names {
+		results, err := db.Search(ctx, SearchOptions{Query: name[:9], Page: 1, PageSize: 10}) // e.g. "bulkbatch"
+		if err != nil {
+			t.Fatalf("pre-check Search(%q): %v", name, err)
+		}
+		if len(results.Items) != 0 {
+			t.Fatalf("pre-check: expected 0 results for %q, got %d", name, len(results.Items))
+		}
+	}
+
+	if err := db.BulkIndexBegin(ctx); err != nil {
+		t.Fatalf("BulkIndexBegin: %v", err)
+	}
+
+	// Insert 5 files with triggers disabled.
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	for i, name := range names {
+		_ = batch.UpsertFile(ctx, &MediaFile{
+			Name:       name,
+			Path:       fmt.Sprintf("fts_test/%s", name),
+			ParentPath: "fts_test",
+			Type:       FileTypeImage,
+			Size:       int64(100 * (i + 1)),
+			ModTime:    time.Now(),
+		})
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	// FTS index must NOT have been updated — Search must return nothing.
+	// (The files exist in the `files` table but the FTS index wasn't touched
+	// because the triggers were disabled by BulkIndexBegin.)
+	results, err := db.Search(ctx, SearchOptions{Query: "bulkbatch", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search during bulk: %v", err)
+	}
+	if len(results.Items) != 0 {
+		t.Errorf("FTS index was updated during bulk (Search returned %d results, want 0): triggers were not disabled",
+			len(results.Items))
+	}
+
+	// After rebuild, Search must find all 5 files.
+	if err := db.BulkIndexEnd(ctx); err != nil {
+		t.Fatalf("BulkIndexEnd: %v", err)
+	}
+	results, err = db.Search(ctx, SearchOptions{Query: "bulkbatch", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search after BulkIndexEnd: %v", err)
+	}
+	if len(results.Items) != 5 {
+		t.Errorf("after BulkIndexEnd: Search returned %d results, want 5", len(results.Items))
+	}
+}
+
+// TestBusyTimeoutIs30000 verifies that every new connection receives
+// PRAGMA busy_timeout = 30000 via the ConnectHook, providing NFS tolerance.
+func TestBusyTimeoutIs30000(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		pool *sql.DB
+	}{
+		{"reader", db.reader},
+		{"writer", db.writer},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var v int
+			if err := tc.pool.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&v); err != nil {
+				t.Fatalf("PRAGMA busy_timeout on %s: %v", tc.name, err)
+			}
+			if v != 30000 {
+				t.Errorf("%s busy_timeout = %d, want 30000", tc.name, v)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Benchmarks
+// =============================================================================
+
 func BenchmarkConcurrentReads(b *testing.B) {
 	db, _ := setupTestDB(b)
 	defer db.Close()

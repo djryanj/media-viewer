@@ -34,7 +34,7 @@ func registerDriver(opts *Options) {
 					"PRAGMA synchronous=NORMAL",
 					"PRAGMA cache_size=10000",
 					"PRAGMA temp_store=MEMORY",
-					"PRAGMA busy_timeout=5000",
+					"PRAGMA busy_timeout=30000",
 				}
 				if mmapDisabled {
 					pragmas = append(pragmas, "PRAGMA mmap_size=0")
@@ -807,6 +807,75 @@ func (d *Database) RebuildFTS() error {
 	done(err)
 
 	return err
+}
+
+// BulkIndexBegin prepares the database for a bulk indexing operation.
+//
+// It drops the three FTS5 maintenance triggers (files_ai / files_au / files_ad)
+// so that per-row FTS updates are skipped during batch upserts. For a 40 k-file
+// library each upsert would otherwise fire an AFTER UPDATE trigger that deletes
+// + re-inserts into files_fts with trigram tokenisation — 80 000 FTS writes that
+// bloat the WAL and make concurrent reads crawl.
+//
+// Always pair with BulkIndexEnd, which rebuilds FTS from the source table in one
+// pass and restores the triggers.
+func (d *Database) BulkIndexBegin(ctx context.Context) error {
+	dropStmts := []string{
+		"DROP TRIGGER IF EXISTS files_ai",
+		"DROP TRIGGER IF EXISTS files_au",
+		"DROP TRIGGER IF EXISTS files_ad",
+	}
+	done := observeQuery("bulk_index_begin")
+	var firstErr error
+	for _, stmt := range dropStmts {
+		if _, err := d.writer.ExecContext(ctx, stmt); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("drop FTS trigger (%s): %w", stmt, err)
+		}
+	}
+	done(firstErr)
+	return firstErr
+}
+
+// BulkIndexEnd rebuilds the FTS index from the files table in a single pass and
+// restores the FTS maintenance triggers.  Must be called after BulkIndexBegin.
+func (d *Database) BulkIndexEnd(ctx context.Context) error {
+	// Give the rebuild a generous timeout — on a 40 k-file library it can take
+	// a few seconds, and on NFS-backed storage even longer.
+	rebuildCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	done := observeQuery("bulk_index_end_rebuild")
+	_, rebuildErr := d.writer.ExecContext(rebuildCtx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
+	done(rebuildErr)
+	if rebuildErr != nil {
+		logging.Error("FTS rebuild after bulk index failed: %v", rebuildErr)
+		// Still try to restore triggers so incremental updates work going forward.
+	}
+
+	// Recreate triggers one statement at a time (go-sqlite3 / database/sql do not
+	// reliably execute multi-statement strings via ExecContext).
+	triggerStmts := []string{
+		`CREATE TRIGGER IF NOT EXISTS files_ai AFTER INSERT ON files BEGIN
+			INSERT INTO files_fts(rowid, name, path) VALUES (new.id, new.name, new.path);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS files_ad AFTER DELETE ON files BEGIN
+			INSERT INTO files_fts(files_fts, rowid, name, path) VALUES('delete', old.id, old.name, old.path);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS files_au AFTER UPDATE ON files BEGIN
+			INSERT INTO files_fts(files_fts, rowid, name, path) VALUES('delete', old.id, old.name, old.path);
+			INSERT INTO files_fts(rowid, name, path) VALUES (new.id, new.name, new.path);
+		END`,
+	}
+	done2 := observeQuery("bulk_index_end_triggers")
+	var triggerErr error
+	for _, stmt := range triggerStmts {
+		if _, err := d.writer.ExecContext(ctx, stmt); err != nil && triggerErr == nil {
+			triggerErr = fmt.Errorf("restore FTS trigger: %w", err)
+		}
+	}
+	done2(triggerErr)
+
+	return errors.Join(rebuildErr, triggerErr)
 }
 
 // Vacuum optimizes the database.
