@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.14.2] - Unreleased
+
+### Changed
+
+- chore(deps): update dependency happy-dom to v20 ([#353](https://github.com/djryanj/media-viewer/pull/353))
+
 ## [0.14.1] - 02-25-2026
 
 ### Fixed
