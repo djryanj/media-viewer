@@ -76,9 +76,9 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            - name: Restore sample media cache
-              id: cache-restore
-              uses: actions/cache/restore@v4
+            - name: Check if sample media cache exists
+              id: cache-check
+              uses: actions/cache/restore@v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -97,8 +97,8 @@ jobs:
                   MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
 
             - name: Save sample media cache
-              if: steps.cache-restore.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v4
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -452,7 +452,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@v4
+              uses: actions/cache/restore@v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
