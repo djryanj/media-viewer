@@ -13,7 +13,7 @@ NC='\033[0m'
 
 # Pin exact Node.js version to match CI workflow
 # renovate: datasource=node depName=node
-REQUIRED_NODE_VERSION="24.13.1"
+REQUIRED_NODE_VERSION="24.14.0"
 
 CURRENT_NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//')
 if [ "$CURRENT_NODE_VERSION" != "$REQUIRED_NODE_VERSION" ]; then
