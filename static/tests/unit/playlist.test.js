@@ -87,10 +87,12 @@ describe('Playlist Module', () => {
         globalThis.fetchWithTimeout = vi.fn();
 
         // Mock VideoPlayer (include loadSource so playCurrentVideo() can call it)
-        globalThis.VideoPlayer = vi.fn().mockImplementation(() => ({
-            destroy: vi.fn(),
-            loadSource: vi.fn(),
-        }));
+        globalThis.VideoPlayer = vi.fn().mockImplementation(function () {
+            return {
+                destroy: vi.fn(),
+                loadSource: vi.fn(),
+            };
+        });
 
         // Load Playlist module
         Playlist = await loadModuleForTesting('playlist', 'PlaylistControls');
@@ -813,10 +815,12 @@ describe('Playlist Module', () => {
     describe('playCurrentVideo()', () => {
         beforeEach(() => {
             // Ensure VideoPlayer mock includes loadSource
-            globalThis.VideoPlayer = vi.fn().mockImplementation(() => ({
-                destroy: vi.fn(),
-                loadSource: vi.fn(),
-            }));
+            globalThis.VideoPlayer = vi.fn().mockImplementation(function () {
+                return {
+                    destroy: vi.fn(),
+                    loadSource: vi.fn(),
+                };
+            });
 
             // Stub methods with side-effects to isolate the unit under test
             vi.spyOn(Playlist, 'showLoading').mockImplementation(() => {

@@ -23,11 +23,13 @@ describe('InfiniteScrollSearch Module', () => {
             <input id="filter-type" value="" />
             <div id="search-query"></div>
         `;
-        globalThis.IntersectionObserver = vi.fn().mockImplementation((_callback) => ({
-            observe: vi.fn(),
-            unobserve: vi.fn(),
-            disconnect: vi.fn(),
-        }));
+        globalThis.IntersectionObserver = vi.fn().mockImplementation(function (_callback) {
+            return {
+                observe: vi.fn(),
+                unobserve: vi.fn(),
+                disconnect: vi.fn(),
+            };
+        });
 
         // Mock lucide
         globalThis.lucide = {

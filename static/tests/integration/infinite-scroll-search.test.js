@@ -32,7 +32,7 @@ describe('InfiniteScrollSearch Integration Tests', () => {
             unobserve: vi.fn(),
             disconnect: vi.fn(),
         };
-        global.IntersectionObserver = vi.fn((callback) => {
+        global.IntersectionObserver = vi.fn(function (callback) {
             // Store callback for manual triggering
             mockObserverInstance.callback = callback;
             return mockObserverInstance;

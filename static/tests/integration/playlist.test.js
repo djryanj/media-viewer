@@ -584,7 +584,9 @@ describe('Playlist Integration', () => {
                 unload: vi.fn(),
                 loadSource: vi.fn(),
             };
-            globalThis.VideoPlayer = vi.fn(() => mockVideoPlayerInstance);
+            globalThis.VideoPlayer = vi.fn(function () {
+                return mockVideoPlayerInstance;
+            });
 
             Playlist.playlist = {
                 name: 'Test',
