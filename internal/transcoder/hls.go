@@ -268,13 +268,6 @@ func (t *Transcoder) startHLSTranscode(session *HLSSession, info *VideoInfo) err
 		return err
 	}
 
-	// Sanitize args (belt-and-suspenders; paths are validated in buildHLSFFmpegArgs).
-	for _, arg := range args {
-		if strings.ContainsAny(arg, ";&|$><") {
-			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
-		}
-	}
-
 	// Background context is intentional: HLS encoding must outlive the HTTP request.
 	cmd := exec.CommandContext(context.Background(), "ffmpeg", args...) // #nosec G204 - no arguments are passed that are user-sourced
 

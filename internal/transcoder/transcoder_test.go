@@ -627,6 +627,50 @@ func TestBuildFFmpegArgs_NoScaleWhenLarger(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegArgs_SpecialCharacterFilenames verifies that filenames
+// containing shell metacharacters (& $ | ; > <) are passed through to ffmpeg
+// arguments verbatim.  exec.Command passes args directly via execve(2), so
+// these characters are safe and must not be rejected.
+func TestBuildFFmpegArgs_SpecialCharacterFilenames(t *testing.T) {
+	t.Parallel()
+
+	trans := New("/tmp/cache", "", true, "none")
+	info := &VideoInfo{Codec: "hevc", Width: 1920, Height: 1080}
+
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"ampersand", "/media/Videos/S&E.avi"},
+		{"dollar", "/media/Videos/$100 Concert.mkv"},
+		{"pipe", "/media/Videos/A|B.mkv"},
+		{"semicolon", "/media/Videos/cmd;name.avi"},
+		{"greater-than", "/media/Videos/out>file.mkv"},
+		{"less-than", "/media/Videos/in<file.mkv"},
+		{"combined", "/media/Videos/S&E $1 | test > out.avi"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args := trans.buildFFmpegArgs(tc.input, "/tmp/output.mp4", 0, info, true)
+
+			// The input path must appear verbatim immediately after "-i".
+			found := false
+			for i := 0; i < len(args)-1; i++ {
+				if args[i] == "-i" {
+					if args[i+1] == tc.input {
+						found = true
+					}
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected -i %q in args; got: %v", tc.input, args)
+			}
+		})
+	}
+}
+
 // TestProgressTrackingReader tests the progress reader functionality
 func TestProgressTrackingReader(t *testing.T) {
 	data := bytes.Repeat([]byte("test data"), 1000) // ~9KB
@@ -1477,6 +1521,70 @@ func TestSanitizeFilePath_EmptyString(t *testing.T) {
 	_, err := sanitizeFilePath("")
 	if err == nil {
 		t.Error("Expected error for empty path")
+	}
+}
+
+// TestSanitizeFilePath_SpecialCharacterFilenames verifies that files whose
+// names contain shell metacharacters (& $ | ; > <) are accepted by
+// sanitizeFilePath.  These are valid POSIX filename characters and must not
+// be rejected.
+func TestSanitizeFilePath_SpecialCharacterFilenames(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	cases := []struct {
+		name     string
+		filename string
+	}{
+		{"ampersand", "S&E.avi"},
+		{"dollar", "$100 Concert.mkv"},
+		{"pipe", "A|B.mkv"},
+		{"semicolon", "cmd;name.avi"},
+		{"greater-than", "out>file.mkv"},
+		{"less-than", "in<file.mkv"},
+		{"combined", "S&E $1 | test.avi"},
+		{"unicode", "可愛い動画.mkv"},
+		{"parens", "video (1).mp4"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			filePath := filepath.Join(tmpDir, tc.filename)
+			if err := os.WriteFile(filePath, []byte("data"), 0o644); err != nil {
+				t.Fatalf("failed to create test file %q: %v", tc.filename, err)
+			}
+
+			result, err := sanitizeFilePath(filePath)
+			if err != nil {
+				t.Fatalf("sanitizeFilePath(%q) unexpected error: %v", tc.filename, err)
+			}
+			if result == "" {
+				t.Errorf("sanitizeFilePath(%q) returned empty string", tc.filename)
+			}
+		})
+	}
+}
+
+// TestTranscodeAndCache_RejectsNonexistentInput verifies that transcodeAndCache
+// now calls sanitizeFilePath before invoking ffmpeg, and therefore returns an
+// error immediately when the input file does not exist.
+func TestTranscodeAndCache_RejectsNonexistentInput(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true, "none")
+	info := &VideoInfo{Codec: "hevc", Width: 1920, Height: 1080}
+
+	err := trans.transcodeAndCache(
+		t.Context(),
+		"/nonexistent/S&E.avi", // input does not exist
+		io.Discard,
+		filepath.Join(tmpDir, "out.mp4"),
+		0, info, true,
+	)
+	if err == nil {
+		t.Fatal("transcodeAndCache: expected error for nonexistent input, got nil")
 	}
 }
 

@@ -28,6 +28,7 @@ class VideoPlayer {
         // Source loading state
         this._hlsInstance = null;
         this._loadId = 0;
+        this._loopHandler = null;
 
         // Volume persistence (shared across all instances)
         if (!VideoPlayer.volumeInitialized) {
@@ -747,17 +748,17 @@ class VideoPlayer {
                 // MediaSource — handle looping explicitly via the ended event.
                 const onEnded = () => {
                     if (!this.video.loop) return;
-                    hls.stopLoad();
-                    hls.startLoad(0);
                     this.video.currentTime = 0;
                     this.video.play().catch(() => {});
                 };
+                this._loopHandler = onEnded;
                 this.video.addEventListener('ended', onEnded);
 
                 hls.on(Hls.Events.ERROR, (_event, errData) => {
                     if (!errData.fatal) return;
                     console.error('VideoPlayer: fatal HLS error', errData);
                     this.video.removeEventListener('ended', onEnded);
+                    if (this._loopHandler === onEnded) this._loopHandler = null;
                     hls.destroy();
                     if (this._hlsInstance === hls) this._hlsInstance = null;
                     if (stale()) return;
@@ -803,6 +804,18 @@ class VideoPlayer {
             .then((data) => {
                 if (!data || stale()) return;
 
+                // Native HLS (Safari/WebKit) with #EXT-X-ENDLIST does not honour
+                // video.loop — handle looping explicitly via the ended event.
+                const onEnded = () => {
+                    if (!this.video.loop) return;
+                    this.video.currentTime = 0;
+                    this.video
+                        .play()
+                        .catch((err) => console.debug('VideoPlayer: loop play prevented', err));
+                };
+                this._loopHandler = onEnded;
+                this.video.addEventListener('ended', onEnded);
+
                 const onCanPlay = () => {
                     if (stale()) return;
                     this.video.removeEventListener('canplay', onCanPlay);
@@ -817,6 +830,8 @@ class VideoPlayer {
                     if (stale()) return;
                     this.video.removeEventListener('canplay', onCanPlay);
                     this.video.removeEventListener('error', onErrorEvt);
+                    this.video.removeEventListener('ended', onEnded);
+                    if (this._loopHandler === onEnded) this._loopHandler = null;
                     onError?.(e);
                 };
 
@@ -869,6 +884,10 @@ class VideoPlayer {
      */
     unload() {
         this._loadId++; // invalidate any pending async operations
+        if (this._loopHandler) {
+            this.video.removeEventListener('ended', this._loopHandler);
+            this._loopHandler = null;
+        }
         if (this._hlsInstance) {
             this._hlsInstance.destroy();
             this._hlsInstance = null;

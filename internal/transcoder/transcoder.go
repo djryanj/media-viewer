@@ -537,19 +537,7 @@ func (t *Transcoder) transcodeDirectToCacheWithOptions(ctx context.Context, file
 	// Run FFmpeg to transcode directly to file (not stdout)
 	// This allows +faststart to work since it needs a seekable output
 	args := t.buildFFmpegArgsWithOptions(cleanInput, tmpPath, targetWidth, info, needsReencode, forceCPU)
-	// Sanitize args to prevent command injection
-	for _, arg := range args {
-		if strings.ContainsAny(arg, ";&|$><") {
-			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
-		}
-	}
-	// Sanitize args to prevent command injection
-	for _, arg := range args {
-		if strings.ContainsAny(arg, ";&|$><") {
-			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
-		}
-	}
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...) // #nosec G702 -- args are constructed internally, paths are validated above
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) // #nosec G702 -- args constructed internally; input path validated via sanitizeFilePath
 
 	// Setup stderr capture and optional logging
 	var stderr bytes.Buffer
@@ -776,10 +764,16 @@ func (t *Transcoder) getCacheLock(cacheKey string) *sync.Mutex {
 
 // transcodeAndCache transcodes and simultaneously streams to response and saves to cache
 func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w io.Writer, cachePath string, targetWidth int, info *VideoInfo, needsReencode bool) error {
+	// Validate input path (EvalSymlinks + isDir check; prevents traversal).
+	cleanInput, err := sanitizeFilePath(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid input file: %w", err)
+	}
+
 	// Create cache directory if needed
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o750); err != nil {
 		logging.Warn("Failed to create cache directory: %v (continuing without cache)", err)
-		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+		return t.transcodeStream(ctx, cleanInput, w, targetWidth, info, needsReencode)
 	}
 
 	// Create temporary file for atomic write
@@ -787,7 +781,7 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 	cacheFile, err := os.Create(tempPath)
 	if err != nil {
 		logging.Warn("Failed to create cache file: %v (continuing without cache)", err)
-		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+		return t.transcodeStream(ctx, cleanInput, w, targetWidth, info, needsReencode)
 	}
 	defer func() {
 		if closeErr := cacheFile.Close(); closeErr != nil {
@@ -798,14 +792,8 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 	}()
 
 	// Build ffmpeg command - output to stdout for streaming
-	args := t.buildFFmpegArgs(filePath, "-", targetWidth, info, needsReencode)
+	args := t.buildFFmpegArgs(cleanInput, "-", targetWidth, info, needsReencode)
 	logging.Debug("FFmpeg command: ffmpeg %v", args)
-	// Sanitize args to prevent command injection
-	for _, arg := range args {
-		if strings.ContainsAny(arg, ";&|$><") {
-			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
-		}
-	}
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	// Create a pipe for ffmpeg output

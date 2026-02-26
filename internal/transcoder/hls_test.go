@@ -498,3 +498,67 @@ func TestClearCache_RemovesHLSSessions(t *testing.T) {
 		t.Errorf("ClearCache: expected 0 remaining HLS sessions, got %d", remaining)
 	}
 }
+
+// =============================================================================
+// buildHLSFFmpegArgs — special character filenames
+// =============================================================================
+
+// TestBuildHLSFFmpegArgs_SpecialCharacterFilenames verifies that
+// buildHLSFFmpegArgs accepts input paths whose filenames contain shell
+// metacharacters (& $ | ; > <).  Because exec.Command bypasses the shell,
+// these characters are safe in filenames and must not be rejected.
+func TestBuildHLSFFmpegArgs_SpecialCharacterFilenames(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	sessionDir := filepath.Join(tmpDir, "hls_session")
+	if err := os.MkdirAll(sessionDir, 0o750); err != nil {
+		t.Fatalf("failed to create session dir: %v", err)
+	}
+
+	cases := []struct {
+		name     string
+		filename string
+	}{
+		{"ampersand", "S&E.avi"},
+		{"dollar", "$100 Concert.mkv"},
+		{"pipe", "A|B.mkv"},
+		{"semicolon", "cmd;name.avi"},
+		{"greater-than", "out>file.mkv"},
+		{"less-than", "in<file.mkv"},
+		{"combined", "S&E $1 | test.avi"},
+		{"unicode", "可愛い動画.mkv"},
+	}
+
+	trans := New(tmpDir, "", true, "none")
+	info := &VideoInfo{Codec: "hevc", Width: 1920, Height: 1080}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// buildHLSFFmpegArgs → sanitizeFilePath requires the file to exist.
+			srcPath := filepath.Join(tmpDir, tc.filename)
+			if err := os.WriteFile(srcPath, []byte("data"), 0o644); err != nil {
+				t.Fatalf("failed to create test file %q: %v", tc.filename, err)
+			}
+
+			args, err := trans.buildHLSFFmpegArgs(srcPath, sessionDir, 0, info, true, false)
+			if err != nil {
+				t.Fatalf("buildHLSFFmpegArgs(%q) unexpected error: %v", tc.filename, err)
+			}
+
+			// The resolved input path must appear immediately after "-i".
+			found := false
+			for i := 0; i < len(args)-1; i++ {
+				if args[i] == "-i" {
+					if filepath.Base(args[i+1]) == tc.filename {
+						found = true
+					}
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected -i <path ending in %q> in args; got: %v", tc.filename, args)
+			}
+		})
+	}
+}
