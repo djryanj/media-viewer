@@ -569,6 +569,7 @@ describe('VideoPlayer Class', () => {
         test('initialises _hlsInstance to null and _loadId to 0', () => {
             expect(player._hlsInstance).toBeNull();
             expect(player._loadId).toBe(0);
+            expect(player._loopHandler).toBeNull();
         });
 
         test('unload() increments _loadId to invalidate pending async loads', () => {
@@ -595,6 +596,23 @@ describe('VideoPlayer Class', () => {
 
         test('unload() is safe when _hlsInstance is null', () => {
             player._hlsInstance = null;
+            expect(() => player.unload()).not.toThrow();
+        });
+
+        test('unload() removes and clears an active _loopHandler', () => {
+            const handler = vi.fn();
+            player._loopHandler = handler;
+            // Spy on removeEventListener so we can assert it was called
+            const removeSpy = vi.spyOn(videoElement, 'removeEventListener');
+
+            player.unload();
+
+            expect(removeSpy).toHaveBeenCalledWith('ended', handler);
+            expect(player._loopHandler).toBeNull();
+        });
+
+        test('unload() is safe when _loopHandler is null', () => {
+            player._loopHandler = null;
             expect(() => player.unload()).not.toThrow();
         });
 
