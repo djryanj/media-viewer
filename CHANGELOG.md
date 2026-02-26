@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.14.3] - 02-26-2026
+
+### Fixed
+
+- fix(backend): **regression** — initial index of large libraries (40 k+ files) was dramatically slower in 0.14.0 due to FTS5 trigram trigger overhead introduced by the database refactor. Each `UpsertFile` call fired an `AFTER UPDATE` trigger that deleted and re-inserted the row into `files_fts` with trigram tokenisation, producing ~80 000 FTS write operations for a 40 k-file library. These writes bloated the SQLite WAL to hundreds of MB, which also caused reads to appear blocked (WAL mode readers must scan the entire WAL file on every query, even though they are not mutex-serialised). Fixed by calling `BulkIndexBegin` at the start of every index run, which drops the three FTS triggers (`files_ai`, `files_au`, `files_ad`) for the duration of the run, then calling `BulkIndexEnd` afterwards which rebuilds the FTS index from the source table in a single pass and restores the triggers.
+- fix(backend): increased `PRAGMA busy_timeout` from 5 000 ms to 30 000 ms. On NFS-backed storage, individual WAL commits can take several seconds; the previous 5-second timeout caused spurious `SQLITE_BUSY` errors during indexing and under concurrent read load.
+- fix(backend): SIGBUS crash (`sigcode=2 / BUS_ADRERR`) during SQLite query execution when the database file resides on NFS. SQLite's mmap accesses a memory-mapped region backed by an NFS page; if the NFS connection is interrupted or the page is evicted the kernel delivers SIGBUS into the CGo call, crashing the process. The existing `DB_MMAP_DISABLED=true` environment variable (added in 0.13.4) is the correct fix — its documentation has been improved in the relevant env-var docs. The new `busy_timeout` increase (see above) also reduces the likelihood of lock-related retries that can trigger mmap reads under load.
+
 ## [0.14.2] - 02-26-2026 "Just the chores"
 
 ### Changed
