@@ -888,6 +888,11 @@ select:focus {
         display: none;
     }
 
+    .gallery-item.folder .gallery-item-mobile-info,
+    .gallery-item.playlist .gallery-item-mobile-info {
+        display: block;
+    }
+
     .gallery-item-thumb:hover .download-button {
         opacity: 100%;
     }

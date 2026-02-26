@@ -236,6 +236,18 @@ const Gallery = {
             thumbArea.appendChild(iconWrapper);
         }
 
+        // Mobile overlay name — folders and playlists only
+        if (item.type === 'folder' || item.type === 'playlist') {
+            const mobileInfo = document.createElement('div');
+            mobileInfo.className = 'gallery-item-mobile-info';
+            const nameEl = document.createElement('span');
+            nameEl.className = 'gallery-item-name';
+            nameEl.textContent =
+                item.type === 'playlist' ? item.name.replace(/\.[^/.]+$/, '') : item.name;
+            mobileInfo.appendChild(nameEl);
+            thumbArea.appendChild(mobileInfo);
+        }
+
         return thumbArea;
     },
 
