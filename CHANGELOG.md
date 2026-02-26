@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [0.14.1] - 02-25-2026
-
+## [0.14.2] - Unreleased
 
 ### Changed
 
 - chore(deps): update dependency happy-dom to v20 ([#353](https://github.com/djryanj/media-viewer/pull/353))
+
+## [0.14.1] - 02-25-2026
+
 ### Fixed
 
 - fix(frontend): folder and playlist names are now visible again in the gallery. A previous refactor removed filename display from all gallery items; names are now re-implemented as an overlay (matching the existing mobile gradient overlay) exclusively for `folder` and `playlist` items on both mobile and desktop. Playlist names have their file extension stripped. Playlist icons are now also coloured with `--type-playlist`. [#354](https://github.com/djryanj/media-viewer/issues/354)
