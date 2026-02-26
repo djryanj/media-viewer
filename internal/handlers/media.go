@@ -16,6 +16,73 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// decodePath extracts the "path" variable from the request's mux vars.
+//
+// gorilla/mux automatically URL-decodes path variables. This single decode
+// is sufficient for most filenames. For filenames containing literal percent
+// characters on disk (e.g. "file%21.jpg"), the frontend should double-encode
+// the path so that mux's decode produces the literal form.
+//
+// This function detects potential encoding issues and logs warnings to help
+// track frontend encoding consistency.
+func decodePath(_ http.ResponseWriter, r *http.Request) (string, bool) {
+	path := mux.Vars(r)["path"]
+
+	logging.Debug("decodePath: path=%q (request URI: %s)", path, r.URL.RequestURI())
+
+	// Detect if the mux var still contains percent-encoding sequences.
+	// This indicates the frontend double-encoded the path (correct behavior
+	// for filenames with literal percent characters). Log at debug level
+	// since this is the expected path for such files.
+	if strings.Contains(path, "%") {
+		logging.Debug("decodePath: path contains percent-encoding after mux decode — "+
+			"filename likely contains literal '%%' characters: path=%q (request: %s)",
+			path, r.URL.RequestURI())
+	}
+
+	return path, true
+}
+
+// pathForFS attempts to find the correct filesystem path when filenames may
+// contain literal percent-encoded characters (e.g. "file%21.jpg" on disk).
+//
+// gorilla/mux decodes path vars, so a file literally named "file%21.jpg"
+// arrives as "file!.jpg" after mux's decode. This function tries the
+// mux-decoded path first, and if it doesn't exist, re-encodes special
+// characters and tries again.
+//
+// Returns the path that exists on disk (joined with mediaDir), or the
+// original mux-decoded path if neither form exists (letting the caller
+// handle the 404).
+func pathForFS(mediaDir, muxPath string) string {
+	// Try the mux-decoded path first (handles normal filenames)
+	fullPath := filepath.Join(mediaDir, muxPath)
+	//nolint:gosec // G304 — callers validate the returned path via isSubPath before use
+	if _, err := os.Stat(fullPath); err == nil {
+		return fullPath
+	}
+
+	// Try URL-encoding the path back (handles filenames with literal %XX on disk)
+	// We encode each path segment individually to preserve directory separators.
+	encodedPath := reEncodePath(muxPath)
+
+	if encodedPath != muxPath {
+		encodedFullPath := filepath.Join(mediaDir, encodedPath)
+		//nolint:gosec // G304 — callers validate the returned path via isSubPath before use
+		if _, err := os.Stat(encodedFullPath); err == nil {
+			logging.Warn("pathForFS: file found using re-encoded path — the frontend may be "+
+				"single-encoding a filename that contains literal percent characters. "+
+				"mux-decoded=%q re-encoded=%q (filesystem match: %q). "+
+				"The frontend should double-encode these paths so mux decoding produces the literal form.",
+				muxPath, encodedPath, encodedFullPath)
+			return encodedFullPath
+		}
+	}
+
+	// Neither found — return original, let caller handle the error
+	return fullPath
+}
+
 // ListFiles lists files in a directory with sorting and pagination
 func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -175,8 +242,10 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 
 // GetFile serves a file from the media directory
 func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	filePath := vars["path"]
+	filePath, ok := decodePath(w, r)
+	if !ok {
+		return
+	}
 
 	// Reject absolute paths before joining
 	if filepath.IsAbs(filePath) {
@@ -184,7 +253,8 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath := filepath.Join(h.mediaDir, filePath)
+	// Resolve the filesystem path, handling filenames with literal percent-encoding
+	fullPath := pathForFS(h.mediaDir, filePath)
 
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {
@@ -195,7 +265,7 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 	// Check if download=true query parameter is present
 	if r.URL.Query().Get("download") == "true" {
 		// Set Content-Disposition header to force download
-		filename := filepath.Base(filePath)
+		filename := filepath.Base(fullPath)
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	}
 
@@ -213,13 +283,9 @@ func (h *Handlers) GetFile(w http.ResponseWriter, r *http.Request) {
 // validateThumbnailPath validates and resolves the thumbnail file path from the request.
 // Returns the relative filePath and absolute fullPath, or writes an HTTP error and returns empty strings.
 func (h *Handlers) validateThumbnailPath(w http.ResponseWriter, r *http.Request) (filePath, fullPath string, ok bool) {
-	vars := mux.Vars(r)
-	filePath = vars["path"]
-
-	// Decode URL-encoded path to catch encoded traversal attempts
-	decodedPath, err := url.QueryUnescape(filePath)
-	if err == nil {
-		filePath = decodedPath
+	filePath, ok = decodePath(w, r)
+	if !ok {
+		return "", "", false
 	}
 
 	if filePath == "" {
@@ -360,6 +426,49 @@ func isValidImageHeader(data []byte) bool {
 	return false
 }
 
+// reEncodePath reconstructs the percent-encoded form of a path that was
+// decoded by gorilla/mux. This is used to match filenames that contain
+// literal percent-encoded characters on disk (e.g., "file%2BWhales.jpg"
+// where %2B is part of the actual filename, not a URL-encoded plus sign).
+//
+// It encodes each path segment using url.PathEscape, plus additional
+// characters that PathEscape considers safe but encodeURIComponent
+// (used by the frontend) would encode. This ensures we can reconstruct
+// the original filename as stored in the database and filesystem.
+func reEncodePath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = encodePathSegment(part)
+	}
+	return strings.Join(parts, "/")
+}
+
+// encodePathSegment percent-encodes a path segment to match the behavior
+// of JavaScript's encodeURIComponent. url.PathEscape does not encode
+// characters like +, ', !, (, ), * which are valid in URL paths but may
+// appear as literal percent-encoded sequences in filenames.
+func encodePathSegment(s string) string {
+	// Start with Go's PathEscape which handles most characters
+	encoded := url.PathEscape(s)
+
+	// Additionally encode characters that url.PathEscape leaves alone
+	// but JavaScript's encodeURIComponent would encode.
+	// These characters are valid in URL paths but when they appear in
+	// a filename, they may have been the result of mux decoding a
+	// percent-encoded sequence (e.g., %2B decoded to +).
+	replacer := strings.NewReplacer(
+		"+", "%2B",
+		"'", "%27",
+		"!", "%21",
+		"(", "%28",
+		")", "%29",
+		"*", "%2A",
+		"@", "%40",
+		"#", "%23",
+	)
+	return replacer.Replace(encoded)
+}
+
 // GetThumbnail returns a thumbnail image for a media file
 func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -377,12 +486,30 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get file info from database to determine type
+	// Get file info from database to determine type.
+	// Try the mux-decoded path first, then the re-encoded form for filenames
+	// with literal percent-encoding on disk (e.g. "file%2BWhales.jpg").
 	file, err := h.db.GetFileByPath(ctx, filePath)
 	if err != nil {
-		logging.Error("Thumbnail: file not found in database %s: %v", filePath, err)
-		http.Error(w, "File not found", http.StatusNotFound)
-		return
+		encodedPath := reEncodePath(filePath)
+		if encodedPath != filePath {
+			file, err = h.db.GetFileByPath(ctx, encodedPath)
+			if err == nil {
+				logging.Debug("Thumbnail: DB lookup succeeded using re-encoded path — "+
+					"filename contains characters that were percent-decoded by mux. "+
+					"mux-decoded=%q re-encoded=%q (request: %s)",
+					filePath, encodedPath, r.URL.RequestURI())
+				// Update filePath and fullPath to the re-encoded form so that
+				// subsequent filesystem operations find the actual file on disk.
+				filePath = encodedPath
+				fullPath = filepath.Join(h.mediaDir, encodedPath)
+			}
+		}
+		if err != nil {
+			logging.Error("Thumbnail: file not found in database %s: %v", filePath, err)
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	// Validate file exists on disk (skip for folders as they're handled differently)
@@ -410,8 +537,11 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 // StreamVideo streams a video file, transcoding if necessary for browser compatibility
 func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	vars := mux.Vars(r)
-	filePath := vars["path"]
+
+	filePath, ok := decodePath(w, r)
+	if !ok {
+		return
+	}
 
 	logging.Debug("StreamVideo request: path=%s, queryWidth=%s", filePath, r.URL.Query().Get("width"))
 
@@ -421,7 +551,8 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath := filepath.Join(h.mediaDir, filePath)
+	// Resolve the filesystem path, handling filenames with literal percent-encoding
+	fullPath := pathForFS(h.mediaDir, filePath)
 
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {
@@ -454,16 +585,20 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For direct file serving (no transcoding needed), use standard ServeFile
-	// which handles range requests properly
 	if !info.NeedsTranscode && (targetWidth == 0 || targetWidth >= info.Width) {
 		logging.Debug("StreamVideo: Using ServeFile for %s (no transcode needed)", fullPath)
 		http.ServeFile(w, r, fullPath)
 		return
 	}
 
-	// For transcoding, check if already cached for fast serving
 	logging.Info("StreamVideo: Transcoding required for %s", fullPath)
+
+	// For HEAD requests, return headers without triggering transcoding
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
 	cachePath, err := h.transcoder.GetOrStartTranscodeAndWait(ctx, fullPath, targetWidth, info)
 	if err != nil {
@@ -472,8 +607,6 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Serve the cache file (complete or being written to)
-	// ServeFile handles Range requests and works fine with growing files
 	logging.Info("Serving cached video: %s", cachePath)
 	http.ServeFile(w, r, cachePath)
 }
@@ -481,10 +614,14 @@ func (h *Handlers) StreamVideo(w http.ResponseWriter, r *http.Request) {
 // GetStreamInfo returns codec and dimension information about a video file
 func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	vars := mux.Vars(r)
-	filePath := vars["path"]
 
-	fullPath := filepath.Join(h.mediaDir, filePath)
+	filePath, ok := decodePath(w, r)
+	if !ok {
+		return
+	}
+
+	// Resolve the filesystem path, handling filenames with literal percent-encoding
+	fullPath := pathForFS(h.mediaDir, filePath)
 
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {
@@ -561,15 +698,18 @@ func isSubPath(parent, child string) bool {
 
 // InvalidateThumbnail invalidates (deletes) the cached thumbnail for a specific file or folder
 func (h *Handlers) InvalidateThumbnail(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	filePath := vars["path"]
+	filePath, ok := decodePath(w, r)
+	if !ok {
+		return
+	}
 
 	if filePath == "" {
 		http.Error(w, "Path is required", http.StatusBadRequest)
 		return
 	}
 
-	fullPath := filepath.Join(h.mediaDir, filePath)
+	// Resolve the filesystem path, handling filenames with literal percent-encoding
+	fullPath := pathForFS(h.mediaDir, filePath)
 
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil || !isSubPath(h.mediaDir, absPath) {

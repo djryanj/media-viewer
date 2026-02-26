@@ -771,7 +771,7 @@ const Search = {
                 const hasThumbnail =
                     item.type === 'image' || item.type === 'video' || item.type === 'folder';
                 const thumbnailUrl = hasThumbnail
-                    ? `/api/thumbnail/${encodeURIComponent(item.path)}`
+                    ? `/api/thumbnail/${item.path.split('/').map(encodeURIComponent).join('/')}`
                     : '';
                 const fallbackIcon = this.getIcon(item.type);
 

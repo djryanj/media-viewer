@@ -1,0 +1,41 @@
+name: Warm Sample Media Cache
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - 'hack/download-sample-media.sh'
+    schedule:
+        # Run weekly to prevent 7-day eviction
+        - cron: '0 6 * * 1'
+
+jobs:
+    warm-cache:
+        name: Warm Sample Media Cache
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Check if sample media cache exists
+              id: cache-check
+              uses: actions/cache/restore@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  lookup-only: true
+
+            - name: Download sample media
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              run: |
+                  chmod +x ./hack/download-sample-media.sh
+                  ./hack/download-sample-media.sh
+              env:
+                  MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
+
+            - name: Save sample media cache
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
