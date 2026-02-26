@@ -31,10 +31,10 @@ jobs:
             pull-requests: write
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Self-hosted Renovate
-              uses: renovatebot/github-action@v46.1.2
+              uses: renovatebot/github-action@8d75b92f43899d483728e9a8a7fd44238020f6e6 # v46.1.2
               with:
                   configurationFile: .github/renovate.json
                   token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}

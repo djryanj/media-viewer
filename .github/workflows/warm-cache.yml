@@ -15,11 +15,11 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
             - name: Check if sample media cache exists
               id: cache-check
-              uses: actions/cache/restore@v4
+              uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -35,7 +35,7 @@ jobs:
 
             - name: Save sample media cache
               if: steps.cache-check.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v4
+              uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
