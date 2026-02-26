@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump actions/setup-node from 4 to 6 ([#341](https://github.com/djryanj/media-viewer/pull/341))
 - build(deps): bump actions/cache from 4 to 5 ([#342](https://github.com/djryanj/media-viewer/pull/342))
 - build(deps): bump renovatebot/github-action from 46.1.1 to 46.1.2 ([#343](https://github.com/djryanj/media-viewer/pull/343))
 ### Added
