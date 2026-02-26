@@ -1038,4 +1038,81 @@ describe('Lightbox Integration', () => {
             expect(refreshSpy).toHaveBeenCalledWith('/photos/photo.jpg');
         });
     });
+
+    // =========================================
+    // Video loading via VideoPlayer delegation
+    // =========================================
+
+    describe('Video loading (VideoPlayer delegation)', () => {
+        beforeEach(() => {
+            // Prevent real network calls from loadSource's stream-info fetch
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: false }),
+                })
+            );
+        });
+
+        afterEach(() => {
+            delete globalThis.fetchWithTimeout;
+        });
+
+        it('loadVideo() delegates to videoPlayer.loadSource()', () => {
+            // Spy on the prototype before the VideoPlayer instance is created
+            const loadSourceSpy = vi
+                .spyOn(_Player.prototype, 'loadSource')
+                .mockImplementation(() => {});
+
+            const file = { path: '/videos/clip.mp4', name: 'clip.mp4', type: 'video' };
+            Lightbox.currentLoadId = 1;
+
+            Lightbox.loadVideo(file, 1);
+
+            expect(loadSourceSpy).toHaveBeenCalledWith('/videos/clip.mp4', expect.any(Object));
+        });
+
+        it('loadVideo() passes loop and autoplay from Preferences', () => {
+            const loadSourceSpy = vi
+                .spyOn(_Player.prototype, 'loadSource')
+                .mockImplementation(() => {});
+
+            globalThis.Preferences.isMediaLoopEnabled = vi.fn(() => false);
+            globalThis.Preferences.isVideoAutoplayEnabled = vi.fn(() => true);
+
+            const file = { path: '/videos/clip.mp4', name: 'clip.mp4', type: 'video' };
+            Lightbox.currentLoadId = 2;
+
+            Lightbox.loadVideo(file, 2);
+
+            expect(loadSourceSpy).toHaveBeenCalledWith(
+                '/videos/clip.mp4',
+                expect.objectContaining({ loop: false, autoplay: true })
+            );
+        });
+
+        it('abortCurrentLoad() calls videoPlayer.unload()', () => {
+            // Create a VideoPlayer instance first
+            Lightbox.loadVideo({ path: '/videos/clip.mp4', name: 'clip.mp4', type: 'video' }, 99);
+            Lightbox.currentLoadId = 99;
+
+            const unloadSpy = vi.spyOn(Lightbox.videoPlayer, 'unload');
+
+            Lightbox.abortCurrentLoad();
+
+            expect(unloadSpy).toHaveBeenCalled();
+        });
+
+        it('initVideoPlayer() replaces any existing VideoPlayer instance', () => {
+            // Call twice — second call should destroy and replace the first
+            Lightbox.initVideoPlayer();
+            const firstInstance = Lightbox.videoPlayer;
+            const destroySpy = vi.spyOn(firstInstance, 'destroy');
+
+            Lightbox.initVideoPlayer();
+
+            expect(destroySpy).toHaveBeenCalled();
+            expect(Lightbox.videoPlayer).not.toBe(firstInstance);
+        });
+    });
 });

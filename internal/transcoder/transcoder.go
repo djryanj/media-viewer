@@ -60,6 +60,10 @@ type Transcoder struct {
 	// Shutdown flag to prevent retries during cleanup
 	shuttingDown atomic.Bool
 
+	// HLS session management
+	hlsSessions   map[string]*HLSSession
+	hlsSessionsMu sync.Mutex
+
 	// Cache size caching (2-minute cache like thumbnail generator)
 	cachedSize      atomic.Int64
 	cachedCount     atomic.Int64
@@ -111,9 +115,13 @@ func New(cacheDir, logDir string, enabled bool, gpuAccel string) *Transcoder {
 		enabled:      enabled,
 		processes:    make(map[string]*exec.Cmd),
 		cacheLocks:   make(map[string]*sync.Mutex),
+		hlsSessions:  make(map[string]*HLSSession),
 		streamConfig: config,
 		gpuAccel:     GPUAccel(gpuAccel),
 	}
+
+	// Start background cleanup for idle HLS sessions.
+	t.startHLSSessionCleaner()
 
 	// Detect GPU capabilities if auto or specific GPU requested
 	if t.gpuAccel != GPUAccelNone {
@@ -1378,6 +1386,9 @@ func (t *Transcoder) Cleanup() {
 	// Set shutdown flag to prevent GPU-to-CPU retries
 	t.shuttingDown.Store(true)
 
+	// Kill all active HLS ffmpeg processes first.
+	t.cleanupAllHLSSessions()
+
 	t.processMu.Lock()
 	defer t.processMu.Unlock()
 
@@ -1394,6 +1405,14 @@ func (t *Transcoder) Cleanup() {
 // ClearCache removes all cached transcoded files and returns the number of bytes freed.
 func (t *Transcoder) ClearCache() (int64, error) {
 	logging.Info("ClearCache called: cacheDir=%q", t.cacheDir)
+
+	// Kill and discard all HLS sessions before deleting their directories.
+	t.hlsSessionsMu.Lock()
+	for id, session := range t.hlsSessions {
+		session.kill()
+		delete(t.hlsSessions, id)
+	}
+	t.hlsSessionsMu.Unlock()
 
 	if t.cacheDir == "" {
 		logging.Warn("ClearCache: No cache directory configured")

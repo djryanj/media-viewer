@@ -575,7 +575,17 @@ describe('Playlist Integration', () => {
     });
 
     describe('Video Playback', () => {
+        let mockVideoPlayerInstance;
+
         beforeEach(() => {
+            // Provide a mock VideoPlayer so playCurrentVideo() doesn't need a live backend.
+            mockVideoPlayerInstance = {
+                destroy: vi.fn(),
+                unload: vi.fn(),
+                loadSource: vi.fn(),
+            };
+            globalThis.VideoPlayer = vi.fn(() => mockVideoPlayerInstance);
+
             Playlist.playlist = {
                 name: 'Test',
                 items: [
@@ -586,11 +596,17 @@ describe('Playlist Integration', () => {
             Playlist.currentIndex = 0;
         });
 
-        it('should set video source when playing', () => {
+        afterEach(() => {
+            delete globalThis.VideoPlayer;
+        });
+
+        it('should delegate video playback to videoPlayer.loadSource', () => {
             Playlist.playCurrentVideo();
 
-            expect(Playlist.elements.video.src).toContain('/api/stream/');
-            expect(Playlist.elements.video.src).toContain('/videos/video1.mp4');
+            expect(mockVideoPlayerInstance.loadSource).toHaveBeenCalledWith(
+                '/videos/video1.mp4',
+                expect.any(Object)
+            );
         });
 
         it('should advance to next video when current ends', () => {
@@ -604,10 +620,6 @@ describe('Playlist Integration', () => {
         });
 
         it('should initialize VideoPlayer for video controls', () => {
-            // Create a mock VideoPlayer constructor
-            const mockVideoPlayerInstance = { destroy: vi.fn() };
-            globalThis.VideoPlayer = vi.fn(() => mockVideoPlayerInstance);
-
             Playlist.open();
 
             // VideoPlayer should be initialized
@@ -717,6 +729,100 @@ describe('Playlist Integration', () => {
             Playlist.checkOrientation();
 
             expect(Playlist.isLandscape).toBe(true);
+        });
+    });
+
+    // =========================================
+    // playCurrentVideo() — VideoPlayer delegation
+    // =========================================
+
+    describe('playCurrentVideo() VideoPlayer delegation', () => {
+        beforeEach(() => {
+            // Return needsTranscode: false so loadSource routes to direct stream
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: false }),
+                })
+            );
+
+            Playlist.playlist = {
+                name: 'Test',
+                items: [
+                    {
+                        name: 'video1.mp4',
+                        path: '/videos/video1.mp4',
+                        type: 'video',
+                        exists: true,
+                    },
+                    {
+                        name: 'video2.mp4',
+                        path: '/videos/video2.mp4',
+                        type: 'video',
+                        exists: true,
+                    },
+                ],
+            };
+            Playlist.currentIndex = 0;
+        });
+
+        afterEach(() => {
+            delete globalThis.fetchWithTimeout;
+            if (Playlist.videoPlayer) {
+                Playlist.videoPlayer.destroy();
+                Playlist.videoPlayer = null;
+            }
+        });
+
+        it('creates a VideoPlayer instance via initVideoPlayer()', () => {
+            const loadSourceSpy = vi
+                .spyOn(_VideoPlayer.prototype, 'loadSource')
+                .mockImplementation(() => {});
+
+            Playlist.playCurrentVideo();
+
+            expect(loadSourceSpy).toHaveBeenCalled();
+            expect(Playlist.videoPlayer).toBeInstanceOf(_VideoPlayer);
+        });
+
+        it('calls videoPlayer.loadSource with the current item path', () => {
+            const loadSourceSpy = vi
+                .spyOn(_VideoPlayer.prototype, 'loadSource')
+                .mockImplementation(() => {});
+
+            Playlist.playCurrentVideo();
+
+            expect(loadSourceSpy).toHaveBeenCalledWith('/videos/video1.mp4', expect.any(Object));
+        });
+
+        it('passes autoplay option from Preferences', () => {
+            globalThis.Preferences.isVideoAutoplayEnabled = vi.fn(() => false);
+            const loadSourceSpy = vi
+                .spyOn(_VideoPlayer.prototype, 'loadSource')
+                .mockImplementation(() => {});
+
+            Playlist.playCurrentVideo();
+
+            expect(loadSourceSpy).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ autoplay: false })
+            );
+        });
+
+        it('reinitialises VideoPlayer on successive plays', () => {
+            const loadSourceSpy = vi
+                .spyOn(_VideoPlayer.prototype, 'loadSource')
+                .mockImplementation(() => {});
+
+            Playlist.playCurrentVideo();
+            const firstPlayer = Playlist.videoPlayer;
+            const destroySpy = vi.spyOn(firstPlayer, 'destroy');
+
+            Playlist.currentIndex = 1;
+            Playlist.playCurrentVideo();
+
+            expect(destroySpy).toHaveBeenCalled();
+            expect(loadSourceSpy).toHaveBeenCalledTimes(2);
         });
     });
 });

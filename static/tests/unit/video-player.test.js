@@ -535,4 +535,240 @@ describe('VideoPlayer Class', () => {
             expect(player.controlsTimeout).not.toBe(firstTimeout);
         });
     });
+
+    // =========================================
+    // Source loading — loadSource / unload
+    // =========================================
+
+    describe('Source loading', () => {
+        let player;
+        // Drains the entire microtask queue (including nested thenable adoption jobs)
+        // by deferring to a macrotask, which only fires after all microtasks complete.
+        const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+        beforeEach(() => {
+            // Ensure video element has load/pause stubs
+            videoElement.load = vi.fn();
+            videoElement.pause = vi.fn();
+            videoElement.play = vi.fn();
+
+            // Provide a controllable fetchWithTimeout stub
+            globalThis.fetchWithTimeout = vi.fn();
+
+            // No Hls by default — individual tests opt-in
+            delete globalThis.Hls;
+
+            player = new VideoPlayer({ video: videoElement, container: containerElement });
+        });
+
+        afterEach(() => {
+            delete globalThis.fetchWithTimeout;
+            delete globalThis.Hls;
+        });
+
+        test('initialises _hlsInstance to null and _loadId to 0', () => {
+            expect(player._hlsInstance).toBeNull();
+            expect(player._loadId).toBe(0);
+        });
+
+        test('unload() increments _loadId to invalidate pending async loads', () => {
+            const before = player._loadId;
+            player.unload();
+            expect(player._loadId).toBeGreaterThan(before);
+        });
+
+        test('unload() destroys and clears an active _hlsInstance', () => {
+            const mockHls = { destroy: vi.fn() };
+            player._hlsInstance = mockHls;
+
+            player.unload();
+
+            expect(mockHls.destroy).toHaveBeenCalled();
+            expect(player._hlsInstance).toBeNull();
+        });
+
+        test('unload() removes src attribute from video element', () => {
+            videoElement.setAttribute('src', '/some/video.mp4');
+            player.unload();
+            expect(videoElement.hasAttribute('src')).toBe(false);
+        });
+
+        test('unload() is safe when _hlsInstance is null', () => {
+            player._hlsInstance = null;
+            expect(() => player.unload()).not.toThrow();
+        });
+
+        test('destroy() calls unload() before removing controls', () => {
+            const unloadSpy = vi.spyOn(player, 'unload');
+            player.destroy();
+            expect(unloadSpy).toHaveBeenCalled();
+        });
+
+        test('loadSource() queries /api/stream-info/ with URI-encoded path', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: false }),
+                })
+            );
+            vi.spyOn(player, '_loadDirect').mockImplementation(() => {});
+
+            player.loadSource('/media/video.mp4');
+            await Promise.resolve(); // flush microtasks
+
+            expect(globalThis.fetchWithTimeout).toHaveBeenCalledWith(
+                expect.stringContaining('/api/stream-info/'),
+                expect.objectContaining({ timeout: 5000 })
+            );
+        });
+
+        test('loadSource() routes to _loadDirect when needsTranscode is false', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: false }),
+                })
+            );
+            const loadDirectSpy = vi.spyOn(player, '_loadDirect').mockImplementation(() => {});
+
+            player.loadSource('/media/video.mp4');
+            await flushPromises();
+
+            expect(loadDirectSpy).toHaveBeenCalled();
+        });
+
+        test('loadSource() falls back to _loadDirect when stream-info request fails', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() => Promise.reject(new Error('network')));
+            const loadDirectSpy = vi.spyOn(player, '_loadDirect').mockImplementation(() => {});
+
+            player.loadSource('/media/video.mp4');
+            await flushPromises();
+
+            expect(loadDirectSpy).toHaveBeenCalled();
+        });
+
+        test('loadSource() falls back to _loadDirect when stream-info returns non-ok response', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({ ok: false, json: () => Promise.resolve(null) })
+            );
+            const loadDirectSpy = vi.spyOn(player, '_loadDirect').mockImplementation(() => {});
+
+            player.loadSource('/media/video.mp4');
+            await flushPromises();
+
+            expect(loadDirectSpy).toHaveBeenCalled();
+        });
+
+        test('loadSource() routes to _loadHLS when needsTranscode is true and Hls is supported', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: true }),
+                })
+            );
+            globalThis.Hls = { isSupported: vi.fn(() => true) };
+            const loadHLSSpy = vi.spyOn(player, '_loadHLS').mockImplementation(() => {});
+
+            player.loadSource('/media/video.mkv');
+            await flushPromises();
+
+            expect(loadHLSSpy).toHaveBeenCalled();
+        });
+
+        test('loadSource() routes to _loadHLSNative when Hls unavailable but canPlayType matches', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: true }),
+                })
+            );
+            // Hls.js not present
+            delete globalThis.Hls;
+            videoElement.canPlayType = vi.fn((type) =>
+                type === 'application/vnd.apple.mpegurl' ? 'probably' : ''
+            );
+            const loadHLSNativeSpy = vi
+                .spyOn(player, '_loadHLSNative')
+                .mockImplementation(() => {});
+
+            player.loadSource('/media/video.mkv');
+            await flushPromises();
+
+            expect(loadHLSNativeSpy).toHaveBeenCalled();
+        });
+
+        test('loadSource() falls back to _loadDirect when no HLS available but needsTranscode is true', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: true }),
+                })
+            );
+            delete globalThis.Hls;
+            videoElement.canPlayType = vi.fn(() => '');
+            const loadDirectSpy = vi.spyOn(player, '_loadDirect').mockImplementation(() => {});
+
+            player.loadSource('/media/video.mkv');
+            await flushPromises();
+
+            expect(loadDirectSpy).toHaveBeenCalled();
+        });
+
+        test('loadSource() sets video.loop from options', async () => {
+            globalThis.fetchWithTimeout = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ needsTranscode: false }),
+                })
+            );
+            vi.spyOn(player, '_loadDirect').mockImplementation(() => {});
+
+            player.loadSource('/media/video.mp4', { loop: true });
+            await flushPromises();
+
+            expect(videoElement.loop).toBe(true);
+        });
+
+        test('loadSource() calls unload() to invalidate previous load', () => {
+            const unloadSpy = vi.spyOn(player, 'unload');
+            globalThis.fetchWithTimeout = vi.fn(() => new Promise(() => {})); // never resolves
+
+            player.loadSource('/media/video.mp4');
+
+            expect(unloadSpy).toHaveBeenCalled();
+        });
+
+        test('second loadSource() call invalidates the first (stale-load guard)', async () => {
+            let resolveFirst;
+            const firstFetch = new Promise((res) => {
+                resolveFirst = res;
+            });
+
+            globalThis.fetchWithTimeout = vi
+                .fn()
+                .mockReturnValueOnce(firstFetch)
+                .mockReturnValue(
+                    Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({ needsTranscode: false }),
+                    })
+                );
+
+            const loadDirectSpy = vi.spyOn(player, '_loadDirect').mockImplementation(() => {});
+
+            player.loadSource('/media/video1.mp4');
+            player.loadSource('/media/video2.mp4'); // invalidates first
+
+            // Resolve the first (now stale) fetch
+            resolveFirst({
+                ok: true,
+                json: () => Promise.resolve({ needsTranscode: false }),
+            });
+            await Promise.resolve();
+            await Promise.resolve(); // two flushes for chained .then()
+
+            // _loadDirect called at most once (for the second, non-stale load only)
+            expect(loadDirectSpy.mock.calls.length).toBeLessThanOrEqual(1);
+        });
+    });
 });
