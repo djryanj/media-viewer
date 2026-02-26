@@ -16,6 +16,7 @@ export default [
                 ...globals.browser,
                 // External libraries
                 lucide: 'readonly',
+                Hls: 'readonly',
                 // Utility functions
                 fetchWithTimeout: 'readonly',
                 // Your global objects - all writable since each file defines one

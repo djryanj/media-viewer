@@ -38,6 +38,10 @@ func TestNew(t *testing.T) {
 	if trans.cacheLocks == nil {
 		t.Error("Expected cacheLocks map to be initialized")
 	}
+
+	if trans.hlsSessions == nil {
+		t.Error("Expected hlsSessions map to be initialized")
+	}
 }
 
 func TestIsEnabled(t *testing.T) {

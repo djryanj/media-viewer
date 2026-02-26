@@ -1660,6 +1660,8 @@ const Lightbox = {
 
     abortCurrentLoad() {
         this.currentLoadId++;
+        // Tear down the active player (including any hls.js instance).
+        this.videoPlayer?.unload();
         const video = this.elements.video;
         if (video && !video.paused) video.pause();
         if (video && video.src) {
@@ -1965,89 +1967,88 @@ const Lightbox = {
     loadVideo(file, loadId) {
         this.showLoading();
         const video = this.elements.video;
-        const videoUrl = `/api/stream/${file.path.split('/').map(encodeURIComponent).join('/')}`;
-        video.loop = Preferences.isMediaLoopEnabled();
         this.initVideoPlayer();
 
-        const loadTimeout = setTimeout(
+        if (loadId !== this.currentLoadId) return;
+
+        const loadTimeoutId = setTimeout(
             () => {
-                if (loadId === this.currentLoadId) {
-                    console.error('Video load timeout:', file.path);
-                    this.hideLoading();
-                    video.removeEventListener('canplay', onCanPlay);
-                    video.removeEventListener('error', onError);
-                    if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                        Gallery.showToast(
-                            'Video load timeout. Server may be transcoding a large file or experiencing issues.',
-                            'error'
-                        );
-                    }
+                if (loadId !== this.currentLoadId) return;
+                console.error('Video load timeout:', file.path);
+                this.hideLoading();
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        'Video load timeout. Server may be transcoding a large file or experiencing issues.',
+                        'error'
+                    );
                 }
             },
             5 * 60 * 1000
         );
 
-        const onCanPlay = () => {
-            if (loadId !== this.currentLoadId) return;
-            clearTimeout(loadTimeout);
-            video.classList.remove('hidden');
-            this.hideLoading();
-            requestAnimationFrame(() => this.updateHotZonePositions());
-            if (Preferences.isVideoAutoplayEnabled()) {
-                video.play().catch((err) => console.debug('Autoplay prevented:', err));
-            }
-            video.removeEventListener('canplay', onCanPlay);
-            video.removeEventListener('error', onError);
-        };
-
-        const onError = async (e) => {
-            if (loadId !== this.currentLoadId) return;
-            clearTimeout(loadTimeout);
-            console.error('Error loading video:', e);
-            this.hideLoading();
-            try {
-                const response = await fetchWithTimeout(videoUrl, {
-                    method: 'HEAD',
-                    timeout: 3000,
-                });
-                if (response.status === 401) {
-                    if (typeof SessionManager !== 'undefined')
-                        SessionManager.handleSessionExpired();
-                    else window.location.replace('/login.html');
-                } else if (response.status === 500) {
-                    if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                        Gallery.showToast(
-                            'Failed to load video. The file may be corrupted or incompatible with transcoding.',
-                            'error',
-                            10000
-                        );
+        this.videoPlayer.loadSource(file.path, {
+            loop: Preferences.isMediaLoopEnabled(),
+            autoplay: Preferences.isVideoAutoplayEnabled(),
+            onReady: () => {
+                if (loadId !== this.currentLoadId) return;
+                clearTimeout(loadTimeoutId);
+                video.classList.remove('hidden');
+                this.hideLoading();
+                requestAnimationFrame(() => this.updateHotZonePositions());
+            },
+            onError: async (_e) => {
+                if (loadId !== this.currentLoadId) return;
+                clearTimeout(loadTimeoutId);
+                console.error('Lightbox: error loading video:', file.path);
+                this.hideLoading();
+                const videoUrl = `/api/stream/${file.path.split('/').map(encodeURIComponent).join('/')}`;
+                try {
+                    const response = await fetchWithTimeout(videoUrl, {
+                        method: 'HEAD',
+                        timeout: 3000,
+                    });
+                    if (response.status === 401) {
+                        if (typeof SessionManager !== 'undefined')
+                            SessionManager.handleSessionExpired();
+                        else window.location.replace('/login.html');
+                    } else if (response.status === 500) {
+                        if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                            Gallery.showToast(
+                                'Failed to load video. The file may be corrupted or incompatible with transcoding.',
+                                'error',
+                                10000
+                            );
+                        }
+                    } else if (response.status >= 400) {
+                        if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                            Gallery.showToast(
+                                `Failed to load video (Error ${response.status})`,
+                                'error',
+                                8000
+                            );
+                        }
                     }
-                } else if (response.status >= 400) {
-                    if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                        Gallery.showToast(
-                            `Failed to load video (Error ${response.status})`,
-                            'error',
-                            8000
-                        );
-                    }
+                } catch (err) {
+                    console.debug('Lightbox: video auth check failed', err);
                 }
-            } catch (err) {
-                console.debug('Lightbox: video auth check failed', err);
-            }
-            video.removeEventListener('canplay', onCanPlay);
-            video.removeEventListener('error', onError);
-        };
+            },
+            onFallback: () => {
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        'HLS streaming error — falling back to direct stream.',
+                        'warning',
+                        5000
+                    );
+                }
+            },
+        });
 
-        video.addEventListener('canplay', onCanPlay);
-        video.addEventListener('error', onError);
         this.checkVideoTranscodingStatus(file.path, loadId);
-        video.src = videoUrl;
-        video.classList.remove('hidden');
-        video.load();
     },
 
     initVideoPlayer() {
         if (this.videoPlayer) {
+            // destroy() calls unload() which also tears down any hls.js instance.
             this.videoPlayer.destroy();
             this.videoPlayer = null;
         }

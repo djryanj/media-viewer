@@ -25,8 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(frontend): thumbnail URLs now always constructed using `encodeURIComponent` path encoding instead of using the backend-provided `thumbnailUrl` field, which contained raw unencoded paths. Filenames containing `#` or `?` would silently truncate the URL (e.g., `clip#1 final.mp4` sent only `/api/thumbnail/clip` to the server). [#329](https://github.com/djryanj/media-viewer/issues/329)
 - fix(frontend): ensured consistency across all API endpoints (`/api/file/`, `/api/thumbnail/`, `/api/stream/`, `/api/stream-info/`), using the `path.split('/').map(encodeURIComponent).join('/')` pattern to ensure round-trips through the backend for files with spaces, special characters, and unicode in their names succeed. [#329](https://github.com/djryanj/media-viewer/issues/329)
 
+### Added
+
+- feat(backend): HLS segmented streaming for videos that require transcoding. A new `POST /api/hls/session` endpoint creates a dedicated ffmpeg session that writes 6-second MPEG-TS segments to `<cacheDir>/hls/<sessionId>/`. `GET /api/hls/{id}/playlist.m3u8` polls until at least one segment is ready (~6 s) and then serves the growing HLS playlist; `GET /api/hls/{id}/seg{n}.ts` waits for the requested segment and serves it with `immutable` cache headers. GPU acceleration (NVENC, VA-API, VideoToolbox) and CPU fallback are both supported. Idle sessions (no requests for 10 min) are cleaned up automatically in the background. [#346](https://github.com/djryanj/media-viewer/issues/346)
+- feat(frontend): video player now uses hls.js for transcoded videos instead of waiting for a complete transcode before playback begins. Chrome/Firefox/Edge use hls.js; Safari/WebKit use native HLS via `<video src="…m3u8">`. Falls back to the direct-stream path on any fatal hls.js error. [#346](https://github.com/djryanj/media-viewer/issues/346)
+
 ### Changed
 
+- build(deps): bump actions/setup-node from 4 to 6 ([#341](https://github.com/djryanj/media-viewer/pull/341))
+- build(deps): bump actions/cache from 4 to 5 ([#342](https://github.com/djryanj/media-viewer/pull/342))
+- build(deps): bump renovatebot/github-action from 46.1.1 to 46.1.2 ([#343](https://github.com/djryanj/media-viewer/pull/343))
+- refactor(frontend): `loadVideo` in `lightbox.js` is now `async`; it queries `/api/stream-info/` first and dispatches to HLS (`loadVideoHLS` / `loadVideoHLSNative`) or the existing direct-stream path (`loadVideoDirectStream`) based on the `needsTranscode` field. [#346](https://github.com/djryanj/media-viewer/issues/346)
 - refactor(backend): introduced `decodePath` helper to centralize path extraction from mux vars across all file-serving handlers (`GetFile`, `GetThumbnail`, `StreamVideo`, `GetStreamInfo`, `InvalidateThumbnail`), replacing inconsistent inline `mux.Vars(r)["path"]` usage. [#329](https://github.com/djryanj/media-viewer/issues/329)
 - refactor(backend): downgraded `pathForFS` and `GetThumbnail` re-encode fallback log messages from `Warn` to `Debug`, since this is expected behavior for files with percent-decoded characters in their names. [#329](https://github.com/djryanj/media-viewer/issues/329)
 - ci: added scheduled weekly workflow to warm the sample media cache on the default branch, preventing GitHub Actions' 7-day cache eviction. Added `restore-keys` fallback so PR workflows can restore stale caches when the download script changes, minimizing re-downloads. [#329](https://github.com/djryanj/media-viewer/issues/329)
@@ -55,12 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.0] - 02-24-2026
 
-
-### Changed
-
-- build(deps): bump actions/setup-node from 4 to 6 ([#341](https://github.com/djryanj/media-viewer/pull/341))
-- build(deps): bump actions/cache from 4 to 5 ([#342](https://github.com/djryanj/media-viewer/pull/342))
-- build(deps): bump renovatebot/github-action from 46.1.1 to 46.1.2 ([#343](https://github.com/djryanj/media-viewer/pull/343))
 ### Added
 
 - test: added basic playwright tests. Not all working yet. [#289](https://github.com/djryanj/media-viewer/issues/289)

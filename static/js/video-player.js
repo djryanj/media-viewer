@@ -25,6 +25,10 @@ class VideoPlayer {
         this.audioCheckTimeout = null;
         this.tooltipListeners = null;
 
+        // Source loading state
+        this._hlsInstance = null;
+        this._loadId = 0;
+
         // Volume persistence (shared across all instances)
         if (!VideoPlayer.volumeInitialized) {
             VideoPlayer.loadVolumePreferences();
@@ -624,7 +628,258 @@ class VideoPlayer {
         }
     }
 
+    /**
+     * Load a video from a file path.  Checks with the server whether transcoding
+     * is needed and routes to HLS (hls.js or Safari native) or a direct stream.
+     *
+     * @param {string} filePath - Server-side path to the video file (un-encoded).
+     * @param {object} [opts]
+     * @param {boolean} [opts.loop=false]
+     * @param {boolean} [opts.autoplay=true]
+     * @param {Function} [opts.onReady]    - Called when playback can begin.
+     * @param {Function} [opts.onError]    - Called on a fatal load error.
+     * @param {Function} [opts.onFallback] - Called when HLS falls back to direct stream.
+     */
+    loadSource(
+        filePath,
+        { loop = false, autoplay = true, onReady = null, onError = null, onFallback = null } = {}
+    ) {
+        this.unload();
+        const loadId = ++this._loadId;
+        const stale = () => loadId !== this._loadId;
+
+        this.video.loop = loop;
+
+        const encodedPath = filePath.split('/').map(encodeURIComponent).join('/');
+        const opts = { loop, autoplay, onReady, onError, onFallback };
+
+        // Ask the server whether this video needs transcoding.  Errors here are
+        // non-fatal — we fall back to a direct stream.
+        (typeof fetchWithTimeout !== 'undefined'
+            ? fetchWithTimeout(`/api/stream-info/${encodedPath}`, { timeout: 5000 })
+            : fetch(`/api/stream-info/${encodedPath}`)
+        )
+            .then((resp) => (resp.ok ? resp.json() : null))
+            .catch(() => null)
+            .then((info) => {
+                if (stale()) return;
+                const needsTranscode = info?.needsTranscode === true;
+
+                if (needsTranscode) {
+                    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                        this._loadHLS(filePath, loadId, opts);
+                        return;
+                    }
+                    if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
+                        this._loadHLSNative(filePath, loadId, opts);
+                        return;
+                    }
+                    console.warn(
+                        'VideoPlayer: HLS not available, using direct stream for transcoded video'
+                    );
+                }
+
+                this._loadDirect(filePath, loadId, opts);
+            });
+    }
+
+    /**
+     * Load a video via hls.js.  Creates an HLS session on the server and feeds
+     * the resulting playlist to hls.js.
+     * @private
+     */
+    _loadHLS(filePath, loadId, { autoplay, onReady, onError, onFallback }) {
+        const stale = () => loadId !== this._loadId;
+
+        (typeof fetchWithTimeout !== 'undefined'
+            ? fetchWithTimeout('/api/hls/session', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: filePath, width: 0 }),
+                  timeout: 15000,
+              })
+            : fetch('/api/hls/session', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: filePath, width: 0 }),
+              })
+        )
+            .then((resp) => {
+                if (stale()) return null;
+                if (!resp.ok) {
+                    console.warn(
+                        'VideoPlayer: HLS session creation failed, falling back to direct stream'
+                    );
+                    this._loadDirect(filePath, loadId, { autoplay, onReady, onError, onFallback });
+                    return null;
+                }
+                return resp.json();
+            })
+            .then((data) => {
+                if (!data || stale()) return;
+
+                const hls = new Hls({
+                    debug: false,
+                    lowLatencyMode: false,
+                    manifestLoadingTimeOut: 20000,
+                    levelLoadingTimeOut: 20000,
+                    fragLoadingTimeOut: 60000,
+                });
+
+                this._hlsInstance = hls;
+                hls.loadSource(data.playlistUrl);
+                hls.attachMedia(this.video);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    if (stale()) {
+                        hls.destroy();
+                        if (this._hlsInstance === hls) this._hlsInstance = null;
+                        return;
+                    }
+                    onReady?.();
+                    if (autoplay)
+                        this.video
+                            .play()
+                            .catch((err) => console.debug('VideoPlayer: autoplay prevented', err));
+                });
+
+                // hls.js ignores the native <video loop> attribute when using
+                // MediaSource — handle looping explicitly via the ended event.
+                const onEnded = () => {
+                    if (!this.video.loop) return;
+                    hls.stopLoad();
+                    hls.startLoad(0);
+                    this.video.currentTime = 0;
+                    this.video.play().catch(() => {});
+                };
+                this.video.addEventListener('ended', onEnded);
+
+                hls.on(Hls.Events.ERROR, (_event, errData) => {
+                    if (!errData.fatal) return;
+                    console.error('VideoPlayer: fatal HLS error', errData);
+                    this.video.removeEventListener('ended', onEnded);
+                    hls.destroy();
+                    if (this._hlsInstance === hls) this._hlsInstance = null;
+                    if (stale()) return;
+                    onFallback?.();
+                    this._loadDirect(filePath, loadId, { autoplay, onReady, onError, onFallback });
+                });
+            })
+            .catch((err) => {
+                if (stale()) return;
+                console.error('VideoPlayer: HLS session request failed', err);
+                this._loadDirect(filePath, loadId, { autoplay, onReady, onError, onFallback });
+            });
+    }
+
+    /**
+     * Load a video using native HLS support (Safari / WebKit).
+     * @private
+     */
+    _loadHLSNative(filePath, loadId, { autoplay, onReady, onError }) {
+        const stale = () => loadId !== this._loadId;
+
+        (typeof fetchWithTimeout !== 'undefined'
+            ? fetchWithTimeout('/api/hls/session', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: filePath, width: 0 }),
+                  timeout: 15000,
+              })
+            : fetch('/api/hls/session', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: filePath, width: 0 }),
+              })
+        )
+            .then((resp) => {
+                if (stale()) return null;
+                if (!resp.ok) {
+                    this._loadDirect(filePath, loadId, { autoplay, onReady, onError });
+                    return null;
+                }
+                return resp.json();
+            })
+            .then((data) => {
+                if (!data || stale()) return;
+
+                const onCanPlay = () => {
+                    if (stale()) return;
+                    this.video.removeEventListener('canplay', onCanPlay);
+                    this.video.removeEventListener('error', onErrorEvt);
+                    onReady?.();
+                    if (autoplay)
+                        this.video
+                            .play()
+                            .catch((err) => console.debug('VideoPlayer: autoplay prevented', err));
+                };
+                const onErrorEvt = (e) => {
+                    if (stale()) return;
+                    this.video.removeEventListener('canplay', onCanPlay);
+                    this.video.removeEventListener('error', onErrorEvt);
+                    onError?.(e);
+                };
+
+                this.video.addEventListener('canplay', onCanPlay);
+                this.video.addEventListener('error', onErrorEvt);
+                this.video.src = data.playlistUrl;
+                this.video.load();
+            })
+            .catch((err) => {
+                if (stale()) return;
+                console.error('VideoPlayer: HLS native session request failed', err);
+                this._loadDirect(filePath, loadId, { autoplay, onReady, onError });
+            });
+    }
+
+    /**
+     * Load a video directly via /api/stream/ without HLS.
+     * @private
+     */
+    _loadDirect(filePath, loadId, { autoplay, onReady, onError }) {
+        const stale = () => loadId !== this._loadId;
+        const videoUrl = `/api/stream/${filePath.split('/').map(encodeURIComponent).join('/')}`;
+
+        const onCanPlay = () => {
+            if (stale()) return;
+            this.video.removeEventListener('canplay', onCanPlay);
+            this.video.removeEventListener('error', onErrorEvt);
+            onReady?.();
+            if (autoplay)
+                this.video
+                    .play()
+                    .catch((err) => console.debug('VideoPlayer: autoplay prevented', err));
+        };
+        const onErrorEvt = (e) => {
+            if (stale()) return;
+            this.video.removeEventListener('canplay', onCanPlay);
+            this.video.removeEventListener('error', onErrorEvt);
+            onError?.(e);
+        };
+
+        this.video.addEventListener('canplay', onCanPlay);
+        this.video.addEventListener('error', onErrorEvt);
+        this.video.src = videoUrl;
+        this.video.load();
+    }
+
+    /**
+     * Stop playback, destroy any active hls.js instance, and clear the video
+     * src.  Invalidates any in-flight loadSource() call.
+     */
+    unload() {
+        this._loadId++; // invalidate any pending async operations
+        if (this._hlsInstance) {
+            this._hlsInstance.destroy();
+            this._hlsInstance = null;
+        }
+        if (!this.video.paused) this.video.pause();
+        this.video.removeAttribute('src');
+        this.video.load();
+    }
+
     destroy() {
+        this.unload();
         this.cancelHideTimer();
         if (this.audioCheckTimeout) {
             clearTimeout(this.audioCheckTimeout);
