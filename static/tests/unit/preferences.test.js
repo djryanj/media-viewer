@@ -138,7 +138,7 @@ describe('Preferences', () => {
             const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
             // Make localStorage.setItem throw
-            vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+            const localStorageSpy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
                 throw new Error('Storage full');
             });
 
@@ -147,6 +147,7 @@ describe('Preferences', () => {
             expect(consoleSpy).toHaveBeenCalled();
 
             consoleSpy.mockRestore();
+            localStorageSpy.mockRestore();
         });
 
         it('should round-trip save and load', () => {

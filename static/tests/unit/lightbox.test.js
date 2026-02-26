@@ -1687,7 +1687,9 @@ describe('Lightbox Module', () => {
                 cancelHideTimer: vi.fn(),
                 audioCheckTimeout: null,
             };
-            globalThis.VideoPlayer = vi.fn(() => mockVideoPlayerInstance);
+            globalThis.VideoPlayer = vi.fn(function () {
+                return mockVideoPlayerInstance;
+            });
         });
 
         afterEach(() => {

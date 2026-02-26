@@ -51,14 +51,16 @@ describe('InfiniteScroll Integration', () => {
         };
 
         // Mock IntersectionObserver
-        global.IntersectionObserver = vi.fn((callback) => ({
-            observe: vi.fn((element) => {
-                // Store callback for manual triggering in tests
-                element._observerCallback = callback;
-            }),
-            unobserve: vi.fn(),
-            disconnect: vi.fn(),
-        }));
+        global.IntersectionObserver = vi.fn(function (callback) {
+            return {
+                observe: vi.fn(function (element) {
+                    // Store callback for manual triggering in tests
+                    element._observerCallback = callback;
+                }),
+                unobserve: vi.fn(),
+                disconnect: vi.fn(),
+            };
+        });
 
         // Load required modules
         await loadModules();
