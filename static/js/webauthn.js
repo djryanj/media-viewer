@@ -201,10 +201,10 @@ class WebAuthnManager {
             });
         } catch (e) {
             if (e.name === 'NotAllowedError') {
-                throw new Error('Registration was cancelled or timed out');
+                throw new Error('Registration was cancelled or timed out', { cause: e });
             }
             if (e.name === 'InvalidStateError') {
-                throw new Error('This authenticator is already registered');
+                throw new Error('This authenticator is already registered', { cause: e });
             }
             throw e;
         }
@@ -268,7 +268,7 @@ class WebAuthnManager {
             });
         } catch (e) {
             if (e.name === 'NotAllowedError') {
-                throw new Error('Authentication was cancelled or timed out');
+                throw new Error('Authentication was cancelled or timed out', { cause: e });
             }
             throw e;
         }

@@ -930,7 +930,7 @@ class SettingsManager {
             passkeyItem?.querySelector('.passkey-name')?.textContent || 'this passkey';
 
         // Use the app's confirm modal if available
-        let confirmed = false;
+        let confirmed;
         if (typeof MediaApp !== 'undefined' && MediaApp.showConfirmModal) {
             confirmed = await MediaApp.showConfirmModal({
                 icon: 'trash-2',
@@ -981,7 +981,7 @@ class SettingsManager {
         const cacheSize = this.formatBytes(this.thumbnailCacheBytes);
         const fileCount = this.thumbnailCacheFiles;
         const fileText = fileCount === 1 ? 'file' : 'files';
-        let confirmed = false;
+        let confirmed;
         if (typeof MediaApp !== 'undefined' && MediaApp.showConfirmModal) {
             confirmed = await MediaApp.showConfirmModal({
                 icon: 'refresh-cw',
@@ -1059,7 +1059,7 @@ class SettingsManager {
         const cacheSize = this.formatBytes(this.transcodeCacheBytes);
         const fileCount = this.transcodeCacheFiles;
         const fileText = fileCount === 1 ? 'file' : 'files';
-        let confirmed = false;
+        let confirmed;
         if (typeof MediaApp !== 'undefined' && MediaApp.showConfirmModal) {
             confirmed = await MediaApp.showConfirmModal({
                 icon: 'trash-2',
