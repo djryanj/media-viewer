@@ -86,9 +86,10 @@ describe('Playlist Module', () => {
         // Mock fetchWithTimeout
         globalThis.fetchWithTimeout = vi.fn();
 
-        // Mock VideoPlayer
+        // Mock VideoPlayer (include loadSource so playCurrentVideo() can call it)
         globalThis.VideoPlayer = vi.fn().mockImplementation(() => ({
             destroy: vi.fn(),
+            loadSource: vi.fn(),
         }));
 
         // Load Playlist module
@@ -802,6 +803,109 @@ describe('Playlist Module', () => {
 
         test('swipe threshold is configurable', () => {
             expect(Playlist.edgeSwipeThreshold).toBe(30);
+        });
+    });
+
+    // =========================================
+    // playCurrentVideo()
+    // =========================================
+
+    describe('playCurrentVideo()', () => {
+        beforeEach(() => {
+            // Ensure VideoPlayer mock includes loadSource
+            globalThis.VideoPlayer = vi.fn().mockImplementation(() => ({
+                destroy: vi.fn(),
+                loadSource: vi.fn(),
+            }));
+
+            // Stub methods with side-effects to isolate the unit under test
+            vi.spyOn(Playlist, 'showLoading').mockImplementation(() => {
+                Playlist.isLoading = true;
+            });
+            vi.spyOn(Playlist, 'checkTranscodingStatus').mockImplementation(() => {});
+
+            Playlist.playlist = {
+                items: [
+                    { path: '/videos/video1.mp4', name: 'video1.mp4', type: 'video', exists: true },
+                    { path: '/videos/video2.mp4', name: 'video2.mp4', type: 'video', exists: true },
+                ],
+            };
+            Playlist.currentIndex = 0;
+        });
+
+        afterEach(() => {
+            if (Playlist.transcodingCheckTimeout) {
+                clearTimeout(Playlist.transcodingCheckTimeout);
+                Playlist.transcodingCheckTimeout = null;
+            }
+        });
+
+        test('calls initVideoPlayer() to create a VideoPlayer instance', () => {
+            const initSpy = vi.spyOn(Playlist, 'initVideoPlayer');
+
+            Playlist.playCurrentVideo();
+
+            expect(initSpy).toHaveBeenCalled();
+            expect(globalThis.VideoPlayer).toHaveBeenCalled();
+        });
+
+        test('calls videoPlayer.loadSource with the current item path', () => {
+            Playlist.playCurrentVideo();
+
+            expect(Playlist.videoPlayer.loadSource).toHaveBeenCalledWith(
+                '/videos/video1.mp4',
+                expect.any(Object)
+            );
+        });
+
+        test('passes autoplay option derived from Preferences', () => {
+            globalThis.Preferences = { isVideoAutoplayEnabled: vi.fn(() => false) };
+
+            Playlist.playCurrentVideo();
+
+            expect(Playlist.videoPlayer.loadSource).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ autoplay: false })
+            );
+        });
+
+        test('shows loading indicator before starting the load', () => {
+            Playlist.playCurrentVideo();
+
+            expect(Playlist.showLoading).toHaveBeenCalled();
+        });
+
+        test('calls next() and skips loadSource when current item does not exist', () => {
+            Playlist.playlist.items[0].exists = false;
+            const nextSpy = vi.spyOn(Playlist, 'next').mockImplementation(() => {});
+
+            Playlist.playCurrentVideo();
+
+            expect(nextSpy).toHaveBeenCalled();
+            expect(globalThis.VideoPlayer).not.toHaveBeenCalled();
+        });
+
+        test('updates the sidebar item active class', () => {
+            const ul = Playlist.elements.items;
+            ul.innerHTML = '<li></li><li></li>';
+            Playlist.currentIndex = 1;
+
+            Playlist.playCurrentVideo();
+
+            const items = ul.querySelectorAll('li');
+            expect(items[0].classList.contains('active')).toBe(false);
+            expect(items[1].classList.contains('active')).toBe(true);
+        });
+
+        test('onReady callback clears the load timeout and hides loading', () => {
+            vi.spyOn(Playlist, 'hideLoading').mockImplementation(() => {});
+
+            Playlist.playCurrentVideo();
+
+            const { onReady } = Playlist.videoPlayer.loadSource.mock.calls[0][1];
+            onReady();
+
+            expect(Playlist.hideLoading).toHaveBeenCalled();
         });
     });
 });
