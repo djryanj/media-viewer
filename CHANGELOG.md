@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.1] - Unreleased
 
+
+### Changed
+
+- chore(deps): update dependency happy-dom to v20 ([#353](https://github.com/djryanj/media-viewer/pull/353))
 ### Fixed
 
 - fix(backend): `StreamVideo` now short-circuits on `HEAD` requests when transcoding is required, returning `200 OK` with `Content-Type: video/mp4` headers without invoking `ffmpeg`. Previously a `HEAD` request to any video that needed transcoding would trigger a full transcode, causing CI failures. [#345](https://github.com/djryanj/media-viewer/issues/345)
