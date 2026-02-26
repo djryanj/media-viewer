@@ -957,11 +957,10 @@ const Playlist = {
         this.elements.title.textContent = displayName;
 
         const video = this.elements.video;
-        const videoUrl = `/api/stream/${item.path}`;
-
         // Remove any existing error listener to avoid duplicates
         if (this._videoErrorHandler) {
             video.removeEventListener('error', this._videoErrorHandler);
+            this._videoErrorHandler = null;
         }
 
         // Clear any pending audio check timeout
@@ -970,44 +969,17 @@ const Playlist = {
             this._audioCheckTimeout = null;
         }
 
-        // Create error handler for this video
-        this._videoErrorHandler = async (e) => {
-            console.error('Player: Error loading video:', e);
-            await this.checkVideoAuthError(videoUrl);
-        };
-
-        video.addEventListener('error', this._videoErrorHandler);
-
         // Show loading indicator
         this.showLoading();
-
-        // Hide loading when video can play (use canplay instead of loadeddata for better transcoding UX)
-        const hideLoadingOnCanPlay = () => {
-            this.hideLoading();
-            video.removeEventListener('canplay', hideLoadingOnCanPlay);
-            video.removeEventListener('error', hideLoadingOnError);
-        };
-
-        const hideLoadingOnError = () => {
-            this.hideLoading();
-            video.removeEventListener('canplay', hideLoadingOnCanPlay);
-            video.removeEventListener('error', hideLoadingOnError);
-        };
-
-        video.addEventListener('canplay', hideLoadingOnCanPlay);
-        video.addEventListener('error', hideLoadingOnError);
-
-        // Check if this video might need transcoding and show appropriate message
         this.checkTranscodingStatus(item.path);
 
-        // Add timeout for video loading (long timeout for transcoding)
-        const loadTimeout = setTimeout(
+        // Initialize VideoPlayer before calling loadSource so HLS support is available.
+        this.initVideoPlayer();
+
+        const loadTimeoutId = setTimeout(
             () => {
                 console.error('Player: Video load timeout:', item.path);
                 this.hideLoading();
-                video.removeEventListener('canplay', hideLoadingOnCanPlay);
-                video.removeEventListener('error', hideLoadingOnError);
-
                 if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                     Gallery.showToast(
                         'Video load timeout. Server may be transcoding a large file or experiencing issues.',
@@ -1016,34 +988,33 @@ const Playlist = {
                 }
             },
             5 * 60 * 1000
-        ); // 5 minutes for transcoding
+        );
 
-        // Clear timeout on successful load
-        const originalHideLoadingOnCanPlay = hideLoadingOnCanPlay;
-        const hideLoadingOnCanPlayWithTimeout = () => {
-            clearTimeout(loadTimeout);
-            originalHideLoadingOnCanPlay();
-        };
-
-        video.removeEventListener('canplay', hideLoadingOnCanPlay);
-        video.addEventListener('canplay', hideLoadingOnCanPlayWithTimeout);
-
-        video.src = videoUrl;
-        video.load();
-
-        // Initialize VideoPlayer component
-        this.initVideoPlayer();
-
-        if (typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled()) {
-            video.play().catch((err) => {
-                console.debug('Autoplay prevented:', err);
-            });
-        }
-
-        const activeItem = this.elements.items.querySelector('.active');
-        if (activeItem) {
-            activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
+        this.videoPlayer.loadSource(item.path, {
+            autoplay: typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled(),
+            onReady: () => {
+                clearTimeout(loadTimeoutId);
+                this.hideLoading();
+                const activeItem = this.elements.items.querySelector('.active');
+                if (activeItem) {
+                    activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            },
+            onError: async (_e) => {
+                clearTimeout(loadTimeoutId);
+                this.hideLoading();
+                await this.checkVideoAuthError(`/api/stream/${item.path}`);
+            },
+            onFallback: () => {
+                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                    Gallery.showToast(
+                        'HLS streaming error \u2014 falling back to direct stream.',
+                        'warning',
+                        5000
+                    );
+                }
+            },
+        });
     },
 
     /**

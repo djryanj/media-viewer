@@ -1463,7 +1463,7 @@ describe('Lightbox Module', () => {
         });
 
         test('close() cleans up video player', () => {
-            const mockPlayer = { destroy: vi.fn() };
+            const mockPlayer = { destroy: vi.fn(), unload: vi.fn() };
             Lightbox.videoPlayer = mockPlayer;
 
             Lightbox.close();
@@ -1668,6 +1668,8 @@ describe('Lightbox Module', () => {
     // =========================================
 
     describe('Video loading', () => {
+        let mockVideoPlayerInstance;
+
         beforeEach(() => {
             globalThis.Preferences = {
                 ...globalThis.Preferences,
@@ -1675,32 +1677,99 @@ describe('Lightbox Module', () => {
                 isVideoAutoplayEnabled: vi.fn(() => true),
             };
             globalThis.fetchWithTimeout = global.fetch;
+
+            // Provide a VideoPlayer constructor whose instances expose loadSource
+            mockVideoPlayerInstance = {
+                loadSource: vi.fn(),
+                destroy: vi.fn(),
+                unload: vi.fn(),
+                controls: document.createElement('div'),
+                cancelHideTimer: vi.fn(),
+                audioCheckTimeout: null,
+            };
+            globalThis.VideoPlayer = vi.fn(() => mockVideoPlayerInstance);
         });
 
-        test('loadVideo sets video source', () => {
-            const file = {
-                path: '/video.mp4',
-                name: 'video.mp4',
-                type: 'video',
-            };
+        afterEach(() => {
+            delete globalThis.VideoPlayer;
+        });
+
+        test('loadVideo delegates to videoPlayer.loadSource with the file path', () => {
+            const file = { path: '/video.mp4', name: 'video.mp4', type: 'video' };
+            Lightbox.currentLoadId = 1;
 
             Lightbox.loadVideo(file, 1);
 
-            expect(Lightbox.elements.video.src).toContain('/video.mp4');
+            expect(mockVideoPlayerInstance.loadSource).toHaveBeenCalledWith(
+                '/video.mp4',
+                expect.objectContaining({ loop: expect.any(Boolean) })
+            );
         });
 
-        test('loadVideo shows video element', () => {
-            const file = {
-                path: '/video.mp4',
-                name: 'video.mp4',
-                type: 'video',
-            };
+        test('loadVideo passes loop and autoplay opts from Preferences', () => {
+            globalThis.Preferences.isMediaLoopEnabled = vi.fn(() => false);
+            globalThis.Preferences.isVideoAutoplayEnabled = vi.fn(() => true);
+            const file = { path: '/vid.mp4', name: 'vid.mp4', type: 'video' };
+            Lightbox.currentLoadId = 1;
 
+            Lightbox.loadVideo(file, 1);
+
+            expect(mockVideoPlayerInstance.loadSource).toHaveBeenCalledWith(
+                '/vid.mp4',
+                expect.objectContaining({ loop: false, autoplay: true })
+            );
+        });
+
+        test('loadVideo calls showLoading before starting the load', () => {
+            const showLoadingSpy = vi.spyOn(Lightbox, 'showLoading');
+            const file = { path: '/video.mp4', name: 'video.mp4', type: 'video' };
+
+            Lightbox.loadVideo(file, 1);
+
+            expect(showLoadingSpy).toHaveBeenCalled();
+        });
+
+        test("loadVideo's onReady callback hides loading and shows video", () => {
             Lightbox.elements.video.classList.add('hidden');
+            const file = { path: '/video.mp4', name: 'video.mp4', type: 'video' };
+            Lightbox.currentLoadId = 1;
 
             Lightbox.loadVideo(file, 1);
+
+            // Simulate the VideoPlayer calling onReady
+            const { onReady } = mockVideoPlayerInstance.loadSource.mock.calls[0][1];
+            onReady();
 
             expect(Lightbox.elements.video.classList.contains('hidden')).toBe(false);
+        });
+
+        test('initVideoPlayer() creates a VideoPlayer instance', () => {
+            Lightbox.initVideoPlayer();
+
+            expect(globalThis.VideoPlayer).toHaveBeenCalled();
+            expect(Lightbox.videoPlayer).toBe(mockVideoPlayerInstance);
+        });
+
+        test('initVideoPlayer() destroys the previous instance before creating a new one', () => {
+            Lightbox.videoPlayer = mockVideoPlayerInstance;
+
+            Lightbox.initVideoPlayer();
+
+            expect(mockVideoPlayerInstance.destroy).toHaveBeenCalled();
+        });
+
+        test('abortCurrentLoad() calls videoPlayer.unload()', () => {
+            Lightbox.videoPlayer = mockVideoPlayerInstance;
+
+            Lightbox.abortCurrentLoad();
+
+            expect(mockVideoPlayerInstance.unload).toHaveBeenCalled();
+        });
+
+        test('abortCurrentLoad() is safe when videoPlayer is null', () => {
+            Lightbox.videoPlayer = null;
+
+            expect(() => Lightbox.abortCurrentLoad()).not.toThrow();
         });
     });
 

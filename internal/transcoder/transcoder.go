@@ -60,6 +60,10 @@ type Transcoder struct {
 	// Shutdown flag to prevent retries during cleanup
 	shuttingDown atomic.Bool
 
+	// HLS session management
+	hlsSessions   map[string]*HLSSession
+	hlsSessionsMu sync.Mutex
+
 	// Cache size caching (2-minute cache like thumbnail generator)
 	cachedSize      atomic.Int64
 	cachedCount     atomic.Int64
@@ -111,9 +115,13 @@ func New(cacheDir, logDir string, enabled bool, gpuAccel string) *Transcoder {
 		enabled:      enabled,
 		processes:    make(map[string]*exec.Cmd),
 		cacheLocks:   make(map[string]*sync.Mutex),
+		hlsSessions:  make(map[string]*HLSSession),
 		streamConfig: config,
 		gpuAccel:     GPUAccel(gpuAccel),
 	}
+
+	// Start background cleanup for idle HLS sessions.
+	t.startHLSSessionCleaner()
 
 	// Detect GPU capabilities if auto or specific GPU requested
 	if t.gpuAccel != GPUAccelNone {
@@ -529,19 +537,7 @@ func (t *Transcoder) transcodeDirectToCacheWithOptions(ctx context.Context, file
 	// Run FFmpeg to transcode directly to file (not stdout)
 	// This allows +faststart to work since it needs a seekable output
 	args := t.buildFFmpegArgsWithOptions(cleanInput, tmpPath, targetWidth, info, needsReencode, forceCPU)
-	// Sanitize args to prevent command injection
-	for _, arg := range args {
-		if strings.ContainsAny(arg, ";&|$><") {
-			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
-		}
-	}
-	// Sanitize args to prevent command injection
-	for _, arg := range args {
-		if strings.ContainsAny(arg, ";&|$><") {
-			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
-		}
-	}
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...) // #nosec G702 -- args are constructed internally, paths are validated above
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) // #nosec G702 -- args constructed internally; input path validated via sanitizeFilePath
 
 	// Setup stderr capture and optional logging
 	var stderr bytes.Buffer
@@ -768,10 +764,16 @@ func (t *Transcoder) getCacheLock(cacheKey string) *sync.Mutex {
 
 // transcodeAndCache transcodes and simultaneously streams to response and saves to cache
 func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w io.Writer, cachePath string, targetWidth int, info *VideoInfo, needsReencode bool) error {
+	// Validate input path (EvalSymlinks + isDir check; prevents traversal).
+	cleanInput, err := sanitizeFilePath(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid input file: %w", err)
+	}
+
 	// Create cache directory if needed
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o750); err != nil {
 		logging.Warn("Failed to create cache directory: %v (continuing without cache)", err)
-		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+		return t.transcodeStream(ctx, cleanInput, w, targetWidth, info, needsReencode)
 	}
 
 	// Create temporary file for atomic write
@@ -779,7 +781,7 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 	cacheFile, err := os.Create(tempPath)
 	if err != nil {
 		logging.Warn("Failed to create cache file: %v (continuing without cache)", err)
-		return t.transcodeStream(ctx, filePath, w, targetWidth, info, needsReencode)
+		return t.transcodeStream(ctx, cleanInput, w, targetWidth, info, needsReencode)
 	}
 	defer func() {
 		if closeErr := cacheFile.Close(); closeErr != nil {
@@ -790,14 +792,8 @@ func (t *Transcoder) transcodeAndCache(ctx context.Context, filePath string, w i
 	}()
 
 	// Build ffmpeg command - output to stdout for streaming
-	args := t.buildFFmpegArgs(filePath, "-", targetWidth, info, needsReencode)
+	args := t.buildFFmpegArgs(cleanInput, "-", targetWidth, info, needsReencode)
 	logging.Debug("FFmpeg command: ffmpeg %v", args)
-	// Sanitize args to prevent command injection
-	for _, arg := range args {
-		if strings.ContainsAny(arg, ";&|$><") {
-			return fmt.Errorf("invalid ffmpeg argument: %s", arg)
-		}
-	}
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	// Create a pipe for ffmpeg output
@@ -1378,6 +1374,9 @@ func (t *Transcoder) Cleanup() {
 	// Set shutdown flag to prevent GPU-to-CPU retries
 	t.shuttingDown.Store(true)
 
+	// Kill all active HLS ffmpeg processes first.
+	t.cleanupAllHLSSessions()
+
 	t.processMu.Lock()
 	defer t.processMu.Unlock()
 
@@ -1394,6 +1393,14 @@ func (t *Transcoder) Cleanup() {
 // ClearCache removes all cached transcoded files and returns the number of bytes freed.
 func (t *Transcoder) ClearCache() (int64, error) {
 	logging.Info("ClearCache called: cacheDir=%q", t.cacheDir)
+
+	// Kill and discard all HLS sessions before deleting their directories.
+	t.hlsSessionsMu.Lock()
+	for id, session := range t.hlsSessions {
+		session.kill()
+		delete(t.hlsSessions, id)
+	}
+	t.hlsSessionsMu.Unlock()
 
 	if t.cacheDir == "" {
 		logging.Warn("ClearCache: No cache directory configured")
