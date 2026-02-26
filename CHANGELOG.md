@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [0.14.2] - Unreleased
+## [0.14.2] - 02-26-2026 "Just the chores"
 
 ### Changed
 
 - chore(deps): update dependency happy-dom to v20 ([#353](https://github.com/djryanj/media-viewer/pull/353))
+- chore(deps): update dependency globals to v17 ([#352](https://github.com/djryanj/media-viewer/pull/352))
+- chore(deps): update dependency eslint-plugin-jsdoc to v62 ([#351](https://github.com/djryanj/media-viewer/pull/351))
+- chore(deps): update dependency eslint-config-prettier to v10 ([#350](https://github.com/djryanj/media-viewer/pull/350))
+- chore(deps): update all non-major dependencies ([#349](https://github.com/djryanj/media-viewer/pull/349))
 
 ## [0.14.1] - 02-25-2026
 
