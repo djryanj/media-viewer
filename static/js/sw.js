@@ -8,7 +8,7 @@
  * - API endpoints with ETag support: Network-first with cache fallback (respects 304)
  *   - /api/media (large responses up to 4MB)
  *   - /api/files (directory listings)
- *   - /api/thumbnail (cached thumbnails)
+ *   - /api/thumbnails (cached thumbnails)
  * - Uncached paths: /login.html, /api/auth, /api/logout (always fresh)
  */
 
@@ -49,7 +49,7 @@ const NO_CACHE_PATHS = [
 const NETWORK_FIRST_API_PATHS = [
     '/api/media', // Large responses with ETag support
     '/api/files', // Directory listings with ETag support
-    '/api/thumbnail', // Thumbnails with ETag support
+    '/api/thumbnails', // Thumbnails with ETag support
 ];
 
 // Install event - cache app shell

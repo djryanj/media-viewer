@@ -41,14 +41,14 @@ function hasPathSafeSpecialChars(name) {
 }
 
 /**
- * Fetch a file via /api/file/{path}.
+ * Fetch a file via /api/files/{path}.
  */
 async function fetchFile(path, options = {}) {
     const query = options.download ? '?download=true' : '';
     const method = options.method || 'GET';
 
     try {
-        const response = await apiRequest(`/api/file/${encodePath(path)}${query}`, {
+        const response = await apiRequest(`/api/files/${encodePath(path)}${query}`, {
             method,
         });
 
@@ -64,11 +64,11 @@ async function fetchFile(path, options = {}) {
 }
 
 /**
- * Fetch a thumbnail via /api/thumbnail/{path}.
+ * Fetch a thumbnail via /api/thumbnails/{path}.
  */
 async function fetchThumbnail(path) {
     try {
-        const response = await apiRequest(`/api/thumbnail/${encodePath(path)}`);
+        const response = await apiRequest(`/api/thumbnails/${encodePath(path)}`);
 
         let size = 0;
         if (response.ok) {
@@ -239,12 +239,12 @@ describe('Path Encoding Integration', () => {
             // everything after it to be treated as a fragment and not
             // sent to the server.
             const path = 'clip#1 final.mp4';
-            const url = `/api/thumbnail/${encodePath(path)}`;
-            expect(url).toBe('/api/thumbnail/clip%231%20final.mp4');
+            const url = `/api/thumbnails/${encodePath(path)}`;
+            expect(url).toBe('/api/thumbnails/clip%231%20final.mp4');
 
             // Verify the URL can be parsed and the full path is preserved
             const parsed = new URL(url, 'http://localhost');
-            expect(parsed.pathname).toBe('/api/thumbnail/clip%231%20final.mp4');
+            expect(parsed.pathname).toBe('/api/thumbnails/clip%231%20final.mp4');
             expect(parsed.hash).toBe(''); // No fragment
         });
 
@@ -262,17 +262,17 @@ describe('Path Encoding Integration', () => {
             expect(encoded).not.toContain('#');
             expect(encoded).not.toContain('?');
 
-            const url = `/api/thumbnail/${encoded}`;
+            const url = `/api/thumbnails/${encoded}`;
             const parsed = new URL(url, 'http://localhost');
-            expect(parsed.pathname).toBe('/api/thumbnail/how%3Fwhy%23both.jpg');
+            expect(parsed.pathname).toBe('/api/thumbnails/how%3Fwhy%23both.jpg');
             expect(parsed.hash).toBe('');
             expect(parsed.search).toBe('');
         });
     });
 
-    // ── /api/file/ ──────────────────────────────────────────────────────
+    // ── /api/files/ ──────────────────────────────────────────────────────
 
-    describe('File serving (/api/file/)', () => {
+    describe('File serving (/api/files/)', () => {
         it('should serve a file with a simple name', async () => {
             if (allFiles.length === 0) {
                 console.log('No files available, skipping');
@@ -364,9 +364,9 @@ describe('Path Encoding Integration', () => {
         });
     });
 
-    // ── /api/thumbnail/ ─────────────────────────────────────────────────
+    // ── /api/thumbnails/ ─────────────────────────────────────────────────
 
-    describe('Thumbnail serving (/api/thumbnail/)', () => {
+    describe('Thumbnail serving (/api/thumbnails/)', () => {
         it('should serve thumbnail for a simple-named image', async () => {
             if (imageFiles.length === 0) {
                 console.log('No image files available, skipping');
@@ -731,7 +731,7 @@ describe('Path Encoding Integration', () => {
             }
         );
 
-        it('should serve listed media files via encoded /api/file/ URLs', async () => {
+        it('should serve listed media files via encoded /api/files/ URLs', async () => {
             const result = await getMediaFiles('');
             expect(result.success).toBe(true);
 

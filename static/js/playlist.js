@@ -645,7 +645,7 @@ const Playlist = {
         if (paths.length === 0) return;
 
         try {
-            const response = await fetchWithTimeout('/api/tags/batch', {
+            const response = await fetchWithTimeout('/api/tags/query', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths }),
@@ -699,7 +699,7 @@ const Playlist = {
     async loadPlaylist(name) {
         MediaApp.showLoading();
         try {
-            const response = await fetchWithTimeout(`/api/playlist/${encodeURIComponent(name)}`, {
+            const response = await fetchWithTimeout(`/api/playlists/${encodeURIComponent(name)}`, {
                 timeout: 5000,
             });
 

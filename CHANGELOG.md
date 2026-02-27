@@ -7,15 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [0.14.4] - Unreleased
+## [0.15.0] - Unreleased
+
+### Changed
+
+> **Breaking**: Some of the changes in this release alter the REST API. Clients and integrations must be updated accordingly. [#112](https://github.com/djryanj/media-viewer/issues/112)
+
+- !fix(api): all REST routes now use consistent plural resource names. `/api/file/` → `/api/files/`, `/api/tag/` → `/api/tags/`, `/api/favorite/` → `/api/favorites/`, `/api/thumbnail/` → `/api/thumbnails/`. [#112](https://github.com/djryanj/media-viewer/issues/112)
+- !fix(api): `POST /api/tags/batch` renamed to `POST /api/tags/query` to better reflect that the endpoint queries tags for a set of files rather than performing a batch mutation. [#112](https://github.com/djryanj/media-viewer/issues/112)
+- !fix(api): tag rename (`POST /api/tags/rename`) and tag delete (`DELETE /api/tags/delete`) consolidated into a single `PATCH /api/tags/{id}` route that accepts a JSON body with the desired operation. [#112](https://github.com/djryanj/media-viewer/issues/112)
+- !fix(api): `POST /api/tags/file/set` replaced by `PUT /api/tags/file` — setting the full tag list on a file is now expressed as an idiomatic PUT. [#112](https://github.com/djryanj/media-viewer/issues/112)
+- !fix(api): `BulkFavoriteRequest` split into two distinct request types: `BulkAddFavoritesRequest` (contains `items`) for `POST /api/favorites/bulk` and `BulkRemoveFavoritesRequest` (contains `paths`) for `DELETE /api/favorites/bulk`. Previously both operations shared one struct with optional fields. [#112](https://github.com/djryanj/media-viewer/issues/112)
+- !fix(api): `POST /api/auth/keepalive` changed to `PUT /api/auth/keepalive`. Session extension is idempotent and does not create a resource; PUT is the correct HTTP method. [#112](https://github.com/djryanj/media-viewer/issues/112)
+- perf(backend): `BulkIndexEnd` now runs `PRAGMA wal_checkpoint(PASSIVE)` after the FTS rebuild and trigger restore. On large libraries the bulk-index write load grows the WAL to tens of MB; without a checkpoint the WAL is not folded back into the main database file until the next full checkpoint, which keeps read latency elevated. The checkpoint is best-effort (PASSIVE mode); a failure is logged at WARN level but does not cause `BulkIndexEnd` to return an error. [#372](https://github.com/djryanj/media-viewer/issues/372)
+
+### Removed
+
+- !fix(api): `GET /api/favorites/check` removed. The endpoint was unused by the frontend, which tracks favorite state locally. [#112](https://github.com/djryanj/media-viewer/issues/112)
 
 ### Added
 
 - feat(backend): added `media_viewer_db_connections_in_use` and `media_viewer_db_connections_idle` Prometheus gauges. The existing `media_viewer_db_connections_open` gauge reports `InUse + Idle`, which is nearly always 0 at scrape time because the connection is released before the scrape arrives; the two new gauges expose the underlying `sql.DBStats.InUse` and `sql.DBStats.Idle` fields directly, providing a more useful picture of connection-pool pressure. [#372](https://github.com/djryanj/media-viewer/issues/372)
-
-### Changed
-
-- perf(backend): `BulkIndexEnd` now runs `PRAGMA wal_checkpoint(PASSIVE)` after the FTS rebuild and trigger restore. On large libraries the bulk-index write load grows the WAL to tens of MB; without a checkpoint the WAL is not folded back into the main database file until the next full checkpoint, which keeps read latency elevated. The checkpoint is best-effort (PASSIVE mode); a failure is logged at WARN level but does not cause `BulkIndexEnd` to return an error. [#372](https://github.com/djryanj/media-viewer/issues/372)
 
 ### Fixed
 

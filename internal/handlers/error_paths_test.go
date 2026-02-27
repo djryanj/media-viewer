@@ -159,7 +159,7 @@ func TestGetFileWithInvalidPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/file", http.NoBody)
+			req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
 			req.Header.Set("X-Request-Path", tt.path)
 			w := httptest.NewRecorder()
 

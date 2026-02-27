@@ -445,7 +445,7 @@ async function executeWorkflowCycle(page, cycle, itemCount) {
         // Collect all unique tags from selected items
         const paths = taggable.map(([p]) => p);
         try {
-            const response = await fetch('/api/tags/batch', {
+            const response = await fetch('/api/tags/query', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths }),

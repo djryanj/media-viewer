@@ -323,7 +323,7 @@ const Tags = {
 
     async loadBulkTags(paths) {
         try {
-            const response = await fetchWithTimeout('/api/tags/batch', {
+            const response = await fetchWithTimeout('/api/tags/query', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths }),
@@ -721,7 +721,7 @@ const Tags = {
         if (visiblePaths.length === 0) return;
 
         try {
-            const response = await fetchWithTimeout('/api/tags/batch', {
+            const response = await fetchWithTimeout('/api/tags/query', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths: visiblePaths }),

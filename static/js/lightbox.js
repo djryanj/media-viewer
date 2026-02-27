@@ -1822,7 +1822,7 @@ const Lightbox = {
     },
 
     loadImage(file, loadId) {
-        const imageUrl = `/api/file/${file.path.split('/').map(encodeURIComponent).join('/')}`;
+        const imageUrl = `/api/files/${file.path.split('/').map(encodeURIComponent).join('/')}`;
         if (this.preloadCache.has(imageUrl)) {
             const cachedImg = this.preloadCache.get(imageUrl);
             if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
@@ -1927,7 +1927,7 @@ const Lightbox = {
             if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                 Gallery.showToast('Connection restored. Retrying image...');
             }
-            const imageUrl = `/api/file/${file.path.split('/').map(encodeURIComponent).join('/')}`;
+            const imageUrl = `/api/files/${file.path.split('/').map(encodeURIComponent).join('/')}`;
             this.preloadCache.delete(imageUrl);
             this.imageFailures.currentFailedImage = null;
             this.showMedia();
@@ -2108,7 +2108,7 @@ const Lightbox = {
 
     async preloadTags(paths) {
         try {
-            const response = await fetchWithTimeout('/api/tags/batch', {
+            const response = await fetchWithTimeout('/api/tags/query', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths }),
@@ -2128,7 +2128,7 @@ const Lightbox = {
     },
 
     preloadImage(file, _ = 'low') {
-        const imageUrl = `/api/file/${file.path.split('/').map(encodeURIComponent).join('/')}`;
+        const imageUrl = `/api/files/${file.path.split('/').map(encodeURIComponent).join('/')}`;
         if (this.preloadCache.has(imageUrl)) return;
 
         const controller = new AbortController();
@@ -2171,7 +2171,7 @@ const Lightbox = {
         const currentItem = this.items[this.currentIndex];
         if (currentItem)
             keepUrls.add(
-                `/api/file/${currentItem.path.split('/').map(encodeURIComponent).join('/')}`
+                `/api/files/${currentItem.path.split('/').map(encodeURIComponent).join('/')}`
             );
         for (let i = 1; i <= this.maxPreload; i++) {
             const nextItem = this.items[(this.currentIndex + i) % this.items.length];
@@ -2179,11 +2179,11 @@ const Lightbox = {
                 this.items[(this.currentIndex - i + this.items.length) % this.items.length];
             if (nextItem)
                 keepUrls.add(
-                    `/api/file/${nextItem.path.split('/').map(encodeURIComponent).join('/')}`
+                    `/api/files/${nextItem.path.split('/').map(encodeURIComponent).join('/')}`
                 );
             if (prevItem)
                 keepUrls.add(
-                    `/api/file/${prevItem.path.split('/').map(encodeURIComponent).join('/')}`
+                    `/api/files/${prevItem.path.split('/').map(encodeURIComponent).join('/')}`
                 );
         }
         for (const url of this.preloadCache.keys()) {
@@ -2254,7 +2254,7 @@ const Lightbox = {
         const file = this.items[this.currentIndex];
         if (!file || file.type === 'folder') return;
         const link = document.createElement('a');
-        link.href = `/api/file/${file.path.split('/').map(encodeURIComponent).join('/')}?download=true`;
+        link.href = `/api/files/${file.path.split('/').map(encodeURIComponent).join('/')}?download=true`;
         link.download = file.name;
         document.body.appendChild(link);
         link.click();

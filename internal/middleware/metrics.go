@@ -136,11 +136,11 @@ func normalizePath(path string) string {
 	// Define prefixes that have wildcard path parameters
 	// These routes capture arbitrary file paths and should be collapsed
 	wildcardPrefixes := []string{
-		"/api/file/",
-		"/api/thumbnail/",
+		"/api/files/",
+		"/api/thumbnails/",
 		"/api/stream/",
 		"/api/stream-info/",
-		"/api/playlist/",
+		"/api/playlists/",
 		"/js/",
 		"/css/",
 		"/icons/",

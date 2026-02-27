@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -405,82 +404,6 @@ func TestRemoveNonExistentFavoriteIntegration(t *testing.T) {
 }
 
 // =============================================================================
-// Check Favorite Tests
-// =============================================================================
-
-func TestCheckFavoriteExistsIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	h, cleanup := setupFavoritesIntegrationTest(t)
-	defer cleanup()
-
-	ctx := context.Background()
-	h.db.AddFavorite(ctx, "/media/test.jpg", "test.jpg", database.FileTypeImage)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/favorites/check?path=/media/test.jpg", http.NoBody)
-	w := httptest.NewRecorder()
-
-	h.CheckFavorite(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", w.Code)
-	}
-
-	var response map[string]bool
-	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if !response["isFavorite"] {
-		t.Error("Expected isFavorite to be true")
-	}
-}
-
-func TestCheckFavoriteNotExistsIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	h, cleanup := setupFavoritesIntegrationTest(t)
-	defer cleanup()
-
-	req := httptest.NewRequest(http.MethodGet, "/api/favorites/check?path=/media/notfavorite.jpg", http.NoBody)
-	w := httptest.NewRecorder()
-
-	h.CheckFavorite(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", w.Code)
-	}
-
-	var response map[string]bool
-	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if response["isFavorite"] {
-		t.Error("Expected isFavorite to be false")
-	}
-}
-
-func TestCheckFavoriteMissingPathIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	h, cleanup := setupFavoritesIntegrationTest(t)
-	defer cleanup()
-
-	req := httptest.NewRequest(http.MethodGet, "/api/favorites/check", http.NoBody)
-	w := httptest.NewRecorder()
-
-	h.CheckFavorite(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected status 400, got %d", w.Code)
-	}
-}
-
-// =============================================================================
 // Bulk Add Favorites Tests
 // =============================================================================
 
@@ -496,7 +419,7 @@ func TestBulkAddFavoritesIntegration(t *testing.T) {
 	addTestFile(t, h.db, "/media/photo2.jpg", "photo2.jpg", database.FileTypeImage)
 	addTestFile(t, h.db, "/media/video1.mp4", "video1.mp4", database.FileTypeVideo)
 
-	reqBody := BulkFavoriteRequest{
+	reqBody := BulkAddFavoritesRequest{
 		Items: []BulkFavoriteItem{
 			{Path: "/media/photo1.jpg", Name: "photo1.jpg", Type: database.FileTypeImage},
 			{Path: "/media/photo2.jpg", Name: "photo2.jpg", Type: database.FileTypeImage},
@@ -543,7 +466,7 @@ func TestBulkAddFavoritesEmptyItemsIntegration(t *testing.T) {
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
-	reqBody := BulkFavoriteRequest{
+	reqBody := BulkAddFavoritesRequest{
 		Items: []BulkFavoriteItem{},
 	}
 	body, _ := json.Marshal(reqBody)
@@ -566,7 +489,7 @@ func TestBulkAddFavoritesSkipsEmptyPathsIntegration(t *testing.T) {
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
-	reqBody := BulkFavoriteRequest{
+	reqBody := BulkAddFavoritesRequest{
 		Items: []BulkFavoriteItem{
 			{Path: "/media/photo1.jpg", Name: "photo1.jpg", Type: database.FileTypeImage},
 			{Path: "", Name: "empty.jpg", Type: database.FileTypeImage}, // Empty path - should be skipped
@@ -612,7 +535,7 @@ func TestBulkAddFavoritesMaxLimitIntegration(t *testing.T) {
 		}
 	}
 
-	reqBody := BulkFavoriteRequest{Items: items}
+	reqBody := BulkAddFavoritesRequest{Items: items}
 	body, _ := json.Marshal(reqBody)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/favorites/bulk", bytes.NewReader(body))
@@ -659,7 +582,7 @@ func TestBulkRemoveFavoritesIntegration(t *testing.T) {
 	h.db.AddFavorite(ctx, "/media/photo2.jpg", "photo2.jpg", database.FileTypeImage)
 	h.db.AddFavorite(ctx, "/media/video1.mp4", "video1.mp4", database.FileTypeVideo)
 
-	reqBody := BulkFavoriteRequest{
+	reqBody := BulkRemoveFavoritesRequest{
 		Paths: []string{"/media/photo1.jpg", "/media/video1.mp4"},
 	}
 	body, _ := json.Marshal(reqBody)
@@ -702,7 +625,7 @@ func TestBulkRemoveFavoritesEmptyPathsIntegration(t *testing.T) {
 	h, cleanup := setupFavoritesIntegrationTest(t)
 	defer cleanup()
 
-	reqBody := BulkFavoriteRequest{
+	reqBody := BulkRemoveFavoritesRequest{
 		Paths: []string{},
 	}
 	body, _ := json.Marshal(reqBody)
@@ -729,7 +652,7 @@ func TestBulkRemoveFavoritesSkipsEmptyPathsIntegration(t *testing.T) {
 	h.db.AddFavorite(ctx, "/media/photo1.jpg", "photo1.jpg", database.FileTypeImage)
 	h.db.AddFavorite(ctx, "/media/photo2.jpg", "photo2.jpg", database.FileTypeImage)
 
-	reqBody := BulkFavoriteRequest{
+	reqBody := BulkRemoveFavoritesRequest{
 		Paths: []string{"/media/photo1.jpg", "", "/media/photo2.jpg"},
 	}
 	body, _ := json.Marshal(reqBody)
@@ -931,22 +854,8 @@ func TestFavoritesWithUnicodePathsIntegration(t *testing.T) {
 				t.Fatalf("failed to add favorite: %v", err)
 			}
 
-			// Verify it was added by checking via API
-			checkReq := httptest.NewRequest(http.MethodGet, "/api/favorites/check?path="+url.QueryEscape(tc.path), http.NoBody)
-			checkW := httptest.NewRecorder()
-
-			h.CheckFavorite(checkW, checkReq)
-
-			if checkW.Code != http.StatusOK {
-				t.Errorf("check failed: expected status 200, got %d: %s", checkW.Code, checkW.Body.String())
-			}
-
-			var result map[string]bool
-			if err := json.NewDecoder(checkW.Body).Decode(&result); err != nil {
-				t.Fatalf("failed to decode check response: %v", err)
-			}
-
-			if !result["isFavorite"] {
+			// Verify it was added via database
+			if !h.db.IsFavorite(ctx, tc.path) {
 				t.Errorf("expected %s to be favorited", tc.path)
 			}
 		})

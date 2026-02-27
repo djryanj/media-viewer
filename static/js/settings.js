@@ -1630,8 +1630,8 @@ class SettingsManager {
         }
 
         try {
-            const response = await fetch(`/api/tags/${encodeURIComponent(tagName)}/rename`, {
-                method: 'POST',
+            const response = await fetch(`/api/tags/${encodeURIComponent(tagName)}`, {
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${sessionStorage.getItem('token')}`,
@@ -1671,7 +1671,7 @@ class SettingsManager {
         if (!confirmed) return;
 
         try {
-            const response = await fetch(`/api/tags/${encodeURIComponent(tagName)}/delete`, {
+            const response = await fetch(`/api/tags/${encodeURIComponent(tagName)}`, {
                 method: 'DELETE',
                 headers: {
                     Authorization: `Bearer ${sessionStorage.getItem('token')}`,

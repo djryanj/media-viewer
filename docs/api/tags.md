@@ -208,7 +208,7 @@ GET /api/tags/unused
 Rename a tag and update all file associations.
 
 ```
-POST /api/tags/{tag}/rename
+PUT /api/tags/{tag}
 ```
 
 ### Parameters
@@ -247,7 +247,7 @@ POST /api/tags/{tag}/rename
 Delete a tag from all file associations.
 
 ```
-DELETE /api/tags/{tag}/delete
+DELETE /api/tags/{tag}
 ```
 
 ### Parameters

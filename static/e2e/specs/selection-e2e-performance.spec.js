@@ -448,8 +448,8 @@ async function executeFullCycle(page, apiTimer, cycle, itemCount) {
 
         const paths = taggable.map(([p]) => p);
 
-        // Read all tags (batch endpoint)
-        const readResp = await fetch('/api/tags/batch', {
+        // Read all tags (query endpoint)
+        const readResp = await fetch('/api/tags/query', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ paths }),
@@ -578,7 +578,7 @@ function printServerDegradationReport(cycleResults) {
         'GET /api/tags/file',
         'POST /api/tags/file',
         'GET /api/tags',
-        'POST /api/tags/batch',
+        'POST /api/tags/query',
     ];
 
     console.log('\n=== Server Response Time Trend ===');

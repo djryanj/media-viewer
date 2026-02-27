@@ -23,21 +23,21 @@ const TEST_CONFIG = {
         FILES: {
             LIST: '/api/files',
             LIST_PATHS: '/api/files/paths',
-            GET_FILE: '/api/file',
+            GET_FILE: '/api/files',
             MEDIA: '/api/media',
-            THUMBNAIL: '/api/thumbnail',
+            THUMBNAIL: '/api/thumbnails',
         },
         TAGS: {
             LIST: '/api/tags',
             STATS: '/api/tags/stats',
             UNUSED: '/api/tags/unused',
             FILE: '/api/tags/file',
-            FILE_SET: '/api/tags/file/set',
-            BATCH: '/api/tags/batch',
+            FILE_SET: '/api/tags/file',
+            QUERY: '/api/tags/query',
             BULK: '/api/tags/bulk',
             BY_TAG: '/api/tags',
-            RENAME_EVERYWHERE: (tag) => `/api/tags/${tag}/rename`,
-            DELETE_EVERYWHERE: (tag) => `/api/tags/${tag}/delete`,
+            RENAME_EVERYWHERE: (tag) => `/api/tags/${tag}`,
+            DELETE_EVERYWHERE: (tag) => `/api/tags/${tag}`,
         },
         FAVORITES: {
             LIST: '/api/favorites',
@@ -45,7 +45,6 @@ const TEST_CONFIG = {
             REMOVE: '/api/favorites',
             BULK_ADD: '/api/favorites/bulk',
             BULK_REMOVE: '/api/favorites/bulk',
-            CHECK: '/api/favorites/check',
         },
         SEARCH: {
             SEARCH: '/api/search',
@@ -53,7 +52,7 @@ const TEST_CONFIG = {
         },
         PLAYLISTS: {
             LIST: '/api/playlists',
-            GET: (name) => `/api/playlist/${name}`,
+            GET: (name) => `/api/playlists/${name}`,
         },
         SYSTEM: {
             STATS: '/api/stats',

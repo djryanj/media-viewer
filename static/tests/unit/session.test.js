@@ -197,7 +197,7 @@ describe('SessionManager', () => {
             expect(global.fetch).toHaveBeenCalledWith(
                 '/api/auth/keepalive',
                 expect.objectContaining({
-                    method: 'POST',
+                    method: 'PUT',
                     credentials: 'same-origin',
                 })
             );

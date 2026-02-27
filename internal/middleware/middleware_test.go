@@ -651,8 +651,8 @@ func TestIsStreamingPath(t *testing.T) {
 		{"Stream endpoint", "/api/stream/video.mp4", true},
 		{"Stream with nested path", "/api/stream/folder/subfolder/video.mp4", true},
 		{"Stream root", "/api/stream/", true},
-		{"File endpoint", "/api/file/video.mp4", false},
-		{"Thumbnail endpoint", "/api/thumbnail/image.jpg", false},
+		{"File endpoint", "/api/files/video.mp4", false},
+		{"Thumbnail endpoint", "/api/thumbnails/image.jpg", false},
 		{"API root", "/api/", false},
 		{"Root path", "/", false},
 		{"Stream-info endpoint", "/api/stream-info/video.mp4", false},
@@ -757,13 +757,13 @@ func TestNormalizePath(t *testing.T) {
 	}{
 		{
 			name:     "API file path",
-			path:     "/api/file/photos/vacation/image.jpg",
-			expected: "/api/file/{path}",
+			path:     "/api/files/photos/vacation/image.jpg",
+			expected: "/api/files/{path}",
 		},
 		{
 			name:     "API thumbnail path",
-			path:     "/api/thumbnail/videos/movie.mp4",
-			expected: "/api/thumbnail/{path}",
+			path:     "/api/thumbnails/videos/movie.mp4",
+			expected: "/api/thumbnails/{path}",
 		},
 		{
 			name:     "API stream path",
@@ -777,8 +777,8 @@ func TestNormalizePath(t *testing.T) {
 		},
 		{
 			name:     "API playlist path",
-			path:     "/api/playlist/12345",
-			expected: "/api/playlist/{path}",
+			path:     "/api/playlists/12345",
+			expected: "/api/playlists/{path}",
 		},
 		{
 			name:     "JS file path",
@@ -832,8 +832,8 @@ func TestNormalizePath(t *testing.T) {
 		},
 		{
 			name:     "Wildcard prefix without trailing content",
-			path:     "/api/file/",
-			expected: "/api/file/{path}",
+			path:     "/api/files/",
+			expected: "/api/files/{path}",
 		},
 	}
 
@@ -920,15 +920,15 @@ func TestNormalizePathCardinality(t *testing.T) {
 	// by verifying many different paths map to the same normalized path
 
 	filePaths := []string{
-		"/api/file/user1/photo1.jpg",
-		"/api/file/user2/photo2.jpg",
-		"/api/file/deep/nested/path/file.png",
+		"/api/files/user1/photo1.jpg",
+		"/api/files/user2/photo2.jpg",
+		"/api/files/deep/nested/path/file.png",
 	}
 
 	for _, path := range filePaths {
 		normalized := normalizePath(path)
-		if normalized != "/api/file/{path}" {
-			t.Errorf("Expected all file paths to normalize to /api/file/{path}, got %q for %q", normalized, path)
+		if normalized != "/api/files/{path}" {
+			t.Errorf("Expected all file paths to normalize to /api/files/{path}, got %q for %q", normalized, path)
 		}
 	}
 
@@ -1056,8 +1056,8 @@ func BenchmarkMetricsMiddleware(b *testing.B) {
 
 func BenchmarkNormalizePath(b *testing.B) {
 	paths := []string{
-		"/api/file/deep/nested/path/to/file.jpg",
-		"/api/thumbnail/image.png",
+		"/api/files/deep/nested/path/to/file.jpg",
+		"/api/thumbnails/image.png",
 		"/api/favorites",
 		"/",
 		"/very/deep/path/with/many/segments/here",

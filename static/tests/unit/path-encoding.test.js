@@ -294,18 +294,18 @@ describe('Path segment encoding with encodeURIComponent', () => {
     });
 
     describe('Constructed API URLs are well-formed', () => {
-        it('should produce valid /api/file/ URL with no raw special chars', () => {
+        it('should produce valid /api/files/ URL with no raw special chars', () => {
             const path = 'photos/my file #1.jpg';
-            const url = `/api/file/${encodePath(path)}`;
+            const url = `/api/files/${encodePath(path)}`;
 
-            expect(url).toBe('/api/file/photos/my%20file%20%231.jpg');
+            expect(url).toBe('/api/files/photos/my%20file%20%231.jpg');
             expect(url).not.toContain(' ');
             expect(url).not.toMatch(/[^%]#/);
         });
 
-        it('should produce valid /api/thumbnail/ URL', () => {
-            const url = `/api/thumbnail/${encodePath('photos/café.jpg')}`;
-            expect(url).toBe('/api/thumbnail/photos/caf%C3%A9.jpg');
+        it('should produce valid /api/thumbnails/ URL', () => {
+            const url = `/api/thumbnails/${encodePath('photos/café.jpg')}`;
+            expect(url).toBe('/api/thumbnails/photos/caf%C3%A9.jpg');
         });
 
         it('should produce valid /api/stream/ URL', () => {
@@ -314,16 +314,16 @@ describe('Path segment encoding with encodeURIComponent', () => {
         });
 
         it('should produce valid download URL with query param intact', () => {
-            const url = `/api/file/${encodePath('docs/report & summary.pdf')}?download=true`;
+            const url = `/api/files/${encodePath('docs/report & summary.pdf')}?download=true`;
 
-            expect(url).toBe('/api/file/docs/report%20%26%20summary.pdf?download=true');
+            expect(url).toBe('/api/files/docs/report%20%26%20summary.pdf?download=true');
             // Only one '?' — the download query param, not from the filename
             expect(url.split('?').length).toBe(2);
         });
 
         it('should not break URL when path has no special chars', () => {
-            const url = `/api/file/${encodePath('simple/path/file.jpg')}`;
-            expect(url).toBe('/api/file/simple/path/file.jpg');
+            const url = `/api/files/${encodePath('simple/path/file.jpg')}`;
+            expect(url).toBe('/api/files/simple/path/file.jpg');
         });
     });
 });
