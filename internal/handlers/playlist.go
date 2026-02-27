@@ -54,7 +54,7 @@ func (h *Handlers) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pl, err := playlist.ParseWPL(playlistPath, h.mediaDir)
+	pl, err := playlist.ParseWPL(r.Context(), playlistPath, h.mediaDir)
 	if err != nil {
 		http.Error(w, "Failed to parse playlist", http.StatusInternalServerError)
 		return

@@ -911,5 +911,122 @@ describe('Playlist Module', () => {
 
             expect(Playlist.hideLoading).toHaveBeenCalled();
         });
+
+        test('stores load timeout as _loadTimeoutId (not a local variable)', () => {
+            vi.useFakeTimers();
+
+            Playlist.playCurrentVideo();
+
+            expect(Playlist._loadTimeoutId).not.toBeNull();
+
+            vi.useRealTimers();
+        });
+
+        test('clears previous _loadTimeoutId when called a second time', () => {
+            vi.useFakeTimers();
+
+            Playlist.playCurrentVideo();
+            const firstId = Playlist._loadTimeoutId;
+
+            const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+            Playlist.currentIndex = 1;
+            Playlist.playCurrentVideo();
+
+            expect(clearSpy).toHaveBeenCalledWith(firstId);
+            expect(Playlist._loadTimeoutId).not.toBe(firstId);
+
+            vi.useRealTimers();
+        });
+
+        test('onReady clears _loadTimeoutId', () => {
+            vi.useFakeTimers();
+
+            Playlist.playCurrentVideo();
+
+            const { onReady } = Playlist.videoPlayer.loadSource.mock.calls[0][1];
+            onReady();
+
+            expect(Playlist._loadTimeoutId).toBeNull();
+
+            vi.useRealTimers();
+        });
+
+        test('onError clears _loadTimeoutId', async () => {
+            vi.useFakeTimers();
+
+            globalThis.fetchWithTimeout = vi.fn(() => Promise.resolve({ ok: true, status: 200 }));
+
+            Playlist.playCurrentVideo();
+
+            const { onError } = Playlist.videoPlayer.loadSource.mock.calls[0][1];
+            await onError(new Event('error'));
+
+            expect(Playlist._loadTimeoutId).toBeNull();
+
+            delete globalThis.fetchWithTimeout;
+            vi.useRealTimers();
+        });
+
+        test('aborts _videoCheckController from a previous play on re-navigation', () => {
+            Playlist.playCurrentVideo();
+
+            // Simulate a controller left behind by an in-flight onError check
+            const staleController = new AbortController();
+            Playlist._videoCheckController = staleController;
+
+            Playlist.currentIndex = 1;
+            Playlist.playCurrentVideo();
+
+            expect(staleController.signal.aborted).toBe(true);
+        });
+    });
+
+    // =========================================
+    // checkVideoAuthError()
+    // =========================================
+
+    describe('checkVideoAuthError()', () => {
+        let mockSession;
+
+        beforeEach(() => {
+            mockSession = { handleSessionExpired: vi.fn() };
+            globalThis.SessionManager = mockSession;
+        });
+
+        afterEach(() => {
+            delete globalThis.fetchWithTimeout;
+            delete globalThis.SessionManager;
+        });
+
+        test('does nothing when the signal is already aborted before the response arrives', async () => {
+            const controller = new AbortController();
+            controller.abort();
+
+            globalThis.fetchWithTimeout = vi.fn(() => Promise.resolve({ status: 401, ok: false }));
+
+            await Playlist.checkVideoAuthError('/api/stream/video.mp4', controller.signal);
+
+            expect(mockSession.handleSessionExpired).not.toHaveBeenCalled();
+        });
+
+        test('calls handleSessionExpired on 401 when signal is not aborted', async () => {
+            const controller = new AbortController();
+
+            globalThis.fetchWithTimeout = vi.fn(() => Promise.resolve({ status: 401, ok: false }));
+
+            await Playlist.checkVideoAuthError('/api/stream/video.mp4', controller.signal);
+
+            expect(mockSession.handleSessionExpired).toHaveBeenCalled();
+        });
+
+        test('silently ignores AbortError thrown by fetchWithTimeout', async () => {
+            const err = new DOMException('Aborted', 'AbortError');
+            globalThis.fetchWithTimeout = vi.fn(() => Promise.reject(err));
+
+            // Should not throw
+            await expect(
+                Playlist.checkVideoAuthError('/api/stream/video.mp4')
+            ).resolves.toBeUndefined();
+        });
     });
 });

@@ -636,3 +636,55 @@ func TestListPlaylistsResponseStructureIntegration(t *testing.T) {
 		t.Errorf("expected type FileTypePlaylist, got %v", pl.Type)
 	}
 }
+
+// TestGetPlaylistCancelledContextIntegration verifies that GetPlaylist returns
+// an error response (not a 200) when the request context is already canceled
+// before the handler runs. This exercises the context propagation path added
+// when ParseWPL learned to accept a context.Context.
+func TestGetPlaylistCancelledContextIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, mediaDir, cleanup := setupPlaylistIntegrationTest(t)
+	defer cleanup()
+
+	playlist1 := filepath.Join(mediaDir, "cancel.wpl")
+	createTestPlaylist(t, playlist1, "Cancel Test", []string{"track.mp3"})
+	addPlaylistToDatabase(t, h.db, playlist1, mediaDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so the handler receives an already-done context
+
+	req := httptest.NewRequest(http.MethodGet, "/api/playlists/cancel", http.NoBody).WithContext(ctx)
+	req = mux.SetURLVars(req, map[string]string{"name": "cancel"})
+	w := httptest.NewRecorder()
+
+	h.GetPlaylist(w, req)
+
+	// The handler must not return 200 for a canceled request
+	if w.Code == http.StatusOK {
+		t.Errorf("expected non-200 status for canceled context, got %d", w.Code)
+	}
+}
+
+// TestListPlaylistsCancelledContextIntegration verifies that ListPlaylists
+// respects a pre-canceled context and returns an error response.
+func TestListPlaylistsCancelledContextIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, _, cleanup := setupPlaylistIntegrationTest(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/playlists", http.NoBody).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	h.ListPlaylists(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Errorf("expected non-200 status for canceled context, got %d", w.Code)
+	}
+}

@@ -1,6 +1,8 @@
 package playlist
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -254,7 +256,7 @@ func TestParseWPLInvalidFile(t *testing.T) {
 	// Create an invalid WPL file (not XML)
 	os.WriteFile(wplPath, []byte("not xml"), 0o644)
 
-	_, err := ParseWPL(wplPath, mediaDir)
+	_, err := ParseWPL(context.Background(), wplPath, mediaDir)
 	if err == nil {
 		t.Error("Expected error when parsing invalid XML")
 	}
@@ -265,7 +267,7 @@ func TestParseWPLNonexistent(t *testing.T) {
 	wplPath := filepath.Join(tmpDir, "nonexistent.wpl")
 	mediaDir := tmpDir
 
-	_, err := ParseWPL(wplPath, mediaDir)
+	_, err := ParseWPL(context.Background(), wplPath, mediaDir)
 	if err == nil {
 		t.Error("Expected error when parsing nonexistent file")
 	}
@@ -299,7 +301,7 @@ func TestParseWPLValidFile(t *testing.T) {
 
 	os.WriteFile(wplPath, []byte(wplContent), 0o644)
 
-	playlist, err := ParseWPL(wplPath, mediaDir)
+	playlist, err := ParseWPL(context.Background(), wplPath, mediaDir)
 	if err != nil {
 		t.Fatalf("Failed to parse valid WPL: %v", err)
 	}
@@ -335,7 +337,7 @@ func TestParseWPLEmptyPlaylist(t *testing.T) {
 
 	os.WriteFile(wplPath, []byte(wplContent), 0o644)
 
-	playlist, err := ParseWPL(wplPath, tmpDir)
+	playlist, err := ParseWPL(context.Background(), wplPath, tmpDir)
 	if err != nil {
 		t.Fatalf("Failed to parse empty playlist: %v", err)
 	}
@@ -376,6 +378,93 @@ func TestPlaylistStruct(t *testing.T) {
 
 	if existingCount != 1 {
 		t.Errorf("Expected 1 existing file, got %d", existingCount)
+	}
+}
+
+// TestParseWPLCancelledBeforeRead verifies that ParseWPL respects a context that
+// is already canceled before the call is made, returning the context error rather
+// than attempting any filesystem I/O.
+func TestParseWPLCancelledBeforeRead(t *testing.T) {
+	tmpDir := t.TempDir()
+	wplPath := filepath.Join(tmpDir, "test.wpl")
+	mediaDir := tmpDir
+
+	wplContent := `<?xml version="1.0" encoding="UTF-8"?>
+<smil><head><title>Test</title></head><body><seq></seq></body></smil>`
+	if err := os.WriteFile(wplPath, []byte(wplContent), 0o644); err != nil {
+		t.Fatalf("failed to write wpl file: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := ParseWPL(ctx, wplPath, mediaDir)
+	if err == nil {
+		t.Fatal("expected error for canceled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestParseWPLDeadlineExceeded verifies that ParseWPL returns an error when the
+// context deadline has already passed.
+func TestParseWPLDeadlineExceeded(t *testing.T) {
+	tmpDir := t.TempDir()
+	wplPath := filepath.Join(tmpDir, "test.wpl")
+	mediaDir := tmpDir
+
+	wplContent := `<?xml version="1.0" encoding="UTF-8"?>
+<smil><head><title>Test</title></head><body><seq></seq></body></smil>`
+	if err := os.WriteFile(wplPath, []byte(wplContent), 0o644); err != nil {
+		t.Fatalf("failed to write wpl file: %v", err)
+	}
+
+	// Create a context whose deadline is already exceeded
+	ctx, cancel := context.WithTimeout(context.Background(), 1)
+	defer cancel()
+	// Ensure it has expired
+	<-ctx.Done()
+
+	_, err := ParseWPL(ctx, wplPath, mediaDir)
+	if err == nil {
+		t.Fatal("expected error for expired deadline, got nil")
+	}
+}
+
+// TestParseWPLActiveContextSucceeds confirms that ParseWPL works normally when
+// the context is active (regression guard for the context checks).
+func TestParseWPLActiveContextSucceeds(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := filepath.Join(tmpDir, "media")
+	playlistDir := filepath.Join(tmpDir, "playlists")
+
+	if err := os.MkdirAll(mediaDir, 0o755); err != nil {
+		t.Fatalf("failed to create mediaDir: %v", err)
+	}
+	if err := os.MkdirAll(playlistDir, 0o755); err != nil {
+		t.Fatalf("failed to create playlistDir: %v", err)
+	}
+
+	wplPath := filepath.Join(playlistDir, "ctx.wpl")
+	wplContent := `<?xml version="1.0" encoding="UTF-8"?>
+<smil>
+	<head><title>Context Test</title></head>
+	<body><seq><media src="track.mp3"/></seq></body>
+</smil>`
+	if err := os.WriteFile(wplPath, []byte(wplContent), 0o644); err != nil {
+		t.Fatalf("failed to write wpl file: %v", err)
+	}
+
+	pl, err := ParseWPL(context.Background(), wplPath, mediaDir)
+	if err != nil {
+		t.Fatalf("unexpected error with active context: %v", err)
+	}
+	if pl.Name != "Context Test" {
+		t.Errorf("expected Name='Context Test', got %q", pl.Name)
+	}
+	if len(pl.Items) != 1 {
+		t.Errorf("expected 1 item, got %d", len(pl.Items))
 	}
 }
 
