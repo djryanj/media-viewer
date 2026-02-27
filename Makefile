@@ -34,6 +34,7 @@ FORCE ?= 0
 
 .PHONY: all \
         build build-all resetpw release-build \
+        prepare-release tag-release \
         run dev dev-info dev-proxy dev-frontend dev-full \
         test test-short test-package test-failures \
         test-coverage test-coverage-report test-coverage-merge \
@@ -83,6 +84,85 @@ release-build:
 	@echo "Building release binaries..."
 	$(GO_BUILD) -ldflags "$(LDFLAGS) -s -w" -o media-viewer ./cmd/media-viewer
 	$(GO_BUILD) -ldflags "$(LDFLAGS) -s -w" -o resetpw ./cmd/resetpw
+
+# =============================================================================
+# Release Targets
+# =============================================================================
+
+# Strip a leading 'v' so VERSION=v0.15.0 and VERSION=0.15.0 both work.
+VERSION_NUM = $(patsubst v%,%,$(VERSION))
+VERSION_TAG = v$(VERSION_NUM)
+
+# Internal guard — validates that VERSION is provided and well-formed.
+.PHONY: _check-version
+_check-version:
+	@[ -n "$(VERSION)" ] || { \
+		echo "Error: VERSION is required. Example: make $(MAKECMDGOALS) VERSION=v0.15.0"; \
+		exit 1; \
+	}
+	@echo "$(VERSION)" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9][a-zA-Z0-9.]*)?$$' || { \
+		echo "Error: VERSION must be in vX.Y.Z or vX.Y.Z-pre format (e.g., v0.15.0, v0.15.0-rc1)"; \
+		exit 1; \
+	}
+
+# prepare-release VERSION=vX.Y.Z
+#   Creates a release/vX.Y.Z branch from a clean main, bumps static/package.json,
+#   stamps the changelog date, commits, and pushes. Run this before opening the
+#   release PR.
+prepare-release: _check-version
+	@echo "─── Checking working tree is clean ───────────────────────────────────"
+	@git diff --quiet && git diff --cached --quiet || { \
+		echo "Error: Working tree has uncommitted changes. Commit or stash them first."; \
+		exit 1; \
+	}
+	@echo "─── Ensuring we are on main ──────────────────────────────────────────"
+	@[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { \
+		echo "Error: prepare-release must be run from the main branch."; \
+		exit 1; \
+	}
+	@git pull --ff-only origin main
+	@echo "─── Creating branch release/$(VERSION_TAG) ───────────────────────────"
+	@git checkout -b release/$(VERSION_TAG)
+	@echo "─── Bumping static/package.json to $(VERSION_NUM) ───────────────────"
+	@cd $(STATIC_DIR) && npm version $(VERSION_NUM) --no-git-tag-version --allow-same-version
+	@echo "─── Stamping CHANGELOG.md ────────────────────────────────────────────"
+	@ESCAPED=$$(printf '%s' '$(VERSION_NUM)' | sed 's/\./\\./g'); \
+	 TODAY=$$(date -u '+%m-%d-%Y'); \
+	 sed -i "s/^\(## \[$$ESCAPED\] - \)Unreleased$$/\1$$TODAY/" CHANGELOG.md
+	@echo "─── Committing ───────────────────────────────────────────────────────"
+	@git add static/package.json static/package-lock.json CHANGELOG.md
+	@git commit -m "chore(release): prepare $(VERSION_TAG)"
+	@echo "─── Pushing branch ───────────────────────────────────────────────────"
+	@git push -u origin release/$(VERSION_TAG)
+	@echo ""
+	@echo "Release branch ready. Next steps:"
+	@echo "  1. Open a PR: release/$(VERSION_TAG) -> main"
+	@echo "  2. Merge the PR"
+	@echo "  3. git checkout main && git pull origin main"
+	@echo "  4. make tag-release VERSION=$(VERSION)"
+
+# tag-release VERSION=vX.Y.Z
+#   Creates an annotated tag on main and pushes it, triggering the release
+#   workflow. Must be run from main after the release PR has been merged.
+tag-release: _check-version
+	@echo "─── Ensuring we are on main ──────────────────────────────────────────"
+	@[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { \
+		echo "Error: tag-release must be run from the main branch."; \
+		exit 1; \
+	}
+	@git pull --ff-only origin main
+	@echo "─── Verifying CHANGELOG has a dated entry for [$(VERSION_NUM)] ───────"
+	@grep -Eq "^## \[$(VERSION_NUM)\] - [0-9]" CHANGELOG.md || { \
+		echo "Error: CHANGELOG.md has no dated entry for [$(VERSION_NUM)]."; \
+		echo "       Did you merge the release branch and pull?"; \
+		exit 1; \
+	}
+	@echo "─── Creating annotated tag $(VERSION_TAG) ────────────────────────────"
+	@git tag -a $(VERSION_TAG) -m "Release $(VERSION_TAG)"
+	@echo "─── Pushing tag ──────────────────────────────────────────────────────"
+	@git push origin $(VERSION_TAG)
+	@echo ""
+	@echo "Tag $(VERSION_TAG) pushed — the release workflow has started."
 
 # =============================================================================
 # Development Targets
@@ -806,6 +886,21 @@ help:
 	@echo "  resetpw            Build the password reset tool"
 	@echo "  release-build      Build with release optimizations (-s -w)"
 	@echo ""
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo " Release"
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  prepare-release    Create release branch, bump package.json, stamp changelog"
+	@echo "                       make prepare-release VERSION=v0.15.0"
+	@echo "  tag-release        Tag main and push to trigger the release workflow"
+	@echo "                       make tag-release VERSION=v0.15.0"
+	@echo ""
+	@echo "  Full flow:"
+	@echo "    1. make prepare-release VERSION=v0.15.0   (on main)"
+	@echo "    2. Open PR, review, and merge"
+	@echo "    3. git checkout main && git pull origin main"
+	@echo "    4. make tag-release VERSION=v0.15.0        (on main)"
+	@echo ""
+
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo " Development"
 	@echo "═══════════════════════════════════════════════════════════════════"

@@ -155,16 +155,26 @@ make test-clean
 
 ## Release Process
 
-Releases are automated when tags are pushed:
+Two `make` targets handle the full release workflow.
 
-1. Commits are analyzed for version bumping:
-    - `fix:` → patch version (1.0.x)
-    - `feat:` → minor version (1.x.0)
-    - `feat!:` or `BREAKING CHANGE:` → major version (x.0.0)
+**Step 1 — prepare the release branch** (run from a clean `main`):
 
-2. Changelog is automatically generated from commits
+```bash
+make prepare-release VERSION=v0.15.0
+```
 
-3. Docker images are built and pushed to GHCR
+This creates `release/v0.15.0`, bumps `static/package.json` to `0.15.0`, stamps the `CHANGELOG.md` date, commits both files, and pushes the branch. Open a PR from `release/v0.15.0` → `main`, review it, then merge.
+
+**Step 2 — tag** (run from `main` after the PR is merged):
+
+```bash
+git checkout main && git pull origin main
+make tag-release VERSION=v0.15.0
+```
+
+This verifies the changelog entry is dated (not `Unreleased`), creates an annotated `v0.15.0` tag, and pushes it. Pushing the tag fires the existing `release.yml` workflow, which runs all tests, builds Docker images, generates SBOMs, and creates the GitHub Release.
+
+Both targets accept `VERSION=v0.15.0` or `VERSION=0.15.0` (the `v` prefix is optional).
 
 ## Questions?
 
