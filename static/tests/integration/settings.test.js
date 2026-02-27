@@ -962,9 +962,9 @@ describe('SettingsManager Integration Tests', () => {
             await settingsManager.renameTag('old-name');
 
             expect(globalThis.fetch).toHaveBeenCalledWith(
-                '/api/tags/old-name/rename',
+                '/api/tags/old-name',
                 expect.objectContaining({
-                    method: 'POST',
+                    method: 'PUT',
                     body: JSON.stringify({ newName: 'new-name' }),
                 })
             );
@@ -984,7 +984,7 @@ describe('SettingsManager Integration Tests', () => {
             await settingsManager.deleteTag('test-tag');
 
             expect(globalThis.fetch).toHaveBeenCalledWith(
-                '/api/tags/test-tag/delete',
+                '/api/tags/test-tag',
                 expect.objectContaining({
                     method: 'DELETE',
                 })

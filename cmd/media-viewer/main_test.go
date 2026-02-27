@@ -455,7 +455,7 @@ func TestHTTPRouteStructure(t *testing.T) {
 		},
 		{
 			category:    "File routes",
-			description: "Should have /api/files, /api/file/*, /api/thumbnail/* endpoints",
+			description: "Should have /api/files, /api/files/*, /api/thumbnails/* endpoints",
 		},
 		{
 			category:    "Favorites routes",

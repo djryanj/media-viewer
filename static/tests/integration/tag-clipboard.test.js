@@ -600,7 +600,7 @@ describe('TagClipboard Integration Tests', () => {
             await TagClipboard.openMergeModal(items);
 
             expect(globalThis.fetchWithTimeout).toHaveBeenCalledWith(
-                '/api/tags/batch',
+                '/api/tags/query',
                 expect.objectContaining({
                     method: 'POST',
                     body: JSON.stringify({ paths: ['/path1', '/path2'] }),

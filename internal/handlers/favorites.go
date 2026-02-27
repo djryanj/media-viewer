@@ -21,10 +21,14 @@ type BulkFavoriteItem struct {
 	Type database.FileType `json:"type"`
 }
 
-// BulkFavoriteRequest represents a request to add/remove multiple favorites
-type BulkFavoriteRequest struct {
+// BulkAddFavoritesRequest represents a request to add multiple favorites
+type BulkAddFavoritesRequest struct {
 	Items []BulkFavoriteItem `json:"items"`
-	Paths []string           `json:"paths"` // For remove operations (only paths needed)
+}
+
+// BulkRemoveFavoritesRequest represents a request to remove multiple favorites
+type BulkRemoveFavoritesRequest struct {
+	Paths []string `json:"paths"`
 }
 
 // BulkFavoriteResponse represents the response from a bulk favorite operation
@@ -102,7 +106,7 @@ func (h *Handlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) BulkAddFavorites(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req BulkFavoriteRequest
+	var req BulkAddFavoritesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -152,7 +156,7 @@ func (h *Handlers) BulkAddFavorites(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) BulkRemoveFavorites(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var req BulkFavoriteRequest
+	var req BulkRemoveFavoritesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -196,20 +200,4 @@ func (h *Handlers) BulkRemoveFavorites(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, response)
-}
-
-// CheckFavorite checks if a media file is in favorites
-func (h *Handlers) CheckFavorite(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		http.Error(w, "Path is required", http.StatusBadRequest)
-		return
-	}
-
-	isFavorite := h.db.IsFavorite(ctx, path)
-
-	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, map[string]bool{"isFavorite": isFavorite})
 }

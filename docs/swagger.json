@@ -287,7 +287,7 @@
             }
         },
         "/api/auth/keepalive": {
-            "post": {
+            "put": {
                 "tags": [
                     "Authentication"
                 ],
@@ -1186,46 +1186,6 @@
                 }
             }
         },
-        "/api/favorites/check": {
-            "get": {
-                "tags": [
-                    "Favorites"
-                ],
-                "summary": "Check if file is favorited",
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "path",
-                        "in": "query",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Favorite status",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "isFavorite": {
-                                            "type": "boolean"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/api/tags": {
             "get": {
                 "tags": [
@@ -1376,10 +1336,8 @@
                         "description": "Tag removed"
                     }
                 }
-            }
-        },
-        "/api/tags/file/set": {
-            "post": {
+            },
+            "put": {
                 "tags": [
                     "Tags"
                 ],
@@ -1422,7 +1380,7 @@
                 }
             }
         },
-        "/api/tags/batch": {
+        "/api/tags/query": {
             "post": {
                 "tags": [
                     "Tags"

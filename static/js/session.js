@@ -195,7 +195,7 @@ const SessionManager = {
             const timeoutId = setTimeout(() => controller.abort(), 5000);
 
             const response = await fetch('/api/auth/keepalive', {
-                method: 'POST',
+                method: 'PUT',
                 credentials: 'same-origin',
                 cache: 'no-store',
                 headers: {

@@ -980,7 +980,7 @@ describe('Playlist Integration', () => {
             });
 
             globalThis.fetchWithTimeout = vi.fn((url) => {
-                if (url.includes('/api/playlist/')) {
+                if (url.includes('/api/playlists/')) {
                     return Promise.resolve({
                         ok: true,
                         status: 200,
@@ -1020,7 +1020,7 @@ describe('Playlist Integration', () => {
             const mockTags = { '/videos/video1.mp4': ['favourite'] };
 
             globalThis.fetchWithTimeout = vi.fn((url) => {
-                if (url.includes('/api/playlist/')) {
+                if (url.includes('/api/playlists/')) {
                     return Promise.resolve({
                         ok: true,
                         status: 200,

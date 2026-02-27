@@ -283,6 +283,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	r := mux.NewRouter()
 
 	// Health check and version routes (no auth required)
+	// Note: both /health and /healthz are supported for compatibility with different platforms
 	r.HandleFunc("/health", h.HealthCheck).Methods("GET", "HEAD")
 	r.HandleFunc("/healthz", h.HealthCheck).Methods("GET", "HEAD")
 	r.HandleFunc("/livez", h.LivenessCheck).Methods("GET", "HEAD")
@@ -305,7 +306,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	auth.HandleFunc("/logout", h.Logout).Methods("POST")
 	auth.HandleFunc("/check", h.CheckAuth).Methods("GET")
 	auth.HandleFunc("/password", h.ChangePassword).Methods("PUT")
-	auth.HandleFunc("/keepalive", h.Keepalive).Methods("POST")
+	auth.HandleFunc("/keepalive", h.Keepalive).Methods("PUT")
 
 	// WebAuthn/Passkey routes
 	auth.HandleFunc("/webauthn/available", h.WebAuthnAvailable).Methods("GET")
@@ -320,11 +321,10 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api := r.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/files", h.ListFiles).Methods("GET")
 	api.HandleFunc("/files/paths", h.ListFilePaths).Methods("GET")
-	api.HandleFunc("/file/{path:.*}", h.GetFile).Methods("GET")
+	api.HandleFunc("/files/{path:.*}", h.GetFile).Methods("GET")
 	api.HandleFunc("/media", h.GetMediaFiles).Methods("GET")
-	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")
 	api.HandleFunc("/playlists", h.ListPlaylists).Methods("GET")
-	api.HandleFunc("/playlist/{name}", h.GetPlaylist).Methods("GET")
+	api.HandleFunc("/playlists/{name}", h.GetPlaylist).Methods("GET")
 	api.HandleFunc("/stream/{path:.*}", h.StreamVideo).Methods("GET", "HEAD")
 	api.HandleFunc("/stream-info/{path:.*}", h.GetStreamInfo).Methods("GET")
 
@@ -343,7 +343,6 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/favorites", h.RemoveFavorite).Methods("DELETE")
 	api.HandleFunc("/favorites/bulk", h.BulkAddFavorites).Methods("POST")
 	api.HandleFunc("/favorites/bulk", h.BulkRemoveFavorites).Methods("DELETE")
-	api.HandleFunc("/favorites/check", h.CheckFavorite).Methods("GET")
 
 	// Tags
 	api.HandleFunc("/tags", h.GetAllTags).Methods("GET")
@@ -352,19 +351,17 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/tags/file", h.GetFileTags).Methods("GET")
 	api.HandleFunc("/tags/file", h.AddTagToFile).Methods("POST")
 	api.HandleFunc("/tags/file", h.RemoveTagFromFile).Methods("DELETE")
-	api.HandleFunc("/tags/file/set", h.SetFileTags).Methods("POST")
-	api.HandleFunc("/tags/batch", h.GetBatchFileTags).Methods("POST")
+	api.HandleFunc("/tags/file", h.SetFileTags).Methods("PUT")
+	api.HandleFunc("/tags/query", h.GetBatchFileTags).Methods("POST")
 	api.HandleFunc("/tags/bulk", h.BulkAddTag).Methods("POST")
 	api.HandleFunc("/tags/bulk", h.BulkRemoveTag).Methods("DELETE")
 	api.HandleFunc("/tags/{tag}", h.GetFilesByTag).Methods("GET")
-	api.HandleFunc("/tags/{tag}", h.DeleteTag).Methods("DELETE")
-	api.HandleFunc("/tags/{tag}", h.RenameTag).Methods("PUT")
-	api.HandleFunc("/tags/{tag}/rename", h.RenameTagEverywhere).Methods("POST")
-	api.HandleFunc("/tags/{tag}/delete", h.DeleteTagEverywhere).Methods("DELETE")
+	api.HandleFunc("/tags/{tag}", h.DeleteTagEverywhere).Methods("DELETE")
+	api.HandleFunc("/tags/{tag}", h.RenameTagEverywhere).Methods("PUT")
 
 	// Thumbnails
-	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")
-	api.HandleFunc("/thumbnail/{path:.*}", h.InvalidateThumbnail).Methods("DELETE")
+	api.HandleFunc("/thumbnails/{path:.*}", h.GetThumbnail).Methods("GET")
+	api.HandleFunc("/thumbnails/{path:.*}", h.InvalidateThumbnail).Methods("DELETE")
 	api.HandleFunc("/thumbnails/invalidate", h.InvalidateAllThumbnails).Methods("POST")
 	api.HandleFunc("/thumbnails/rebuild", h.RebuildAllThumbnails).Methods("POST")
 	api.HandleFunc("/thumbnails/status", h.GetThumbnailStatus).Methods("GET")

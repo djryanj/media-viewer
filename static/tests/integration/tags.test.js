@@ -404,7 +404,7 @@ describe('Tags Integration Tests', () => {
             await Tags.openBulkModal(['/path1.jpg', '/path2.jpg'], ['file1', 'file2']);
 
             expect(globalThis.fetchWithTimeout).toHaveBeenCalledWith(
-                '/api/tags/batch',
+                '/api/tags/query',
                 expect.objectContaining({
                     method: 'POST',
                     body: JSON.stringify({ paths: ['/path1.jpg', '/path2.jpg'] }),

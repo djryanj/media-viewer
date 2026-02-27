@@ -318,7 +318,7 @@ func TestGetBatchFileTagsIntegration(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/files/tags/batch", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/query", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
 	h.GetBatchFileTags(w, req)
@@ -354,7 +354,7 @@ func TestGetBatchFileTagsEmptyPathsIntegration(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/files/tags/batch", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/query", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
 	h.GetBatchFileTags(w, req)
@@ -390,7 +390,7 @@ func TestGetBatchFileTagsMaxLimitIntegration(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/files/tags/batch", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/query", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
 	h.GetBatchFileTags(w, req)
@@ -674,7 +674,7 @@ func TestSetFileTagsIntegration(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/files/tags/set", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/tags/file", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
 	h.SetFileTags(w, req)
@@ -715,7 +715,7 @@ func TestSetFileTagsEmptyIntegration(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/files/tags/set", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/tags/file", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
 	h.SetFileTags(w, req)
@@ -1460,7 +1460,7 @@ func TestRenameTagEverywhereIntegration(t *testing.T) {
 		_ = h.db.AddTagToFile(ctx, "rename2.jpg", "oldname")
 
 		body, _ := json.Marshal(map[string]string{"newName": "newname"})
-		req := httptest.NewRequest(http.MethodPost, "/api/tags/oldname/rename", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPut, "/api/tags/oldname", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req = mux.SetURLVars(req, map[string]string{"tag": "oldname"})
 		w := httptest.NewRecorder()
@@ -1495,7 +1495,7 @@ func TestRenameTagEverywhereIntegration(t *testing.T) {
 	// Test case 2: Missing tag name
 	t.Run("Missing tag name", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{"newName": "test"})
-		req := httptest.NewRequest(http.MethodPost, "/api/tags//rename", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPut, "/api/tags/", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req = mux.SetURLVars(req, map[string]string{"tag": ""})
 		w := httptest.NewRecorder()
@@ -1510,7 +1510,7 @@ func TestRenameTagEverywhereIntegration(t *testing.T) {
 	// Test case 3: Missing new name
 	t.Run("Missing new name", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{})
-		req := httptest.NewRequest(http.MethodPost, "/api/tags/oldname/rename", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPut, "/api/tags/oldname", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req = mux.SetURLVars(req, map[string]string{"tag": "oldname"})
 		w := httptest.NewRecorder()
@@ -1524,7 +1524,7 @@ func TestRenameTagEverywhereIntegration(t *testing.T) {
 
 	// Test case 4: Invalid JSON
 	t.Run("Invalid JSON", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/tags/test/rename", strings.NewReader("invalid json"))
+		req := httptest.NewRequest(http.MethodPut, "/api/tags/test", strings.NewReader("invalid json"))
 		req.Header.Set("Content-Type", "application/json")
 		req = mux.SetURLVars(req, map[string]string{"tag": "test"})
 		w := httptest.NewRecorder()
@@ -1544,7 +1544,7 @@ func TestRenameTagEverywhereIntegration(t *testing.T) {
 		_ = h.db.AddTagToFile(ctx, "case.jpg", "lowercase")
 
 		body, _ := json.Marshal(map[string]string{"newName": "LowerCase"})
-		req := httptest.NewRequest(http.MethodPost, "/api/tags/lowercase/rename", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPut, "/api/tags/lowercase", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req = mux.SetURLVars(req, map[string]string{"tag": "lowercase"})
 		w := httptest.NewRecorder()
@@ -1580,7 +1580,7 @@ func TestDeleteTagEverywhereIntegration(t *testing.T) {
 		_ = h.db.AddTagToFile(ctx, "del1.jpg", "deleteme")
 		_ = h.db.AddTagToFile(ctx, "del2.jpg", "deleteme")
 
-		req := httptest.NewRequest(http.MethodDelete, "/api/tags/deleteme/delete", http.NoBody)
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/deleteme", http.NoBody)
 		req = mux.SetURLVars(req, map[string]string{"tag": "deleteme"})
 		w := httptest.NewRecorder()
 
@@ -1616,7 +1616,7 @@ func TestDeleteTagEverywhereIntegration(t *testing.T) {
 		ctx := context.Background()
 		_, _ = h.db.GetOrCreateTag(ctx, "unuseddelete")
 
-		req := httptest.NewRequest(http.MethodDelete, "/api/tags/unuseddelete/delete", http.NoBody)
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/unuseddelete", http.NoBody)
 		req = mux.SetURLVars(req, map[string]string{"tag": "unuseddelete"})
 		w := httptest.NewRecorder()
 
@@ -1639,7 +1639,7 @@ func TestDeleteTagEverywhereIntegration(t *testing.T) {
 
 	// Test case 3: Delete non-existent tag
 	t.Run("Delete non-existent tag", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodDelete, "/api/tags/nonexistent/delete", http.NoBody)
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/nonexistent", http.NoBody)
 		req = mux.SetURLVars(req, map[string]string{"tag": "nonexistent"})
 		w := httptest.NewRecorder()
 
@@ -1652,7 +1652,7 @@ func TestDeleteTagEverywhereIntegration(t *testing.T) {
 
 	// Test case 4: Missing tag name
 	t.Run("Missing tag name", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodDelete, "/api/tags//delete", http.NoBody)
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/", http.NoBody)
 		req = mux.SetURLVars(req, map[string]string{"tag": ""})
 		w := httptest.NewRecorder()
 
@@ -1670,7 +1670,7 @@ func TestDeleteTagEverywhereIntegration(t *testing.T) {
 		ctx := context.Background()
 		_ = h.db.AddTagToFile(ctx, "delcase.jpg", "MixedCase")
 
-		req := httptest.NewRequest(http.MethodDelete, "/api/tags/mixedcase/delete", http.NoBody)
+		req := httptest.NewRequest(http.MethodDelete, "/api/tags/mixedcase", http.NoBody)
 		req = mux.SetURLVars(req, map[string]string{"tag": "mixedcase"})
 		w := httptest.NewRecorder()
 

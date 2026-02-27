@@ -146,7 +146,7 @@ export const mockApiResponses = {
     '/api/tags': { tags: mockTags },
     '/api/favorites': { favorites: mockFavorites },
     '/api/search': mockSearchResults,
-    '/api/playlist': mockPlaylist,
+    '/api/playlists': mockPlaylist,
 };
 
 /**
