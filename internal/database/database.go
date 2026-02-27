@@ -875,6 +875,13 @@ func (d *Database) BulkIndexEnd(ctx context.Context) error {
 	}
 	done2(triggerErr)
 
+	// Checkpoint the WAL after bulk inserts to prevent it growing unbounded.
+	// PASSIVE mode checkpoints without blocking any readers; it is non-fatal
+	// because a checkpoint will happen implicitly on the next write anyway.
+	if _, cpErr := d.writer.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); cpErr != nil {
+		logging.Warn("WAL checkpoint after bulk index failed (non-fatal): %v", cpErr)
+	}
+
 	return errors.Join(rebuildErr, triggerErr)
 }
 
@@ -895,6 +902,8 @@ func (d *Database) UpdateDBMetrics() {
 	rStats := d.reader.Stats()
 	wStats := d.writer.Stats()
 	metrics.DBConnectionsOpen.Set(float64(rStats.OpenConnections + wStats.OpenConnections))
+	metrics.DBConnectionsInUse.Set(float64(rStats.InUse + wStats.InUse))
+	metrics.DBConnectionsIdle.Set(float64(rStats.Idle + wStats.Idle))
 }
 
 func diagnoseDatabasePermissions(dbPath string) error {

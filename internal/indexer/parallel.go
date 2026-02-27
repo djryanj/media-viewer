@@ -261,6 +261,11 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 	}
 
 	if job.info.IsDir() {
+		hashStart := time.Now()
+		hash := fmt.Sprintf("%x", md5.Sum([]byte(job.relPath+job.info.ModTime().String()))) //nolint:gosec // MD5 used for cache key generation, not security
+		metrics.FileHashComputeDuration.Observe(time.Since(hashStart).Seconds())
+		depth := strings.Count(job.relPath, string(filepath.Separator)) + 1
+		metrics.DirectoryWalkDepth.Observe(float64(depth))
 		return fileResult{
 			file: &database.MediaFile{
 				Name:       job.info.Name(),
@@ -269,7 +274,7 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 				Type:       database.FileTypeFolder,
 				Size:       0,
 				ModTime:    job.info.ModTime(),
-				FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(job.relPath+job.info.ModTime().String()))), //nolint:gosec // MD5 used for cache key generation, not security
+				FileHash:   hash,
 			},
 			isDir: true,
 		}
@@ -282,6 +287,9 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 		return fileResult{}
 	}
 
+	hashStart := time.Now()
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", job.relPath, job.info.Size(), job.info.ModTime().Unix())))) //nolint:gosec // MD5 used for cache key generation, not security
+	metrics.FileHashComputeDuration.Observe(time.Since(hashStart).Seconds())
 	return fileResult{
 		file: &database.MediaFile{
 			Name:       job.info.Name(),
@@ -291,7 +299,7 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 			Size:       job.info.Size(),
 			ModTime:    job.info.ModTime(),
 			MimeType:   mediatypes.GetMimeType(ext),
-			FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", job.relPath, job.info.Size(), job.info.ModTime().Unix())))), //nolint:gosec // MD5 used for cache key generation, not security
+			FileHash:   hash,
 		},
 		isDir: false,
 	}

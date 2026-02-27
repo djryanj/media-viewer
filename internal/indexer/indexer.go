@@ -696,6 +696,11 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 	}
 
 	if info.IsDir() {
+		hashStart := time.Now()
+		hash := fmt.Sprintf("%x", md5.Sum([]byte(relPath+info.ModTime().String())))
+		metrics.FileHashComputeDuration.Observe(time.Since(hashStart).Seconds())
+		depth := strings.Count(relPath, string(filepath.Separator)) + 1
+		metrics.DirectoryWalkDepth.Observe(float64(depth))
 		return database.MediaFile{
 			Name:       info.Name(),
 			Path:       relPath,
@@ -703,7 +708,7 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 			Type:       database.FileTypeFolder,
 			Size:       0,
 			ModTime:    info.ModTime(),
-			FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(relPath+info.ModTime().String()))),
+			FileHash:   hash,
 		}, true
 	}
 
@@ -714,6 +719,9 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 		return database.MediaFile{}, false
 	}
 
+	hashStart := time.Now()
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", relPath, info.Size(), info.ModTime().Unix()))))
+	metrics.FileHashComputeDuration.Observe(time.Since(hashStart).Seconds())
 	return database.MediaFile{
 		Name:       info.Name(),
 		Path:       relPath,
@@ -722,7 +730,7 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 		Size:       info.Size(),
 		ModTime:    info.ModTime(),
 		MimeType:   mediatypes.GetMimeType(ext),
-		FileHash:   fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", relPath, info.Size(), info.ModTime().Unix())))),
+		FileHash:   hash,
 	}, true
 }
 

@@ -31,6 +31,8 @@ func TestDatabaseMetricsExist(t *testing.T) {
 		{"DBQueryTotal", DBQueryTotal},
 		{"DBQueryDuration", DBQueryDuration},
 		{"DBConnectionsOpen", DBConnectionsOpen},
+		{"DBConnectionsInUse", DBConnectionsInUse},
+		{"DBConnectionsIdle", DBConnectionsIdle},
 		{"DBSizeBytes", DBSizeBytes},
 	}
 
@@ -123,6 +125,16 @@ func TestDatabaseMetricOperations(t *testing.T) {
 	t.Run("DBConnectionsOpen set", func(_ *testing.T) {
 		// Should not panic
 		DBConnectionsOpen.Set(5)
+	})
+
+	t.Run("DBConnectionsInUse set", func(_ *testing.T) {
+		// Should not panic
+		DBConnectionsInUse.Set(3)
+	})
+
+	t.Run("DBConnectionsIdle set", func(_ *testing.T) {
+		// Should not panic
+		DBConnectionsIdle.Set(7)
 	})
 
 	t.Run("DBSizeBytes set with labels", func(_ *testing.T) {
