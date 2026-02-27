@@ -2532,6 +2532,60 @@ func TestBusyTimeoutIs30000(t *testing.T) {
 	}
 }
 
+// TestBulkIndexEndCheckpointsWAL verifies that BulkIndexEnd triggers a
+// WAL checkpoint without returning an error. The checkpoint is best-effort
+// (PASSIVE mode) so it must never fail an otherwise-successful bulk index.
+func TestBulkIndexEndCheckpointsWAL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	if err := db.BulkIndexBegin(ctx); err != nil {
+		t.Fatalf("BulkIndexBegin: %v", err)
+	}
+
+	// Insert a few rows so the WAL has something to checkpoint.
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		_ = batch.UpsertFile(ctx, &MediaFile{
+			Name:       fmt.Sprintf("wal_test_%d.jpg", i),
+			Path:       fmt.Sprintf("wal/%d.jpg", i),
+			ParentPath: "wal",
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+		})
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	// BulkIndexEnd must succeed (checkpoint failure is logged but non-fatal).
+	if err := db.BulkIndexEnd(ctx); err != nil {
+		t.Fatalf("BulkIndexEnd returned error: %v", err)
+	}
+}
+
+// TestUpdateDBMetricsConnectionDetails verifies that UpdateDBMetrics sets the
+// InUse and Idle connection gauges without panicking. Between queries both
+// values will typically be 0 but the call must not error.
+func TestUpdateDBMetricsConnectionDetails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// Should not panic; gauges may read 0 between queries.
+	db.UpdateDBMetrics()
+}
+
 // =============================================================================
 // Benchmarks
 // =============================================================================

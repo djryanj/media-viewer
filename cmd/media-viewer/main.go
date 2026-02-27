@@ -159,6 +159,7 @@ func main() {
 	// Start metrics collector
 	metricsCollector := metrics.NewCollector(&dbStatsAdapter{db: db}, config.DatabasePath, 1*time.Minute)
 	metricsCollector.SetTranscoderCacheDir(config.TranscodeDir)
+	metricsCollector.SetStorageHealthChecker(db)
 	metricsCollector.Start()
 	logging.Info("Metrics collector started")
 

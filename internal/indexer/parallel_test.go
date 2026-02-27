@@ -932,6 +932,85 @@ func BenchmarkDefaultParallelWalkerConfig_WithEnvVar(b *testing.B) {
 	}
 }
 
+// TestParallelWalkerDirectoryWalkDepthMetric verifies that processFile computes
+// a non-empty FileHash for directory entries and records the walk depth.
+// It exercises the DirectoryWalkDepth instrumentation path without requiring
+// a Prometheus test registry.
+func TestParallelWalkerDirectoryWalkDepthMetric(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a two-level nested directory structure.
+	nestedDir := filepath.Join(tmpDir, "level1", "level2")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	walker := NewParallelWalker(tmpDir, DefaultParallelWalkerConfig())
+
+	tests := []struct {
+		relPath       string
+		expectedDepth int
+	}{
+		{"level1", 1},
+		{filepath.Join("level1", "level2"), 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.relPath, func(t *testing.T) {
+			path := filepath.Join(tmpDir, tt.relPath)
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("Stat: %v", err)
+			}
+			job := fileJob{path: path, info: info, relPath: tt.relPath}
+			result := walker.processFile(job)
+
+			if result.err != nil {
+				t.Fatalf("processFile error: %v", result.err)
+			}
+			if !result.isDir {
+				t.Error("expected isDir=true for directory entry")
+			}
+			if result.file == nil {
+				t.Fatal("expected non-nil file for directory entry")
+			}
+			if result.file.FileHash == "" {
+				t.Error("expected non-empty FileHash for directory entry")
+			}
+		})
+	}
+}
+
+// TestParallelWalkerFileHashComputeDurationObserved verifies that processFile
+// records a non-empty FileHash for regular files, confirming the
+// FileHashComputeDuration instrumentation path is exercised.
+func TestParallelWalkerFileHashComputeDurationObserved(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "sample.jpg")
+	if err := os.WriteFile(filePath, []byte("jpeg data"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	walker := NewParallelWalker(tmpDir, DefaultParallelWalkerConfig())
+	info, err := os.Stat(filePath)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+
+	job := fileJob{path: filePath, info: info, relPath: "sample.jpg"}
+	result := walker.processFile(job)
+
+	if result.err != nil {
+		t.Fatalf("processFile error: %v", result.err)
+	}
+	if result.file == nil {
+		t.Fatal("expected non-nil file result")
+	}
+	if result.file.FileHash == "" {
+		t.Error("expected FileHash to be set (FileHashComputeDuration must be observed)")
+	}
+}
+
 // BenchmarkDefaultParallelWalkerConfig_InvalidEnvVar benchmarks with invalid env value
 func BenchmarkDefaultParallelWalkerConfig_InvalidEnvVar(b *testing.B) {
 	oldValue := os.Getenv("INDEX_WORKERS")

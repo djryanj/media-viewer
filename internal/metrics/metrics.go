@@ -58,6 +58,20 @@ var (
 		},
 	)
 
+	DBConnectionsInUse = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_db_connections_in_use",
+			Help: "Number of database connections currently checked out from the pool",
+		},
+	)
+
+	DBConnectionsIdle = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_db_connections_idle",
+			Help: "Number of idle database connections waiting in the pool",
+		},
+	)
+
 	DBSizeBytes = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "media_viewer_db_size_bytes",
