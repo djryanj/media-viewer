@@ -827,4 +827,239 @@ describe('Playlist Integration', () => {
             expect(loadSourceSpy).toHaveBeenCalledTimes(2);
         });
     });
+
+    // =========================================
+    // Slow-server / race-condition behaviour
+    // =========================================
+
+    describe('Slow Server Behavior', () => {
+        let mockVideoPlayerInstance;
+
+        beforeEach(() => {
+            mockVideoPlayerInstance = {
+                destroy: vi.fn(),
+                loadSource: vi.fn(),
+            };
+            globalThis.VideoPlayer = vi.fn(function () {
+                return mockVideoPlayerInstance;
+            });
+
+            globalThis.SessionManager = {
+                isAuthenticated: vi.fn(() => true),
+                handleSessionExpired: vi.fn(),
+            };
+
+            Playlist.playlist = {
+                name: 'Test',
+                items: [
+                    { name: 'video1.mp4', path: '/videos/video1.mp4', type: 'video', exists: true },
+                    { name: 'video2.mp4', path: '/videos/video2.mp4', type: 'video', exists: true },
+                ],
+            };
+            Playlist.currentIndex = 0;
+        });
+
+        afterEach(() => {
+            delete globalThis.VideoPlayer;
+            // Clean up any lingering timers stored on Playlist
+            if (Playlist._loadTimeoutId) {
+                clearTimeout(Playlist._loadTimeoutId);
+                Playlist._loadTimeoutId = null;
+            }
+            if (Playlist.transcodingCheckTimeout) {
+                clearTimeout(Playlist.transcodingCheckTimeout);
+                Playlist.transcodingCheckTimeout = null;
+            }
+        });
+
+        // ------------------------------------------------------------------
+        // Fix 1: _loadTimeoutId stored on this and cleared across navigations
+        // ------------------------------------------------------------------
+
+        it('stores the load timeout as this._loadTimeoutId', () => {
+            vi.useFakeTimers();
+
+            Playlist.playCurrentVideo();
+
+            expect(Playlist._loadTimeoutId).not.toBeNull();
+
+            vi.useRealTimers();
+        });
+
+        it('clears _loadTimeoutId from a previous play when navigating to the next video', () => {
+            vi.useFakeTimers();
+
+            Playlist.playCurrentVideo();
+            const firstTimeoutId = Playlist._loadTimeoutId;
+            const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+            Playlist.currentIndex = 1;
+            Playlist.playCurrentVideo();
+
+            // clearTimeout should have been called with the first timeout id
+            expect(clearSpy).toHaveBeenCalledWith(firstTimeoutId);
+            // A new timeout should now be set
+            expect(Playlist._loadTimeoutId).not.toBeNull();
+            expect(Playlist._loadTimeoutId).not.toBe(firstTimeoutId);
+
+            vi.useRealTimers();
+        });
+
+        it('clears _loadTimeoutId in the onReady callback', () => {
+            vi.useFakeTimers();
+
+            Playlist.playCurrentVideo();
+
+            expect(Playlist._loadTimeoutId).not.toBeNull();
+
+            // Simulate the video becoming ready
+            const { onReady } = mockVideoPlayerInstance.loadSource.mock.calls[0][1];
+            onReady();
+
+            expect(Playlist._loadTimeoutId).toBeNull();
+
+            vi.useRealTimers();
+        });
+
+        it('clears _loadTimeoutId in the onError callback', async () => {
+            vi.useFakeTimers();
+
+            // Prevent checkVideoAuthError from making real network calls
+            globalThis.fetchWithTimeout = vi.fn(() => Promise.resolve({ ok: true, status: 200 }));
+
+            Playlist.playCurrentVideo();
+
+            expect(Playlist._loadTimeoutId).not.toBeNull();
+
+            // Simulate a video error
+            const { onError } = mockVideoPlayerInstance.loadSource.mock.calls[0][1];
+            await onError(new Event('error'));
+
+            expect(Playlist._loadTimeoutId).toBeNull();
+
+            vi.useRealTimers();
+        });
+
+        // ------------------------------------------------------------------
+        // Fix 2: stale checkVideoAuthError aborted on re-navigation
+        // ------------------------------------------------------------------
+
+        it('aborts _videoCheckController when a second playCurrentVideo call is made', () => {
+            Playlist.playCurrentVideo();
+
+            // Simulate a slow onError from the first video: create a controller as if onError ran
+            const firstController = new AbortController();
+            Playlist._videoCheckController = firstController;
+
+            Playlist.currentIndex = 1;
+            Playlist.playCurrentVideo();
+
+            expect(firstController.signal.aborted).toBe(true);
+        });
+
+        it('checkVideoAuthError does nothing when signal is already aborted', async () => {
+            const controller = new AbortController();
+            controller.abort();
+
+            globalThis.fetchWithTimeout = vi.fn(() => Promise.resolve({ status: 401, ok: false }));
+
+            await Playlist.checkVideoAuthError('/api/stream/video.mp4', controller.signal);
+
+            // Despite a 401 response arriving, session expiry must NOT be triggered
+            expect(globalThis.SessionManager.handleSessionExpired).not.toHaveBeenCalled();
+        });
+
+        // ------------------------------------------------------------------
+        // Fix 3: playlist opens immediately; tags load in background
+        // ------------------------------------------------------------------
+
+        it('loadPlaylist opens the modal before the tag request completes', async () => {
+            let resolveTagsFetch;
+            const tagsPromise = new Promise((resolve) => {
+                resolveTagsFetch = resolve;
+            });
+
+            globalThis.fetchWithTimeout = vi.fn((url) => {
+                if (url.includes('/api/playlist/')) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 200,
+                        json: () =>
+                            Promise.resolve({
+                                name: 'Test',
+                                items: [
+                                    {
+                                        name: 'video1.mp4',
+                                        path: '/videos/video1.mp4',
+                                        exists: true,
+                                    },
+                                ],
+                            }),
+                    });
+                }
+                // Tags endpoint hangs until we resolve it manually
+                return tagsPromise;
+            });
+
+            // Start loading but don't await yet
+            const loadPromise = Playlist.loadPlaylist('Test');
+
+            // Give microtasks a chance to run (playlist fetch resolves synchronously)
+            await Promise.resolve();
+            await Promise.resolve();
+
+            // Modal should be visible even though tags haven't loaded yet
+            expect(Playlist.elements.modal.classList.contains('hidden')).toBe(false);
+
+            // Unblock tags and finish
+            resolveTagsFetch({ ok: false, status: 500 });
+            await loadPromise;
+        });
+
+        it('loadPlaylist re-renders sidebar items after background tag load', async () => {
+            const mockTags = { '/videos/video1.mp4': ['favourite'] };
+
+            globalThis.fetchWithTimeout = vi.fn((url) => {
+                if (url.includes('/api/playlist/')) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 200,
+                        json: () =>
+                            Promise.resolve({
+                                name: 'Test',
+                                items: [
+                                    {
+                                        name: 'video1.mp4',
+                                        path: '/videos/video1.mp4',
+                                        exists: true,
+                                    },
+                                ],
+                            }),
+                    });
+                }
+                // Tags endpoint returns successfully
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve(mockTags),
+                });
+            });
+
+            const renderSpy = vi.spyOn(Playlist, 'renderPlaylistItems');
+
+            await Playlist.loadPlaylist('Test');
+
+            // Flush the microtask queue so the background loadPlaylistTags().then(...)
+            // callback (which calls renderPlaylistItems a second time) has a chance to run.
+            // Each Promise.resolve() advances one level of chained .then() handlers.
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            // renderPlaylistItems should have been called at least twice:
+            // once during open() and once after tags loaded
+            expect(renderSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+        });
+    });
 });

@@ -18,6 +18,8 @@ const Playlist = {
     edgeSwipeThreshold: 30,
     itemTags: new Map(),
     _videoErrorHandler: null,
+    _loadTimeoutId: null,
+    _videoCheckController: null,
     videoPlayer: null,
     isLoading: false,
 
@@ -731,9 +733,15 @@ const Playlist = {
 
             this.currentIndex = 0;
 
-            await this.loadPlaylistTags(items);
-
+            // Open immediately so the user isn't blocked waiting for tags on a slow server.
             this.open();
+
+            // Load tags in the background and re-render the sidebar once they arrive.
+            this.loadPlaylistTags(items).then(() => {
+                if (this.playlist && this.playlist.items === items) {
+                    this.renderPlaylistItems();
+                }
+            });
         } catch (error) {
             console.error('Error loading playlist:', error);
             const isTimeout = error.name === 'AbortError';
@@ -969,6 +977,18 @@ const Playlist = {
             this._audioCheckTimeout = null;
         }
 
+        // Cancel any in-flight load timeout from a previous video.
+        if (this._loadTimeoutId) {
+            clearTimeout(this._loadTimeoutId);
+            this._loadTimeoutId = null;
+        }
+
+        // Abort any in-flight auth-error check from a previous video.
+        if (this._videoCheckController) {
+            this._videoCheckController.abort();
+            this._videoCheckController = null;
+        }
+
         // Show loading indicator
         this.showLoading();
         this.checkTranscodingStatus(item.path);
@@ -976,8 +996,9 @@ const Playlist = {
         // Initialize VideoPlayer before calling loadSource so HLS support is available.
         this.initVideoPlayer();
 
-        const loadTimeoutId = setTimeout(
+        this._loadTimeoutId = setTimeout(
             () => {
+                this._loadTimeoutId = null;
                 console.error('Player: Video load timeout:', item.path);
                 this.hideLoading();
                 if (typeof Gallery !== 'undefined' && Gallery.showToast) {
@@ -993,7 +1014,10 @@ const Playlist = {
         this.videoPlayer.loadSource(item.path, {
             autoplay: typeof Preferences !== 'undefined' && Preferences.isVideoAutoplayEnabled(),
             onReady: () => {
-                clearTimeout(loadTimeoutId);
+                if (this._loadTimeoutId) {
+                    clearTimeout(this._loadTimeoutId);
+                    this._loadTimeoutId = null;
+                }
                 this.hideLoading();
                 const activeItem = this.elements.items.querySelector('.active');
                 if (activeItem) {
@@ -1001,9 +1025,14 @@ const Playlist = {
                 }
             },
             onError: async (_e) => {
-                clearTimeout(loadTimeoutId);
+                if (this._loadTimeoutId) {
+                    clearTimeout(this._loadTimeoutId);
+                    this._loadTimeoutId = null;
+                }
                 this.hideLoading();
-                await this.checkVideoAuthError(`/api/stream/${item.path}`);
+                const controller = new AbortController();
+                this._videoCheckController = controller;
+                await this.checkVideoAuthError(`/api/stream/${item.path}`, controller.signal);
             },
             onFallback: () => {
                 if (typeof Gallery !== 'undefined' && Gallery.showToast) {
@@ -1039,12 +1068,19 @@ const Playlist = {
     },
 
     /**
-     * Check if a video load failure was due to authentication or other server errors
+     * Check if a video load failure was due to authentication or other server errors.
      * @param {string} videoUrl - The URL that failed to load
+     * @param {AbortSignal} [signal] - Optional signal; if aborted the check is a no-op (stale navigation)
      */
-    async checkVideoAuthError(videoUrl) {
+    async checkVideoAuthError(videoUrl, signal) {
         try {
-            const response = await fetchWithTimeout(videoUrl, { method: 'HEAD', timeout: 3000 });
+            const response = await fetchWithTimeout(videoUrl, {
+                method: 'HEAD',
+                timeout: 3000,
+                signal,
+            });
+            // If the user navigated away before this response arrived, discard it.
+            if (signal?.aborted) return;
             if (response.status === 401) {
                 console.debug('Player: video auth error detected');
                 if (typeof SessionManager !== 'undefined') {
@@ -1073,7 +1109,9 @@ const Playlist = {
                 }
             }
         } catch (e) {
-            console.debug('Player: video auth check failed', e);
+            if (e?.name !== 'AbortError') {
+                console.debug('Player: video auth check failed', e);
+            }
         }
     },
 

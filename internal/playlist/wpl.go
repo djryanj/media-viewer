@@ -1,6 +1,7 @@
 package playlist
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -41,13 +42,23 @@ type PlaylistItem struct {
 	MediaType string `json:"mediaType,omitempty"`
 }
 
-// ParseWPL parses a Windows Playlist file
-func ParseWPL(wplPath, mediaDir string) (*Playlist, error) {
+// ParseWPL parses a Windows Playlist file.
+// ctx is checked before and after the file read so callers can cancel promptly
+// on client disconnect without waiting for slow filesystem I/O to fully complete.
+func ParseWPL(ctx context.Context, wplPath, mediaDir string) (*Playlist, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	logging.Debug("Parsing WPL: %s (mediaDir: %s)", wplPath, mediaDir)
 
 	data, err := os.ReadFile(wplPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read playlist file: %w", err)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	var wpl WPL

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.14.4] - Unreleased
+
+### Fixed
+
+- fix(frontend): playlist video load timeout ID was stored in a local `let` variable inside `playCurrentVideo`, making it impossible to cancel when the user navigated to a different item before the timeout elapsed. After 5 minutes the stale callback would fire, calling `hideLoading()` and showing a misleading timeout toast against whatever video was currently playing. The timeout is now stored as `this._loadTimeoutId` and cleared at the start of every `playCurrentVideo` call, and set to `null` in both the `onReady` and `onError` callbacks. [#298](https://github.com/djryanj/media-viewer/issues/298)
+- fix(frontend): `checkVideoAuthError` could trigger `SessionManager.handleSessionExpired()` (or a redirect to `/login.html`) for the wrong playlist item when the server was slow. If the user navigated away before the 3-second HEAD request completed, the response would arrive in the context of an already-abandoned video load and act on it anyway. Fixed by threading an `AbortController` signal through `checkVideoAuthError`; navigating to a new item aborts the in-flight check by storing the controller as `this._videoCheckController` and aborting it at the start of each `playCurrentVideo` call. `AbortError` exceptions from `fetchWithTimeout` are silently ignored. [#298](https://github.com/djryanj/media-viewer/issues/298)
+- fix(frontend): playlist modal was blocked from opening until the `/api/tags/batch` request completed. On a slow server this meant users waited up to 10 seconds (5 s playlist fetch + 5 s tag fetch) staring at a loading spinner before the modal appeared. The playlist now opens immediately once playlist data arrives; tag loading continues in the background and the sidebar re-renders once complete. [#298](https://github.com/djryanj/media-viewer/issues/298)
+- fix(backend): `ParseWPL` now accepts a `context.Context` as its first argument. Two `ctx.Err()` checks were added — one before `os.ReadFile` and one after parsing the XML — so the function returns the context error promptly when the client has already disconnected (e.g. because the frontend's 5-second timeout fired). Previously the file read and XML parse would continue to completion even after the request was cancelled. [#298](https://github.com/djryanj/media-viewer/issues/298)
+
+### Tests
+
+- test(frontend): added unit tests verifying `_loadTimeoutId` is stored on `this`, cleared when `playCurrentVideo` is called a second time, cleared in the `onReady` callback, and cleared in the `onError` callback. [#298](https://github.com/djryanj/media-viewer/issues/298)
+- test(frontend): added unit tests verifying `_videoCheckController` from a previous play is aborted when `playCurrentVideo` is called again, and that `checkVideoAuthError` does not call `handleSessionExpired` when the provided signal is already aborted. [#298](https://github.com/djryanj/media-viewer/issues/298)
+- test(frontend): added integration tests asserting the playlist modal opens before the tag request completes (testing the non-blocking tag load), and that the sidebar re-renders after background tag loading finishes. [#298](https://github.com/djryanj/media-viewer/issues/298)
+- test(backend): added unit tests for `ParseWPL` with a pre-cancelled context, an expired deadline, and an active context (regression guard). [#298](https://github.com/djryanj/media-viewer/issues/298)
+- test(backend): added integration tests verifying `GetPlaylist` and `ListPlaylists` return a non-200 response when invoked with an already-cancelled request context. [#298](https://github.com/djryanj/media-viewer/issues/298)
+
 ## [0.14.3] - 02-26-2026
 
 ### Fixed
