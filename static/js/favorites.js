@@ -58,10 +58,7 @@ const Favorites = {
 
             this.pinnedPaths.add(path);
             this.updateAllPinStates(path, true);
-
-            if (MediaApp.state.currentPath === '') {
-                this.loadFavorites();
-            }
+            this.loadFavorites();
 
             return true;
         } catch (error) {
@@ -83,10 +80,7 @@ const Favorites = {
 
             this.pinnedPaths.delete(path);
             this.updateAllPinStates(path, false);
-
-            if (MediaApp.state.currentPath === '') {
-                this.loadFavorites();
-            }
+            this.loadFavorites();
 
             return true;
         } catch (error) {
@@ -143,6 +137,19 @@ const Favorites = {
         favorites.forEach((item) => {
             item.isFavorite = true;
             const element = Gallery.createGalleryItem(item);
+
+            // Add a parent-path hint so same-named items are distinguishable.
+            // Only applied to images/videos; folders already have a name overlay.
+            if (item.parentPath && (item.type === 'image' || item.type === 'video')) {
+                const pathHint = document.createElement('div');
+                pathHint.className = 'gallery-item-favorites-path';
+                pathHint.title = item.parentPath;
+                // Show only the immediate parent folder name to keep it compact.
+                const parts = item.parentPath.split('/');
+                pathHint.textContent = parts[parts.length - 1];
+                element.querySelector('.gallery-item-thumb')?.appendChild(pathHint);
+            }
+
             this.elements.gallery.appendChild(element);
         });
 
@@ -156,14 +163,9 @@ const Favorites = {
     },
 
     updateFromListing(listing) {
-        if (listing.path === '' && listing.favorites && listing.favorites.length > 0) {
-            listing.favorites.forEach((f) => this.pinnedPaths.add(f.path));
-            this.renderFavorites(listing.favorites);
-        } else if (listing.path === '') {
-            this.elements.section.classList.add('hidden');
-        } else {
-            this.elements.section.classList.add('hidden');
-        }
+        // Always reload the favorites strip from the API so it is visible
+        // (and current) regardless of which directory was just navigated to.
+        this.loadFavorites();
 
         if (listing.items) {
             listing.items.forEach((item) => {

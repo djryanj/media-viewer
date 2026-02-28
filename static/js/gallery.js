@@ -405,10 +405,34 @@ const Gallery = {
             const index = MediaApp.getMediaIndex(item.path);
             if (index >= 0) {
                 Lightbox.open(index);
+            } else {
+                // Item is not in the current directory's media list (e.g. clicked
+                // from the favorites strip while browsing a different path). Load
+                // the media files for its parent directory and open the lightbox.
+                this._openItemFromParent(item);
             }
         } else if (item.type === 'playlist') {
             const playlistName = item.name.replace(/\.[^/.]+$/, '');
             Playlist.loadPlaylist(playlistName);
+        }
+    },
+
+    async _openItemFromParent(item) {
+        try {
+            const params = new URLSearchParams({
+                path: item.parentPath ?? '',
+                sort: MediaApp.state.currentSort.field,
+                order: MediaApp.state.currentSort.order,
+            });
+            const response = await fetch(`/api/media?${params}`);
+            if (!response.ok) return;
+            const files = await response.json();
+            const index = files.findIndex((f) => f.path === item.path);
+            if (index >= 0) {
+                Lightbox.openWithItems(files, index);
+            }
+        } catch (error) {
+            console.error('Error opening item from favorites:', error);
         }
     },
 

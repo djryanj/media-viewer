@@ -1098,6 +1098,27 @@ select:focus {
     display: none;
 }
 
+/* Parent-path overlay shown on image/video items in the favorites strip.
+   Helps distinguish two favorites that share the same filename. */
+.gallery-item-favorites-path {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 0.2rem 0.25rem;
+    font-size: 0.45rem;
+    line-height: 1.2;
+    text-align: center;
+    color: rgb(255 255 255 / 90%);
+    background: linear-gradient(transparent, rgb(0 0 0 / 65%));
+    border-radius: 0 0 var(--radius) var(--radius);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    z-index: 1;
+}
+
 .favorites-gallery .pin-button {
     opacity: 100%;
     width: 20px;

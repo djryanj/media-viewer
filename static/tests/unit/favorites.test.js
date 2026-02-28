@@ -44,6 +44,9 @@ describe('Favorites Module', () => {
                 const div = document.createElement('div');
                 div.className = 'gallery-item';
                 div.dataset.path = item.path;
+                const thumb = document.createElement('div');
+                thumb.className = 'gallery-item-thumb';
+                div.appendChild(thumb);
                 return div;
             }),
             showToast: vi.fn(),
@@ -227,8 +230,8 @@ describe('Favorites Module', () => {
             expect(Gallery.showToast).toHaveBeenCalledWith('Failed to add favorite');
         });
 
-        test('loads favorites when at root path', async () => {
-            globalThis.MediaApp.state.currentPath = '';
+        test('always loads favorites after adding regardless of current path', async () => {
+            globalThis.MediaApp.state.currentPath = '/some/subfolder';
             const loadFavoritesSpy = vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
 
             globalThis.fetch.mockResolvedValueOnce({
@@ -236,23 +239,9 @@ describe('Favorites Module', () => {
                 json: async () => ({ success: true }),
             });
 
-            await Favorites.addFavorite('/photos/test.jpg', 'test.jpg', 'image');
+            await Favorites.addFavorite('/some/subfolder/test.jpg', 'test.jpg', 'image');
 
             expect(loadFavoritesSpy).toHaveBeenCalled();
-        });
-
-        test('does not load favorites when not at root path', async () => {
-            globalThis.MediaApp.state.currentPath = '/photos';
-            const loadFavoritesSpy = vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
-
-            globalThis.fetch.mockResolvedValueOnce({
-                ok: true,
-                json: async () => ({ success: true }),
-            });
-
-            await Favorites.addFavorite('/photos/test.jpg', 'test.jpg', 'image');
-
-            expect(loadFavoritesSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -300,6 +289,21 @@ describe('Favorites Module', () => {
 
             expect(result).toBe(false);
             expect(Gallery.showToast).toHaveBeenCalledWith('Failed to remove favorite');
+        });
+
+        test('always loads favorites after removing regardless of current path', async () => {
+            globalThis.MediaApp.state.currentPath = '/some/subfolder';
+            const loadFavoritesSpy = vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
+            Favorites.pinnedPaths.add('/some/subfolder/test.jpg');
+
+            globalThis.fetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ success: true }),
+            });
+
+            await Favorites.removeFavorite('/some/subfolder/test.jpg');
+
+            expect(loadFavoritesSpy).toHaveBeenCalled();
         });
     });
 
@@ -455,53 +459,95 @@ describe('Favorites Module', () => {
 
             expect(setupSpy).toHaveBeenCalled();
         });
+
+        test('adds parent-path hint for image items with parentPath', () => {
+            const mockFavorites = [
+                {
+                    path: 'folder1/photo.jpg',
+                    name: 'photo.jpg',
+                    type: 'image',
+                    parentPath: 'folder1',
+                },
+            ];
+
+            Favorites.renderFavorites(mockFavorites);
+
+            const hint = Favorites.elements.gallery
+                .querySelector('.gallery-item')
+                ?.querySelector('.gallery-item-favorites-path');
+            expect(hint).not.toBeNull();
+            expect(hint.textContent).toBe('folder1');
+            expect(hint.title).toBe('folder1');
+        });
+
+        test('shows only the immediate folder name for a nested parentPath', () => {
+            const mockFavorites = [
+                { path: 'a/b/photo.jpg', name: 'photo.jpg', type: 'image', parentPath: 'a/b' },
+            ];
+
+            Favorites.renderFavorites(mockFavorites);
+
+            const hint = Favorites.elements.gallery
+                .querySelector('.gallery-item')
+                ?.querySelector('.gallery-item-favorites-path');
+            expect(hint.textContent).toBe('b');
+            expect(hint.title).toBe('a/b');
+        });
+
+        test('does not add parent-path hint for root-level items', () => {
+            const mockFavorites = [
+                { path: 'photo.jpg', name: 'photo.jpg', type: 'image', parentPath: '' },
+            ];
+
+            Favorites.renderFavorites(mockFavorites);
+
+            const hint = Favorites.elements.gallery
+                .querySelector('.gallery-item')
+                ?.querySelector('.gallery-item-favorites-path');
+            expect(hint).toBeNull();
+        });
+
+        test('does not add parent-path hint for folder type items', () => {
+            const mockFavorites = [
+                {
+                    path: 'folder1/vacation',
+                    name: 'vacation',
+                    type: 'folder',
+                    parentPath: 'folder1',
+                },
+            ];
+
+            Favorites.renderFavorites(mockFavorites);
+
+            const hint = Favorites.elements.gallery
+                .querySelector('.gallery-item')
+                ?.querySelector('.gallery-item-favorites-path');
+            expect(hint).toBeNull();
+        });
     });
 
     describe('updateFromListing()', () => {
-        test('renders favorites when at root with favorites', () => {
-            const listing = {
-                path: '',
-                favorites: [
-                    { path: '/photos/a.jpg', name: 'a.jpg', type: 'image' },
-                    { path: '/photos/b.jpg', name: 'b.jpg', type: 'image' },
-                ],
-            };
+        test('always calls loadFavorites regardless of path', () => {
+            const loadFavoritesSpy = vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
 
-            const renderSpy = vi.spyOn(Favorites, 'renderFavorites');
+            Favorites.updateFromListing({ path: '', items: [] });
 
-            Favorites.updateFromListing(listing);
-
-            expect(Favorites.pinnedPaths.size).toBe(2);
-            expect(renderSpy).toHaveBeenCalledWith(listing.favorites);
+            expect(loadFavoritesSpy).toHaveBeenCalledTimes(1);
         });
 
-        test('hides section at root with no favorites', () => {
-            const listing = {
-                path: '',
-                favorites: [],
-            };
+        test('calls loadFavorites when navigating to a subfolder', () => {
+            const loadFavoritesSpy = vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
 
-            Favorites.elements.section.classList.remove('hidden');
+            Favorites.updateFromListing({ path: '/photos/vacation', items: [] });
 
-            Favorites.updateFromListing(listing);
-
-            expect(Favorites.elements.section.classList.contains('hidden')).toBe(true);
-        });
-
-        test('hides section when not at root', () => {
-            const listing = {
-                path: '/photos',
-                favorites: [],
-            };
-
-            Favorites.elements.section.classList.remove('hidden');
-
-            Favorites.updateFromListing(listing);
-
-            expect(Favorites.elements.section.classList.contains('hidden')).toBe(true);
+            expect(loadFavoritesSpy).toHaveBeenCalledTimes(1);
         });
 
         test('tracks favorite status from items', () => {
+            // Mock loadFavorites to prevent an unawaited fetch call from leaking
+            // into the global fetch mock queue.
+            vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
+
             const listing = {
                 path: '/photos',
                 items: [

@@ -38,6 +38,9 @@ describe('Gallery Module', () => {
                 return globalThis.MediaApp.currentMedia.findIndex((m) => m.path === path);
             }),
             currentMedia: [],
+            state: {
+                currentSort: { field: 'name', order: 'asc' },
+            },
         };
 
         globalThis.Tags = {
@@ -69,6 +72,7 @@ describe('Gallery Module', () => {
             },
             retryCurrentImage: vi.fn(),
             open: vi.fn(),
+            openWithItems: vi.fn(),
         };
 
         globalThis.InfiniteScroll = {
@@ -1050,6 +1054,72 @@ describe('Gallery Module', () => {
             Gallery.handleSingleTap(item);
 
             expect(globalThis.Playlist.loadPlaylist).toHaveBeenCalledWith('playlist');
+        });
+
+        test('opens lightbox via parent directory when image is not in current media', async () => {
+            globalThis.MediaApp.currentMedia = [];
+            const openWithItemsMock = vi.fn();
+            globalThis.Lightbox = { open: vi.fn(), openWithItems: openWithItemsMock };
+            globalThis.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: async () => [
+                        { path: 'folder1/photo.jpg', type: 'image' },
+                        { path: 'folder1/other.jpg', type: 'image' },
+                    ],
+                })
+            );
+
+            const item = {
+                name: 'photo.jpg',
+                path: 'folder1/photo.jpg',
+                type: 'image',
+                parentPath: 'folder1',
+            };
+
+            await Gallery._openItemFromParent(item);
+
+            expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('path=folder1'));
+            expect(openWithItemsMock).toHaveBeenCalledWith(
+                expect.arrayContaining([expect.objectContaining({ path: 'folder1/photo.jpg' })]),
+                0
+            );
+        });
+
+        test('does not open lightbox when item not found in parent directory media', async () => {
+            const openWithItemsMock = vi.fn();
+            globalThis.Lightbox = { open: vi.fn(), openWithItems: openWithItemsMock };
+            globalThis.fetch = vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: async () => [{ path: 'folder1/other.jpg', type: 'image' }],
+                })
+            );
+
+            const item = {
+                name: 'photo.jpg',
+                path: 'folder1/photo.jpg',
+                type: 'image',
+                parentPath: 'folder1',
+            };
+
+            await Gallery._openItemFromParent(item);
+
+            expect(openWithItemsMock).not.toHaveBeenCalled();
+        });
+
+        test('handles fetch error gracefully in _openItemFromParent', async () => {
+            globalThis.Lightbox = { open: vi.fn(), openWithItems: vi.fn() };
+            globalThis.fetch = vi.fn(() => Promise.reject(new Error('Network error')));
+
+            const item = {
+                name: 'photo.jpg',
+                path: 'folder1/photo.jpg',
+                type: 'image',
+                parentPath: 'folder1',
+            };
+
+            await expect(Gallery._openItemFromParent(item)).resolves.toBeUndefined();
         });
     });
 
