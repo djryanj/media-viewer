@@ -59,8 +59,24 @@ fi
 TMPDIR_BASE="$(mktemp -d "${TMPDIR:-/tmp}/media-viewer-test.XXXXXXXXXX")"
 TEST_DATABASE_DIR="$TMPDIR_BASE/db"
 TEST_CACHE_DIR="$TMPDIR_BASE/cache"
+SERVER_LOG="$TMPDIR_BASE/server.log"
 mkdir -p "$TEST_DATABASE_DIR" "$TEST_CACHE_DIR"
 info "Temp directory: $TMPDIR_BASE"
+info "Server log:     $SERVER_LOG"
+
+# ── Server log helper ───────────────────────────────────────────────────────
+# Prints the last N lines of the server log to stderr so it appears even when
+# stdout has been redirected. Only called on failure paths.
+dump_server_log() {
+    local lines="${1:-50}"
+    if [ -s "$SERVER_LOG" ]; then
+        printf "${YELLOW}[test-server]${RESET} ── last %s lines of server log (%s) ──\n" "$lines" "$SERVER_LOG" >&2
+        tail -n "$lines" "$SERVER_LOG" >&2
+        printf "${YELLOW}[test-server]${RESET} ── end of server log ──\n" >&2
+    else
+        warn "Server log is empty or missing: $SERVER_LOG" >&2
+    fi
+}
 
 # ── Find a free port ────────────────────────────────────────────────────────
 find_free_port() {
@@ -122,14 +138,17 @@ cleanup() {
         fi
     fi
 
+    if [ $exit_code -ne 0 ]; then
+        # Print server log on any unexpected exit so the cause is visible.
+        dump_server_log 80
+        error "Exiting with code $exit_code"
+    fi
+
     if [ -d "$TMPDIR_BASE" ]; then
         info "Removing temp directory: $TMPDIR_BASE"
         rm -rf "$TMPDIR_BASE"
     fi
 
-    if [ $exit_code -ne 0 ]; then
-        error "Exiting with code $exit_code"
-    fi
     return $exit_code
 }
 
@@ -142,7 +161,7 @@ PORT="$TEST_PORT" \
 DATABASE_DIR="$TEST_DATABASE_DIR" \
 CACHE_DIR="$TEST_CACHE_DIR" \
 LOG_LEVEL="${LOG_LEVEL:-warn}" \
-"$BINARY" &
+"$BINARY" >"$SERVER_LOG" 2>&1 &
 
 SERVER_PID=$!
 info "Server started (PID $SERVER_PID)"
@@ -159,7 +178,7 @@ while [ $elapsed -lt $TIMEOUT ]; do
     # Check that the process hasn't crashed.
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
         error "Server process exited unexpectedly."
-        # Show any logs that might help debug.
+        dump_server_log 80
         exit 1
     fi
 
@@ -174,14 +193,19 @@ done
 
 if [ $elapsed -ge $TIMEOUT ]; then
     error "Server failed to become ready within ${TIMEOUT}s"
+    dump_server_log 80
     exit 1
 fi
 
 # ── Run the user-supplied command ────────────────────────────────────────────
+# Note: initial password seeding is handled by Playwright's globalSetup
+# (e2e/global-setup.js) so it works for any invocation, not only this script.
 info "Running: $*"
 info "TEST_BASE_URL=$TEST_BASE_URL"
 
 # Export TEST_BASE_URL so the command (and its children) can see it.
+# Both Playwright (playwright.config.js) and the vitest integration tests
+# (tests/test.config.js) read this variable.
 export TEST_BASE_URL
 
 # Run the command, capturing its exit code without letting set -e kill us.
@@ -194,6 +218,7 @@ if [ $CMD_EXIT -eq 0 ]; then
     ok "Command completed successfully."
 else
     error "Command failed with exit code $CMD_EXIT."
+    dump_server_log 50
 fi
 
 # cleanup runs via trap; propagate the command's exit code.
