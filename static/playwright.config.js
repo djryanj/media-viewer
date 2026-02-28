@@ -5,6 +5,11 @@ import { defineConfig, devices } from '@playwright/test';
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
+    // Global setup — seeds the initial password on a fresh server before any
+    // browser is launched.  Safe to run against a server that already has a
+    // password configured (the setup endpoint returns 403 and is ignored).
+    globalSetup: './e2e/global-setup.js',
+
     // Test directory
     testDir: './e2e/specs',
 
@@ -35,7 +40,7 @@ export default defineConfig({
     // Shared settings for all projects
     use: {
         // Base URL to use in actions like `await page.goto('/')`
-        baseURL: process.env.BASE_URL || 'http://localhost:8080',
+        baseURL: process.env.TEST_BASE_URL || 'http://localhost:8080',
 
         // Collect trace on first retry
         trace: 'on-first-retry',
