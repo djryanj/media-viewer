@@ -52,6 +52,7 @@ const InfiniteScroll = {
     _scrubFraction: 0, // last fraction set during a pointer drag
     _pendingRestoreFraction: null, // restore fraction awaiting "Go back"
     _restorePopoverTimer: null, // auto-dismiss timer for restore popover
+    _restorePopoverHideTimer: null, // 250 ms fade-out delay timer (tracked so it can be cancelled)
     _saveScrollTimer: null, // debounce timer for persistent position save
 
     // Cached grid geometry — invalidated on resize and renderItems so we
@@ -921,6 +922,11 @@ const InfiniteScroll = {
         const popover = this.elements.restorePopover;
         if (!popover) return;
 
+        // Cancel any in-flight hide-delay timer so it doesn't add 'hidden'
+        // to a popover that is being re-shown (e.g. after resetState()).
+        clearTimeout(this._restorePopoverHideTimer);
+        this._restorePopoverHideTimer = null;
+
         // Reset the countdown bar so the animation replays fresh.
         const bar = popover.querySelector('.scroll-restore-progress-bar');
         if (bar) bar.innerHTML = '<div class="scroll-restore-progress-fill"></div>';
@@ -972,7 +978,10 @@ const InfiniteScroll = {
         if (!popover) return;
         popover.classList.remove('visible');
         // Remove the scrubber marker and anchoring once the fade-out finishes.
-        setTimeout(() => {
+        // Store the timer so showScrollRestorePopover can cancel it if the
+        // popover is re-shown before the 250 ms delay elapses.
+        this._restorePopoverHideTimer = setTimeout(() => {
+            this._restorePopoverHideTimer = null;
             popover.classList.add('hidden');
             popover.classList.remove('scrubber-anchored');
             popover.style.top = '';
@@ -1002,10 +1011,19 @@ const InfiniteScroll = {
     bindEvents() {
         const originalNavigateTo = MediaApp.navigateTo.bind(MediaApp);
         MediaApp.navigateTo = (path) => {
+            // Flush the debounced persistent save before currentPath changes.
+            // If the 500 ms timer is still pending it would fire after the path
+            // has been updated, writing this folder's scrollY under the wrong key.
+            clearTimeout(this._saveScrollTimer);
+            this._saveScrollTimer = null;
+            this.savePersistentScrollPosition();
             this.saveToCache(MediaApp.state.currentPath);
             originalNavigateTo(path);
         };
         window.addEventListener('beforeunload', () => {
+            clearTimeout(this._saveScrollTimer);
+            this._saveScrollTimer = null;
+            this.savePersistentScrollPosition();
             this.saveToCache(MediaApp.state.currentPath);
         });
 

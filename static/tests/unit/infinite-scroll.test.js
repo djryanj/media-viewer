@@ -637,6 +637,108 @@ describe('InfiniteScroll Module', () => {
         });
     });
 
+    // ─── navigateTo wrapper — persistent scroll flush ─────────────────────────
+
+    describe('bindEvents() — navigation flush of savePersistentScrollPosition', () => {
+        let originalNavigateTo;
+
+        beforeEach(() => {
+            // bindEvents() wraps MediaApp.navigateTo; capture the original vi.fn() so we
+            // can restore it and avoid the wrapper accumulating across tests.
+            originalNavigateTo = globalThis.MediaApp.navigateTo;
+
+            InfiniteScroll.elements = {
+                ...InfiniteScroll.elements,
+                scrubber: null, // skip pointer-event wiring in bindEvents
+            };
+
+            Object.defineProperty(globalThis.window, 'scrollY', {
+                value: 300,
+                configurable: true,
+            });
+            globalThis.MediaApp.state.currentPath = 'folder1';
+
+            InfiniteScroll.bindEvents();
+        });
+
+        afterEach(() => {
+            // Restore so the next test's beforeEach gets a clean vi.fn() again.
+            globalThis.MediaApp.navigateTo = originalNavigateTo;
+        });
+
+        test('navigateTo wrapper calls savePersistentScrollPosition before the original', () => {
+            const saveSpy = vi.spyOn(InfiniteScroll, 'savePersistentScrollPosition');
+
+            MediaApp.navigateTo('');
+
+            expect(saveSpy).toHaveBeenCalledTimes(1);
+        });
+
+        test('navigateTo wrapper saves under the pre-navigation path, not the destination', () => {
+            let capturedPath;
+            vi.spyOn(InfiniteScroll, 'savePersistentScrollPosition').mockImplementation(() => {
+                capturedPath = globalThis.MediaApp.state.currentPath;
+            });
+            globalThis.MediaApp.state.currentPath = 'folder1';
+
+            MediaApp.navigateTo('');
+
+            expect(capturedPath).toBe('folder1');
+        });
+
+        test('navigateTo wrapper clears the pending _saveScrollTimer', () => {
+            const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+            InfiniteScroll._saveScrollTimer = 77;
+
+            MediaApp.navigateTo('');
+
+            expect(clearSpy).toHaveBeenCalledWith(77);
+        });
+
+        test('navigateTo wrapper sets _saveScrollTimer to null after clearing', () => {
+            InfiniteScroll._saveScrollTimer = 77;
+
+            MediaApp.navigateTo('');
+
+            expect(InfiniteScroll._saveScrollTimer).toBeNull();
+        });
+
+        test('navigateTo wrapper still calls the original navigateTo function', () => {
+            MediaApp.navigateTo('subfolder');
+
+            expect(originalNavigateTo).toHaveBeenCalledWith('subfolder');
+        });
+
+        test('beforeunload flushes savePersistentScrollPosition', () => {
+            const saveSpy = vi.spyOn(InfiniteScroll, 'savePersistentScrollPosition');
+
+            window.dispatchEvent(new Event('beforeunload'));
+
+            expect(saveSpy).toHaveBeenCalledTimes(1);
+        });
+
+        test('beforeunload saves under the current path', () => {
+            let capturedPath;
+            vi.spyOn(InfiniteScroll, 'savePersistentScrollPosition').mockImplementation(() => {
+                capturedPath = globalThis.MediaApp.state.currentPath;
+            });
+            globalThis.MediaApp.state.currentPath = 'subfolder';
+
+            window.dispatchEvent(new Event('beforeunload'));
+
+            expect(capturedPath).toBe('subfolder');
+        });
+
+        test('beforeunload clears the pending _saveScrollTimer', () => {
+            const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+            InfiniteScroll._saveScrollTimer = 99;
+
+            window.dispatchEvent(new Event('beforeunload'));
+
+            expect(clearSpy).toHaveBeenCalledWith(99);
+        });
+    });
+
     // ─── New feature: scroll restore popover ─────────────────────────────────
 
     describe('showScrollRestorePopover()', () => {
@@ -706,6 +808,102 @@ describe('InfiniteScroll Module', () => {
             InfiniteScroll.hideScrollRestorePopover();
 
             expect(popover.classList.contains('visible')).toBe(false);
+        });
+
+        test('stores the hide-delay timer in _restorePopoverHideTimer', () => {
+            vi.useFakeTimers();
+            const popover = globalThis.document.createElement('div');
+            InfiniteScroll.elements.restorePopover = popover;
+
+            InfiniteScroll.hideScrollRestorePopover();
+
+            expect(InfiniteScroll._restorePopoverHideTimer).not.toBeNull();
+            vi.useRealTimers();
+        });
+
+        test('adds hidden class after the 250 ms delay', () => {
+            vi.useFakeTimers();
+            const popover = globalThis.document.createElement('div');
+            popover.classList.add('visible');
+            InfiniteScroll.elements.restorePopover = popover;
+
+            InfiniteScroll.hideScrollRestorePopover();
+            vi.advanceTimersByTime(250);
+
+            expect(popover.classList.contains('hidden')).toBe(true);
+            vi.useRealTimers();
+        });
+
+        test('sets _restorePopoverHideTimer to null after the delay fires', () => {
+            vi.useFakeTimers();
+            const popover = globalThis.document.createElement('div');
+            InfiniteScroll.elements.restorePopover = popover;
+
+            InfiniteScroll.hideScrollRestorePopover();
+            vi.advanceTimersByTime(250);
+
+            expect(InfiniteScroll._restorePopoverHideTimer).toBeNull();
+            vi.useRealTimers();
+        });
+    });
+
+    describe('showScrollRestorePopover() — cancels stale hide timer', () => {
+        function makePopover() {
+            const popover = globalThis.document.createElement('div');
+            popover.classList.add('scroll-restore-popover', 'hidden');
+            const bar = globalThis.document.createElement('div');
+            bar.className = 'scroll-restore-progress-bar';
+            bar.appendChild(
+                Object.assign(document.createElement('div'), {
+                    className: 'scroll-restore-progress-fill',
+                })
+            );
+            popover.appendChild(bar);
+            return popover;
+        }
+
+        test('cancels a pending _restorePopoverHideTimer when called', () => {
+            vi.useFakeTimers();
+            const popover = makePopover();
+            InfiniteScroll.elements.restorePopover = popover;
+
+            // Start a hide, then immediately show again (simulating resetState → show)
+            InfiniteScroll.hideScrollRestorePopover();
+            const timerBefore = InfiniteScroll._restorePopoverHideTimer;
+            const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+            InfiniteScroll.showScrollRestorePopover(0.5);
+
+            expect(clearSpy).toHaveBeenCalledWith(timerBefore);
+            vi.useRealTimers();
+        });
+
+        test('sets _restorePopoverHideTimer to null when show is called', () => {
+            vi.useFakeTimers();
+            const popover = makePopover();
+            InfiniteScroll.elements.restorePopover = popover;
+
+            InfiniteScroll.hideScrollRestorePopover();
+            InfiniteScroll.showScrollRestorePopover(0.5);
+
+            expect(InfiniteScroll._restorePopoverHideTimer).toBeNull();
+            vi.useRealTimers();
+        });
+
+        test('popover is NOT hidden after 250 ms when show is called after hide (the flash fix)', () => {
+            vi.useFakeTimers();
+            const popover = makePopover();
+            InfiniteScroll.elements.restorePopover = popover;
+
+            // Reproduce the resetState() → _checkPersistentRestore() sequence
+            InfiniteScroll.hideScrollRestorePopover();
+            InfiniteScroll.showScrollRestorePopover(0.5);
+
+            // The stale hide timer from the first call must not fire
+            vi.advanceTimersByTime(300);
+
+            expect(popover.classList.contains('hidden')).toBe(false);
+            vi.useRealTimers();
         });
     });
 
