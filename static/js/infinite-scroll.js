@@ -54,6 +54,14 @@ const InfiniteScroll = {
     _restorePopoverTimer: null, // auto-dismiss timer for restore popover
     _saveScrollTimer: null, // debounce timer for persistent position save
 
+    // Cached grid geometry — invalidated on resize and renderItems so we
+    // don't force synchronous layout on every updateVirtualSpacer call.
+    _cachedGridGeometry: null,
+
+    // Path → DOM element map for O(1) gallery item lookups (used by Lightbox
+    // to read tag data without a full DOM querySelector scan).
+    _galleryItemsByPath: new Map(),
+
     // ── Elements ─────────────────────────────────────────────────────────────
     elements: {},
 
@@ -128,6 +136,8 @@ const InfiniteScroll = {
      * sticky chrome.  Must be called AFTER the elements exist in the DOM.
      */
     _positionScrubber() {
+        // Grid column widths may have changed on resize, so invalidate the cache.
+        this._cachedGridGeometry = null;
         const scrubber = this.elements.scrubber;
         if (!scrubber) return;
         const header = document.querySelector('.header');
@@ -299,6 +309,8 @@ const InfiniteScroll = {
         this._catchUpTarget = 0;
         this._isScrubbing = false;
         this._scrubFraction = 0;
+        this._cachedGridGeometry = null;
+        this._galleryItemsByPath.clear();
         clearTimeout(this._catchUpTimer);
         clearTimeout(this._saveScrollTimer);
         document.documentElement.classList.remove('catchup-active', 'custom-scrubber-active');
@@ -330,6 +342,7 @@ const InfiniteScroll = {
     // Grid geometry (exact values from live browser layout)
     // ─────────────────────────────────────────────────────────────────────────
     _getGridGeometry() {
+        if (this._cachedGridGeometry) return this._cachedGridGeometry;
         const gallery = this.elements.gallery;
         if (!gallery) return { cols: 3, gap: 2, itemSize: 120, rowHeight: 122 };
         const cs = getComputedStyle(gallery);
@@ -339,7 +352,8 @@ const InfiniteScroll = {
         const itemSize = item
             ? item.offsetWidth
             : Math.floor((gallery.offsetWidth - gap * (cols - 1)) / cols);
-        return { cols, gap, itemSize, rowHeight: itemSize + gap };
+        this._cachedGridGeometry = { cols, gap, itemSize, rowHeight: itemSize + gap };
+        return this._cachedGridGeometry;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -727,7 +741,13 @@ const InfiniteScroll = {
     // ─────────────────────────────────────────────────────────────────────────
     renderItems(items, append = false) {
         const gallery = this.elements.gallery;
-        if (!append) gallery.innerHTML = '';
+        if (!append) {
+            gallery.innerHTML = '';
+            // New gallery contents invalidate both the geometry cache and the
+            // path-to-element lookup map.
+            this._cachedGridGeometry = null;
+            this._galleryItemsByPath.clear();
+        }
 
         if (!items || items.length === 0) {
             if (!append) {
@@ -743,6 +763,7 @@ const InfiniteScroll = {
 
         const fragment = document.createDocumentFragment();
         const startIndex = append ? this.state.loadedItems.length - items.length : 0;
+        const createdElements = [];
         items.forEach((item, i) => {
             const element = Gallery.createGalleryItem(item);
             element.dataset.index = startIndex + i;
@@ -750,8 +771,15 @@ const InfiniteScroll = {
                 if (ItemSelection.selectedPaths.has(item.path)) element.classList.add('selected');
             }
             fragment.appendChild(element);
+            createdElements.push({ path: item.path, element });
         });
         gallery.appendChild(fragment);
+
+        // Populate the path-to-element map for fast tag lookups.
+        for (const { path, element } of createdElements) {
+            this._galleryItemsByPath.set(path, element);
+        }
+
         lucide.createIcons();
 
         if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {

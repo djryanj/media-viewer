@@ -178,6 +178,31 @@ describe('InfiniteScroll Module', () => {
 
             expect(clearSpy).toHaveBeenCalledWith(42);
         });
+
+        test('sets _cachedGridGeometry to null', () => {
+            InfiniteScroll._cachedGridGeometry = { cols: 4, gap: 8, itemSize: 200, rowHeight: 208 };
+            InfiniteScroll.elements = {
+                skeletonContainer: { classList: { add: vi.fn() } },
+                loadMoreBtn: { classList: { add: vi.fn() } },
+            };
+
+            InfiniteScroll.resetState();
+
+            expect(InfiniteScroll._cachedGridGeometry).toBeNull();
+        });
+
+        test('clears _galleryItemsByPath map', () => {
+            InfiniteScroll._galleryItemsByPath.set('/img1.jpg', document.createElement('div'));
+            InfiniteScroll._galleryItemsByPath.set('/img2.jpg', document.createElement('div'));
+            InfiniteScroll.elements = {
+                skeletonContainer: { classList: { add: vi.fn() } },
+                loadMoreBtn: { classList: { add: vi.fn() } },
+            };
+
+            InfiniteScroll.resetState();
+
+            expect(InfiniteScroll._galleryItemsByPath.size).toBe(0);
+        });
     });
 
     describe('Cache operations - saveToCache()', () => {
@@ -1203,6 +1228,148 @@ describe('InfiniteScroll Module', () => {
             sentinel.getBoundingClientRect = () => ({ top: 400, bottom: 420 });
             InfiniteScroll.checkAndFillViewport();
             expect(spy).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    // =========================================
+    // _galleryItemsByPath map
+    // =========================================
+
+    describe('_galleryItemsByPath — path-to-element map', () => {
+        const items = [
+            { path: '/img1.jpg', name: 'img1.jpg', type: 'image' },
+            { path: '/img2.jpg', name: 'img2.jpg', type: 'image' },
+        ];
+
+        beforeEach(() => {
+            InfiniteScroll.state.loadedItems = [];
+            InfiniteScroll.elements = {
+                ...InfiniteScroll.elements,
+                gallery: document.getElementById('gallery'),
+            };
+        });
+
+        test('renderItems() populates the map with path→element entries', () => {
+            InfiniteScroll.renderItems(items);
+
+            expect(InfiniteScroll._galleryItemsByPath.size).toBe(2);
+            expect(InfiniteScroll._galleryItemsByPath.has('/img1.jpg')).toBe(true);
+            expect(InfiniteScroll._galleryItemsByPath.has('/img2.jpg')).toBe(true);
+        });
+
+        test('map entry points to the correct DOM element for the given path', () => {
+            InfiniteScroll.renderItems(items);
+
+            const el = InfiniteScroll._galleryItemsByPath.get('/img1.jpg');
+
+            expect(el).toBeTruthy();
+            expect(el.dataset.path).toBe('/img1.jpg');
+        });
+
+        test('renderItems() with append=false clears stale entries before populating', () => {
+            InfiniteScroll._galleryItemsByPath.set('/old.jpg', document.createElement('div'));
+
+            InfiniteScroll.renderItems(items, false);
+
+            expect(InfiniteScroll._galleryItemsByPath.has('/old.jpg')).toBe(false);
+            expect(InfiniteScroll._galleryItemsByPath.size).toBe(2);
+        });
+
+        test('renderItems() with append=true adds to existing map entries', () => {
+            InfiniteScroll.renderItems(items, false);
+            InfiniteScroll.state.loadedItems = [...items];
+
+            const extra = [{ path: '/img3.jpg', name: 'img3.jpg', type: 'image' }];
+            InfiniteScroll.renderItems(extra, true);
+
+            expect(InfiniteScroll._galleryItemsByPath.size).toBe(3);
+            expect(InfiniteScroll._galleryItemsByPath.has('/img3.jpg')).toBe(true);
+        });
+
+        test('renderItems() with append=true preserves existing map entries', () => {
+            InfiniteScroll.renderItems(items, false);
+            InfiniteScroll.state.loadedItems = [...items];
+            const extra = [{ path: '/img3.jpg', name: 'img3.jpg', type: 'image' }];
+
+            InfiniteScroll.renderItems(extra, true);
+
+            expect(InfiniteScroll._galleryItemsByPath.has('/img1.jpg')).toBe(true);
+            expect(InfiniteScroll._galleryItemsByPath.has('/img2.jpg')).toBe(true);
+        });
+    });
+
+    // =========================================
+    // _cachedGridGeometry cache
+    // =========================================
+
+    describe('_cachedGridGeometry — grid geometry cache', () => {
+        beforeEach(() => {
+            InfiniteScroll.elements = {
+                ...InfiniteScroll.elements,
+                gallery: document.getElementById('gallery'),
+                scrubber: null,
+            };
+            InfiniteScroll._cachedGridGeometry = null;
+        });
+
+        test('renderItems() with append=false sets _cachedGridGeometry to null', () => {
+            InfiniteScroll._cachedGridGeometry = { cols: 4, gap: 8, itemSize: 200, rowHeight: 208 };
+            InfiniteScroll.state.loadedItems = [];
+
+            InfiniteScroll.renderItems([], false);
+
+            expect(InfiniteScroll._cachedGridGeometry).toBeNull();
+        });
+
+        test('renderItems() with append=true does not clear _cachedGridGeometry', () => {
+            const cached = { cols: 4, gap: 8, itemSize: 200, rowHeight: 208 };
+            InfiniteScroll._cachedGridGeometry = cached;
+            InfiniteScroll.state.loadedItems = [];
+
+            InfiniteScroll.renderItems([], true);
+
+            expect(InfiniteScroll._cachedGridGeometry).toBe(cached);
+        });
+
+        test('_positionScrubber() sets _cachedGridGeometry to null', () => {
+            InfiniteScroll._cachedGridGeometry = { cols: 4, gap: 8, itemSize: 200, rowHeight: 208 };
+
+            InfiniteScroll._positionScrubber();
+
+            expect(InfiniteScroll._cachedGridGeometry).toBeNull();
+        });
+
+        test('_getGridGeometry() returns same cached object on second call', () => {
+            const result1 = InfiniteScroll._getGridGeometry();
+
+            // Make gallery appear to have a different width — a fresh compute would differ
+            Object.defineProperty(InfiniteScroll.elements.gallery, 'offsetWidth', {
+                value: 9999,
+                configurable: true,
+            });
+            const result2 = InfiniteScroll._getGridGeometry();
+
+            expect(result2).toBe(result1);
+        });
+
+        test('_getGridGeometry() computes a new value after cache is cleared', () => {
+            const result1 = InfiniteScroll._getGridGeometry();
+            InfiniteScroll._cachedGridGeometry = null;
+
+            const result2 = InfiniteScroll._getGridGeometry();
+
+            // Both are valid geometry objects but are distinct references
+            expect(result2).not.toBe(result1);
+            expect(result2).toHaveProperty('cols');
+            expect(result2).toHaveProperty('rowHeight');
+        });
+
+        test('_getGridGeometry() returns a default geometry when gallery element is null', () => {
+            InfiniteScroll.elements.gallery = null;
+
+            const geo = InfiniteScroll._getGridGeometry();
+
+            expect(geo).toEqual({ cols: 3, gap: 2, itemSize: 120, rowHeight: 122 });
         });
     });
 });

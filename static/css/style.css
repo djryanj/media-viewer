@@ -1975,6 +1975,37 @@ select:focus {
     display: none;
 }
 
+/*
+ * Autoplay / loop buttons contain both icon states pre-rendered.
+ * CSS (not JS) decides which SVG is visible based on the .enabled class,
+ * avoiding innerHTML mutations and lucide.createIcons() on every navigation.
+ *
+ * Default (off): show the "off" icon; enabled: swap to the "on" icon.
+ */
+.lightbox-autoplay [data-lucide='play-circle'] {
+    display: none;
+}
+
+.lightbox-autoplay.enabled [data-lucide='play-circle'] {
+    display: inline;
+}
+
+.lightbox-autoplay.enabled [data-lucide='pause-circle'] {
+    display: none;
+}
+
+.lightbox-loop-toggle [data-lucide='repeat'] {
+    display: none;
+}
+
+.lightbox-loop-toggle.enabled [data-lucide='repeat'] {
+    display: inline;
+}
+
+.lightbox-loop-toggle.enabled [data-lucide='repeat-1'] {
+    display: none;
+}
+
 /* ===========================================
    LIGHTBOX TAG SUMMARY (in info bar)
    =========================================== */
