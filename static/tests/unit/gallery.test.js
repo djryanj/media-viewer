@@ -857,35 +857,53 @@ describe('Gallery Module', () => {
             expect(img.draggable).toBe(false);
         });
 
-        test('adds loaded class on successful load', async () => {
+        test('adds loaded class on successful load', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
             const img = thumbArea.querySelector('img');
 
-            // Wait for fetch and image load
-            await new Promise((resolve) => setTimeout(resolve, 0));
-
-            // Trigger onload event
-            if (img.onload) {
-                img.onload();
-            }
+            // Simulate the browser firing a load event
+            img.dispatchEvent(new Event('load'));
 
             expect(img.classList.contains('loaded')).toBe(true);
         });
 
-        test('uses provided thumbnail URL', () => {
-            const item = {
-                name: 'test.jpg',
-                path: 'test.jpg',
-                type: 'image',
-                thumbnailUrl: '/custom/thumb.jpg',
-            };
+        test('sets img.src directly to the thumbnail API URL', () => {
+            const item = { name: 'test.jpg', path: 'subdir/test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
+            const img = thumbArea.querySelector('img');
 
-            // Thumbnail URL is used in fetch, not directly in img.src
-            expect(thumbArea.querySelector('img')).toBeTruthy();
+            // src is assigned directly — loading="lazy" is respected and the browser
+            // can evict decoded bitmaps under memory pressure
+            expect(img.src).toContain('/api/thumbnails/subdir/test.jpg');
+        });
+
+        test('does not call fetch for thumbnail loading', () => {
+            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
+            globalThis.fetch.mockClear();
+
+            Gallery.createThumbArea(item);
+
+            expect(globalThis.fetch).not.toHaveBeenCalledWith(
+                expect.stringContaining('/api/thumbnails/'),
+                expect.anything()
+            );
+        });
+
+        test('shows fallback icon on load error', () => {
+            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
+
+            const thumbArea = Gallery.createThumbArea(item);
+            const img = thumbArea.querySelector('img');
+
+            expect(thumbArea.querySelector('.gallery-item-icon')).toBeNull();
+
+            img.dispatchEvent(new Event('error'));
+
+            expect(img.style.display).toBe('none');
+            expect(thumbArea.querySelector('.gallery-item-icon')).toBeTruthy();
         });
 
         test('adds video indicator for video type', () => {

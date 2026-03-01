@@ -1100,6 +1100,169 @@ func TestListDirectoryPagination(t *testing.T) {
 	}
 }
 
+func TestListDirectoryWithOffset(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	const dir = "offset-test"
+
+	// Insert 10 files named file00.jpg … file09.jpg so alphabetical order is stable.
+	batch, _ := db.BeginBatch(ctx)
+	for i := 0; i < 10; i++ {
+		file := MediaFile{
+			Name:       fmt.Sprintf("file%02d.jpg", i),
+			Path:       filepath.Join(dir, fmt.Sprintf("file%02d.jpg", i)),
+			ParentPath: dir,
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+		}
+		_ = batch.UpsertFile(ctx, &file)
+	}
+	_ = db.EndBatch(batch, nil)
+
+	tests := []struct {
+		name        string
+		offset      int
+		pageSize    int
+		expectCount int
+		expectTotal int
+		expectFirst string // Name of the first item returned
+	}{
+		{
+			name:        "offset 0 returns from beginning",
+			offset:      0,
+			pageSize:    3,
+			expectCount: 3,
+			expectTotal: 10,
+			expectFirst: "file00.jpg",
+		},
+		{
+			name:        "offset 3 skips first three items",
+			offset:      3,
+			pageSize:    3,
+			expectCount: 3,
+			expectTotal: 10,
+			expectFirst: "file03.jpg",
+		},
+		{
+			name:        "offset 8 returns only remaining items",
+			offset:      8,
+			pageSize:    10,
+			expectCount: 2,
+			expectTotal: 10,
+			expectFirst: "file08.jpg",
+		},
+		{
+			name:        "offset matches page-based result for same window",
+			offset:      5,
+			pageSize:    5,
+			expectCount: 5,
+			expectTotal: 10,
+			expectFirst: "file05.jpg",
+		},
+		{
+			name:        "offset beyond total returns empty",
+			offset:      20,
+			pageSize:    5,
+			expectCount: 0,
+			expectTotal: 10,
+			expectFirst: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := ListOptions{
+				Path:      dir,
+				SortField: SortByName,
+				SortOrder: SortAsc,
+				Page:      1,
+				PageSize:  tt.pageSize,
+				Offset:    tt.offset,
+			}
+
+			listing, err := db.ListDirectory(ctx, opts)
+			if err != nil {
+				t.Fatalf("ListDirectory failed: %v", err)
+			}
+
+			if len(listing.Items) != tt.expectCount {
+				t.Errorf("got %d items, want %d", len(listing.Items), tt.expectCount)
+			}
+			if listing.TotalItems != tt.expectTotal {
+				t.Errorf("TotalItems = %d, want %d", listing.TotalItems, tt.expectTotal)
+			}
+			if tt.expectFirst != "" {
+				if len(listing.Items) == 0 {
+					t.Errorf("expected first item %q but got no items", tt.expectFirst)
+				} else if listing.Items[0].Name != tt.expectFirst {
+					t.Errorf("first item = %q, want %q", listing.Items[0].Name, tt.expectFirst)
+				}
+			}
+		})
+	}
+}
+
+// TestListDirectoryOffsetMatchesPageResult verifies that fetching via offset
+// produces the same items as the equivalent page-based query.
+func TestListDirectoryOffsetMatchesPageResult(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	const dir = "parity-test"
+	const pageSize = 5
+
+	batch, _ := db.BeginBatch(ctx)
+	for i := 0; i < 20; i++ {
+		file := MediaFile{
+			Name:       fmt.Sprintf("item%02d.jpg", i),
+			Path:       filepath.Join(dir, fmt.Sprintf("item%02d.jpg", i)),
+			ParentPath: dir,
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+		}
+		_ = batch.UpsertFile(ctx, &file)
+	}
+	_ = db.EndBatch(batch, nil)
+
+	// Compare page 2 (items 5–9) with offset=5
+	pageListing, err := db.ListDirectory(ctx, ListOptions{
+		Path:      dir,
+		SortField: SortByName,
+		SortOrder: SortAsc,
+		Page:      2,
+		PageSize:  pageSize,
+	})
+	if err != nil {
+		t.Fatalf("page-based ListDirectory failed: %v", err)
+	}
+
+	offsetListing, err := db.ListDirectory(ctx, ListOptions{
+		Path:      dir,
+		SortField: SortByName,
+		SortOrder: SortAsc,
+		Page:      1,
+		PageSize:  pageSize,
+		Offset:    pageSize, // skip first 5
+	})
+	if err != nil {
+		t.Fatalf("offset-based ListDirectory failed: %v", err)
+	}
+
+	if len(pageListing.Items) != len(offsetListing.Items) {
+		t.Fatalf("item count mismatch: page=%d, offset=%d", len(pageListing.Items), len(offsetListing.Items))
+	}
+	for i := range pageListing.Items {
+		if pageListing.Items[i].Path != offsetListing.Items[i].Path {
+			t.Errorf("item[%d]: page=%q, offset=%q", i, pageListing.Items[i].Path, offsetListing.Items[i].Path)
+		}
+	}
+}
+
 func TestListDirectoryEmpty(t *testing.T) {
 	db, _ := setupTestDB(t)
 	defer db.Close()

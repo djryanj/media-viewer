@@ -103,6 +103,16 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	if pageSize, err := strconv.Atoi(r.URL.Query().Get("pageSize")); err == nil && pageSize > 0 {
 		opts.PageSize = pageSize
 	}
+	// offset overrides default page-based pagination. When specified, items are
+	// returned starting at that 0-based index regardless of the page parameter.
+	// Page is derived from offset so response metadata (Page, TotalPages) is
+	// consistent with the actual data returned.
+	if offsetVal, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && offsetVal >= 0 {
+		opts.Offset = offsetVal
+		if opts.PageSize > 0 {
+			opts.Page = offsetVal/opts.PageSize + 1
+		}
+	}
 
 	if opts.SortField == "" {
 		opts.SortField = database.SortByName

@@ -152,13 +152,11 @@ const Gallery = {
             img.alt = item.name;
             img.draggable = false;
 
-            const controller = new AbortController();
             let imageLoaded = false;
 
             const handleFailure = () => {
                 if (imageLoaded) return;
                 imageLoaded = true;
-                controller.abort();
 
                 img.style.display = 'none';
                 const iconWrapper = document.createElement('span');
@@ -188,38 +186,16 @@ const Gallery = {
                 }
             };
 
-            // we ignore the thumbnailUrl provided by the backend because it doesn't escape certain characters properly.
+            // Assign src directly so that loading="lazy" takes effect: the browser only
+            // fetches images near the viewport and can evict decoded bitmaps when under
+            // memory pressure (re-fetching from HTTP cache). The fetch→blob approach
+            // bypasses lazy loading entirely and permanently pins decoded bitmaps in memory
+            // (blob URLs are revoked, so the browser has no URL to re-fetch from).
+            // The URL is already correctly encoded by the path.split/map/join above.
             const thumbnailUrl = `/api/thumbnails/${item.path.split('/').map(encodeURIComponent).join('/')}`;
-            const timeoutId = setTimeout(() => {
-                controller.abort();
-                handleFailure();
-            }, 10000);
-
-            fetch(thumbnailUrl, { signal: controller.signal })
-                .then((response) => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-                    return response.blob();
-                })
-                .then((blob) => {
-                    if (imageLoaded) return;
-                    clearTimeout(timeoutId);
-
-                    const blobUrl = URL.createObjectURL(blob);
-                    img.onload = () => {
-                        handleSuccess();
-                        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
-                    };
-                    img.onerror = handleFailure;
-                    img.src = blobUrl;
-                })
-                .catch((_) => {
-                    clearTimeout(timeoutId);
-                    if (!imageLoaded) {
-                        handleFailure();
-                    }
-                });
+            img.addEventListener('load', handleSuccess, { once: true });
+            img.addEventListener('error', handleFailure, { once: true });
+            img.src = thumbnailUrl;
 
             thumbArea.appendChild(img);
 
@@ -747,14 +723,7 @@ const Gallery = {
             img.style.display = '';
             img.classList.remove('loaded');
 
-            const controller = new AbortController();
-            let retryLoaded = false;
-
             const handleRetryFailure = () => {
-                if (retryLoaded) return;
-                retryLoaded = true;
-                controller.abort();
-
                 img.style.display = 'none';
                 const newIconWrapper = document.createElement('span');
                 newIconWrapper.className = 'gallery-item-icon';
@@ -773,8 +742,6 @@ const Gallery = {
             };
 
             const handleRetrySuccess = () => {
-                if (retryLoaded) return;
-                retryLoaded = true;
                 img.classList.add('loaded');
 
                 if (
@@ -785,47 +752,36 @@ const Gallery = {
                 }
             };
 
-            // we ignore the thumbnailUrl provided by the backend because it doesn't escape certain characters properly.
+            // Same rationale as createThumbArea: direct src preserves lazy loading
+            // and allows the browser to evict decoded bitmaps and re-fetch from cache.
             const originalSrc = `/api/thumbnails/${item.path.split('/').map(encodeURIComponent).join('/')}`;
             const cacheBuster = `t=${Date.now()}`;
             const retryUrl = originalSrc + (originalSrc.includes('?') ? '&' : '?') + cacheBuster;
 
-            const timeoutId = setTimeout(() => {
-                controller.abort();
-                handleRetryFailure();
-            }, 5000);
+            const onDone = () => {
+                completedRetries++;
+                if (completedRetries === thumbnailBatch.length) {
+                    this.thumbnailFailures.retryInProgress = false;
+                }
+            };
 
-            fetch(retryUrl, { signal: controller.signal })
-                .then((response) => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-                    return response.blob();
-                })
-                .then((blob) => {
-                    if (retryLoaded) return;
-                    clearTimeout(timeoutId);
-
-                    const blobUrl = URL.createObjectURL(blob);
-                    img.onload = () => {
-                        handleRetrySuccess();
-                        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
-                    };
-                    img.onerror = handleRetryFailure;
-                    img.src = blobUrl;
-                })
-                .catch((_) => {
-                    clearTimeout(timeoutId);
-                    if (!retryLoaded) {
-                        handleRetryFailure();
-                    }
-                })
-                .finally(() => {
-                    completedRetries++;
-                    if (completedRetries === thumbnailBatch.length) {
-                        this.thumbnailFailures.retryInProgress = false;
-                    }
-                });
+            img.addEventListener(
+                'load',
+                () => {
+                    handleRetrySuccess();
+                    onDone();
+                },
+                { once: true }
+            );
+            img.addEventListener(
+                'error',
+                () => {
+                    handleRetryFailure();
+                    onDone();
+                },
+                { once: true }
+            );
+            img.src = retryUrl;
         });
     },
 };
