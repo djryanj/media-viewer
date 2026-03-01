@@ -1,6 +1,6 @@
 {
     "name": "media-viewer-frontend",
-    "version": "0.15.0-rc1",
+    "version": "0.15.0",
     "description": "Media Viewer Frontend",
     "private": true,
     "type": "module",
