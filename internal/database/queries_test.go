@@ -461,6 +461,44 @@ func TestNormalizeListOptions(t *testing.T) {
 				PageSize:  200,
 			},
 		},
+		{
+			name: "positive offset preserved unchanged",
+			input: ListOptions{
+				Path:      "photos",
+				SortField: SortByName,
+				SortOrder: SortAsc,
+				Page:      1,
+				PageSize:  10,
+				Offset:    50,
+			},
+			expected: ListOptions{
+				Path:      "photos",
+				SortField: SortByName,
+				SortOrder: SortAsc,
+				Page:      1,
+				PageSize:  10,
+				Offset:    50,
+			},
+		},
+		{
+			name: "zero offset preserved unchanged",
+			input: ListOptions{
+				Path:      "photos",
+				SortField: SortByName,
+				SortOrder: SortAsc,
+				Page:      1,
+				PageSize:  10,
+				Offset:    0,
+			},
+			expected: ListOptions{
+				Path:      "photos",
+				SortField: SortByName,
+				SortOrder: SortAsc,
+				Page:      1,
+				PageSize:  10,
+				Offset:    0,
+			},
+		},
 	}
 
 	for _, tt := range tests {

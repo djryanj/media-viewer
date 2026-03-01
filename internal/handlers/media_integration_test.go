@@ -348,6 +348,125 @@ func TestListFilesWithPaginationIntegration(t *testing.T) {
 	}
 }
 
+// TestListFilesWithOffsetIntegration tests that the ?offset= parameter skips
+// the correct number of items and that the derived page metadata is consistent.
+func TestListFilesWithOffsetIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add 10 files; use zero-padded names so alphabetical order is deterministic.
+	for i := 1; i <= 10; i++ {
+		addTestMediaFile(t, h, fmt.Sprintf("file%02d.jpg", i), database.FileTypeImage, fmt.Sprintf("content %d", i))
+	}
+
+	t.Run("offset skips items", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files?offset=3&pageSize=4", http.NoBody)
+		w := httptest.NewRecorder()
+		h.ListFiles(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var listing database.DirectoryListing
+		if err := json.NewDecoder(w.Body).Decode(&listing); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(listing.Items) != 4 {
+			t.Errorf("expected 4 items, got %d", len(listing.Items))
+		}
+		if listing.TotalItems != 10 {
+			t.Errorf("expected TotalItems 10, got %d", listing.TotalItems)
+		}
+		// Items should start at the 4th file (index 3).
+		if len(listing.Items) > 0 && listing.Items[0].Name != "file04.jpg" {
+			t.Errorf("expected first item file04.jpg, got %s", listing.Items[0].Name)
+		}
+	})
+
+	t.Run("page is derived from offset and pageSize", func(t *testing.T) {
+		// offset=5, pageSize=5 → page = 5/5+1 = 2
+		req := httptest.NewRequest(http.MethodGet, "/api/files?offset=5&pageSize=5", http.NoBody)
+		w := httptest.NewRecorder()
+		h.ListFiles(w, req)
+
+		var listing database.DirectoryListing
+		if err := json.NewDecoder(w.Body).Decode(&listing); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if listing.Page != 2 {
+			t.Errorf("expected Page 2, got %d", listing.Page)
+		}
+	})
+
+	t.Run("offset 0 returns from beginning", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files?offset=0&pageSize=3", http.NoBody)
+		w := httptest.NewRecorder()
+		h.ListFiles(w, req)
+
+		var listing database.DirectoryListing
+		if err := json.NewDecoder(w.Body).Decode(&listing); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(listing.Items) != 3 {
+			t.Errorf("expected 3 items, got %d", len(listing.Items))
+		}
+		if len(listing.Items) > 0 && listing.Items[0].Name != "file01.jpg" {
+			t.Errorf("expected first item file01.jpg, got %s", listing.Items[0].Name)
+		}
+	})
+
+	t.Run("offset result matches equivalent page-based result", func(t *testing.T) {
+		// page=2, pageSize=5 should equal offset=5, pageSize=5
+		pageReq := httptest.NewRequest(http.MethodGet, "/api/files?page=2&pageSize=5", http.NoBody)
+		pageW := httptest.NewRecorder()
+		h.ListFiles(pageW, pageReq)
+
+		offsetReq := httptest.NewRequest(http.MethodGet, "/api/files?offset=5&pageSize=5", http.NoBody)
+		offsetW := httptest.NewRecorder()
+		h.ListFiles(offsetW, offsetReq)
+
+		var pageListing, offsetListing database.DirectoryListing
+		if err := json.NewDecoder(pageW.Body).Decode(&pageListing); err != nil {
+			t.Fatalf("failed to decode page listing: %v", err)
+		}
+		if err := json.NewDecoder(offsetW.Body).Decode(&offsetListing); err != nil {
+			t.Fatalf("failed to decode offset listing: %v", err)
+		}
+
+		if len(pageListing.Items) != len(offsetListing.Items) {
+			t.Fatalf("item count mismatch: page=%d, offset=%d", len(pageListing.Items), len(offsetListing.Items))
+		}
+		for i := range pageListing.Items {
+			if pageListing.Items[i].Path != offsetListing.Items[i].Path {
+				t.Errorf("item[%d]: page=%q, offset=%q", i, pageListing.Items[i].Path, offsetListing.Items[i].Path)
+			}
+		}
+	})
+
+	t.Run("negative offset is ignored", func(t *testing.T) {
+		// Negative offset should be rejected; handler falls back to page 1.
+		req := httptest.NewRequest(http.MethodGet, "/api/files?offset=-1&pageSize=5", http.NoBody)
+		w := httptest.NewRecorder()
+		h.ListFiles(w, req)
+
+		var listing database.DirectoryListing
+		if err := json.NewDecoder(w.Body).Decode(&listing); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		// Without a valid offset, page 1 is returned starting from the first item.
+		if len(listing.Items) > 0 && listing.Items[0].Name != "file01.jpg" {
+			t.Errorf("expected page-1 result starting at file01.jpg, got %s", listing.Items[0].Name)
+		}
+	})
+}
+
 // TestGetMediaFilesIntegration tests retrieving media files from a directory
 func TestGetMediaFilesIntegration(t *testing.T) {
 	if testing.Short() {

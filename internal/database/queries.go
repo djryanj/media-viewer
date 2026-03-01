@@ -51,6 +51,11 @@ type ListOptions struct {
 	FilterType string
 	Page       int
 	PageSize   int
+	// Offset, when > 0, is used directly as the SQL OFFSET instead of the
+	// page-derived value ((Page-1)*PageSize).  Allows the frontend to fetch
+	// an arbitrary window of items in a single request (e.g. for catch-up
+	// after a scrubber jump) rather than fetching many small pages.
+	Offset int
 }
 
 // SearchOptions specifies options for searching the media library.
@@ -160,6 +165,9 @@ func (d *Database) fetchDirectoryItems(ctx context.Context, opts ListOptions) ([
 	}
 
 	offset := (opts.Page - 1) * opts.PageSize
+	if opts.Offset > 0 {
+		offset = opts.Offset
+	}
 
 	var orderColumn string
 	if sortColumn == NameCollation {

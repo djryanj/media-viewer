@@ -506,6 +506,115 @@ func TestPageSizeParsing(t *testing.T) {
 	}
 }
 
+// TestOffsetParsing tests the offset parameter parsing and derived Page logic
+// from ListFiles. The handler accepts offset >= 0 and rejects negative values
+// and non-numeric strings.
+func TestOffsetParsing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		offsetParam    string
+		pageSizeParam  string
+		wantOffset     int
+		wantPage       int
+		offsetAccepted bool
+	}{
+		{
+			name:           "valid offset sets Offset and derives Page",
+			offsetParam:    "10",
+			pageSizeParam:  "5",
+			wantOffset:     10,
+			wantPage:       3,
+			offsetAccepted: true,
+		},
+		{
+			name:           "offset zero accepted",
+			offsetParam:    "0",
+			pageSizeParam:  "10",
+			wantOffset:     0,
+			wantPage:       1,
+			offsetAccepted: true,
+		},
+		{
+			name:           "negative offset rejected",
+			offsetParam:    "-5",
+			pageSizeParam:  "10",
+			wantOffset:     0,
+			wantPage:       1,
+			offsetAccepted: false,
+		},
+		{
+			name:           "non-numeric offset rejected",
+			offsetParam:    "abc",
+			pageSizeParam:  "10",
+			wantOffset:     0,
+			wantPage:       1,
+			offsetAccepted: false,
+		},
+		{
+			name:           "empty offset rejected",
+			offsetParam:    "",
+			pageSizeParam:  "10",
+			wantOffset:     0,
+			wantPage:       1,
+			offsetAccepted: false,
+		},
+		{
+			name:           "large offset accepted",
+			offsetParam:    "500",
+			pageSizeParam:  "50",
+			wantOffset:     500,
+			wantPage:       11,
+			offsetAccepted: true,
+		},
+		{
+			name:           "offset with pageSize 1 computes page correctly",
+			offsetParam:    "7",
+			pageSizeParam:  "1",
+			wantOffset:     7,
+			wantPage:       8,
+			offsetAccepted: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Simulate the parsing block from ListFiles.
+			pageSize := 50
+			if tt.pageSizeParam != "" {
+				if parsed, err := parseInt(tt.pageSizeParam); err == nil && parsed > 0 {
+					pageSize = parsed
+				}
+			}
+
+			gotOffset := 0
+			gotPage := 1
+			if tt.offsetParam != "" {
+				if parsed, err := parseInt(tt.offsetParam); err == nil && parsed >= 0 {
+					gotOffset = parsed
+					if pageSize > 0 {
+						gotPage = parsed/pageSize + 1
+					}
+				}
+			}
+
+			if gotOffset != tt.wantOffset {
+				t.Errorf("Offset = %d, want %d", gotOffset, tt.wantOffset)
+			}
+			if gotPage != tt.wantPage {
+				t.Errorf("Page = %d, want %d", gotPage, tt.wantPage)
+			}
+			wasAccepted := gotOffset != 0 || (tt.offsetParam == "0")
+			if wasAccepted != tt.offsetAccepted {
+				t.Errorf("offsetAccepted = %v, want %v", wasAccepted, tt.offsetAccepted)
+			}
+		})
+	}
+}
+
 func TestWidthParsing(t *testing.T) {
 	t.Parallel()
 

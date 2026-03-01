@@ -1,16 +1,34 @@
 /**
- * InfiniteScroll - Handles endless scrolling for gallery views
- * Uses Intersection Observer for performance and supports scroll position restoration
+ * InfiniteScroll - handles endless scrolling, a touch-friendly scrubber,
+ * virtual spacer (full-height scrollbar), and persistent scroll restore.
+ *
+ * ## Design principles
+ *
+ * 1. The scrubber thumb lives in ITEM-SPACE (fraction = item / totalItems),
+ *    not scroll-space.  This decouples it from scrollHeight entirely, removing
+ *    the whole class of compensation bugs that arise when scrollHeight changes
+ *    during loading.
+ *
+ * 2. One catch-up flag: _catchUpTarget (0 = idle; N = loading to item N).
+ *    After the final scrollTo(targetEl), scrollY is already correct so the pin
+ *    simply clears in the next rAF — no pin/release/grace-window logic needed.
+ *
+ * 3. html.catchup-active { overflow-anchor: none } is applied during loading
+ *    so the browser never adjusts scrollY while the spacer shrinks.
+ *
+ * 4. Catch-up uses a single offset-based API request (?offset=N&pageSize=M)
+ *    to fetch everything needed at once, rather than multiple small page
+ *    requests.  Sequential loadMore still uses page-based pagination.
  */
 const InfiniteScroll = {
-    // Configuration
+    // ── Configuration ────────────────────────────────────────────────────────
     config: {
         batchSize: 50,
-        rootMargin: '800px', // Load more when within 800px of bottom
-        skeletonCount: 12, // Number of skeleton placeholders to show
+        rootMargin: '800px',
+        skeletonCount: 12,
     },
 
-    // State
+    // ── State ────────────────────────────────────────────────────────────────
     state: {
         isLoading: false,
         hasMore: true,
@@ -18,24 +36,35 @@ const InfiniteScroll = {
         totalItems: 0,
         loadedItems: [],
         observer: null,
-        sentinelEl: null,
-        loadFailed: false, // Track if last load failed
+        loadFailed: false,
+        isCatchingUp: false,
     },
 
-    // Cache for scroll position restoration (keyed by path)
+    // ── In-memory cache (within-session navigation) ──────────────────────────
     cache: new Map(),
     maxCacheSize: 20,
 
-    // Elements
+    // ── Private: catch-up / scrubber / restore ───────────────────────────────
+    // Item index being loaded to; thumb is pinned here while nonzero.
+    _catchUpTarget: 0,
+    _catchUpTimer: null, // debounce: scrubber release → catch-up start
+    _isScrubbing: false, // pointer is held on the scrubber rail
+    _scrubFraction: 0, // last fraction set during a pointer drag
+    _pendingRestoreFraction: null, // restore fraction awaiting "Go back"
+    _restorePopoverTimer: null, // auto-dismiss timer for restore popover
+    _saveScrollTimer: null, // debounce timer for persistent position save
+
+    // ── Elements ─────────────────────────────────────────────────────────────
     elements: {},
 
-    /**
-     * Initialize infinite scroll for the main gallery
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Init
+    // ─────────────────────────────────────────────────────────────────────────
     init() {
         this.cacheElements();
         this.createSentinel();
         this.createSkeletonTemplate();
+        this._createScrollUI();
         this.setupIntersectionObserver();
         this.bindEvents();
     },
@@ -44,18 +73,18 @@ const InfiniteScroll = {
         this.elements = {
             gallery: document.getElementById('gallery'),
             statsInfo: document.getElementById('stats-info'),
-            // We'll create these dynamically
             sentinel: null,
             loadMoreBtn: null,
             skeletonContainer: null,
+            virtualSpacer: null,
+            scrubber: null,
+            scrubberThumb: null,
+            scrubberLabel: null,
+            restorePopover: null,
         };
     },
 
-    /**
-     * Create the sentinel element that triggers loading
-     */
     createSentinel() {
-        // Create container for skeleton + load more + sentinel
         const container = document.createElement('div');
         container.id = 'infinite-scroll-container';
         container.className = 'infinite-scroll-container';
@@ -67,23 +96,14 @@ const InfiniteScroll = {
             </button>
             <div id="scroll-sentinel" class="scroll-sentinel"></div>
         `;
-
-        // Insert after gallery
         this.elements.gallery.parentNode.insertBefore(container, this.elements.gallery.nextSibling);
-
         this.elements.sentinel = document.getElementById('scroll-sentinel');
         this.elements.loadMoreBtn = document.getElementById('load-more-btn');
         this.elements.skeletonContainer = document.getElementById('skeleton-container');
-
-        // Bind load more button
         this.elements.loadMoreBtn.addEventListener('click', () => this.loadMore());
-
         lucide.createIcons();
     },
 
-    /**
-     * Create skeleton placeholder template
-     */
     createSkeletonTemplate() {
         const skeletons = [];
         for (let i = 0; i < this.config.skeletonCount; i++) {
@@ -103,208 +123,171 @@ const InfiniteScroll = {
     },
 
     /**
-     * Setup Intersection Observer for infinite scroll
+     * Set the scrubber rail top/bottom from the actual header and stats-bar
+     * heights.  Called once at init and again on resize so it never overlaps
+     * sticky chrome.  Must be called AFTER the elements exist in the DOM.
      */
-    setupIntersectionObserver() {
-        const options = {
-            root: null, // viewport
-            rootMargin: this.config.rootMargin,
-            threshold: 0,
-        };
+    _positionScrubber() {
+        const scrubber = this.elements.scrubber;
+        if (!scrubber) return;
+        const header = document.querySelector('.header');
+        const statsBar = document.querySelector('.stats-bar');
+        const topPx = header ? header.offsetHeight : 0;
+        const bottomPx = statsBar ? statsBar.offsetHeight : 0;
+        scrubber.style.top = `${topPx}px`;
+        scrubber.style.bottom = `${bottomPx}px`;
+    },
 
+    _createScrollUI() {
+        // ── Virtual spacer ───────────────────────────────────────────────────
+        const spacer = document.createElement('div');
+        spacer.id = 'virtual-spacer';
+        spacer.className = 'virtual-spacer';
+        spacer.style.height = '0px';
+        const skeletonGrid = document.createElement('div');
+        skeletonGrid.className = 'virtual-spacer-grid';
+        spacer.appendChild(skeletonGrid);
+        const isc = document.getElementById('infinite-scroll-container');
+        if (isc) {
+            isc.parentNode.insertBefore(spacer, isc.nextSibling);
+        } else {
+            this.elements.gallery.parentNode.appendChild(spacer);
+        }
+        this.elements.virtualSpacer = spacer;
+
+        // ── Custom scrubber ──────────────────────────────────────────────────
+        const scrubber = document.createElement('div');
+        scrubber.id = 'gallery-scrubber';
+        scrubber.className = 'gallery-scrubber hidden';
+        scrubber.setAttribute('aria-hidden', 'true');
+        const thumb = document.createElement('div');
+        thumb.id = 'gallery-scrubber-thumb';
+        thumb.className = 'gallery-scrubber-thumb';
+        const label = document.createElement('div');
+        label.id = 'gallery-scrubber-label';
+        label.className = 'gallery-scrubber-label';
+        scrubber.appendChild(thumb);
+        scrubber.appendChild(label);
+        document.body.appendChild(scrubber);
+        this.elements.scrubber = scrubber;
+        this.elements.scrubberThumb = thumb;
+        this.elements.scrubberLabel = label;
+        // Position the rail against the real header/stats-bar heights.
+        // rAF ensures the sticky header has been laid out first.
+        requestAnimationFrame(() => {
+            this._positionScrubber();
+        });
+
+        // ── Scroll-restore popover ───────────────────────────────────────────
+        const popover = document.createElement('div');
+        popover.id = 'scroll-restore-popover';
+        popover.className = 'scroll-restore-popover hidden';
+        popover.innerHTML = `
+            <div class="scroll-restore-popover-body">
+                <i data-lucide="history" class="scroll-restore-icon"></i>
+                <span class="scroll-restore-label">Continue where you left off?</span>
+            </div>
+            <div class="scroll-restore-popover-actions">
+                <button id="scroll-restore-go" class="scroll-restore-btn-go">Yes!</button>
+                <button id="scroll-restore-dismiss" class="scroll-restore-btn-dismiss">Dismiss</button>
+            </div>
+            <div class="scroll-restore-progress-bar">
+                <div class="scroll-restore-progress-fill"></div>
+            </div>
+            <div class="scroll-restore-arrow" aria-hidden="true"></div>
+        `;
+        document.body.appendChild(popover);
+        this.elements.restorePopover = popover;
+        popover.querySelector('#scroll-restore-go').addEventListener('click', () => {
+            this._restoreScrollNow();
+        });
+        popover.querySelector('#scroll-restore-dismiss').addEventListener('click', () => {
+            this.hideScrollRestorePopover();
+            const key = 'media-viewer:scroll-positions';
+            const stored = JSON.parse(localStorage.getItem(key) || '{}');
+            delete stored[MediaApp.state.currentPath];
+            localStorage.setItem(key, JSON.stringify(stored));
+        });
+        lucide.createIcons();
+    },
+
+    setupIntersectionObserver() {
+        const options = { root: null, rootMargin: this.config.rootMargin, threshold: 0 };
         this.state.observer = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
-                if (entry.isIntersecting && !this.state.isLoading && this.state.hasMore) {
+                if (
+                    entry.isIntersecting &&
+                    !this.state.isLoading &&
+                    !this.state.isCatchingUp &&
+                    !this._isScrubbing &&
+                    this.state.hasMore
+                ) {
                     this.loadMore();
                 }
             });
         }, options);
     },
 
-    /**
-     * Start observing for a directory
-     * @param {string} path - Directory path
-     * @param {object} initialData - Initial listing data from server
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Directory lifecycle
+    // ─────────────────────────────────────────────────────────────────────────
     async startForDirectory(path, initialData) {
-        // Check cache for scroll position restoration
         const cached = this.cache.get(path);
         const savedScrollPosition = cached ? cached.scrollPosition : null;
 
-        // If we have cached data with more items loaded (from previous scrolling),
-        // merge fresh metadata from the server into the cached items.
-        // This preserves pagination progress while ensuring tags/favorites are current.
         if (cached && cached.loadedItems.length > initialData.items.length) {
             this.restoreWithFreshData(path, cached, initialData, savedScrollPosition);
             return;
         }
 
-        // No usable cache — start fresh with server data
         this.resetState();
-
         this.state.totalItems = initialData.totalItems;
         this.state.hasMore = initialData.items.length < initialData.totalItems;
         this.state.loadedItems = [...initialData.items];
         this.state.currentPage = 1;
-
-        // Render initial items
         this.renderItems(initialData.items, false);
 
-        // Restore scroll position if returning to this directory
         if (savedScrollPosition !== null) {
-            // Clear stale cache entry since we're using fresh data now
             this.cache.delete(path);
-
             requestAnimationFrame(() => {
                 window.scrollTo(0, savedScrollPosition);
             });
         }
 
-        // Start observing
         this.startObserving();
         this.updateStats();
-
+        this.updateVirtualSpacer();
+        this.updateScrollScrubber();
         setTimeout(() => {
             this.checkAndFillViewport();
         }, 100);
+        this._checkPersistentRestore(path);
     },
 
-    /**
-     * Restore from cache but merge fresh server data for the first page.
-     * Preserves scroll position and pagination progress while ensuring
-     * metadata (tags, favorites) is current for visible items.
-     */
     async restoreWithFreshData(path, cached, initialData, savedScrollPosition) {
         this.resetState();
-
-        // Build a lookup of fresh items by path for fast merging
         const freshByPath = new Map();
-        for (const item of initialData.items) {
-            freshByPath.set(item.path, item);
-        }
+        for (const item of initialData.items) freshByPath.set(item.path, item);
+        const mergedItems = cached.loadedItems.map((item) => freshByPath.get(item.path) ?? item);
 
-        // Merge fresh metadata into cached items
-        const mergedItems = cached.loadedItems.map((item) => {
-            const fresh = freshByPath.get(item.path);
-            if (fresh) {
-                // Replace with fresh data (has updated tags, favorites, etc.)
-                return fresh;
-            }
-            // Item was loaded via pagination beyond the first page — keep as-is
-            return item;
-        });
-
-        // Restore state with merged data
         this.state.totalItems = initialData.totalItems;
         this.state.currentPage = cached.currentPage;
         this.state.hasMore = mergedItems.length < initialData.totalItems;
         this.state.loadedItems = mergedItems;
-
-        // Render all items
         this.renderItems(mergedItems, false);
 
-        // Restore scroll position
         if (savedScrollPosition !== null) {
             requestAnimationFrame(() => {
                 window.scrollTo(0, savedScrollPosition);
             });
         }
-
-        // Clear stale cache
         this.cache.delete(path);
-
         this.startObserving();
         this.updateStats();
+        this.updateVirtualSpacer();
+        this.updateScrollScrubber();
     },
 
-    /**
-     * Render skeleton placeholders for a specific count
-     */
-    renderSkeletonsForCount(count) {
-        const gallery = this.elements.gallery;
-        gallery.innerHTML = '';
-
-        const fragment = document.createDocumentFragment();
-        for (let i = 0; i < count; i++) {
-            const skeleton = document.createElement('div');
-            skeleton.className = 'gallery-item skeleton';
-            skeleton.dataset.index = i;
-            skeleton.innerHTML = `
-                <div class="gallery-item-thumb skeleton-thumb">
-                    <div class="skeleton-shimmer"></div>
-                </div>
-                <div class="gallery-item-info skeleton-info">
-                    <div class="skeleton-text skeleton-name"></div>
-                    <div class="skeleton-text skeleton-meta"></div>
-                </div>
-            `;
-            fragment.appendChild(skeleton);
-        }
-        gallery.appendChild(fragment);
-    },
-
-    /**
-     * Render items at a specific position, replacing skeletons
-     */
-    async renderItemsAtPosition(items, startIndex) {
-        const gallery = this.elements.gallery;
-
-        // Use requestAnimationFrame for smooth rendering
-        return new Promise((resolve) => {
-            requestAnimationFrame(() => {
-                items.forEach((item, i) => {
-                    const index = startIndex + i;
-                    const skeleton = gallery.querySelector(
-                        `.gallery-item.skeleton[data-index="${index}"]`
-                    );
-
-                    if (skeleton) {
-                        const element = Gallery.createGalleryItem(item);
-                        element.dataset.index = index;
-                        skeleton.replaceWith(element);
-                    }
-                });
-
-                lucide.createIcons();
-                resolve();
-            });
-        });
-    },
-
-    /**
-     * Estimate item height for scroll calculations
-     */
-    estimateItemHeight() {
-        const gallery = this.elements.gallery;
-        const item = gallery.querySelector('.gallery-item:not(.skeleton)');
-        if (item) {
-            return item.offsetHeight + parseInt(getComputedStyle(gallery).gap) || 16;
-        }
-        // Default estimates based on CSS
-        return window.innerWidth < 900 ? 120 : 280;
-    },
-
-    /**
-     * Estimate items per row
-     */
-    estimateItemsPerRow() {
-        const gallery = this.elements.gallery;
-        const galleryWidth = gallery.offsetWidth;
-        const item = gallery.querySelector('.gallery-item');
-        if (item) {
-            const itemWidth = item.offsetWidth + parseInt(getComputedStyle(gallery).gap) || 16;
-            return Math.floor(galleryWidth / itemWidth) || 3;
-        }
-        // Default estimates
-        if (window.innerWidth < 480) return 3;
-        if (window.innerWidth < 600) return 4;
-        if (window.innerWidth < 900) return 5;
-        return Math.floor(galleryWidth / 200) || 5;
-    },
-
-    /**
-     * Reset state for new directory
-     */
     resetState() {
         this.state.isLoading = false;
         this.state.hasMore = true;
@@ -312,14 +295,24 @@ const InfiniteScroll = {
         this.state.totalItems = 0;
         this.state.loadedItems = [];
         this.state.loadFailed = false;
+        this.state.isCatchingUp = false;
+        this._catchUpTarget = 0;
+        this._isScrubbing = false;
+        this._scrubFraction = 0;
+        clearTimeout(this._catchUpTimer);
+        clearTimeout(this._saveScrollTimer);
+        document.documentElement.classList.remove('catchup-active', 'custom-scrubber-active');
+        if (this.elements.virtualSpacer) {
+            this.elements.virtualSpacer.style.height = '0px';
+            const grid = this.elements.virtualSpacer.querySelector('.virtual-spacer-grid');
+            if (grid) grid.innerHTML = '';
+        }
+        this.hideScrollRestorePopover();
         this.stopObserving();
         this.hideSkeletons();
         this.hideLoadMoreButton();
     },
 
-    /**
-     * Start observing the sentinel
-     */
     startObserving() {
         if (this.state.observer && this.elements.sentinel) {
             this.state.observer.observe(this.elements.sentinel);
@@ -327,32 +320,334 @@ const InfiniteScroll = {
         this.updateLoadMoreVisibility();
     },
 
-    /**
-     * Stop observing
-     */
     stopObserving() {
         if (this.state.observer && this.elements.sentinel) {
             this.state.observer.unobserve(this.elements.sentinel);
         }
     },
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Grid geometry (exact values from live browser layout)
+    // ─────────────────────────────────────────────────────────────────────────
+    _getGridGeometry() {
+        const gallery = this.elements.gallery;
+        if (!gallery) return { cols: 3, gap: 2, itemSize: 120, rowHeight: 122 };
+        const cs = getComputedStyle(gallery);
+        const cols = cs.gridTemplateColumns.trim().split(/\s+/).length || 3;
+        const gap = parseInt(cs.gap, 10) || 2;
+        const item = gallery.querySelector('.gallery-item:not(.skeleton)');
+        const itemSize = item
+            ? item.offsetWidth
+            : Math.floor((gallery.offsetWidth - gap * (cols - 1)) / cols);
+        return { cols, gap, itemSize, rowHeight: itemSize + gap };
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Virtual spacer
+    // ─────────────────────────────────────────────────────────────────────────
+    updateVirtualSpacer() {
+        const spacer = this.elements.virtualSpacer;
+        if (!spacer) return;
+        const unloaded = this.state.totalItems - this.state.loadedItems.length;
+        if (unloaded <= 0) {
+            spacer.style.height = '0px';
+            const grid = spacer.querySelector('.virtual-spacer-grid');
+            if (grid) grid.innerHTML = '';
+            return;
+        }
+        const { cols, rowHeight } = this._getGridGeometry();
+        const unloadedRows = Math.ceil(unloaded / cols);
+        spacer.style.height = `${unloadedRows * rowHeight}px`;
+
+        const grid = spacer.querySelector('.virtual-spacer-grid');
+        if (grid) {
+            const viewportRows = Math.ceil(window.innerHeight / rowHeight) + 1;
+            const skeletonCount = Math.min(viewportRows * cols, unloaded);
+            grid.innerHTML = Array.from(
+                { length: skeletonCount },
+                () =>
+                    `<div class="gallery-item skeleton">
+                    <div class="gallery-item-thumb skeleton-thumb">
+                        <div class="skeleton-shimmer"></div>
+                    </div>
+                </div>`
+            ).join('');
+        }
+    },
+
+    updateSpacerGridPosition() {
+        const spacer = this.elements.virtualSpacer;
+        if (!spacer || !spacer.offsetHeight) return;
+        const grid = spacer.querySelector('.virtual-spacer-grid');
+        if (!grid) return;
+        const offsetIntoSpacer = Math.max(0, -spacer.getBoundingClientRect().top);
+        grid.style.top = `${offsetIntoSpacer}px`;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Custom scrubber
+    // ─────────────────────────────────────────────────────────────────────────
+    updateScrollScrubber() {
+        const scrubber = this.elements.scrubber;
+        const thumb = this.elements.scrubberThumb;
+        const label = this.elements.scrubberLabel;
+        if (!scrubber || !thumb) return;
+
+        const scrollH = document.documentElement.scrollHeight;
+        const viewH = window.innerHeight;
+        const maxScroll = scrollH - viewH;
+
+        if (maxScroll > viewH * 0.5) {
+            scrubber.classList.remove('hidden');
+            document.documentElement.classList.add('custom-scrubber-active');
+        } else {
+            scrubber.classList.add('hidden');
+            document.documentElement.classList.remove('custom-scrubber-active');
+            return;
+        }
+
+        // getBoundingClientRect() gives the correct track height immediately
+        // after removing the 'hidden' class (forces synchronous reflow).
+        const trackH = scrubber.getBoundingClientRect().height;
+        if (trackH <= 0) return;
+
+        // Thumb height is fixed by CSS — read it once for positioning math.
+        const thumbH = thumb.offsetHeight;
+
+        // Pin to catch-up target (item-space) while loading; otherwise follow scrollY
+        let fraction;
+        if (this._catchUpTarget > 0 && this.state.totalItems > 0) {
+            fraction = this._catchUpTarget / this.state.totalItems;
+        } else {
+            fraction = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+        }
+        fraction = Math.max(0, Math.min(1, fraction));
+
+        const maxThumbTop = trackH - thumbH;
+        const thumbTop = Math.round(fraction * maxThumbTop);
+        thumb.style.top = `${thumbTop}px`;
+
+        if (label && this.state.totalItems > 0) {
+            const approxItem = Math.round(fraction * this.state.totalItems);
+            label.textContent = `${approxItem.toLocaleString()} / ${this.state.totalItems.toLocaleString()}`;
+            label.style.top = `${thumbTop + thumbH / 2}px`;
+        }
+    },
+
+    _onScrubberMove(e) {
+        const scrubber = this.elements.scrubber;
+        const thumb = this.elements.scrubberThumb;
+        const label = this.elements.scrubberLabel;
+        if (!scrubber || !thumb) return;
+
+        const trackRect = scrubber.getBoundingClientRect();
+        const thumbH = thumb.offsetHeight;
+        const maxThumbTop = trackRect.height - thumbH;
+        const thumbTop = Math.max(0, Math.min(maxThumbTop, e.clientY - trackRect.top - thumbH / 2));
+        const fraction = maxThumbTop > 0 ? thumbTop / maxThumbTop : 0;
+
+        thumb.style.top = `${thumbTop}px`;
+        this._scrubFraction = fraction;
+
+        if (label && this.state.totalItems > 0) {
+            const approxItem = Math.round(fraction * this.state.totalItems);
+            label.textContent = `${approxItem.toLocaleString()} / ${this.state.totalItems.toLocaleString()}`;
+            label.style.top = `${thumbTop + thumbH / 2}px`;
+        }
+    },
+
+    _onScrubberRelease() {
+        if (!this.state.totalItems) return;
+        const fraction = this._scrubFraction;
+        const targetItem = Math.max(1, Math.round(fraction * this.state.totalItems));
+        const loaded = this.state.loadedItems.length;
+
+        if (targetItem <= loaded) {
+            // Fraction 0 / item 1 → absolute top of the page so the header and
+            // favorites bar are fully visible, not just the first gallery row.
+            if (targetItem <= 1) {
+                window.scrollTo({ top: 0, behavior: 'instant' });
+                this.checkAndFillViewport();
+                return;
+            }
+            // Target is already in the DOM — scroll directly to it
+            const gallery = this.elements.gallery;
+            const targetEl = gallery?.children[targetItem - 1];
+            if (targetEl) {
+                window.scrollTo({
+                    top: Math.max(0, targetEl.getBoundingClientRect().top + window.scrollY - 8),
+                    behavior: 'instant',
+                });
+            } else {
+                const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+                window.scrollTo({ top: Math.round(fraction * maxScroll), behavior: 'instant' });
+            }
+            this.checkAndFillViewport();
+            return;
+        }
+
+        // Target not loaded yet — use catch-up (with scrubber pin)
+        if (this.state.isCatchingUp) {
+            // Already loading — chase the new (possibly higher) target
+            this._catchUpTarget = Math.max(this._catchUpTarget, targetItem);
+        } else {
+            this._catchUpTarget = targetItem; // pin thumb immediately
+            clearTimeout(this._catchUpTimer);
+            this._catchUpTimer = setTimeout(() => {
+                this._parallelCatchUp(this._catchUpTarget);
+            }, 50);
+        }
+        this.updateScrollScrubber();
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fetch helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Load more items
+     * Fetch a window of items starting at `offset` (0-based).
+     * Uses the backend's ?offset= parameter to avoid fetching many small pages.
+     * @param {number} offset - 0-based index of the first item to return
+     * @param {number} count  - number of items to retrieve
      */
+    async _fetchOffset(offset, count) {
+        const params = new URLSearchParams({
+            path: MediaApp.state.currentPath,
+            sort: MediaApp.state.currentSort.field,
+            order: MediaApp.state.currentSort.order,
+            offset: String(offset),
+            pageSize: String(count),
+        });
+        if (MediaApp.state.currentFilter) params.set('type', MediaApp.state.currentFilter);
+        const controller = new AbortController();
+        // Longer timeout — a large catch-up fetch may return many items
+        const tid = setTimeout(() => controller.abort(), 15000);
+        try {
+            const res = await fetch(`/api/files?${params}`, { signal: controller.signal });
+            clearTimeout(tid);
+            if (res.status === 401) {
+                window.location.href = '/login.html';
+                return null;
+            }
+            if (!res.ok) return null;
+            return await res.json();
+        } catch {
+            clearTimeout(tid);
+            return null;
+        }
+    },
+
+    /**
+     * Fetch a single page (legacy sequential path used by loadMore).
+     */
+    async _fetchPage(page) {
+        const params = new URLSearchParams({
+            path: MediaApp.state.currentPath,
+            sort: MediaApp.state.currentSort.field,
+            order: MediaApp.state.currentSort.order,
+            page: String(page),
+            pageSize: String(this.config.batchSize),
+        });
+        if (MediaApp.state.currentFilter) params.set('type', MediaApp.state.currentFilter);
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 10000);
+        try {
+            const res = await fetch(`/api/files?${params}`, { signal: controller.signal });
+            clearTimeout(tid);
+            if (res.status === 401) {
+                window.location.href = '/login.html';
+                return null;
+            }
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (err) {
+            clearTimeout(tid);
+            // Rethrow network and abort errors so callers can show specific messages
+            if (err.name === 'AbortError' || err instanceof TypeError) throw err;
+            return null;
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Catch-up load (scrubber jump)
+    // ─────────────────────────────────────────────────────────────────────────
+    /**
+     * Fetch items from the current loaded count up to _catchUpTarget in a
+     * single offset-based request, then scroll to the target item's actual DOM
+     * position.
+     *
+     * Key: html.catchup-active sets overflow-anchor:none so the browser never
+     * adjusts scrollY while the spacer shrinks.  After the final scrollTo,
+     * scrollY is already correct — _catchUpTarget clears in the next rAF and
+     * the thumb reverts to natural scroll tracking.
+     */
+    async _parallelCatchUp(targetItem) {
+        if (this.state.isCatchingUp) return;
+        this.state.isCatchingUp = true;
+        this._catchUpTarget = Math.max(this._catchUpTarget, targetItem);
+        document.documentElement.classList.add('catchup-active');
+
+        try {
+            const offset = this.state.loadedItems.length;
+            const needed = Math.max(1, this._catchUpTarget - offset);
+
+            const data = await this._fetchOffset(offset, needed);
+            if (data?.items?.length) {
+                this.state.loadedItems.push(...data.items);
+                this.state.totalItems = data.totalItems;
+                this.state.hasMore = this.state.loadedItems.length < data.totalItems;
+                // Align currentPage so sequential loadMore resumes from the right page
+                this.state.currentPage = Math.ceil(
+                    this.state.loadedItems.length / this.config.batchSize
+                );
+                this.renderItems(data.items, true);
+            } else {
+                this.state.loadFailed = true;
+            }
+        } catch (err) {
+            console.error('[catch-up] error:', err);
+            this.state.loadFailed = true;
+        } finally {
+            this.state.isCatchingUp = false;
+            this.hideSkeletons();
+            this.updateLoadMoreVisibility();
+            this.updateStats();
+
+            requestAnimationFrame(() => {
+                this.updateVirtualSpacer();
+
+                if (!this.state.loadFailed) {
+                    const gallery = this.elements.gallery;
+                    const targetEl = gallery?.children[this._catchUpTarget - 1];
+                    if (targetEl) {
+                        window.scrollTo({
+                            top: Math.max(
+                                0,
+                                targetEl.getBoundingClientRect().top + window.scrollY - 8
+                            ),
+                            behavior: 'instant',
+                        });
+                    }
+                }
+
+                document.documentElement.classList.remove('catchup-active');
+
+                requestAnimationFrame(() => {
+                    this._catchUpTarget = 0;
+                    this.updateScrollScrubber();
+                    this.updateMediaFiles();
+                });
+            });
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Sequential loading (IntersectionObserver path)
+    // ─────────────────────────────────────────────────────────────────────────
     async loadMore() {
-        if (this.state.isLoading) {
-            console.debug('InfiniteScroll: load already in progress, skipping');
-            return;
-        }
-
-        if (!this.state.hasMore) {
-            console.debug('InfiniteScroll: no more items to load');
-            return;
-        }
-
-        // Safety check: don't exceed total
+        if (this.state.isLoading) return;
+        if (!this.state.hasMore) return;
         if (this.state.loadedItems.length >= this.state.totalItems) {
-            console.debug('InfiniteScroll: already at or exceeded total, stopping');
             this.state.hasMore = false;
             this.updateLoadMoreVisibility();
             return;
@@ -362,78 +657,24 @@ const InfiniteScroll = {
         this.showSkeletons();
 
         try {
-            const nextPage = this.state.currentPage + 1;
-            const params = new URLSearchParams({
-                path: MediaApp.state.currentPath,
-                sort: MediaApp.state.currentSort.field,
-                order: MediaApp.state.currentSort.order,
-                page: String(nextPage),
-                pageSize: String(this.config.batchSize),
-            });
+            const data = await this._fetchPage(this.state.currentPage + 1);
+            if (!data) throw new Error('Failed to load more items');
 
-            if (MediaApp.state.currentFilter) {
-                params.set('type', MediaApp.state.currentFilter);
-            }
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-            const response = await fetch(`/api/files?${params}`, {
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (response.status === 401) {
-                window.location.href = '/login.html';
-                return;
-            }
-
-            if (!response.ok) throw new Error('Failed to load more items');
-
-            const data = await response.json();
-
-            console.debug(
-                `InfiniteScroll: loaded page ${nextPage}, got ${data.items.length} items`
-            );
-
-            // Append new items
-            this.state.currentPage = nextPage;
+            this.state.currentPage++;
             this.state.loadedItems.push(...data.items);
-
-            // Update hasMore with safety check
-            const loaded = this.state.loadedItems.length;
-            const total = this.state.totalItems;
-            this.state.hasMore = loaded < total;
+            this.state.hasMore = this.state.loadedItems.length < this.state.totalItems;
             this.state.loadFailed = false;
-
-            console.debug(
-                `InfiniteScroll: state - page: ${this.state.currentPage}, loaded: ${loaded}, total: ${total}, hasMore: ${this.state.hasMore}`
-            );
-
-            // Render new items
             this.renderItems(data.items, true);
-
-            // Update media files for lightbox navigation
-            await this.updateMediaFiles();
         } catch (error) {
             if (error.name === 'AbortError') {
-                console.error('Loading more items timeout - server not responding');
-                Gallery.showToast(
-                    'Server not responding while loading more items. Try again.',
-                    'error'
-                );
-                // Trigger connectivity check in Gallery
+                console.error('Loading more items timed out');
+                Gallery.showToast('Server not responding. Try scrolling to retry.', 'error');
                 if (typeof Gallery.startConnectivityCheck === 'function') {
                     Gallery.startConnectivityCheck();
                 }
             } else if (error instanceof TypeError) {
-                console.error('Loading more items network error - server may be offline:', error);
-                Gallery.showToast(
-                    'Server is offline. Check your connection and try again.',
-                    'error'
-                );
-                // Trigger connectivity check in Gallery
+                console.error('Network error loading items:', error);
+                Gallery.showToast('Server is offline. Check your connection.', 'error');
                 if (typeof Gallery.startConnectivityCheck === 'function') {
                     Gallery.startConnectivityCheck();
                 }
@@ -441,86 +682,60 @@ const InfiniteScroll = {
                 console.error('Error loading more items:', error);
                 Gallery.showToast('Failed to load more items', 'error');
             }
-            this.state.loadFailed = true; // Mark load as failed
+            this.state.loadFailed = true;
         } finally {
             this.state.isLoading = false;
             this.hideSkeletons();
             this.updateLoadMoreVisibility();
             this.updateStats();
+            this.updateVirtualSpacer();
+            this.updateScrollScrubber();
         }
     },
 
-    /**
-     * Check if the last load attempt failed
-     */
     hasLoadFailed() {
         return this.state.loadFailed && this.state.hasMore;
     },
 
-    /**
-     * Retry the last failed load
-     */
     retryLoad() {
         if (this.hasLoadFailed() && !this.state.isLoading) {
-            console.debug(
-                `InfiniteScroll: retrying failed load (current page: ${this.state.currentPage}, loaded: ${this.state.loadedItems.length})`
-            );
             this.state.loadFailed = false;
             this.loadMore();
         }
     },
 
-    /**
-     * Check if viewport is filled and auto-load more items if needed
-     * This ensures that when filtering results in few items, we keep loading until viewport is full
-     */
     async checkAndFillViewport() {
-        // Don't proceed if already loading, no more items, or loading failed
-        if (this.state.isLoading || !this.state.hasMore || this.state.loadFailed) {
-            return;
-        }
-
-        // Check if sentinel is visible (meaning viewport is not filled)
+        if (this.state.isLoading || !this.state.hasMore || this.state.loadFailed) return;
         const sentinel = this.elements.sentinel;
         if (!sentinel) return;
-
         const rect = sentinel.getBoundingClientRect();
-        const isVisible = rect.top < window.innerHeight && rect.bottom >= 0;
-
-        // If sentinel is visible, load more items
-        if (isVisible && this.state.hasMore) {
+        if (rect.top < window.innerHeight && rect.bottom >= 0) {
+            const prevLen = this.state.loadedItems.length;
             await this.loadMore();
-
-            // Recursively check again after loading
-            // Use setTimeout to allow DOM to update
-            setTimeout(() => {
-                this.checkAndFillViewport();
-            }, 100);
+            // Only reschedule if items were actually added; avoids infinite loops
+            // when fetch returns empty results but hasMore remains true.
+            if (this.state.hasMore && this.state.loadedItems.length > prevLen) {
+                setTimeout(() => {
+                    this.checkAndFillViewport();
+                }, 100);
+            }
         }
     },
 
-    /**
-     * Render items to the gallery
-     * @param {Array} items - Items to render
-     * @param {boolean} append - Whether to append or replace
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rendering
+    // ─────────────────────────────────────────────────────────────────────────
     renderItems(items, append = false) {
         const gallery = this.elements.gallery;
-
-        if (!append) {
-            gallery.innerHTML = '';
-        }
+        if (!append) gallery.innerHTML = '';
 
         if (!items || items.length === 0) {
             if (!append) {
                 gallery.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">
-                        <i data-lucide="folder-open"></i>
-                    </div>
-                    <p>This folder is empty</p>
-                </div>
-            `;
+                    <div class="empty-state">
+                        <div class="empty-state-icon"><i data-lucide="folder-open"></i></div>
+                        <p>This folder is empty</p>
+                    </div>`;
                 lucide.createIcons();
             }
             return;
@@ -528,39 +743,25 @@ const InfiniteScroll = {
 
         const fragment = document.createDocumentFragment();
         const startIndex = append ? this.state.loadedItems.length - items.length : 0;
-
         items.forEach((item, i) => {
             const element = Gallery.createGalleryItem(item);
             element.dataset.index = startIndex + i;
-
-            // Apply selection state if item is selected
             if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
-                if (ItemSelection.selectedPaths.has(item.path)) {
-                    element.classList.add('selected');
-                }
+                if (ItemSelection.selectedPaths.has(item.path)) element.classList.add('selected');
             }
-
             fragment.appendChild(element);
         });
-
         gallery.appendChild(fragment);
         lucide.createIcons();
 
-        // Re-apply selection mode if active (adds checkboxes)
         if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
-            // Pass the fragment's children that are now in the DOM
             const newItems = Array.from(gallery.children).slice(-items.length);
-            newItems.forEach((item) => {
-                if (!item.classList.contains('skeleton')) {
-                    ItemSelection.applySelectionState(item);
-                }
+            newItems.forEach((el) => {
+                if (!el.classList.contains('skeleton')) ItemSelection.applySelectionState(el);
             });
         }
     },
 
-    /**
-     * Update media files for lightbox navigation
-     */
     async updateMediaFiles() {
         try {
             const params = new URLSearchParams({
@@ -568,50 +769,31 @@ const InfiniteScroll = {
                 sort: MediaApp.state.currentSort.field,
                 order: MediaApp.state.currentSort.order,
             });
-
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-            const response = await fetch(`/api/media?${params}`, {
-                signal: controller.signal,
-            });
-
+            const response = await fetch(`/api/media?${params}`, { signal: controller.signal });
             clearTimeout(timeoutId);
-
-            if (response.ok) {
-                MediaApp.state.mediaFiles = await response.json();
-            }
+            if (response.ok) MediaApp.state.mediaFiles = await response.json();
         } catch (error) {
-            if (error.name === 'AbortError') {
-                console.error('Updating media files timeout - server not responding');
-            } else if (error instanceof TypeError) {
-                console.error('Updating media files network error:', error);
-            } else {
+            if (error.name !== 'AbortError' && !(error instanceof TypeError)) {
                 console.error('Error updating media files:', error);
             }
-            // Don't show toast for background media file updates - not user-facing
         }
     },
 
-    /**
-     * Show skeleton loaders
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // UI helpers
+    // ─────────────────────────────────────────────────────────────────────────
     showSkeletons() {
         this.elements.skeletonContainer.innerHTML = this.skeletonHTML;
         this.elements.skeletonContainer.classList.remove('hidden');
     },
 
-    /**
-     * Hide skeleton loaders
-     */
     hideSkeletons() {
         this.elements.skeletonContainer.classList.add('hidden');
         this.elements.skeletonContainer.innerHTML = '';
     },
 
-    /**
-     * Update load more button visibility
-     */
     updateLoadMoreVisibility() {
         if (this.state.hasMore && !this.state.isLoading) {
             this.elements.loadMoreBtn.classList.remove('hidden');
@@ -620,52 +802,35 @@ const InfiniteScroll = {
         }
     },
 
-    /**
-     * Hide load more button
-     */
     hideLoadMoreButton() {
-        this.elements.loadMoreBtn.classList.add('hidden');
+        this.elements.loadMoreBtn?.classList.add('hidden');
     },
 
-    /**
-     * Update stats display
-     */
     updateStats() {
         const loaded = this.state.loadedItems.length;
         const total = this.state.totalItems;
-
-        // Build stats parts
         const parts = [];
-
         if (total > 0) {
             parts.push(`Showing ${loaded.toLocaleString()} of ${total.toLocaleString()} items`);
         }
-
-        // Add version info if available
         if (MediaApp.state.version) {
             const v = MediaApp.state.version;
             const shortCommit = v.commit ? v.commit.substring(0, 7) : '';
             const versionText = shortCommit ? `${v.version} (${shortCommit})` : v.version || '';
-            if (versionText) {
-                parts.push(versionText);
-            }
+            if (versionText) parts.push(versionText);
         }
-
         this.elements.statsInfo.textContent = parts.join(' | ');
     },
 
-    /**
-     * Save current state to cache before navigating away
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // In-memory cache
+    // ─────────────────────────────────────────────────────────────────────────
     saveToCache(path) {
         if (this.state.loadedItems.length === 0) return;
-
-        // Manage cache size
         if (this.cache.size >= this.maxCacheSize) {
             const firstKey = this.cache.keys().next().value;
             this.cache.delete(firstKey);
         }
-
         this.cache.set(path, {
             loadedItems: [...this.state.loadedItems],
             currentPage: this.state.currentPage,
@@ -676,44 +841,215 @@ const InfiniteScroll = {
         });
     },
 
-    /**
-     * Clear cache for a specific path or all
-     */
     clearCache(path = null) {
-        if (path) {
-            this.cache.delete(path);
-        } else {
-            this.cache.clear();
+        if (path) this.cache.delete(path);
+        else this.cache.clear();
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Persistent scroll restore (localStorage)
+    // ─────────────────────────────────────────────────────────────────────────
+    savePersistentScrollPosition() {
+        const scrollY = window.scrollY;
+        if (scrollY < 50) return;
+        const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        const fraction = scrollY / maxScroll;
+        const path = MediaApp.state.currentPath;
+        const key = 'media-viewer:scroll-positions';
+        try {
+            const stored = JSON.parse(localStorage.getItem(key) || '{}');
+            stored[path] = { scrollY, fraction, timestamp: Date.now() };
+            const entries = Object.entries(stored);
+            if (entries.length > 50) {
+                entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+                localStorage.setItem(key, JSON.stringify(Object.fromEntries(entries.slice(0, 50))));
+            } else {
+                localStorage.setItem(key, JSON.stringify(stored));
+            }
+        } catch {
+            // localStorage unavailable (private browsing, quota exceeded, etc.)
         }
     },
 
-    /**
-     * Bind navigation events to save cache
-     */
+    _checkPersistentRestore(path) {
+        const key = 'media-viewer:scroll-positions';
+        const stored = JSON.parse(localStorage.getItem(key) || '{}');
+        const entry = stored[path];
+        if (!entry) return;
+        if (Date.now() - entry.timestamp > 7 * 24 * 60 * 60 * 1000) {
+            delete stored[path];
+            localStorage.setItem(key, JSON.stringify(stored));
+            return;
+        }
+        if (entry.scrollY < window.innerHeight) return;
+        const fraction =
+            entry.fraction ??
+            entry.scrollY / Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        this.showScrollRestorePopover(fraction);
+    },
+
+    showScrollRestorePopover(fraction) {
+        this._pendingRestoreFraction = fraction;
+        const popover = this.elements.restorePopover;
+        if (!popover) return;
+
+        // Reset the countdown bar so the animation replays fresh.
+        const bar = popover.querySelector('.scroll-restore-progress-bar');
+        if (bar) bar.innerHTML = '<div class="scroll-restore-progress-fill"></div>';
+
+        // Remove hidden first so we can measure popover height for centering.
+        popover.classList.remove('hidden');
+
+        // If the custom scrubber is visible, anchor the popover beside it and
+        // place a pulsing marker on the rail at the saved position.
+        const scrubber = this.elements.scrubber;
+        if (scrubber && !scrubber.classList.contains('hidden')) {
+            const trackH = scrubber.getBoundingClientRect().height;
+            const thumbH = this.elements.scrubberThumb?.offsetHeight ?? 48;
+            const markerTop = Math.round(Math.max(0, Math.min(1, fraction)) * (trackH - thumbH));
+
+            // Remove any stale marker before adding a fresh one.
+            scrubber.querySelector('.scroll-restore-marker')?.remove();
+            const marker = document.createElement('div');
+            marker.className = 'scroll-restore-marker';
+            marker.style.top = `${markerTop}px`;
+            scrubber.appendChild(marker);
+
+            // Position popover vertically so it's centred on the marker.
+            const scrubberRect = scrubber.getBoundingClientRect();
+            const markerAbsTop = scrubberRect.top + markerTop;
+            const popoverH = popover.offsetHeight || 110;
+            let popoverTop = markerAbsTop - popoverH / 2;
+            // Clamp so it stays inside the viewport.
+            const pad = 8;
+            popoverTop = Math.max(pad, Math.min(window.innerHeight - popoverH - pad, popoverTop));
+            popover.style.top = `${popoverTop}px`;
+            popover.style.bottom = 'auto';
+            popover.classList.add('scrubber-anchored');
+        } else {
+            popover.classList.remove('scrubber-anchored');
+            popover.style.top = '';
+            popover.style.bottom = '';
+        }
+
+        requestAnimationFrame(() => popover.classList.add('visible'));
+        clearTimeout(this._restorePopoverTimer);
+        this._restorePopoverTimer = setTimeout(() => {
+            this.hideScrollRestorePopover();
+        }, 8000);
+    },
+
+    hideScrollRestorePopover() {
+        const popover = this.elements.restorePopover;
+        if (!popover) return;
+        popover.classList.remove('visible');
+        // Remove the scrubber marker and anchoring once the fade-out finishes.
+        setTimeout(() => {
+            popover.classList.add('hidden');
+            popover.classList.remove('scrubber-anchored');
+            popover.style.top = '';
+            popover.style.bottom = '';
+            this.elements.scrubber?.querySelector('.scroll-restore-marker')?.remove();
+        }, 250);
+        clearTimeout(this._restorePopoverTimer);
+    },
+
+    _restoreScrollNow() {
+        const fraction = this._pendingRestoreFraction;
+        this._pendingRestoreFraction = null;
+        this.hideScrollRestorePopover();
+        if (!fraction) return;
+        const targetItem = Math.max(1, Math.round(fraction * this.state.totalItems));
+        if (targetItem <= this.state.loadedItems.length) {
+            const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+            window.scrollTo({ top: Math.round(fraction * maxScroll), behavior: 'smooth' });
+        } else {
+            this._parallelCatchUp(targetItem);
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Events
+    // ─────────────────────────────────────────────────────────────────────────
     bindEvents() {
-        // Save cache before navigating to a new directory
         const originalNavigateTo = MediaApp.navigateTo.bind(MediaApp);
         MediaApp.navigateTo = (path) => {
             this.saveToCache(MediaApp.state.currentPath);
             originalNavigateTo(path);
         };
-
-        // Handle browser back/forward
         window.addEventListener('beforeunload', () => {
             this.saveToCache(MediaApp.state.currentPath);
         });
+
+        window.addEventListener(
+            'scroll',
+            () => {
+                this.updateScrollScrubber();
+                this.updateSpacerGridPosition();
+                if (!this.state.isCatchingUp) {
+                    clearTimeout(this._saveScrollTimer);
+                    this._saveScrollTimer = setTimeout(() => {
+                        this.savePersistentScrollPosition();
+                    }, 500);
+                }
+            },
+            { passive: true }
+        );
+
+        let resizeTimer = null;
+        window.addEventListener(
+            'resize',
+            () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    this._positionScrubber();
+                    this.updateVirtualSpacer();
+                    this.updateScrollScrubber();
+                }, 200);
+            },
+            { passive: true }
+        );
+
+        const scrubber = this.elements.scrubber;
+        if (scrubber) {
+            scrubber.addEventListener(
+                'pointerdown',
+                (e) => {
+                    e.preventDefault();
+                    scrubber.setPointerCapture(e.pointerId);
+                    scrubber.classList.add('dragging');
+                    this._isScrubbing = true;
+                    this._onScrubberMove(e);
+                },
+                { passive: false }
+            );
+
+            scrubber.addEventListener(
+                'pointermove',
+                (e) => {
+                    if (!this._isScrubbing) return;
+                    this._onScrubberMove(e);
+                },
+                { passive: true }
+            );
+
+            const endDrag = () => {
+                if (!this._isScrubbing) return;
+                this._isScrubbing = false;
+                scrubber.classList.remove('dragging');
+                this._onScrubberRelease();
+            };
+            scrubber.addEventListener('pointerup', endDrag);
+            scrubber.addEventListener('lostpointercapture', endDrag);
+        }
     },
 
-    /**
-     * Get all loaded items (for selection)
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Public accessors
+    // ─────────────────────────────────────────────────────────────────────────
     getAllLoadedItems() {
         return this.state.loadedItems;
     },
-
-    /**
-     * Get total item count
-     */
     getTotalItems() {
         return this.state.totalItems;
     },
