@@ -62,6 +62,7 @@ const Lightbox = {
 
     init() {
         this.cacheElements();
+        this._initStaticIcons();
         this.videoControlsHeight = 0;
         this.createHotZones();
         this.createLoadingIndicator();
@@ -103,12 +104,34 @@ const Lightbox = {
         };
     },
 
+    /**
+     * Render static icons (pin, tag) once at init time so that
+     * updatePinButton / updateTagButton never need to touch innerHTML or
+     * call lucide.createIcons() on every navigation — eliminating the DOM
+     * mutation cascade that triggers browser extensions on each next/open.
+     */
+    _initStaticIcons() {
+        if (this.elements.pinBtn) {
+            this.elements.pinBtn.innerHTML = '<i data-lucide="star"></i>';
+        }
+        if (this.elements.tagBtn) {
+            this.elements.tagBtn.innerHTML = '<i data-lucide="tag"></i>';
+        }
+        const nodes = [this.elements.pinBtn, this.elements.tagBtn].filter(Boolean);
+        if (nodes.length) lucide.createIcons({ nodes });
+    },
+
     createAutoplayToggle() {
         const toggle = document.createElement('button');
         toggle.className = 'lightbox-autoplay hidden';
         toggle.id = 'lightbox-autoplay';
         toggle.title = 'Toggle video autoplay (A)';
-        this.updateAutoplayButton(toggle);
+        // Pre-render both icon states once; CSS + .enabled class selects the
+        // visible icon so updateAutoplayButton() never touches the DOM again.
+        toggle.innerHTML = [
+            '<i data-lucide="play-circle" class="icon-autoplay-on"></i>',
+            '<i data-lucide="pause-circle" class="icon-autoplay-off"></i>',
+        ].join('');
 
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -123,18 +146,17 @@ const Lightbox = {
         }
 
         this.elements.autoplayBtn = toggle;
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [toggle] });
+        this.updateAutoplayButton();
     },
 
     updateAutoplayButton(btn = this.elements.autoplayBtn) {
         if (!btn) return;
         const isEnabled = Preferences.isVideoAutoplayEnabled();
         btn.classList.toggle('enabled', isEnabled);
-        btn.innerHTML = isEnabled
-            ? '<i data-lucide="play-circle"></i>'
-            : '<i data-lucide="pause-circle"></i>';
         btn.title = isEnabled ? 'Autoplay ON (A)' : 'Autoplay OFF (A)';
-        lucide.createIcons({ nodes: [btn] });
+        // Icon visibility is controlled by CSS (.enabled toggles play-circle vs pause-circle).
+        // No innerHTML mutation or lucide.createIcons() call needed.
     },
 
     toggleAutoplay() {
@@ -150,7 +172,12 @@ const Lightbox = {
         toggle.className = 'lightbox-loop-toggle hidden';
         toggle.id = 'lightbox-loop-toggle';
         toggle.title = 'Toggle loop (L)';
-        this.updateLoopButton(toggle);
+        // Pre-render both icon states once; CSS + .enabled class selects the
+        // visible icon so updateLoopButton() never touches the DOM again.
+        toggle.innerHTML = [
+            '<i data-lucide="repeat" class="icon-loop-on"></i>',
+            '<i data-lucide="repeat-1" class="icon-loop-off"></i>',
+        ].join('');
 
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -165,18 +192,17 @@ const Lightbox = {
         }
 
         this.elements.loopBtn = toggle;
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [toggle] });
+        this.updateLoopButton();
     },
 
     updateLoopButton(btn = this.elements.loopBtn) {
         if (!btn) return;
         const isEnabled = Preferences.isMediaLoopEnabled();
         btn.classList.toggle('enabled', isEnabled);
-        btn.innerHTML = isEnabled
-            ? '<i data-lucide="repeat"></i>'
-            : '<i data-lucide="repeat-1"></i>';
         btn.title = isEnabled ? 'Loop ON (L)' : 'Loop OFF (L)';
-        lucide.createIcons({ nodes: [btn] });
+        // Icon visibility is controlled by CSS (.enabled toggles repeat vs repeat-1).
+        // No innerHTML mutation or lucide.createIcons() call needed.
     },
 
     toggleLoop() {
@@ -1762,9 +1788,13 @@ const Lightbox = {
     },
 
     getTagsFromGallery(path) {
-        const galleryItem = document.querySelector(
-            `.gallery-item[data-path="${CSS.escape(path)}"]`
-        );
+        // Use the O(1) path-to-element map maintained by InfiniteScroll when
+        // available, falling back to a full DOM scan for non-infinite-scroll
+        // contexts (search, playlist, etc.).
+        const galleryItem =
+            (typeof InfiniteScroll !== 'undefined' &&
+                InfiniteScroll._galleryItemsByPath?.get(path)) ||
+            document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
         if (!galleryItem) return null;
         const tagsContainer = galleryItem.querySelector('.gallery-item-tags');
         if (!tagsContainer && !galleryItem.querySelector('.tag-button.has-tags')) return [];
@@ -2195,11 +2225,11 @@ const Lightbox = {
         const isPinned =
             file.isFavorite || (typeof Favorites !== 'undefined' && Favorites.isPinned(file.path));
         this.elements.pinBtn.classList.toggle('pinned', isPinned);
-        this.elements.pinBtn.innerHTML = '<i data-lucide="star"></i>';
         this.elements.pinBtn.title = isPinned
             ? 'Remove from favorites (F)'
             : 'Add to favorites (F)';
-        lucide.createIcons({ nodes: [this.elements.pinBtn] });
+        // Icon (star SVG) was rendered once in _initStaticIcons().
+        // Only the CSS class and title change — no DOM mutation, no lucide call.
     },
 
     togglePin() {
@@ -2244,9 +2274,9 @@ const Lightbox = {
         if (!this.elements.tagBtn) return;
         const hasTags = file.tags && file.tags.length > 0;
         this.elements.tagBtn.classList.toggle('has-tags', hasTags);
-        this.elements.tagBtn.innerHTML = '<i data-lucide="tag"></i>';
         this.elements.tagBtn.title = 'Manage tags (T)';
-        lucide.createIcons({ nodes: [this.elements.tagBtn] });
+        // Icon (tag SVG) was rendered once in _initStaticIcons().
+        // Only the CSS class changes — no DOM mutation, no lucide call.
     },
 
     downloadCurrent() {

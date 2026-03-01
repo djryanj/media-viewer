@@ -1417,6 +1417,76 @@ describe('Lightbox Module', () => {
 
             expect(tags).toBeNull();
         });
+
+        test('getTagsFromGallery uses InfiniteScroll._galleryItemsByPath map when available', () => {
+            const el = document.createElement('div');
+            el.className = 'gallery-item';
+            el.dataset.path = '/mapped.jpg';
+            el.innerHTML = `<div class="gallery-item-tags" data-all-tags='["map-tag"]'></div>`;
+
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map([['/mapped.jpg', el]]),
+            };
+
+            const tags = Lightbox.getTagsFromGallery('/mapped.jpg');
+
+            expect(tags).toEqual(['map-tag']);
+
+            delete globalThis.InfiniteScroll;
+        });
+
+        test('getTagsFromGallery falls back to DOM scan when InfiniteScroll is undefined', () => {
+            delete globalThis.InfiniteScroll;
+            document.body.innerHTML += `
+                <div class="gallery-item" data-path="/dom-only.jpg">
+                    <div class="gallery-item-tags" data-all-tags='["dom-tag"]'></div>
+                </div>
+            `;
+
+            const tags = Lightbox.getTagsFromGallery('/dom-only.jpg');
+
+            expect(tags).toEqual(['dom-tag']);
+        });
+
+        test('getTagsFromGallery falls back to DOM scan when path is not in the map', () => {
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map(),
+            };
+            document.body.innerHTML += `
+                <div class="gallery-item" data-path="/fallback.jpg">
+                    <div class="gallery-item-tags" data-all-tags='["fallback-tag"]'></div>
+                </div>
+            `;
+
+            const tags = Lightbox.getTagsFromGallery('/fallback.jpg');
+
+            expect(tags).toEqual(['fallback-tag']);
+
+            delete globalThis.InfiniteScroll;
+        });
+
+        test('getTagsFromGallery map lookup takes precedence over DOM element with same path', () => {
+            const mapEl = document.createElement('div');
+            mapEl.className = 'gallery-item';
+            mapEl.dataset.path = '/shared.jpg';
+            mapEl.innerHTML = `<div class="gallery-item-tags" data-all-tags='["from-map"]'></div>`;
+
+            document.body.innerHTML += `
+                <div class="gallery-item" data-path="/shared.jpg">
+                    <div class="gallery-item-tags" data-all-tags='["from-dom"]'></div>
+                </div>
+            `;
+
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map([['/shared.jpg', mapEl]]),
+            };
+
+            const tags = Lightbox.getTagsFromGallery('/shared.jpg');
+
+            expect(tags).toEqual(['from-map']);
+
+            delete globalThis.InfiniteScroll;
+        });
     });
 
     // =========================================
@@ -1653,6 +1723,39 @@ describe('Lightbox Module', () => {
             expect(button.title).toContain('ON');
         });
 
+        test('updateAutoplayButton adds .enabled class when autoplay is on', () => {
+            const button = document.createElement('button');
+            Preferences.isVideoAutoplayEnabled = vi.fn(() => true);
+
+            Lightbox.updateAutoplayButton(button);
+
+            expect(button.classList.contains('enabled')).toBe(true);
+        });
+
+        test('updateAutoplayButton removes .enabled class when autoplay is off', () => {
+            const button = document.createElement('button');
+            button.classList.add('enabled');
+            Preferences.isVideoAutoplayEnabled = vi.fn(() => false);
+
+            Lightbox.updateAutoplayButton(button);
+
+            expect(button.classList.contains('enabled')).toBe(false);
+        });
+
+        test('updateAutoplayButton does not call lucide.createIcons()', () => {
+            const button = document.createElement('button');
+            Preferences.isVideoAutoplayEnabled = vi.fn(() => true);
+            lucide.createIcons.mockClear();
+
+            Lightbox.updateAutoplayButton(button);
+
+            expect(lucide.createIcons).not.toHaveBeenCalled();
+        });
+
+        test('updateAutoplayButton returns early and does not throw when btn is null', () => {
+            expect(() => Lightbox.updateAutoplayButton(null)).not.toThrow();
+        });
+
         test('updateLoopButton shows correct state', () => {
             const button = document.createElement('button');
             Preferences.isMediaLoopEnabled = vi.fn(() => false);
@@ -1660,6 +1763,39 @@ describe('Lightbox Module', () => {
             Lightbox.updateLoopButton(button);
 
             expect(button.title).toContain('OFF');
+        });
+
+        test('updateLoopButton adds .enabled class when loop is on', () => {
+            const button = document.createElement('button');
+            Preferences.isMediaLoopEnabled = vi.fn(() => true);
+
+            Lightbox.updateLoopButton(button);
+
+            expect(button.classList.contains('enabled')).toBe(true);
+        });
+
+        test('updateLoopButton removes .enabled class when loop is off', () => {
+            const button = document.createElement('button');
+            button.classList.add('enabled');
+            Preferences.isMediaLoopEnabled = vi.fn(() => false);
+
+            Lightbox.updateLoopButton(button);
+
+            expect(button.classList.contains('enabled')).toBe(false);
+        });
+
+        test('updateLoopButton does not call lucide.createIcons()', () => {
+            const button = document.createElement('button');
+            Preferences.isMediaLoopEnabled = vi.fn(() => true);
+            lucide.createIcons.mockClear();
+
+            Lightbox.updateLoopButton(button);
+
+            expect(lucide.createIcons).not.toHaveBeenCalled();
+        });
+
+        test('updateLoopButton returns early and does not throw when btn is null', () => {
+            expect(() => Lightbox.updateLoopButton(null)).not.toThrow();
         });
     });
 
@@ -1801,6 +1937,207 @@ describe('Lightbox Module', () => {
             Lightbox.stopAnimationLoopDetection();
 
             expect(Lightbox.lastImageData).toBeNull();
+        });
+    });
+
+    // =========================================
+    // _initStaticIcons
+    // =========================================
+
+    describe('_initStaticIcons()', () => {
+        beforeEach(() => {
+            // The outer beforeEach only calls cacheElements(), not init().
+            // Call _initStaticIcons() explicitly so each test starts with
+            // icons already rendered and lucide mock calls recorded cleanly.
+            lucide.createIcons.mockClear();
+            Lightbox._initStaticIcons();
+        });
+
+        test('renders star icon markup into pinBtn', () => {
+            expect(Lightbox.elements.pinBtn.innerHTML).toContain('data-lucide="star"');
+        });
+
+        test('renders tag icon markup into tagBtn', () => {
+            expect(Lightbox.elements.tagBtn.innerHTML).toContain('data-lucide="tag"');
+        });
+
+        test('calls lucide.createIcons() with pinBtn and tagBtn as nodes during init', () => {
+            const calls = lucide.createIcons.mock.calls;
+            const iconInitCall = calls.find(
+                (c) => c[0]?.nodes && c[0].nodes.includes(Lightbox.elements.pinBtn)
+            );
+            expect(iconInitCall).toBeTruthy();
+        });
+
+        test('does not throw when pinBtn is absent', () => {
+            Lightbox.elements.pinBtn = null;
+            expect(() => Lightbox._initStaticIcons()).not.toThrow();
+        });
+
+        test('does not throw when tagBtn is absent', () => {
+            Lightbox.elements.tagBtn = null;
+            expect(() => Lightbox._initStaticIcons()).not.toThrow();
+        });
+
+        test('does not call lucide.createIcons() when both buttons are absent', () => {
+            Lightbox.elements.pinBtn = null;
+            Lightbox.elements.tagBtn = null;
+            lucide.createIcons.mockClear();
+
+            Lightbox._initStaticIcons();
+
+            expect(lucide.createIcons).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================
+    // updatePinButton
+    // =========================================
+
+    describe('updatePinButton()', () => {
+        let file;
+
+        beforeEach(() => {
+            file = { path: '/test.jpg', name: 'test.jpg', isFavorite: false };
+            globalThis.Favorites = {
+                isPinned: vi.fn(() => false),
+                toggleFavorite: vi.fn(() => Promise.resolve(false)),
+            };
+        });
+
+        afterEach(() => {
+            delete globalThis.Favorites;
+        });
+
+        test('adds .pinned class when file.isFavorite is true', () => {
+            file.isFavorite = true;
+
+            Lightbox.updatePinButton(file);
+
+            expect(Lightbox.elements.pinBtn.classList.contains('pinned')).toBe(true);
+        });
+
+        test('removes .pinned class when file is not a favorite', () => {
+            Lightbox.elements.pinBtn.classList.add('pinned');
+            file.isFavorite = false;
+
+            Lightbox.updatePinButton(file);
+
+            expect(Lightbox.elements.pinBtn.classList.contains('pinned')).toBe(false);
+        });
+
+        test('adds .pinned class when Favorites.isPinned() returns true', () => {
+            Favorites.isPinned = vi.fn(() => true);
+
+            Lightbox.updatePinButton(file);
+
+            expect(Lightbox.elements.pinBtn.classList.contains('pinned')).toBe(true);
+        });
+
+        test('sets title to remove-from-favorites message when pinned', () => {
+            file.isFavorite = true;
+
+            Lightbox.updatePinButton(file);
+
+            expect(Lightbox.elements.pinBtn.title).toContain('Remove from favorites');
+        });
+
+        test('sets title to add-to-favorites message when not pinned', () => {
+            file.isFavorite = false;
+
+            Lightbox.updatePinButton(file);
+
+            expect(Lightbox.elements.pinBtn.title).toContain('Add to favorites');
+        });
+
+        test('does not call lucide.createIcons()', () => {
+            lucide.createIcons.mockClear();
+
+            Lightbox.updatePinButton(file);
+
+            expect(lucide.createIcons).not.toHaveBeenCalled();
+        });
+
+        test('does not mutate pinBtn innerHTML', () => {
+            const originalHTML = Lightbox.elements.pinBtn.innerHTML;
+
+            Lightbox.updatePinButton(file);
+
+            expect(Lightbox.elements.pinBtn.innerHTML).toBe(originalHTML);
+        });
+
+        test('works gracefully when Favorites global is undefined', () => {
+            delete globalThis.Favorites;
+            file.isFavorite = false;
+
+            expect(() => Lightbox.updatePinButton(file)).not.toThrow();
+            expect(Lightbox.elements.pinBtn.classList.contains('pinned')).toBe(false);
+        });
+    });
+
+    // =========================================
+    // updateTagButton
+    // =========================================
+
+    describe('updateTagButton()', () => {
+        let file;
+
+        beforeEach(() => {
+            file = { path: '/test.jpg', name: 'test.jpg', tags: [] };
+        });
+
+        test('adds .has-tags class when file has tags', () => {
+            file.tags = ['nature', 'beach'];
+
+            Lightbox.updateTagButton(file);
+
+            expect(Lightbox.elements.tagBtn.classList.contains('has-tags')).toBe(true);
+        });
+
+        test('removes .has-tags class when file has no tags', () => {
+            Lightbox.elements.tagBtn.classList.add('has-tags');
+            file.tags = [];
+
+            Lightbox.updateTagButton(file);
+
+            expect(Lightbox.elements.tagBtn.classList.contains('has-tags')).toBe(false);
+        });
+
+        test('removes .has-tags class when file.tags is undefined', () => {
+            Lightbox.elements.tagBtn.classList.add('has-tags');
+            file.tags = undefined;
+
+            Lightbox.updateTagButton(file);
+
+            expect(Lightbox.elements.tagBtn.classList.contains('has-tags')).toBe(false);
+        });
+
+        test('sets title to manage-tags message', () => {
+            Lightbox.updateTagButton(file);
+
+            expect(Lightbox.elements.tagBtn.title).toContain('Manage tags');
+        });
+
+        test('does not call lucide.createIcons()', () => {
+            lucide.createIcons.mockClear();
+
+            Lightbox.updateTagButton(file);
+
+            expect(lucide.createIcons).not.toHaveBeenCalled();
+        });
+
+        test('does not mutate tagBtn innerHTML', () => {
+            const originalHTML = Lightbox.elements.tagBtn.innerHTML;
+
+            Lightbox.updateTagButton(file);
+
+            expect(Lightbox.elements.tagBtn.innerHTML).toBe(originalHTML);
+        });
+
+        test('returns early without throwing when tagBtn is null', () => {
+            Lightbox.elements.tagBtn = null;
+
+            expect(() => Lightbox.updateTagButton(file)).not.toThrow();
         });
     });
 });

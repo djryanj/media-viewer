@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.15.1] - Unreleased
+
+### Fixed
+
+- perf(frontend): `lucide.createIcons()` was called three times on every lightbox navigation (pin button, tag button, and loop/autoplay toggle) because each `updatePinButton`, `updateTagButton`, and `updateLoopButton` call replaced `innerHTML` and re-rendered icons from scratch. On every next/prev click this triggered a full DOM mutation, causing the Lucide library and browser extensions to re-scan the subtree. Fixed by adding `_initStaticIcons()`, called once at lightbox startup, which writes the icon `<i>` elements and calls `lucide.createIcons({ nodes })` a single time. All update functions now only toggle CSS classes and the button `title` — no DOM mutation occurs during navigation. [#114](https://github.com/djryanj/media-viewer/issues/114)
+- perf(frontend): `getTagsFromGallery` performed an O(n) `document.querySelector` scan on every tag lookup. The function now checks `InfiniteScroll._galleryItemsByPath` (a `Map` populated by `renderItems`) first, falling back to the DOM scan only when InfiniteScroll is unavailable or the path is absent from the map. [#114](https://github.com/djryanj/media-viewer/issues/114)
+- perf(frontend): `_getGridGeometry` forced a synchronous layout reflow on every call by reading `getComputedStyle` and `offsetWidth`. The result is now cached in `_cachedGridGeometry` and reused until explicitly invalidated. The cache is cleared by `_positionScrubber` (called on resize), by a full re-render in `renderItems`, and by `resetState`. [#114](https://github.com/djryanj/media-viewer/issues/114)
+
 ## [0.15.0] - 03-01-2026
 
 ### Changed
