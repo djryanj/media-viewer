@@ -36,14 +36,17 @@ Monitor web server performance and request patterns.
 
 Monitor SQLite database performance and health.
 
-| Metric                                         | Type      | Labels                | Description                                             |
-| ---------------------------------------------- | --------- | --------------------- | ------------------------------------------------------- |
-| `media_viewer_db_queries_total`                | Counter   | `operation`, `status` | Total database queries by operation type and status     |
-| `media_viewer_db_query_duration_seconds`       | Histogram | `operation`           | Database query duration distribution                    |
-| `media_viewer_db_connections_open`             | Gauge     | -                     | Number of open database connections                     |
-| `media_viewer_db_size_bytes`                   | Gauge     | `file`                | Size of SQLite files (main, WAL, SHM) in bytes          |
-| `media_viewer_db_transaction_duration_seconds` | Histogram | `type`                | Transaction duration by type (commit/rollback)          |
-| `media_viewer_db_rows_affected`                | Histogram | `operation`           | Rows affected by operations (upsert_file, delete_files) |
+| Metric                                            | Type      | Labels                | Description                                                         |
+| ------------------------------------------------- | --------- | --------------------- | ------------------------------------------------------------------- |
+| `media_viewer_db_queries_total`                   | Counter   | `operation`, `status` | Total database queries by operation type and status                 |
+| `media_viewer_db_query_duration_seconds`          | Histogram | `operation`           | Database query duration distribution                                |
+| `media_viewer_db_connections_open`                | Gauge     | -                     | Number of open database connections                                 |
+| `media_viewer_db_size_bytes`                      | Gauge     | `file`                | Size of SQLite files (main, WAL, SHM) in bytes                      |
+| `media_viewer_db_transaction_duration_seconds`    | Histogram | `type`                | Transaction duration by type (commit/rollback)                      |
+| `media_viewer_db_rows_affected`                   | Histogram | `operation`           | Rows affected by operations (upsert_file, delete_files)             |
+| `media_viewer_db_wal_checkpoint_total`            | Counter   | -                     | WAL checkpoint operations run by the background worker              |
+| `media_viewer_db_wal_checkpoint_duration_seconds` | Histogram | -                     | Duration of WAL checkpoint operations                               |
+| `media_viewer_db_wal_pages`                       | Gauge     | `type`                | WAL page counts from most recent checkpoint (log/checkpointed/busy) |
 
 **Use cases:**
 

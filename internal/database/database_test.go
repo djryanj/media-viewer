@@ -670,3 +670,46 @@ func TestObserveQueryConcurrentClosureSafety(t *testing.T) {
 
 	wg.Wait()
 }
+
+// TestGetCheckpointIntervalDefault verifies the 5-minute default when the env
+// var is absent.
+func TestGetCheckpointIntervalDefault(t *testing.T) {
+	t.Setenv("WAL_CHECKPOINT_INTERVAL_SECONDS", "")
+
+	got := getCheckpointInterval()
+	if got != 5*time.Minute {
+		t.Errorf("expected 5m, got %s", got)
+	}
+}
+
+// TestGetCheckpointIntervalCustom verifies that WAL_CHECKPOINT_INTERVAL_SECONDS
+// is respected.
+func TestGetCheckpointIntervalCustom(t *testing.T) {
+	t.Setenv("WAL_CHECKPOINT_INTERVAL_SECONDS", "60")
+
+	got := getCheckpointInterval()
+	if got != 60*time.Second {
+		t.Errorf("expected 60s, got %s", got)
+	}
+}
+
+// TestGetCheckpointIntervalInvalid verifies that invalid values fall back to the
+// default rather than panicking.
+func TestGetCheckpointIntervalInvalid(t *testing.T) {
+	t.Setenv("WAL_CHECKPOINT_INTERVAL_SECONDS", "not-a-number")
+
+	got := getCheckpointInterval()
+	if got != 5*time.Minute {
+		t.Errorf("expected default 5m on invalid input, got %s", got)
+	}
+}
+
+// TestGetCheckpointIntervalZero verifies that a zero value falls back to default.
+func TestGetCheckpointIntervalZero(t *testing.T) {
+	t.Setenv("WAL_CHECKPOINT_INTERVAL_SECONDS", "0")
+
+	got := getCheckpointInterval()
+	if got != 5*time.Minute {
+		t.Errorf("expected default 5m for zero, got %s", got)
+	}
+}

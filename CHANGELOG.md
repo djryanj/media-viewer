@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - refactor(metrics): removed `media_viewer_go_gc_runs_total` and `media_viewer_go_gc_pause_total_seconds` as they are exact duplicates of the standard Go runtime metrics `go_gc_duration_seconds_count` and `go_gc_duration_seconds_sum`. All Grafana dashboard panels and documentation queries updated to use the standard metrics. `media_viewer_go_gc_pause_last_seconds` is retained as it has no standard equivalent.
+- fix(database): disabled SQLite `wal_autocheckpoint` (set to 0) to prevent checkpoint I/O from blocking write-commit transactions. Previously the default threshold of 1,000 pages (~4 MB) could cause commits to block synchronously on a checkpoint, explaining the observed ~92ms average commit latency with a long tail into 500ms–1s.
+- fix(database): `BulkIndexEnd` WAL checkpoint now goes through the new `Checkpoint()` method so it records metrics consistently with all other checkpoint operations.
+
+### Added
+
+- feat(database): background WAL checkpoint worker that runs a `PASSIVE` checkpoint on a configurable interval (default 5 minutes, tunable via `WAL_CHECKPOINT_INTERVAL_SECONDS`). A final checkpoint is also run at shutdown before closing the database.
+- feat(metrics): three new WAL checkpoint metrics: `media_viewer_db_wal_checkpoint_total` (counter), `media_viewer_db_wal_checkpoint_duration_seconds` (histogram), and `media_viewer_db_wal_pages` (gauge with `log`/`checkpointed`/`busy` labels) to track checkpoint health and WAL file size over time.
 
 ## [0.15.1] - 03-01-2026
 
