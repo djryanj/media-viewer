@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.15.1] - 03-01-2026
 
+
+### Changed
+
+- chore(deps): update mikepenz/release-changelog-builder-action digest to a34a800 ([#386](https://github.com/djryanj/media-viewer/pull/386))
 ### Fixed
 
 - perf(frontend): `lucide.createIcons()` was called three times on every lightbox navigation (pin button, tag button, and loop/autoplay toggle) because each `updatePinButton`, `updateTagButton`, and `updateLoopButton` call replaced `innerHTML` and re-rendered icons from scratch. On every next/prev click this triggered a full DOM mutation, causing the Lucide library and browser extensions to re-scan the subtree. Fixed by adding `_initStaticIcons()`, called once at lightbox startup, which writes the icon `<i>` elements and calls `lucide.createIcons({ nodes })` a single time. All update functions now only toggle CSS classes and the button `title` — no DOM mutation occurs during navigation. [#114](https://github.com/djryanj/media-viewer/issues/114)
