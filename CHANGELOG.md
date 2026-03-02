@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - chore(deps): update mikepenz/release-changelog-builder-action digest to a34a800 ([#386](https://github.com/djryanj/media-viewer/pull/386))
+- chore(deps): update github actions (major) ([#389](https://github.com/djryanj/media-viewer/pull/389))
+- fix(deps): update go modules ([#388](https://github.com/djryanj/media-viewer/pull/388))
 
 ## [0.15.3] - 03-02-2026
 
