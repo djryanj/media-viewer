@@ -7,12 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
-## [0.15.1] - 03-01-2026
-
+## [TBD] - Unreleased
 
 ### Changed
 
+- chore(deps): update mikepenz/release-changelog-builder-action digest to a34a800 ([#386](https://github.com/djryanj/media-viewer/pull/386))
+- chore(deps): update github actions (major) ([#389](https://github.com/djryanj/media-viewer/pull/389))
 - fix(deps): update go modules ([#388](https://github.com/djryanj/media-viewer/pull/388))
+
+## [0.15.3] - 03-02-2026
+
+### Changed
+
+- refactor(config): `WAL_CHECKPOINT_INTERVAL_SECONDS` and `SLOW_QUERY_THRESHOLD_MS` environment variables are now parsed, validated, and logged to the console during startup in `startup.go`, following the same pattern as all other environment variables. Previously both were read directly from the environment at call-time inside `database.go` (`getCheckpointInterval()` / `getSlowQueryThreshold()`). The parsed values flow through `Config` into `database.Options` (`SlowQueryThresholdMs`) and directly into `StartCheckpointWorker(ctx, interval)`, which now receives the interval as a parameter rather than reading the environment itself. The package-level `observeQuery()` function has been converted to a `(*Database).observeQuery()` method so it can read `d.slowQueryThreshold` from the struct instead of calling `os.Getenv` on every query. [#395](https://github.com/djryanj/media-viewer/issues/395)
+
+### Fixed
+
+- fix(database): WAL checkpoint mode changed from `RESTART` to `TRUNCATE`. `RESTART` mode resets the WAL write position so SQLite can reuse the file space for new writes, but the physical file size stays at its high-water mark — the WAL file on disk never shrinks. `TRUNCATE` mode does everything `RESTART` does and additionally truncates the WAL file to zero bytes after a successful checkpoint, which actually reduces the file size on disk. The background checkpoint worker and the shutdown checkpoint both now use `TRUNCATE`. [#395](https://github.com/djryanj/media-viewer/issues/395)
+
+## [0.15.2] - 03-02-2026
+
+### Tests
+
+- test(backend): 126 new test functions resulting in coverage improvement from ~71% to ~77.2%. [#370](https://github.com/djryanj/media-viewer/issues/370)
+
+### Changed
+
+- refactor(metrics): removed `media_viewer_go_gc_runs_total` and `media_viewer_go_gc_pause_total_seconds` as they are exact duplicates of the standard Go runtime metrics `go_gc_duration_seconds_count` and `go_gc_duration_seconds_sum`. All Grafana dashboard panels and documentation queries updated to use the standard metrics. `media_viewer_go_gc_pause_last_seconds` is retained as it has no standard equivalent.
+- fix(database): disabled SQLite `wal_autocheckpoint` (set to 0) to prevent checkpoint I/O from blocking write-commit transactions. Previously the default threshold of 1,000 pages (~4 MB) could cause commits to block synchronously on a checkpoint, explaining the observed ~92ms average commit latency with a long tail into 500ms–1s.
+- fix(database): `BulkIndexEnd` WAL checkpoint now goes through the new `Checkpoint()` method so it records metrics consistently with all other checkpoint operations.
+
+### Added
+
+- feat(metrics): three new WAL checkpoint metrics: `media_viewer_db_wal_checkpoint_total` (counter), `media_viewer_db_wal_checkpoint_duration_seconds` (histogram), and `media_viewer_db_wal_pages` (gauge with `log`/`checkpointed`/`busy` labels) to track checkpoint health and WAL file size over time.
+
+## [0.15.1] - 03-01-2026
+
 ### Fixed
 
 - perf(frontend): `lucide.createIcons()` was called three times on every lightbox navigation (pin button, tag button, and loop/autoplay toggle) because each `updatePinButton`, `updateTagButton`, and `updateLoopButton` call replaced `innerHTML` and re-rendered icons from scratch. On every next/prev click this triggered a full DOM mutation, causing the Lucide library and browser extensions to re-scan the subtree. Fixed by adding `_initStaticIcons()`, called once at lightbox startup, which writes the icon `<i>` elements and calls `lucide.createIcons({ nodes })` a single time. All update functions now only toggle CSS classes and the button `title` — no DOM mutation occurs during navigation. [#114](https://github.com/djryanj/media-viewer/issues/114)
