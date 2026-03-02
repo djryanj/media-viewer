@@ -188,18 +188,16 @@ Monitor authentication and session management.
 
 Monitor memory usage and garbage collection.
 
-| Metric                                   | Type    | Labels | Description                                         |
-| ---------------------------------------- | ------- | ------ | --------------------------------------------------- |
-| `media_viewer_memory_usage_ratio`        | Gauge   | -      | Memory usage as ratio of limit (0.0-1.0)            |
-| `media_viewer_memory_paused`             | Gauge   | -      | Whether processing is paused due to memory pressure |
-| `media_viewer_memory_gc_pauses_total`    | Counter | -      | Times processing was paused due to memory pressure  |
-| `media_viewer_go_memlimit_bytes`         | Gauge   | -      | Configured GOMEMLIMIT in bytes                      |
-| `media_viewer_go_memalloc_bytes`         | Gauge   | -      | Current Go heap allocation                          |
-| `media_viewer_go_memsys_bytes`           | Gauge   | -      | Total memory obtained from OS                       |
-| `media_viewer_go_gc_runs_total`          | Counter | -      | Completed garbage collection cycles                 |
-| `media_viewer_go_gc_pause_total_seconds` | Counter | -      | Cumulative time spent in GC pauses                  |
-| `media_viewer_go_gc_pause_last_seconds`  | Gauge   | -      | Duration of most recent GC pause                    |
-| `media_viewer_go_gc_cpu_fraction`        | Gauge   | -      | Fraction of CPU time used by GC (0.0-1.0)           |
+| Metric                                  | Type    | Labels | Description                                         |
+| --------------------------------------- | ------- | ------ | --------------------------------------------------- |
+| `media_viewer_memory_usage_ratio`       | Gauge   | -      | Memory usage as ratio of limit (0.0-1.0)            |
+| `media_viewer_memory_paused`            | Gauge   | -      | Whether processing is paused due to memory pressure |
+| `media_viewer_memory_gc_pauses_total`   | Counter | -      | Times processing was paused due to memory pressure  |
+| `media_viewer_go_memlimit_bytes`        | Gauge   | -      | Configured GOMEMLIMIT in bytes                      |
+| `media_viewer_go_memalloc_bytes`        | Gauge   | -      | Current Go heap allocation                          |
+| `media_viewer_go_memsys_bytes`          | Gauge   | -      | Total memory obtained from OS                       |
+| `media_viewer_go_gc_pause_last_seconds` | Gauge   | -      | Duration of most recent GC pause                    |
+| `media_viewer_go_gc_cpu_fraction`       | Gauge   | -      | Fraction of CPU time used by GC (0.0-1.0)           |
 
 **Use cases:**
 
@@ -295,11 +293,11 @@ rate(media_viewer_db_size_bytes{file="main"}[1h])
 Monitor CPU overhead and pause times from garbage collection:
 
 ```promql
-# GC frequency (collections per second)
-rate(media_viewer_go_gc_runs_total[5m])
+# GC frequency (collections per second) — standard Go runtime metric
+rate(go_gc_duration_seconds_count[5m])
 
-# Total GC pause time per second (in milliseconds)
-rate(media_viewer_go_gc_pause_total_seconds[5m]) * 1000
+# Total GC pause time per second (in milliseconds) — standard Go runtime metric
+rate(go_gc_duration_seconds_sum[5m]) * 1000
 
 # GC CPU overhead percentage
 media_viewer_go_gc_cpu_fraction * 100
@@ -314,7 +312,7 @@ rate(media_viewer_go_memalloc_bytes[5m]) / 1024 / 1024
 media_viewer_go_memalloc_bytes / media_viewer_go_memlimit_bytes * 100
 
 # GC efficiency: bytes allocated per GC cycle
-rate(media_viewer_go_memalloc_bytes[5m]) / rate(media_viewer_go_gc_runs_total[5m])
+rate(media_viewer_go_memalloc_bytes[5m]) / rate(go_gc_duration_seconds_count[5m])
 ```
 
 **Interpreting GC metrics:**

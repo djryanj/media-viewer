@@ -397,20 +397,6 @@ var (
 		},
 	)
 
-	GoGCRuns = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "media_viewer_go_gc_runs_total",
-			Help: "Total number of completed GC cycles",
-		},
-	)
-
-	GoGCPauseTotalSeconds = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "media_viewer_go_gc_pause_total_seconds",
-			Help: "Cumulative seconds spent in GC stop-the-world pauses",
-		},
-	)
-
 	GoGCPauseLastSeconds = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "media_viewer_go_gc_pause_last_seconds",

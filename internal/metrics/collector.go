@@ -41,7 +41,6 @@ type Collector struct {
 	transcoderCacheDir   string
 	interval             time.Duration
 	stopChan             chan struct{}
-	lastGCCount          uint32
 }
 
 // NewCollector creates a new metrics collector
@@ -124,12 +123,6 @@ func (c *Collector) collectMemoryMetrics() {
 	GoMemAllocBytes.Set(float64(memStats.Alloc))
 	GoMemSysBytes.Set(float64(memStats.Sys))
 
-	if memStats.NumGC > c.lastGCCount {
-		GoGCRuns.Add(float64(memStats.NumGC - c.lastGCCount))
-		c.lastGCCount = memStats.NumGC
-	}
-
-	GoGCPauseTotalSeconds.Add(float64(memStats.PauseTotalNs) / 1e9)
 	if memStats.NumGC > 0 {
 		idx := (memStats.NumGC + 255) % 256
 		GoGCPauseLastSeconds.Set(float64(memStats.PauseNs[idx]) / 1e9)

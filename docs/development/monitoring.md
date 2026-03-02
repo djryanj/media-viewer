@@ -238,10 +238,10 @@ Access Prometheus at http://localhost:9091/graph and run these queries:
 media_viewer_go_gc_cpu_fraction * 100
 
 # GC frequency (GCs per minute)
-rate(media_viewer_go_gc_runs_total[5m]) * 60
+rate(go_gc_duration_seconds_count[5m]) * 60
 
 # GC pause budget (ms per second)
-rate(media_viewer_go_gc_pause_total_seconds[5m]) * 1000
+rate(go_gc_duration_seconds_sum[5m]) * 1000
 
 # Memory pressure (% of GOMEMLIMIT)
 media_viewer_go_memalloc_bytes / media_viewer_go_memlimit_bytes * 100
