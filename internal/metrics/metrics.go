@@ -81,6 +81,32 @@ var (
 	)
 )
 
+// WAL checkpoint metrics
+var (
+	DBWALCheckpointTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_db_wal_checkpoint_total",
+			Help: "Total number of WAL checkpoint operations run by the background worker",
+		},
+	)
+
+	DBWALCheckpointDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_db_wal_checkpoint_duration_seconds",
+			Help:    "Duration of WAL checkpoint operations",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10},
+		},
+	)
+
+	DBWALPages = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_db_wal_pages",
+			Help: "WAL page counts from the most recent PASSIVE checkpoint (log=total WAL pages, checkpointed=pages written to main db, busy=1 if blocked by an active reader)",
+		},
+		[]string{"type"}, // "log", "checkpointed", "busy"
+	)
+)
+
 // Database mmap and storage health metrics
 var (
 	DBMmapOverrideApplied = promauto.NewCounter(
@@ -394,20 +420,6 @@ var (
 		prometheus.GaugeOpts{
 			Name: "media_viewer_go_memsys_bytes",
 			Help: "Total memory obtained from the OS by Go runtime",
-		},
-	)
-
-	GoGCRuns = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "media_viewer_go_gc_runs_total",
-			Help: "Total number of completed GC cycles",
-		},
-	)
-
-	GoGCPauseTotalSeconds = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "media_viewer_go_gc_pause_total_seconds",
-			Help: "Cumulative seconds spent in GC stop-the-world pauses",
 		},
 	)
 

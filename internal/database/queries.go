@@ -41,6 +41,8 @@ const (
 	FilterTypeClause = " AND f.type = ?"
 	// TagPrefix is the prefix used for tag search queries.
 	TagPrefix = "tag:"
+	// rootDirName is the display name used for the root media directory.
+	rootDirName = "Media"
 )
 
 // ListOptions specifies options for listing directory contents.
@@ -74,7 +76,7 @@ type TagFilter struct {
 
 // ListDirectory returns a paginated directory listing.
 func (d *Database) ListDirectory(ctx context.Context, opts ListOptions) (*DirectoryListing, error) {
-	done := observeQuery("list_directory")
+	done := d.observeQuery("list_directory")
 
 	logging.Debug("ListDirectory called: path=%q", opts.Path)
 
@@ -321,7 +323,7 @@ func (d *Database) buildDirectoryListing(ctx context.Context, opts ListOptions, 
 
 	dirName := filepath.Base(opts.Path)
 	if opts.Path == "" {
-		dirName = "Media"
+		dirName = rootDirName
 	}
 
 	listing := &DirectoryListing{
@@ -349,7 +351,7 @@ func (d *Database) buildDirectoryListing(ctx context.Context, opts ListOptions, 
 // buildBreadcrumb constructs breadcrumb navigation from a file path.
 func buildBreadcrumb(path string) []PathPart {
 	breadcrumb := []PathPart{
-		{Name: "Media", Path: ""},
+		{Name: rootDirName, Path: ""},
 	}
 
 	if path == "" {
@@ -379,7 +381,7 @@ func buildBreadcrumb(path string) []PathPart {
 
 // Search searches for media files matching the given query.
 func (d *Database) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
-	done := observeQuery("search")
+	done := d.observeQuery("search")
 
 	if opts.Query == "" {
 		done(nil)
@@ -768,7 +770,7 @@ func (d *Database) searchWithTagFilters(ctx context.Context, opts SearchOptions,
 
 // SearchSuggestions returns quick search suggestions for autocomplete.
 func (d *Database) SearchSuggestions(ctx context.Context, query string, limit int) ([]SearchSuggestion, error) {
-	done := observeQuery("search_suggestions")
+	done := d.observeQuery("search_suggestions")
 
 	if query == "" {
 		done(nil)
@@ -1070,7 +1072,7 @@ func highlightMatch(text, query string) string {
 
 // GetAllPlaylists returns all playlist files.
 func (d *Database) GetAllPlaylists(ctx context.Context) ([]MediaFile, error) {
-	done := observeQuery("get_all_playlists")
+	done := d.observeQuery("get_all_playlists")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -1120,7 +1122,7 @@ func (d *Database) GetAllPlaylists(ctx context.Context) ([]MediaFile, error) {
 
 // GetMediaInDirectory returns all media files in a directory (for lightbox).
 func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, sortField SortField, sortOrder SortOrder) ([]MediaFile, error) {
-	done := observeQuery("get_media_in_directory")
+	done := d.observeQuery("get_media_in_directory")
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -1277,7 +1279,7 @@ func (d *Database) GetMediaFilesInFolder(ctx context.Context, folderPath string,
 
 // CalculateStats uses a prepared statement for the stats query.
 func (d *Database) CalculateStats() (IndexStats, error) {
-	done := observeQuery("calculate_stats")
+	done := d.observeQuery("calculate_stats")
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
@@ -1362,7 +1364,7 @@ func (d *Database) GetSubfolders(ctx context.Context, parentPath string) ([]Medi
 
 // GetAllMediaFiles returns all media files (images, videos, folders) for thumbnail rebuilding.
 func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
-	done := observeQuery("get_all_media_files")
+	done := d.observeQuery("get_all_media_files")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -1425,7 +1427,7 @@ func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
 
 // GetAllMediaFilesForThumbnails returns all media files ordered by path depth (root first).
 func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
-	done := observeQuery("get_all_media_files_for_thumbnails")
+	done := d.observeQuery("get_all_media_files_for_thumbnails")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -1490,7 +1492,7 @@ func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
 
 // GetFilesUpdatedSince returns media files updated after the given timestamp.
 func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([]MediaFile, error) {
-	done := observeQuery("get_files_updated_since")
+	done := d.observeQuery("get_files_updated_since")
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -1553,7 +1555,7 @@ func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([
 
 // GetFoldersWithUpdatedContents returns folders that contain files updated after the given timestamp.
 func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time.Time) ([]MediaFile, error) {
-	done := observeQuery("get_folders_with_updated_contents")
+	done := d.observeQuery("get_folders_with_updated_contents")
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -1614,7 +1616,7 @@ func (d *Database) GetFoldersWithUpdatedContents(ctx context.Context, since time
 
 // GetAllIndexedPaths returns all file paths currently in the index.
 func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]struct{}, error) {
-	done := observeQuery("get_all_indexed_paths")
+	done := d.observeQuery("get_all_indexed_paths")
 
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()

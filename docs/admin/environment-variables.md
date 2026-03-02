@@ -4,45 +4,46 @@ Complete reference for all environment variables supported by Media Viewer.
 
 ## Quick Reference
 
-| Variable                      | Default        | Description                                            |
-| ----------------------------- | -------------- | ------------------------------------------------------ |
-| **Paths**                     |                |                                                        |
-| `MEDIA_DIR`                   | `/media`       | Media directory path                                   |
-| `CACHE_DIR`                   | `/cache`       | Cache directory for thumbnails and transcoded videos   |
-| `DATABASE_DIR`                | `/database`    | Database directory path                                |
-| **Database**                  |                |                                                        |
-| `DB_MMAP_DISABLED`            | `false`        | Disable SQLite mmap (avoid SIGBUS on network storage)  |
-| `TRANSCODER_LOG_DIR`          | _(none)_       | Transcoder log directory (optional)                    |
-| **Video Transcoding**         |                |                                                        |
-| `GPU_ACCEL`                   | `auto`         | GPU acceleration (auto/nvidia/vaapi/videotoolbox/none) |
-| **Network**                   |                |                                                        |
-| `PORT`                        | `8080`         | HTTP server port                                       |
-| `METRICS_PORT`                | `9090`         | Prometheus metrics port                                |
-| `METRICS_ENABLED`             | `true`         | Enable/disable metrics server                          |
-| **Indexing & Scanning**       |                |                                                        |
-| `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                           |
-| `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                   |
-| `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                     |
-| `INDEX_WORKERS`               | `3`            | Parallel indexer workers (tune for NFS/local)          |
-| `THUMBNAIL_WORKERS`           | _(auto)_       | Thumbnail generation workers (tune for performance)    |
-| **Authentication & Sessions** |                |                                                        |
-| `SESSION_DURATION`            | `24h`          | User session lifetime                                  |
-| `SESSION_CLEANUP`             | `1h`           | Expired session cleanup interval                       |
-| **WebAuthn**                  |                |                                                        |
-| `WEBAUTHN_ENABLED`            | `false`        | Enable passkey authentication                          |
-| `WEBAUTHN_RP_ID`              | _(none)_       | Relying Party ID (required if enabled)                 |
-| `WEBAUTHN_RP_NAME`            | `Media Viewer` | Display name for WebAuthn prompts                      |
-| `WEBAUTHN_ORIGINS`            | _(none)_       | Allowed origins (required if enabled)                  |
-| **Memory Management**         |                |                                                        |
-| `MEMORY_LIMIT`                | _(none)_       | Container memory limit in bytes                        |
-| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.75 recommended)            |
-| `GOGC`                        | `150`          | Go GC target percentage (Go default: 100)              |
-| `GOMEMLIMIT`                  | _(none)_       | Direct Go memory limit override                        |
-| **Logging**                   |                |                                                        |
-| `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                  |
-| `LOG_STATIC_FILES`            | `false`        | Log static file requests                               |
-| `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                              |
-| `SLOW_QUERY_THRESHOLD_MS`     | `100`          | Threshold (ms) for logging slow database queries       |
+| Variable                          | Default        | Description                                                     |
+| --------------------------------- | -------------- | --------------------------------------------------------------- |
+| **Paths**                         |                |                                                                 |
+| `MEDIA_DIR`                       | `/media`       | Media directory path                                            |
+| `CACHE_DIR`                       | `/cache`       | Cache directory for thumbnails and transcoded videos            |
+| `DATABASE_DIR`                    | `/database`    | Database directory path                                         |
+| **Database**                      |                |                                                                 |
+| `DB_MMAP_DISABLED`                | `false`        | Disable SQLite mmap (avoid SIGBUS on network storage)           |
+| `TRANSCODER_LOG_DIR`              | _(none)_       | Transcoder log directory (optional)                             |
+| **Video Transcoding**             |                |                                                                 |
+| `GPU_ACCEL`                       | `auto`         | GPU acceleration (auto/nvidia/vaapi/videotoolbox/none)          |
+| **Network**                       |                |                                                                 |
+| `PORT`                            | `8080`         | HTTP server port                                                |
+| `METRICS_PORT`                    | `9090`         | Prometheus metrics port                                         |
+| `METRICS_ENABLED`                 | `true`         | Enable/disable metrics server                                   |
+| **Indexing & Scanning**           |                |                                                                 |
+| `INDEX_INTERVAL`                  | `30m`          | Full media re-index interval                                    |
+| `POLL_INTERVAL`                   | `30s`          | Filesystem change detection interval                            |
+| `THUMBNAIL_INTERVAL`              | `6h`           | Thumbnail generation scan interval                              |
+| `INDEX_WORKERS`                   | `3`            | Parallel indexer workers (tune for NFS/local)                   |
+| `THUMBNAIL_WORKERS`               | _(auto)_       | Thumbnail generation workers (tune for performance)             |
+| **Authentication & Sessions**     |                |                                                                 |
+| `SESSION_DURATION`                | `24h`          | User session lifetime                                           |
+| `SESSION_CLEANUP`                 | `1h`           | Expired session cleanup interval                                |
+| **WebAuthn**                      |                |                                                                 |
+| `WEBAUTHN_ENABLED`                | `false`        | Enable passkey authentication                                   |
+| `WEBAUTHN_RP_ID`                  | _(none)_       | Relying Party ID (required if enabled)                          |
+| `WEBAUTHN_RP_NAME`                | `Media Viewer` | Display name for WebAuthn prompts                               |
+| `WEBAUTHN_ORIGINS`                | _(none)_       | Allowed origins (required if enabled)                           |
+| **Memory Management**             |                |                                                                 |
+| `MEMORY_LIMIT`                    | _(none)_       | Container memory limit in bytes                                 |
+| `MEMORY_RATIO`                    | `0.85`         | Go heap allocation ratio (0.75 recommended)                     |
+| `GOGC`                            | `150`          | Go GC target percentage (Go default: 100)                       |
+| `GOMEMLIMIT`                      | _(none)_       | Direct Go memory limit override                                 |
+| **Logging**                       |                |                                                                 |
+| `LOG_LEVEL`                       | `info`         | Log verbosity (debug/info/warn/error)                           |
+| `LOG_STATIC_FILES`                | `false`        | Log static file requests                                        |
+| `LOG_HEALTH_CHECKS`               | `true`         | Log health check requests                                       |
+| `SLOW_QUERY_THRESHOLD_MS`         | `100`          | Threshold (ms) for logging slow database queries                |
+| `WAL_CHECKPOINT_INTERVAL_SECONDS` | `30`           | Interval (seconds) between background WAL checkpoint operations |
 
 ## Paths
 
@@ -614,6 +615,20 @@ SLOW_QUERY_THRESHOLD_MS=100
 - Set to a higher value (e.g., `500`) if you want to only log very slow queries
 - Set to `0` to log all queries (not recommended for production)
 - Example log output: `Slow query detected: operation=list_directory duration=0.235s status=success`
+
+### WAL_CHECKPOINT_INTERVAL_SECONDS
+
+Interval in seconds between background WAL (Write-Ahead Log) checkpoint operations.
+
+```bash
+WAL_CHECKPOINT_INTERVAL_SECONDS=30
+```
+
+- Default: `30` (30 seconds)
+- Auto-checkpointing is disabled at the connection level (`wal_autocheckpoint=0`) to prevent checkpoint I/O from blocking write-commit transactions. This background worker performs `RESTART` checkpoints: it waits for any active read transactions to finish, flushes all WAL pages to the main database file, then resets the WAL write position back to the start of the file — keeping the WAL from growing unboundedly.
+- Lower this value if the WAL file (`media_viewer_db_wal_pages{type="log"}`) is still growing large between checkpoints.
+- Raise this value to reduce checkpoint frequency on slow storage (NFS, spinning disk). A higher value allows the WAL file to grow larger, which increases read overhead.
+- A final checkpoint is also run at shutdown regardless of this interval.
 
 ## Duration Format
 

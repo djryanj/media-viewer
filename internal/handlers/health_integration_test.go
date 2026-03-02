@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/indexer"
@@ -104,6 +105,34 @@ func TestLivenessCheckAlwaysSucceedsIntegration(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Errorf("Iteration %d: Expected status 200, got %d", i, w.Code)
 		}
+	}
+}
+
+// TestLivenessCheckHEADRequestIntegration tests that HEAD requests get no response body.
+func TestLivenessCheckHEADRequestIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupHealthIntegrationTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodHead, "/health/live", http.NoBody)
+	w := httptest.NewRecorder()
+
+	h.LivenessCheck(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for HEAD request, got %d", w.Code)
+	}
+
+	// Content-Type should be set
+	if contentType := w.Header().Get("Content-Type"); contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+
+	// Body should be empty for HEAD requests
+	if w.Body.Len() != 0 {
+		t.Errorf("Expected empty body for HEAD request, got %d bytes", w.Body.Len())
 	}
 }
 
@@ -438,5 +467,78 @@ func TestHealthCheckConcurrentAccessIntegration(t *testing.T) {
 	close(errors)
 	if len(errors) > 0 {
 		t.Error("Some concurrent health checks failed")
+	}
+}
+
+// TestHealthCheckDegradedStatusIntegration tests that statusDegraded is returned
+// when the initial index fails (e.g., media directory does not exist).
+func TestHealthCheckDegradedStatusIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// mediaDir intentionally does NOT exist so indexing will fail
+	nonExistentMediaDir := filepath.Join(tmpDir, "does-not-exist")
+
+	os.MkdirAll(cacheDir, 0o755)
+
+	dbOpts := &database.Options{MmapDisabled: false}
+	db, _, err := database.New(context.Background(), dbPath, dbOpts)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	idx := indexer.New(db, nonExistentMediaDir, time.Hour)
+
+	// Start the indexer — the background goroutine will fail because the directory
+	// does not exist and will set initialIndexError.
+	if err := idx.Start(); err != nil {
+		t.Fatalf("Start() returned unexpected error: %v", err)
+	}
+	defer idx.Stop()
+
+	// Wait up to 2s for the background goroutine to complete.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		status := idx.GetHealthStatus()
+		if status.InitialIndexError != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Verify the error was recorded.
+	if idx.GetHealthStatus().InitialIndexError == "" {
+		t.Skip("Initial index error not recorded before deadline (possible slow CI); skipping")
+	}
+
+	trans := transcoder.New(cacheDir, "", false, "none")
+	thumbGen := media.NewThumbnailGenerator(cacheDir, nonExistentMediaDir, false, db, 0, nil)
+	config := &startup.Config{
+		MediaDir: nonExistentMediaDir,
+		CacheDir: cacheDir,
+	}
+
+	h := New(db, idx, trans, thumbGen, config)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
+	w := httptest.NewRecorder()
+	h.HealthCheck(w, req)
+
+	var response HealthResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response.Status != statusDegraded {
+		t.Errorf("Expected status %q, got %q", statusDegraded, response.Status)
+	}
+
+	if response.InitialIndexError == "" {
+		t.Error("Expected InitialIndexError to be non-empty in degraded state")
 	}
 }

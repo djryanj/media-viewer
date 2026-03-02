@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"math"
 	"runtime"
 	"testing"
 	"time"
@@ -300,6 +301,207 @@ func TestMonitorCheckMemory(t *testing.T) {
 	}
 
 	monitor.Stop()
+}
+
+// =============================================================================
+// checkMemory branch coverage – critical path and recovery path
+// =============================================================================
+
+// TestCheckMemoryCriticalPath verifies that checkMemory sets isPaused=true when
+// the simulated usage exceeds CriticalWaterMark.  We set m.limit=1 so that
+// any real heap allocation produces usage >> 1.0.
+func TestCheckMemoryCriticalPath(t *testing.T) {
+	config := Config{
+		MemoryLimitBytes:  1024 * 1024 * 100,
+		HighWaterMark:     0.7,
+		CriticalWaterMark: 0.85,
+		CheckInterval:     5 * time.Second,
+	}
+	monitor := NewMonitor(config)
+
+	// Override the limit to 1 byte so actual alloc >> limit → critical.
+	monitor.limit = 1
+
+	monitor.checkMemory()
+
+	monitor.mu.RLock()
+	paused := monitor.isPaused
+	monitor.mu.RUnlock()
+
+	if !paused {
+		t.Error("expected isPaused=true after checkMemory with limit=1")
+	}
+}
+
+// TestCheckMemoryRecoveryPath verifies the recovery transition: isPaused goes
+// from true → false when usage drops below HighWaterMark.
+func TestCheckMemoryRecoveryPath(t *testing.T) {
+	config := Config{
+		MemoryLimitBytes:  1024 * 1024 * 100,
+		HighWaterMark:     0.7,
+		CriticalWaterMark: 0.85,
+		CheckInterval:     5 * time.Second,
+	}
+	monitor := NewMonitor(config)
+
+	// Force critical state: limit=1 byte ensures usage >> CriticalWaterMark.
+	monitor.limit = 1
+	monitor.checkMemory()
+
+	monitor.mu.RLock()
+	paused := monitor.isPaused
+	monitor.mu.RUnlock()
+	if !paused {
+		t.Fatal("precondition failed: expected isPaused=true after tiny-limit checkMemory")
+	}
+
+	// Now set an enormous limit so usage << HighWaterMark → recovery triggered.
+	monitor.limit = math.MaxInt64 / 2
+	monitor.checkMemory()
+
+	monitor.mu.RLock()
+	paused = monitor.isPaused
+	monitor.mu.RUnlock()
+
+	if paused {
+		t.Error("expected isPaused=false after recovery (large limit) checkMemory")
+	}
+}
+
+// TestWaitIfPausedBlocksUntilRecovery verifies that WaitIfPaused blocks while
+// the monitor is paused and resumes (returning true) once recovery fires.
+func TestWaitIfPausedBlocksUntilRecovery(t *testing.T) {
+	config := Config{
+		MemoryLimitBytes:  1024 * 1024 * 100,
+		HighWaterMark:     0.7,
+		CriticalWaterMark: 0.85,
+		CheckInterval:     5 * time.Second,
+	}
+	monitor := NewMonitor(config)
+
+	// Put the monitor into paused state directly.
+	monitor.limit = 1
+	monitor.checkMemory() // sets isPaused=true and closes the old pauseChan
+
+	if !monitor.isPaused {
+		t.Fatal("precondition failed: monitor should be paused")
+	}
+
+	// WaitIfPaused in a separate goroutine — it should block until recovery.
+	resultCh := make(chan bool, 1)
+	go func() {
+		resultCh <- monitor.WaitIfPaused()
+	}()
+
+	// Give the goroutine a moment to block on pauseChan.
+	time.Sleep(20 * time.Millisecond)
+
+	// Trigger recovery by raising the limit.
+	monitor.limit = math.MaxInt64 / 2
+	monitor.checkMemory()
+
+	select {
+	case result := <-resultCh:
+		if !result {
+			t.Error("WaitIfPaused returned false; expected true after recovery")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitIfPaused did not unblock within 2s after recovery")
+	}
+}
+
+// TestWaitIfPausedStopWhilePaused verifies that WaitIfPaused returns false when
+// the stop channel is closed while the monitor is paused.
+func TestWaitIfPausedStopWhilePaused(t *testing.T) {
+	config := Config{
+		MemoryLimitBytes:  1024 * 1024 * 100,
+		HighWaterMark:     0.7,
+		CriticalWaterMark: 0.85,
+		CheckInterval:     5 * time.Second,
+	}
+	monitor := NewMonitor(config)
+
+	// Force paused state.
+	monitor.limit = 1
+	monitor.checkMemory()
+
+	if !monitor.isPaused {
+		t.Fatal("precondition failed: monitor should be paused")
+	}
+
+	resultCh := make(chan bool, 1)
+	go func() {
+		resultCh <- monitor.WaitIfPaused()
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Close stop channel to simulate Stop().
+	close(monitor.stopChan)
+
+	select {
+	case result := <-resultCh:
+		if result {
+			t.Error("WaitIfPaused returned true; expected false when stop channel closes")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitIfPaused did not unblock within 2s after stop")
+	}
+}
+
+// TestStartEarlyReturnWhenNoLimit verifies that Start() returns immediately
+// without launching a goroutine when limit == 0, covering memory.go:76-78.
+func TestStartEarlyReturnWhenNoLimit(_ *testing.T) {
+	// Construct directly to guarantee limit == 0 regardless of GOMEMLIMIT.
+	m := &Monitor{
+		config: Config{
+			HighWaterMark:     0.7,
+			CriticalWaterMark: 0.85,
+			CheckInterval:     50 * time.Millisecond,
+		},
+		limit:     0,
+		stopChan:  make(chan struct{}),
+		pauseChan: make(chan struct{}),
+	}
+	// Start must return immediately (no goroutine launched) — just verify no panic.
+	m.Start()
+}
+
+// TestShouldThrottleNoLimitReturnsFalseDirectly covers the early-return path
+// in ShouldThrottle() when limit == 0 (memory.go:162-164) by constructing a
+// Monitor directly, bypassing NewMonitor's GOMEMLIMIT fallback.
+func TestShouldThrottleNoLimitReturnsFalseDirectly(t *testing.T) {
+	m := &Monitor{
+		config: Config{
+			HighWaterMark:     0.7,
+			CriticalWaterMark: 0.85,
+			CheckInterval:     5 * time.Second,
+		},
+		limit:     0,
+		stopChan:  make(chan struct{}),
+		pauseChan: make(chan struct{}),
+	}
+	if m.ShouldThrottle() {
+		t.Error("ShouldThrottle should return false when limit == 0")
+	}
+}
+
+// TestGetUsageNoLimitReturnsZeroDirectly covers the early-return path in
+// GetUsage() when limit == 0 (memory.go:182-184).
+func TestGetUsageNoLimitReturnsZeroDirectly(t *testing.T) {
+	m := &Monitor{
+		config: Config{
+			HighWaterMark:     0.7,
+			CriticalWaterMark: 0.85,
+			CheckInterval:     5 * time.Second,
+		},
+		limit:     0,
+		stopChan:  make(chan struct{}),
+		pauseChan: make(chan struct{}),
+	}
+	if got := m.GetUsage(); got != 0 {
+		t.Errorf("GetUsage should return 0 when limit == 0, got %f", got)
+	}
 }
 
 func TestMonitorConcurrency(_ *testing.T) {

@@ -2,6 +2,9 @@ package database
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
 	"testing"
 	"time"
 )
@@ -589,6 +592,323 @@ func TestSessionExpirationIntegration(t *testing.T) {
 	maxExpiry := time.Now().Add(31 * 24 * time.Hour)
 	if session.ExpiresAt.After(maxExpiry) {
 		t.Error("Session expiration seems too far in the future")
+	}
+}
+
+// =============================================================================
+// Error-path integration tests — covering lines reported as 0 in coverage.out
+// =============================================================================
+
+// TestIsSetupCompleteClosedDB verifies that IsSetupComplete returns false
+// when the DB is closed (auth.go:62-64: query error → return false).
+func TestIsSetupCompleteClosedDB(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	db.Close()
+
+	if db.IsSetupComplete(context.Background()) {
+		t.Error("IsSetupComplete should return false when DB is closed")
+	}
+}
+
+// TestHasUsersClosedDB verifies that HasUsers returns false when the DB is
+// closed (auth.go:75-77: query error → return false).
+func TestHasUsersClosedDB(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	db.Close()
+
+	if db.HasUsers(context.Background()) {
+		t.Error("HasUsers should return false when DB is closed")
+	}
+}
+
+// TestCreateUserClosedDB verifies that CreateUser returns an error when the
+// DB is closed (auth.go:91-95: reader query error path).
+func TestCreateUserClosedDB(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	db.Close()
+
+	if err := db.CreateUser(context.Background(), "password"); err == nil {
+		t.Error("CreateUser should error when DB is closed")
+	}
+}
+
+// TestValidateSessionTokenNotFound covers the path in ValidateSession where a
+// well-formed hex token is not present in the sessions table
+// (auth.go:233.13-238.5: QueryRowContext scan returns sql.ErrNoRows).
+func TestValidateSessionTokenNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// 64 hex zeros → valid hex, but the derived SHA-256 hash is not in sessions.
+	_, err := db.ValidateSession(context.Background(), strings.Repeat("0", 64))
+	if err == nil {
+		t.Error("expected error when session token is not found")
+	}
+}
+
+// TestValidateSessionExpiredToken covers the expired-session branch in
+// ValidateSession (auth.go:240.3-242.18). An already-expired session is
+// inserted directly so the expiry check fires.
+func TestValidateSessionExpiredToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	if err := db.CreateUser(ctx, "password"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	user, err := db.ValidatePassword(ctx, "password")
+	if err != nil {
+		t.Fatalf("ValidatePassword: %v", err)
+	}
+
+	// Build a token that mimics what CreateSession does, but with a past expiry.
+	rawToken := make([]byte, 32) // 32 zero-bytes
+	tokenHex := hex.EncodeToString(rawToken)
+	hash := sha256.Sum256(rawToken)
+	tokenHash := hex.EncodeToString(hash[:])
+
+	expiredAt := time.Now().Add(-1 * time.Hour).Unix()
+	_, err = db.writer.ExecContext(ctx,
+		"INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)",
+		user.ID, tokenHash, expiredAt,
+	)
+	if err != nil {
+		t.Fatalf("failed to insert expired session: %v", err)
+	}
+
+	_, err = db.ValidateSession(ctx, tokenHex)
+	if err == nil {
+		t.Error("expected error for expired session")
+	}
+}
+
+// TestValidateSessionOrphanedSession covers the "user not found" branch in
+// ValidateSession (auth.go:252.16-256.3). SQLite does not enforce foreign-key
+// constraints by default (no PRAGMA foreign_keys=ON in our ConnectHook), so
+// deleting a user leaves its sessions intact. ValidateSession then finds the
+// session row but cannot look up the owning user.
+func TestValidateSessionOrphanedSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	if err := db.CreateUser(ctx, "password"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	user, err := db.ValidatePassword(ctx, "password")
+	if err != nil {
+		t.Fatalf("ValidatePassword: %v", err)
+	}
+	session, err := db.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// Confirm the session is valid before we break things.
+	if _, err = db.ValidateSession(ctx, session.Token); err != nil {
+		t.Fatalf("pre-condition: session should be valid: %v", err)
+	}
+
+	// Delete the user directly. FK enforcement is off → session row survives.
+	if _, err = db.writer.ExecContext(ctx, "DELETE FROM users"); err != nil {
+		t.Fatalf("DELETE FROM users: %v", err)
+	}
+
+	// Now ValidateSession should find the session but fail the user lookup.
+	_, err = db.ValidateSession(ctx, session.Token)
+	if err == nil {
+		t.Error("expected error when owning user no longer exists")
+	}
+}
+
+// TestExtendSessionExecError covers the writer.ExecContext error path in
+// ExtendSession (auth.go:286.16-290.3): hex decode and hash succeed, but the
+// UPDATE fails because the DB is closed.
+func TestExtendSessionExecError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+
+	ctx := context.Background()
+
+	if err := db.CreateUser(ctx, "password"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	user, err := db.ValidatePassword(ctx, "password")
+	if err != nil {
+		t.Fatalf("ValidatePassword: %v", err)
+	}
+	session, err := db.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	db.Close() // DB closed — next ExecContext will fail.
+
+	if err := db.ExtendSession(ctx, session.Token); err == nil {
+		t.Error("expected error from ExtendSession when DB is closed")
+	}
+}
+
+// TestExtendSessionNotFound covers the rows-affected == 0 path in ExtendSession
+// (auth.go:293.15-297.3): UPDATE matches no rows because the token is not in
+// the sessions table (valid hex, but no matching session).
+func TestExtendSessionNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// 64 'a' chars: valid hex, but SHA-256 hash is not a session token.
+	notInDB := strings.Repeat("a", 64)
+	if err := db.ExtendSession(context.Background(), notInDB); err == nil {
+		t.Error("expected error when session is not found")
+	}
+}
+
+// TestDeleteSessionByHashExecError covers the writer.ExecContext error path
+// in deleteSessionByHash (auth.go:308.16-310.3): a valid hex token is held,
+// then the DB is closed so the DELETE fails.
+func TestDeleteSessionByHashExecError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+
+	ctx := context.Background()
+
+	if err := db.CreateUser(ctx, "password"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	user, err := db.ValidatePassword(ctx, "password")
+	if err != nil {
+		t.Fatalf("ValidatePassword: %v", err)
+	}
+	session, err := db.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	db.Close() // closed → DELETE will fail.
+
+	if err := db.DeleteSession(ctx, session.Token); err == nil {
+		t.Error("expected error from DeleteSession when DB is closed")
+	}
+}
+
+// TestDeleteSessionByHashNotFound covers the rows-affected == 0 path in
+// deleteSessionByHash (auth.go:313.15-315.3). The session is deleted
+// successfully on the first call; a second call finds no matching row.
+func TestDeleteSessionByHashNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	if err := db.CreateUser(ctx, "password"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	user, err := db.ValidatePassword(ctx, "password")
+	if err != nil {
+		t.Fatalf("ValidatePassword: %v", err)
+	}
+	session, err := db.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// First delete: succeeds.
+	if err := db.DeleteSession(ctx, session.Token); err != nil {
+		t.Fatalf("first DeleteSession failed: %v", err)
+	}
+
+	// Second delete: same token, no row → deleteSessionByHash rows==0.
+	if err := db.DeleteSession(ctx, session.Token); err == nil {
+		t.Error("expected error when deleting an already-deleted session")
+	}
+}
+
+// TestUpdatePasswordNoUser covers the rows-affected == 0 path in UpdatePassword
+// (auth.go:403.2-410.3): the UPDATE affects no rows because the users table
+// is empty.
+func TestUpdatePasswordNoUser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// No user has been created → UPDATE users SET ... returns 0 rows.
+	if err := db.UpdatePassword(context.Background(), "newpassword"); err == nil {
+		t.Error("expected error from UpdatePassword when no user exists")
+	}
+}
+
+// TestUpdatePasswordClosedDB covers the BeginTx error path in UpdatePassword
+// (auth.go:380.16-383.3): bcrypt hashing succeeds but the transaction cannot
+// be started because the DB is closed.
+func TestUpdatePasswordClosedDB(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	db.Close()
+
+	if err := db.UpdatePassword(context.Background(), "newpassword"); err == nil {
+		t.Error("expected error from UpdatePassword when DB is closed")
+	}
+}
+
+// TestCreateSessionExecErrorIntegration covers the ExecContext failure branch
+// in CreateSession (auth.go:180-184) by closing the DB after creating a user.
+func TestCreateSessionExecErrorIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+
+	ctx := context.Background()
+
+	if err := db.CreateUser(ctx, "password"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	user, err := db.ValidatePassword(ctx, "password")
+	if err != nil {
+		t.Fatalf("ValidatePassword failed: %v", err)
+	}
+
+	// Close the DB before calling CreateSession to force the ExecContext error.
+	db.Close()
+
+	if _, err := db.CreateSession(ctx, user.ID); err == nil {
+		t.Error("expected error from CreateSession when DB is closed")
 	}
 }
 

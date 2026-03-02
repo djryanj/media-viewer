@@ -10,7 +10,7 @@ import (
 
 // AddFavorite adds a path to favorites.
 func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType FileType) error {
-	done := observeQuery("add_favorite")
+	done := d.observeQuery("add_favorite")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -28,7 +28,7 @@ func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType 
 
 // RemoveFavorite removes a favorite by its path.
 func (d *Database) RemoveFavorite(ctx context.Context, path string) error {
-	done := observeQuery("remove_favorite")
+	done := d.observeQuery("remove_favorite")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -53,7 +53,7 @@ func (d *Database) IsFavorite(ctx context.Context, path string) bool {
 
 // GetFavorites returns all favorites with their file info.
 func (d *Database) GetFavorites(ctx context.Context) ([]MediaFile, error) {
-	done := observeQuery("get_favorites")
+	done := d.observeQuery("get_favorites")
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

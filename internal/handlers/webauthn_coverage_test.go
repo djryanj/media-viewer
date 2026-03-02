@@ -737,6 +737,156 @@ func TestWebAuthnContentTypeHeaders(t *testing.T) {
 	}
 }
 
+// TestHasSuffix tests the hasSuffix helper function
+func TestHasSuffix(t *testing.T) {
+	tests := []struct {
+		s      string
+		suffix string
+		want   bool
+	}{
+		{"sub.example.com", ".example.com", true},
+		{"example.com", ".example.com", false},
+		{"other.com", ".example.com", false},
+		{"", ".example.com", false},
+		{"example.com", "", true},
+		{"abc", "abc", true},
+		{"ab", "abc", false},
+	}
+
+	for _, tt := range tests {
+		got := hasSuffix(tt.s, tt.suffix)
+		if got != tt.want {
+			t.Errorf("hasSuffix(%q, %q) = %v, want %v", tt.s, tt.suffix, got, tt.want)
+		}
+	}
+}
+
+// setupWebAuthnConfigTest initializes WebAuthn with given config for validateWebAuthnConfig tests
+func setupWebAuthnConfigTest(t *testing.T, rpID string, origins []string) func() {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	dbPath := tempDir + "/test.db"
+	db, _, err := database.New(context.Background(), dbPath, &database.Options{})
+	if err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+
+	config := &startup.Config{
+		WebAuthnEnabled:       true,
+		WebAuthnRPID:          rpID,
+		WebAuthnRPDisplayName: "Test",
+		WebAuthnRPOrigins:     origins,
+	}
+
+	originalEnabled := webAuthnEnabled
+	originalInstance := webAuthnInstance
+
+	if err := InitWebAuthn(config, db); err != nil {
+		t.Fatalf("InitWebAuthn failed: %v", err)
+	}
+
+	return func() {
+		webAuthnEnabled = originalEnabled
+		webAuthnInstance = originalInstance
+		_ = db.Close()
+	}
+}
+
+// TestValidateWebAuthnConfigSuccess tests the success path (origin and RPID match)
+func TestValidateWebAuthnConfigSuccess(t *testing.T) {
+	cleanup := setupWebAuthnConfigTest(t, "localhost", []string{"http://localhost"})
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/webauthn/available", http.NoBody)
+	req.Host = "localhost"
+
+	result := validateWebAuthnConfig(req)
+	if result != "" {
+		t.Errorf("expected empty string (success), got %q", result)
+	}
+}
+
+// TestValidateWebAuthnConfigXForwardedProto tests scheme override via X-Forwarded-Proto
+func TestValidateWebAuthnConfigXForwardedProto(t *testing.T) {
+	cleanup := setupWebAuthnConfigTest(t, "localhost", []string{"https://localhost"})
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/webauthn/available", http.NoBody)
+	req.Host = "localhost"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	result := validateWebAuthnConfig(req)
+	if result != "" {
+		t.Errorf("expected empty string (success with https), got %q", result)
+	}
+}
+
+// TestValidateWebAuthnConfigRPIDMismatch tests when origin matches but RPID doesn't match host
+func TestValidateWebAuthnConfigRPIDMismatch(t *testing.T) {
+	cleanup := setupWebAuthnConfigTest(t, "other.example.com", []string{"http://localhost"})
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/webauthn/available", http.NoBody)
+	req.Host = "localhost"
+
+	result := validateWebAuthnConfig(req)
+	if result == "" {
+		t.Error("expected RPID mismatch error, got empty string")
+	}
+	if result != "WEBAUTHN_RP_ID does not match request host. Update environment variables." {
+		t.Errorf("unexpected error message: %q", result)
+	}
+}
+
+// TestValidateWebAuthnConfigSubdomainMatch tests hasSuffix path in RPID validation
+func TestValidateWebAuthnConfigSubdomainMatch(t *testing.T) {
+	cleanup := setupWebAuthnConfigTest(t, "example.com", []string{"http://sub.example.com"})
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/webauthn/available", http.NoBody)
+	req.Host = "sub.example.com"
+
+	result := validateWebAuthnConfig(req)
+	if result != "" {
+		t.Errorf("expected empty string (subdomain match), got %q", result)
+	}
+}
+
+// TestValidateWebAuthnConfigDisabled tests when webAuthn is disabled
+func TestValidateWebAuthnConfigDisabled(t *testing.T) {
+	// Save and restore global state
+	originalEnabled := webAuthnEnabled
+	originalInstance := webAuthnInstance
+	defer func() {
+		webAuthnEnabled = originalEnabled
+		webAuthnInstance = originalInstance
+	}()
+
+	webAuthnEnabled = false
+	webAuthnInstance = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/api/webauthn/available", http.NoBody)
+	result := validateWebAuthnConfig(req)
+	if result != "" {
+		t.Errorf("expected empty string when disabled, got %q", result)
+	}
+}
+
+// TestValidateWebAuthnConfigHostWithPort tests host stripping of port
+func TestValidateWebAuthnConfigHostWithPort(t *testing.T) {
+	cleanup := setupWebAuthnConfigTest(t, "localhost", []string{"http://localhost:8080"})
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/webauthn/available", http.NoBody)
+	req.Host = "localhost:8080"
+
+	result := validateWebAuthnConfig(req)
+	if result != "" {
+		t.Errorf("expected empty string (host with port), got %q", result)
+	}
+}
+
 // TestWebAuthnEmptyNameInRegistration tests registration with empty name
 func TestWebAuthnEmptyNameInRegistration(t *testing.T) {
 	h, cleanup := setupWebAuthnCoverageTest(t, true)

@@ -409,3 +409,60 @@ func TestWriteJSONStatusWithSpecialCharacters(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteJSONError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		message    string
+		statusCode int
+	}{
+		{
+			name:       "Bad request",
+			message:    "invalid input",
+			statusCode: 400,
+		},
+		{
+			name:       "Internal server error",
+			message:    "something went wrong",
+			statusCode: 500,
+		},
+		{
+			name:       "Not found",
+			message:    "resource not found",
+			statusCode: 404,
+		},
+		{
+			name:       "Unauthorized",
+			message:    "access denied",
+			statusCode: 401,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := httptest.NewRecorder()
+			writeJSONError(w, tc.message, tc.statusCode)
+
+			if got := w.Code; got != tc.statusCode {
+				t.Errorf("status code = %d, want %d", got, tc.statusCode)
+			}
+
+			if got := w.Header().Get("Content-Type"); got != "application/json" {
+				t.Errorf("Content-Type = %q, want %q", got, "application/json")
+			}
+
+			var result map[string]string
+			if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+				t.Fatalf("failed to decode JSON: %v", err)
+			}
+
+			if result["error"] != tc.message {
+				t.Errorf("error message = %q, want %q", result["error"], tc.message)
+			}
+		})
+	}
+}

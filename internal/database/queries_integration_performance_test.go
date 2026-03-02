@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -437,14 +436,11 @@ func TestPerformanceOptimizations_EndToEnd(t *testing.T) {
 
 // TestSlowQueryLogging_Integration tests that slow queries are actually logged
 func TestSlowQueryLogging_Integration(t *testing.T) {
-	// Set very low threshold to catch queries
-	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "1")
-	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
-
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 	dbOpts := &Options{
-		MmapDisabled: false, // Set to true if you want to disable mmap
+		MmapDisabled:         false,
+		SlowQueryThresholdMs: 1, // 1ms — catches any real query
 	}
 	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {

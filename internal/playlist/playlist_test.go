@@ -501,3 +501,278 @@ func BenchmarkGetMediaType(b *testing.B) {
 		}
 	}
 }
+
+// =============================================================================
+// resolveUNCPath coverage
+// =============================================================================
+
+// makeUNCItem returns a minimal PlaylistItem suitable for direct calls to
+// resolveUNCPath / resolveAbsolutePath.
+func makeUNCItem(src string) PlaylistItem {
+	return PlaylistItem{
+		OrigPath:  src,
+		Name:      filepath.Base(src),
+		MediaType: getMediaType(filepath.Base(src)),
+	}
+}
+
+// TestResolveUNCPathMalformed verifies that a UNC path with fewer than three
+// components (server + share + filename) is returned unchanged with Exists=false.
+func TestResolveUNCPathMalformed(t *testing.T) {
+	tmpDir := t.TempDir()
+	// "//server" → only 1 component after stripping "//", so len(parts) < 3.
+	src := "//server"
+	item := resolveUNCPath(src, tmpDir, tmpDir, makeUNCItem(src))
+	if item.Exists {
+		t.Errorf("expected Exists=false for malformed UNC path, got true")
+	}
+	if item.Path != "" {
+		t.Errorf("expected empty Path for malformed UNC path, got %q", item.Path)
+	}
+}
+
+// TestResolveUNCPathStrategy1PlaylistDir verifies Strategy 1: the bare filename
+// is found directly inside the playlist directory.
+func TestResolveUNCPathStrategy1PlaylistDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	playlistDir := filepath.Join(tmpDir, "playlists")
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(playlistDir, 0o755)
+	os.MkdirAll(mediaDir, 0o755)
+
+	// Place the file in the playlist directory so Strategy 1 hits.
+	os.WriteFile(filepath.Join(playlistDir, "clip.mp4"), []byte("v"), 0o644)
+
+	src := "//server/share/nested/clip.mp4"
+	item := resolveUNCPath(src, playlistDir, mediaDir, makeUNCItem(src))
+	if !item.Exists {
+		t.Errorf("expected Exists=true when file is in playlistDir (Strategy 1)")
+	}
+}
+
+// TestResolveUNCPathStrategy2PlaylistDir verifies Strategy 2 (sub-path match)
+// when the file is found inside the playlist directory rather than the media
+// directory.
+func TestResolveUNCPathStrategy2PlaylistDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	playlistDir := filepath.Join(tmpDir, "playlists")
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(playlistDir, 0o755)
+	os.MkdirAll(mediaDir, 0o755)
+
+	// UNC: //server/share/sub/clip.mp4 – parts=[server,share,sub,clip.mp4]
+	// Strategy 2 i=2: subPath = "sub/clip.mp4"
+	//   → mediaDir/sub/clip.mp4   (don't create)
+	//   → playlistDir/sub/clip.mp4 (create this)
+	subDir := filepath.Join(playlistDir, "sub")
+	os.MkdirAll(subDir, 0o755)
+	os.WriteFile(filepath.Join(subDir, "clip.mp4"), []byte("v"), 0o644)
+
+	src := "//server/share/sub/clip.mp4"
+	item := resolveUNCPath(src, playlistDir, mediaDir, makeUNCItem(src))
+	if !item.Exists {
+		t.Errorf("expected Exists=true when file is in playlistDir sub-path (Strategy 2)")
+	}
+}
+
+// TestResolveUNCPathStrategy3ShareAsRoot verifies Strategy 3: the UNC share
+// name maps to a sub-directory of the media directory.
+func TestResolveUNCPathStrategy3ShareAsRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	playlistDir := filepath.Join(tmpDir, "playlists")
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(playlistDir, 0o755)
+	os.MkdirAll(mediaDir, 0o755)
+
+	// UNC: //server/Videos/sub/clip.mp4 – parts=[server,Videos,sub,clip.mp4]
+	// Strategy 1 & 2 must all miss; Strategy 3 tries
+	//   mediaDir/Videos/sub/clip.mp4
+	shareSubDir := filepath.Join(mediaDir, "Videos", "sub")
+	os.MkdirAll(shareSubDir, 0o755)
+	os.WriteFile(filepath.Join(shareSubDir, "clip.mp4"), []byte("v"), 0o644)
+
+	src := "//server/Videos/sub/clip.mp4"
+	item := resolveUNCPath(src, playlistDir, mediaDir, makeUNCItem(src))
+	if !item.Exists {
+		t.Errorf("expected Exists=true when file matches share-as-root (Strategy 3)")
+	}
+}
+
+// TestResolveUNCPathNotFound verifies the final return path: all strategies
+// exhausted, Exists stays false.
+func TestResolveUNCPathNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	src := "//server/share/missing/clip.mp4"
+	item := resolveUNCPath(src, tmpDir, tmpDir, makeUNCItem(src))
+	if item.Exists {
+		t.Errorf("expected Exists=false when no strategy finds the file")
+	}
+}
+
+// =============================================================================
+// resolveAbsolutePath coverage
+// =============================================================================
+
+// TestResolveAbsolutePathStrategy1PlaylistDir verifies Strategy 1: the bare
+// filename is found directly in the playlist directory.
+func TestResolveAbsolutePathStrategy1PlaylistDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	playlistDir := filepath.Join(tmpDir, "playlists")
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(playlistDir, 0o755)
+	os.MkdirAll(mediaDir, 0o755)
+
+	// Place only the filename in the playlist directory.
+	os.WriteFile(filepath.Join(playlistDir, "clip.mp4"), []byte("v"), 0o644)
+
+	src := "C:/Videos/folder/clip.mp4"
+	// normalizedSrc = "C:/Videos/folder/clip.mp4", filename = "clip.mp4"
+	// Strategy 1 tries playlistDir/clip.mp4 → exists
+	item := resolveAbsolutePath(src, playlistDir, mediaDir, makeUNCItem(src))
+	if !item.Exists {
+		t.Errorf("expected Exists=true when filename found in playlistDir (Strategy 1)")
+	}
+}
+
+// TestResolveAbsolutePathStrategy2PlaylistDir verifies Strategy 2 (sub-path
+// match) when the file is found in the playlist directory tree.
+func TestResolveAbsolutePathStrategy2PlaylistDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	playlistDir := filepath.Join(tmpDir, "playlists")
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(playlistDir, 0o755)
+	os.MkdirAll(mediaDir, 0o755)
+
+	// src = "C:/Videos/folder/clip.mp4"
+	// pathWithoutDrive = "Videos/folder/clip.mp4", parts = [Videos, folder, clip.mp4]
+	// Strategy 1: playlistDir/clip.mp4 – don't create
+	// Strategy 2 i=0: subPath = "Videos/folder/clip.mp4"
+	//   → mediaDir/Videos/folder/clip.mp4 – don't create
+	//   → playlistDir/Videos/folder/clip.mp4 – CREATE this
+	subDir := filepath.Join(playlistDir, "Videos", "folder")
+	os.MkdirAll(subDir, 0o755)
+	os.WriteFile(filepath.Join(subDir, "clip.mp4"), []byte("v"), 0o644)
+
+	src := "C:/Videos/folder/clip.mp4"
+	item := resolveAbsolutePath(src, playlistDir, mediaDir, makeUNCItem(src))
+	if !item.Exists {
+		t.Errorf("expected Exists=true when sub-path found in playlistDir (Strategy 2)")
+	}
+}
+
+// TestResolveAbsolutePathNotFound verifies the final return when every strategy
+// fails to locate the file.
+func TestResolveAbsolutePathNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	src := "C:/Videos/missing/clip.mp4"
+	item := resolveAbsolutePath(src, tmpDir, tmpDir, makeUNCItem(src))
+	if item.Exists {
+		t.Errorf("expected Exists=false when no strategy finds the file")
+	}
+}
+
+// TestParsePlaylistContextAlreadyCanceled verifies that Parse returns the
+// context error when the context is already canceled after ReadFile succeeds
+// but before XML unmarshalling (wpl.go:60-62).
+func TestParsePlaylistContextAlreadyCanceled(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(mediaDir, 0o755)
+
+	// Minimal valid WPL file.
+	wplContent := `<?xml version="1.0" encoding="UTF-8"?>
+<smil>
+  <head><title>Test</title></head>
+  <body><seq></seq></body>
+</smil>`
+	wplPath := filepath.Join(tmpDir, "test.wpl")
+	if err := os.WriteFile(wplPath, []byte(wplContent), 0o644); err != nil {
+		t.Fatalf("failed to write wpl file: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before calling Parse
+
+	_, err := ParseWPL(ctx, wplPath, mediaDir)
+	if err == nil {
+		t.Fatal("expected an error from canceled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestGetRelativePathOutsideMediaDir verifies that getRelativePath returns the
+// original fullPath when the computed relative path escapes mediaDir via ".."
+// (wpl.go:277-279).
+func TestGetRelativePathOutsideMediaDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := filepath.Join(tmpDir, "media")
+	// fullPath is a sibling directory — relative path will start with ".."
+	fullPath := filepath.Join(tmpDir, "other", "clip.mp4")
+
+	result := getRelativePath(fullPath, mediaDir)
+	if result != fullPath {
+		t.Errorf("expected original fullPath %q, got %q", fullPath, result)
+	}
+	if !strings.HasPrefix(result, tmpDir) {
+		t.Errorf("expected result to be an absolute path under tmpDir, got %q", result)
+	}
+}
+
+// =============================================================================
+// resolveRelativePath strategy 2 & 3 (wpl.go:239-243, 256-260)
+// =============================================================================
+
+// TestResolveRelativePathStrategy2MediaDir verifies that resolveRelativePath
+// finds a file by looking up its relative sub-path inside mediaDir when it is
+// absent from playlistDir (wpl.go:239-243: testPath = filepath.Join(mediaDir,
+// normalizedSrc); fileExists(testPath) == true).
+func TestResolveRelativePathStrategy2MediaDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	playlistDir := filepath.Join(tmpDir, "playlists")
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(playlistDir, 0o755)
+
+	// Create the file only under mediaDir, not under playlistDir.
+	subDir := filepath.Join(mediaDir, "sub")
+	os.MkdirAll(subDir, 0o755)
+	os.WriteFile(filepath.Join(subDir, "clip.mp4"), []byte("v"), 0o644)
+
+	// src = "sub/clip.mp4":
+	//   Strategy 1: playlistDir/sub/clip.mp4  — doesn't exist.
+	//   Strategy 2: mediaDir/sub/clip.mp4     — exists (covered by this test).
+	src := "sub/clip.mp4"
+	item := resolveRelativePath(src, playlistDir, mediaDir, makeUNCItem(src))
+	if !item.Exists {
+		t.Errorf("expected Exists=true when file is found via mediaDir subpath (Strategy 2)")
+	}
+	if item.Path != "sub/clip.mp4" && item.Path != filepath.Join("sub", "clip.mp4") {
+		t.Errorf("unexpected Path %q", item.Path)
+	}
+}
+
+// TestResolveRelativePathStrategy3BareFilenamePlaylistDir verifies that
+// resolveRelativePath finds a file by matching just its basename in playlistDir
+// when neither the full sub-path in playlistDir nor any path in mediaDir
+// exists (wpl.go:256-260: testPath = filepath.Join(playlistDir, filename)).
+func TestResolveRelativePathStrategy3BareFilenamePlaylistDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	playlistDir := filepath.Join(tmpDir, "playlists")
+	mediaDir := filepath.Join(tmpDir, "media")
+	os.MkdirAll(playlistDir, 0o755)
+	os.MkdirAll(mediaDir, 0o755)
+
+	// Create the file as a bare filename in playlistDir only.
+	os.WriteFile(filepath.Join(playlistDir, "clip.mp4"), []byte("v"), 0o644)
+
+	// src = "folder/2024/clip.mp4":
+	//   Strategy 1: playlistDir/folder/2024/clip.mp4 — doesn't exist.
+	//   Strategy 2: mediaDir/folder/2024/clip.mp4    — doesn't exist.
+	//   Strategy 3: playlistDir/clip.mp4             — exists (covered here).
+	src := "folder/2024/clip.mp4"
+	item := resolveRelativePath(src, playlistDir, mediaDir, makeUNCItem(src))
+	if !item.Exists {
+		t.Errorf("expected Exists=true when bare filename is found in playlistDir (Strategy 3)")
+	}
+}
