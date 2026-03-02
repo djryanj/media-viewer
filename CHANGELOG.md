@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - test(backend): 126 new test functions resulting in coverage improvement from ~71% to ~77.2%. [#370](https://github.com/djryanj/media-viewer/issues/370)
 -
 
+### Changed
+
+- refactor(metrics): removed `media_viewer_go_gc_runs_total` and `media_viewer_go_gc_pause_total_seconds` as they are exact duplicates of the standard Go runtime metrics `go_gc_duration_seconds_count` and `go_gc_duration_seconds_sum`. All Grafana dashboard panels and documentation queries updated to use the standard metrics. `media_viewer_go_gc_pause_last_seconds` is retained as it has no standard equivalent.
+
 ## [0.15.1] - 03-01-2026
 
 ### Fixed

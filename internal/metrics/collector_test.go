@@ -193,22 +193,15 @@ func TestCollectMemoryMetrics(t *testing.T) {
 	}()
 
 	collector.collectMemoryMetrics()
-
-	// Call again to test GC counter delta
 	collector.collectMemoryMetrics()
 }
 
-func TestCollectMemoryMetricsMultipleTimes(t *testing.T) {
+func TestCollectMemoryMetricsMultipleTimes(_ *testing.T) {
 	collector := NewCollector(nil, "", 1*time.Second)
 
-	// Collect multiple times to ensure GC counter tracks properly
+	// Collect multiple times to ensure no panic
 	for i := 0; i < 5; i++ {
 		collector.collectMemoryMetrics()
-		// The lastGCCount should be updated each time
-	}
-
-	if collector.lastGCCount == 0 {
-		t.Log("No GC runs detected (expected in short test)")
 	}
 }
 
@@ -479,20 +472,12 @@ func TestCollectorWithVeryLongInterval(t *testing.T) {
 	collector.Stop()
 }
 
-func TestCollectorMemoryMetricsConsistency(t *testing.T) {
+func TestCollectorMemoryMetricsConsistency(_ *testing.T) {
 	collector := NewCollector(nil, "", 1*time.Second)
 
 	// Collect twice and verify no panic
 	collector.collectMemoryMetrics()
-	firstGCCount := collector.lastGCCount
-
 	collector.collectMemoryMetrics()
-	secondGCCount := collector.lastGCCount
-
-	// GC count should not decrease
-	if secondGCCount < firstGCCount {
-		t.Errorf("GC count decreased: %d -> %d", firstGCCount, secondGCCount)
-	}
 }
 
 func TestCollectorDBSizeWithSymlink(t *testing.T) {
@@ -1061,20 +1046,14 @@ func TestObserverConcurrentAccess(t *testing.T) {
 // collectMemoryMetrics branch coverage
 // =============================================================================
 
-// TestCollectMemoryMetricsGCBranch verifies the "NumGC > lastGCCount" branch
-// by forcing a GC before the first collectMemoryMetrics call so the GC counter
-// is non-zero while lastGCCount is still 0.
-func TestCollectMemoryMetricsGCBranch(t *testing.T) {
+// TestCollectMemoryMetricsGCBranch verifies that collectMemoryMetrics runs
+// without panic when NumGC > 0.
+func TestCollectMemoryMetricsGCBranch(_ *testing.T) {
 	// Force at least one GC so memStats.NumGC > 0.
 	runtime.GC()
 
 	collector := NewCollector(nil, "", 1*time.Second)
-	// lastGCCount starts at 0; after GC, memStats.NumGC >= 1 → branch entered.
 	collector.collectMemoryMetrics()
-
-	if collector.lastGCCount == 0 {
-		t.Error("expected lastGCCount to be updated after GC-branch collectMemoryMetrics")
-	}
 }
 
 // TestCollectMemoryMetricsGCPauseLastSecondBranch verifies the

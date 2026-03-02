@@ -2882,7 +2882,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "media_viewer_go_gc_runs_total{job=~\"$instance\"}",
+                    "expr": "go_gc_duration_seconds_count{job=~\"$instance\"}",
                     "refId": "A"
                 }
             ],
@@ -2952,7 +2952,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "rate(media_viewer_go_gc_runs_total{job=~\"$instance\"}[5m]) * 60",
+                    "expr": "rate(go_gc_duration_seconds_count{job=~\"$instance\"}[5m]) * 60",
                     "refId": "A"
                 }
             ],
@@ -3326,7 +3326,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "increase(media_viewer_go_gc_runs_total{job=~\"$instance\"}[5m])",
+                    "expr": "increase(go_gc_duration_seconds_count{job=~\"$instance\"}[5m])",
                     "legendFormat": "GC Runs",
                     "refId": "A"
                 }
@@ -3661,7 +3661,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "rate(media_viewer_go_gc_pause_total_seconds{job=~\"$instance\"}[5m]) * 1000",
+                    "expr": "rate(go_gc_duration_seconds_sum{job=~\"$instance\"}[5m]) * 1000",
                     "refId": "A"
                 }
             ],
@@ -3977,7 +3977,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "expr": "rate(media_viewer_go_gc_pause_total_seconds{job=~\"$instance\"}[5m]) * 1000",
+                    "expr": "rate(go_gc_duration_seconds_sum{job=~\"$instance\"}[5m]) * 1000",
                     "legendFormat": "GC Pause Rate (ms/sec)",
                     "refId": "B"
                 }
