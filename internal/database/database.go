@@ -608,21 +608,22 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	return err
 }
 
-// Checkpoint runs a RESTART WAL checkpoint: it waits for any active readers to
-// finish their current read transaction, flushes all WAL pages to the main
-// database file, then resets the WAL write position back to the start of the
-// file. This caps WAL file size — unlike PASSIVE mode, which only checkpoints
-// frames not needed by current readers and never resets the write position,
-// allowing the WAL to grow unboundedly when readers are always active.
+// Checkpoint runs a TRUNCATE WAL checkpoint: it waits for any active readers
+// to finish their current read transaction, flushes all WAL pages to the main
+// database file, resets the WAL write position back to the start of the file,
+// and then truncates the WAL file to zero bytes on disk. This is the only mode
+// that actually reduces the WAL file's physical size — RESTART resets the write
+// position so SQLite can reuse WAL space, but the file stays at its high-water
+// mark. PASSIVE mode neither resets the write position nor shrinks the file.
 // Returns the total number of WAL pages (log) and the number successfully
 // checkpointed. A non-zero busy value means a reader held a lock that
 // prevented completion within the busy_timeout; the WAL was partially
-// checkpointed but the write position was not reset.
+// checkpointed but was not truncated.
 func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err error) {
 	start := time.Now()
 	var busy int
 	// wal_checkpoint returns one row: (busy, log, checkpointed)
-	err = d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(RESTART)").Scan(&busy, &log, &checkpointed)
+	err = d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &log, &checkpointed)
 	duration := time.Since(start).Seconds()
 
 	metrics.DBWALCheckpointTotal.Inc()
@@ -638,7 +639,7 @@ func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err e
 	logging.Debug("WAL checkpoint: busy=%d log=%d checkpointed=%d duration=%.3fs",
 		busy, log, checkpointed, duration)
 	if busy != 0 {
-		logging.Debug("WAL checkpoint incomplete: active reader prevented WAL reset (log=%d checkpointed=%d)",
+		logging.Debug("WAL checkpoint incomplete: active reader prevented WAL truncation (log=%d checkpointed=%d)",
 			log, checkpointed)
 	}
 	return log, checkpointed, nil

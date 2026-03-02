@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- feat(database): background WAL checkpoint worker that runs a `RESTART` checkpoint on a configurable interval (default 30 seconds, tunable via `WAL_CHECKPOINT_INTERVAL_SECONDS`). A final checkpoint is also run at shutdown before closing the database. `RESTART` mode resets the WAL write position after checkpointing, preventing the WAL file from growing unboundedly when readers are continuously active. [#395](https://github.com/djryanj/media-viewer/issues/395)
+- fix(database): WAL checkpoint mode changed from `RESTART` to `TRUNCATE`. `RESTART` mode resets the WAL write position so SQLite can reuse the file space for new writes, but the physical file size stays at its high-water mark — the WAL file on disk never shrinks. `TRUNCATE` mode does everything `RESTART` does and additionally truncates the WAL file to zero bytes after a successful checkpoint, which actually reduces the file size on disk. The background checkpoint worker and the shutdown checkpoint both now use `TRUNCATE`. [#395](https://github.com/djryanj/media-viewer/issues/395)
 
 ## [0.15.2] - 03-02-2026
 
