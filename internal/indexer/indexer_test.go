@@ -1087,3 +1087,155 @@ func BenchmarkParallelWalkerStatsAccess(b *testing.B) {
 		_, _, _ = walker.Stats()
 	}
 }
+
+// TestGetHealthStatusBasic tests GetHealthStatus with default/initial state.
+func TestGetHealthStatusBasic(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	status := idx.GetHealthStatus()
+
+	// Not ready initially
+	if status.Ready {
+		t.Error("Expected Ready=false initially")
+	}
+	if status.Indexing {
+		t.Error("Expected Indexing=false initially")
+	}
+	if status.FilesIndexed != 0 {
+		t.Errorf("Expected FilesIndexed=0, got %d", status.FilesIndexed)
+	}
+	if status.FoldersIndexed != 0 {
+		t.Errorf("Expected FoldersIndexed=0, got %d", status.FoldersIndexed)
+	}
+	if status.Uptime == "" {
+		t.Error("Expected non-empty Uptime")
+	}
+	if status.InitialIndexError != "" {
+		t.Errorf("Expected empty InitialIndexError, got %s", status.InitialIndexError)
+	}
+	if status.IndexProgress != nil {
+		t.Error("Expected nil IndexProgress when not indexing")
+	}
+}
+
+// TestGetHealthStatusWhileIndexing tests GetHealthStatus when indexing is in progress.
+func TestGetHealthStatusWhileIndexing(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	// Simulate indexing in progress
+	idx.indexMu.Lock()
+	idx.isIndexing = true
+	idx.indexMu.Unlock()
+	idx.filesIndexed.Store(150)
+	idx.foldersIndexed.Store(20)
+	idx.indexProgress.Store(IndexProgress{
+		FilesIndexed:   150,
+		FoldersIndexed: 20,
+		IsIndexing:     true,
+		StartedAt:      time.Now(),
+	})
+
+	status := idx.GetHealthStatus()
+
+	if !status.Ready {
+		t.Error("Expected Ready=true (150+20=170 >= 100)")
+	}
+	if !status.Indexing {
+		t.Error("Expected Indexing=true")
+	}
+	if status.FilesIndexed != 150 {
+		t.Errorf("Expected FilesIndexed=150, got %d", status.FilesIndexed)
+	}
+	if status.FoldersIndexed != 20 {
+		t.Errorf("Expected FoldersIndexed=20, got %d", status.FoldersIndexed)
+	}
+	if status.IndexProgress == nil {
+		t.Error("Expected non-nil IndexProgress when indexing")
+	} else if !status.IndexProgress.IsIndexing {
+		t.Error("Expected IndexProgress.IsIndexing=true")
+	}
+}
+
+// TestGetHealthStatusWithInitialIndexComplete tests GetHealthStatus after initial index.
+func TestGetHealthStatusWithInitialIndexComplete(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	// Simulate initial index complete but few files
+	idx.indexMu.Lock()
+	idx.initialIndexComplete = true
+	idx.indexMu.Unlock()
+
+	status := idx.GetHealthStatus()
+
+	if !status.Ready {
+		t.Error("Expected Ready=true when initialIndexComplete=true")
+	}
+}
+
+// TestGetHealthStatusWithError tests GetHealthStatus when an initial index error occurred.
+func TestGetHealthStatusWithError(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	// Set an initial index error
+	idx.indexMu.Lock()
+	idx.initialIndexError = os.ErrNotExist
+	idx.indexMu.Unlock()
+
+	status := idx.GetHealthStatus()
+
+	if status.InitialIndexError == "" {
+		t.Error("Expected non-empty InitialIndexError")
+	}
+	if status.InitialIndexError != os.ErrNotExist.Error() {
+		t.Errorf("Expected error=%s, got %s", os.ErrNotExist.Error(), status.InitialIndexError)
+	}
+}
+
+// TestTriggerIndexWhenAlreadyIndexing tests TriggerIndex when already in progress.
+func TestTriggerIndexWhenAlreadyIndexing(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	// Set indexing to true so tryStartIndexing returns false
+	// This means the goroutine launched by TriggerIndex will call Index(),
+	// which will return early without touching the DB.
+	idx.indexMu.Lock()
+	idx.isIndexing = true
+	idx.indexMu.Unlock()
+
+	// TriggerIndex should not panic even with a mock DB
+	idx.TriggerIndex()
+
+	// Small sleep to allow the goroutine to start and return
+	time.Sleep(20 * time.Millisecond)
+
+	// isIndexing should still be true since we set it manually and TriggerIndex returned early
+	if !idx.IsIndexing() {
+		t.Error("Expected IsIndexing=true (we set it and TriggerIndex returned early)")
+	}
+}
+
+// TestGetProgressNoValue tests getProgress when no value has been stored.
+func TestGetProgressNoValue(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	// getProgress via GetProgress (public wrapper)
+	progress := idx.GetProgress()
+	if progress.FilesIndexed != 0 {
+		t.Errorf("Expected FilesIndexed=0 for empty progress, got %d", progress.FilesIndexed)
+	}
+	if progress.IsIndexing {
+		t.Error("Expected IsIndexing=false for empty progress")
+	}
+}

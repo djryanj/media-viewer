@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -123,5 +124,34 @@ func TestSessionDurationPersistence(t *testing.T) {
 		if result != testDuration {
 			t.Errorf("iteration %d: GetSessionDuration() = %v, want %v", i, result, testDuration)
 		}
+	}
+}
+
+// =============================================================================
+// Unit tests for hex-decode error paths — no real DB required
+// =============================================================================
+
+// TestValidateSessionInvalidHexUnit covers the hex.DecodeString error path in
+// ValidateSession (auth.go:231.35-233.13). The error occurs before any DB
+// access, so a zero-value Database is sufficient.
+func TestValidateSessionInvalidHexUnit(t *testing.T) {
+	t.Parallel()
+
+	d := &Database{}
+	_, err := d.ValidateSession(context.Background(), "not-valid-hex-!!!")
+	if err == nil {
+		t.Error("expected error for non-hex token")
+	}
+}
+
+// TestExtendSessionInvalidHexUnit covers the hex.DecodeString error path in
+// ExtendSession (auth.go around lines 273-276). Same reasoning as above.
+func TestExtendSessionInvalidHexUnit(t *testing.T) {
+	t.Parallel()
+
+	d := &Database{}
+	err := d.ExtendSession(context.Background(), "not-valid-hex-!!!")
+	if err == nil {
+		t.Error("expected error for non-hex token")
 	}
 }

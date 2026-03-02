@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.15.2] - Unreleased
+
+### Tests
+
+- test(backend): 126 new test functions resulting in coverage improvement from ~71% to ~77.2%. [#370](https://github.com/djryanj/media-viewer/issues/370)
+-
+
 ## [0.15.1] - 03-01-2026
 
 ### Fixed

@@ -2,6 +2,7 @@ package logging
 
 import (
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -182,5 +183,138 @@ func TestLogLevelString(t *testing.T) {
 				t.Errorf("LogLevel.String() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+// =============================================================================
+// initLevel DEBUG env-var branch coverage
+// These tests need to reset the package-level sync.Once (accessible because
+// they are in the same package) to exercise initLevel fresh for each case.
+// =============================================================================
+
+// TestInitLevelDEBUGEnvTruthy verifies that DEBUG=1/true/yes/on all select
+// LevelDebug, covering the previously uncovered case body of initLevel.
+func TestInitLevelDEBUGEnvTruthy(t *testing.T) {
+	// Restore package state when the whole test completes so later tests are
+	// not affected by our level/Once manipulation.
+	t.Cleanup(func() {
+		levelOnce = sync.Once{}
+		currentLevel = LevelInfo
+	})
+
+	tests := []struct {
+		debugVal string
+	}{
+		{"1"},
+		{"true"},
+		{"yes"},
+		{"on"},
+		{"TRUE"}, // case-insensitive
+		{"ON"},
+	}
+
+	for _, tt := range tests {
+		t.Run("DEBUG="+tt.debugVal, func(t *testing.T) {
+			// Reset once and level for each sub-run.
+			levelOnce = sync.Once{}
+			currentLevel = LevelInfo
+
+			t.Setenv("DEBUG", tt.debugVal)
+			t.Setenv("LOG_LEVEL", "") // ensure LOG_LEVEL doesn't interfere
+
+			initLevel()
+
+			if currentLevel != LevelDebug {
+				t.Errorf("DEBUG=%s: expected LevelDebug, got %v", tt.debugVal, currentLevel)
+			}
+		})
+	}
+}
+
+// TestInitLevelDEBUGEnvNonTruthy verifies that a non-empty but non-truthy
+// DEBUG value (e.g., "false") falls through to the LOG_LEVEL check and then
+// to the default (LevelInfo), covering the if-body entry without the case hit.
+func TestInitLevelDEBUGEnvNonTruthy(t *testing.T) {
+	t.Cleanup(func() {
+		levelOnce = sync.Once{}
+		currentLevel = LevelInfo
+	})
+
+	levelOnce = sync.Once{}
+	currentLevel = LevelInfo
+
+	t.Setenv("DEBUG", "false")
+	t.Setenv("LOG_LEVEL", "") // not set → default
+
+	initLevel()
+
+	if currentLevel != LevelInfo {
+		t.Errorf("DEBUG=false with no LOG_LEVEL: expected LevelInfo, got %v", currentLevel)
+	}
+}
+
+// TestInitLevelLOGLEVELCases verifies the individual LOG_LEVEL switch case
+// bodies (info, warn, warning, error, default) inside initLevel — these are
+// not reached by the DEBUG-env tests because DEBUG= triggers an early return.
+func TestInitLevelLOGLEVELCases(t *testing.T) {
+	t.Cleanup(func() {
+		levelOnce = sync.Once{}
+		currentLevel = LevelInfo
+	})
+
+	tests := []struct {
+		logLevel string
+		want     LogLevel
+	}{
+		{"info", LevelInfo},
+		{"INFO", LevelInfo}, // case-insensitive via strings.ToLower
+		{"warn", LevelWarn},
+		{"warning", LevelWarn},
+		{"error", LevelError},
+		{"", LevelInfo},        // default case
+		{"unknown", LevelInfo}, // default case
+	}
+
+	for _, tt := range tests {
+		t.Run("LOG_LEVEL="+tt.logLevel, func(t *testing.T) {
+			// Reset levelOnce so initLevel executes fresh.
+			levelOnce = sync.Once{}
+			currentLevel = LevelDebug // start different from expected to detect changes
+
+			// No DEBUG env — must reach the LOG_LEVEL switch.
+			os.Unsetenv("DEBUG")
+			t.Setenv("LOG_LEVEL", tt.logLevel)
+
+			initLevel()
+
+			if currentLevel != tt.want {
+				t.Errorf("LOG_LEVEL=%q: expected level %v, got %v", tt.logLevel, tt.want, currentLevel)
+			}
+		})
+	}
+}
+
+// TestDebugBodyExecutedWhenDebugEnabled verifies that Debug()'s log.Printf
+// branch (line 74 in logging.go) is executed when the log level is LevelDebug.
+// This covers the "73.30,75.3" uncovered block from the coverage report.
+func TestDebugBodyExecutedWhenDebugEnabled(t *testing.T) {
+	t.Cleanup(func() {
+		levelOnce = sync.Once{}
+		currentLevel = LevelInfo
+	})
+
+	// Set level directly — the check in Debug() is `GetLevel() <= LevelDebug`.
+	// By setting currentLevel = LevelDebug and firing a fresh levelOnce we ensure
+	// the condition is true and the Printf line is reached.
+	levelOnce = sync.Once{}
+	os.Unsetenv("DEBUG")
+	t.Setenv("LOG_LEVEL", "debug")
+	initLevel() // sets currentLevel = LevelDebug
+
+	// This call must reach log.Printf inside Debug(), covering the branch.
+	Debug("coverage probe: %s", "debug body executed")
+
+	if currentLevel != LevelDebug {
+		t.Errorf("expected LevelDebug after LOG_LEVEL=debug, got %v", currentLevel)
 	}
 }
