@@ -107,7 +107,7 @@ func (d *Database) InitWebAuthnSchema() error {
 
 // SaveWebAuthnCredential saves a new WebAuthn credential for a user.
 func (d *Database) SaveWebAuthnCredential(ctx context.Context, userID int64, cred *webauthn.Credential, name string) error {
-	done := observeQuery("save_webauthn_credential")
+	done := d.observeQuery("save_webauthn_credential")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -151,7 +151,7 @@ func (d *Database) SaveWebAuthnCredential(ctx context.Context, userID int64, cre
 
 // GetWebAuthnCredentials returns all WebAuthn credentials for a user.
 func (d *Database) GetWebAuthnCredentials(ctx context.Context, userID int64) ([]webauthn.Credential, error) {
-	done := observeQuery("get_webauthn_credentials")
+	done := d.observeQuery("get_webauthn_credentials")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -212,7 +212,7 @@ func (d *Database) GetWebAuthnCredentials(ctx context.Context, userID int64) ([]
 
 // GetWebAuthnUser returns the WebAuthnUser for authentication.
 func (d *Database) GetWebAuthnUser(ctx context.Context) (*WebAuthnUser, error) {
-	done := observeQuery("get_webauthn_user")
+	done := d.observeQuery("get_webauthn_user")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -251,7 +251,7 @@ func (d *Database) GetWebAuthnUser(ctx context.Context) (*WebAuthnUser, error) {
 
 // UpdateCredentialSignCount updates the sign count for a WebAuthn credential.
 func (d *Database) UpdateCredentialSignCount(ctx context.Context, credentialID []byte, signCount uint32) error {
-	done := observeQuery("update_credential_sign_count")
+	done := d.observeQuery("update_credential_sign_count")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -272,7 +272,7 @@ func (d *Database) UpdateCredentialSignCount(ctx context.Context, credentialID [
 
 // DeleteWebAuthnCredential deletes a WebAuthn credential for a user.
 func (d *Database) DeleteWebAuthnCredential(ctx context.Context, userID, credentialID int64) error {
-	done := observeQuery("delete_webauthn_credential")
+	done := d.observeQuery("delete_webauthn_credential")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -300,7 +300,7 @@ func (d *Database) DeleteWebAuthnCredential(ctx context.Context, userID, credent
 
 // ListWebAuthnCredentials returns all WebAuthnCredential records for a user.
 func (d *Database) ListWebAuthnCredentials(ctx context.Context, userID int64) ([]WebAuthnCredential, error) {
-	done := observeQuery("list_webauthn_credentials")
+	done := d.observeQuery("list_webauthn_credentials")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -346,7 +346,7 @@ func (d *Database) ListWebAuthnCredentials(ctx context.Context, userID int64) ([
 
 // SaveWebAuthnSession saves a WebAuthn session with a TTL.
 func (d *Database) SaveWebAuthnSession(ctx context.Context, sessionID string, data []byte, ttl time.Duration) error {
-	done := observeQuery("save_webauthn_session")
+	done := d.observeQuery("save_webauthn_session")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -368,7 +368,7 @@ func (d *Database) SaveWebAuthnSession(ctx context.Context, sessionID string, da
 
 // GetWebAuthnSession retrieves and deletes a WebAuthn session by ID.
 func (d *Database) GetWebAuthnSession(ctx context.Context, sessionID string) ([]byte, error) {
-	done := observeQuery("get_webauthn_session")
+	done := d.observeQuery("get_webauthn_session")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -418,7 +418,7 @@ func (d *Database) GetWebAuthnSession(ctx context.Context, sessionID string) ([]
 
 // CleanExpiredWebAuthnSessions removes expired WebAuthn sessions.
 func (d *Database) CleanExpiredWebAuthnSessions(ctx context.Context) error {
-	done := observeQuery("clean_expired_webauthn_sessions")
+	done := d.observeQuery("clean_expired_webauthn_sessions")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

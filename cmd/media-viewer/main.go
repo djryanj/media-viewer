@@ -94,7 +94,8 @@ func main() {
 	// Initialize database
 	dbStart := time.Now()
 	dbOpts := &database.Options{
-		MmapDisabled: config.DBMmapDisabled,
+		MmapDisabled:         config.DBMmapDisabled,
+		SlowQueryThresholdMs: config.SlowQueryThresholdMs,
 	}
 	db, dbInfo, err := database.New(bgCtx, config.DatabasePath, dbOpts)
 	if err != nil {
@@ -103,9 +104,9 @@ func main() {
 	startup.LogDatabaseInit(time.Since(dbStart), dbInfo)
 
 	// Start background WAL checkpoint worker (auto-checkpointing is disabled at
-	// connection level; this worker runs PASSIVE checkpoints on a timer to keep
+	// connection level; this worker runs RESTART checkpoints on a timer to keep
 	// the WAL file from growing unboundedly without blocking writers).
-	db.StartCheckpointWorker(bgCtx)
+	db.StartCheckpointWorker(bgCtx, config.WALCheckpointInterval)
 
 	// Clean up expired sessions periodically (use configured interval)
 	go func() {

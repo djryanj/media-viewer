@@ -80,7 +80,7 @@ func (d *Database) HasUsers(ctx context.Context) bool {
 
 // CreateUser creates the single user with the given password.
 func (d *Database) CreateUser(ctx context.Context, password string) error {
-	done := observeQuery("create_user")
+	done := d.observeQuery("create_user")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -122,7 +122,7 @@ func (d *Database) CreateUser(ctx context.Context, password string) error {
 
 // ValidatePassword checks the password and returns the user if valid.
 func (d *Database) ValidatePassword(ctx context.Context, password string) (*User, error) {
-	done := observeQuery("validate_password")
+	done := d.observeQuery("validate_password")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -155,7 +155,7 @@ func (d *Database) ValidatePassword(ctx context.Context, password string) (*User
 
 // CreateSession creates a new session for a user.
 func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, error) {
-	done := observeQuery("create_session")
+	done := d.observeQuery("create_session")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -200,7 +200,7 @@ func (d *Database) CreateSession(ctx context.Context, userID int64) (*Session, e
 
 // ValidateSession checks if a session token is valid.
 func (d *Database) ValidateSession(ctx context.Context, token string) (*User, error) {
-	done := observeQuery("validate_session")
+	done := d.observeQuery("validate_session")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -264,7 +264,7 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 
 // ExtendSession extends the expiration time of an existing session.
 func (d *Database) ExtendSession(ctx context.Context, token string) error {
-	done := observeQuery("extend_session")
+	done := d.observeQuery("extend_session")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -345,7 +345,7 @@ func (d *Database) DeleteAllSessions(ctx context.Context) error {
 
 // CleanExpiredSessions removes expired sessions from the database.
 func (d *Database) CleanExpiredSessions(ctx context.Context) error {
-	done := observeQuery("clean_expired_sessions")
+	done := d.observeQuery("clean_expired_sessions")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -364,7 +364,7 @@ func (d *Database) CleanExpiredSessions(ctx context.Context) error {
 
 // UpdatePassword updates the user's password and invalidates all sessions.
 func (d *Database) UpdatePassword(ctx context.Context, newPassword string) error {
-	done := observeQuery("update_password")
+	done := d.observeQuery("update_password")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

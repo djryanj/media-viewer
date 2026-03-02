@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.15.3] - Unreleased
+
+### Changed
+
+- refactor(config): `WAL_CHECKPOINT_INTERVAL_SECONDS` and `SLOW_QUERY_THRESHOLD_MS` environment variables are now parsed, validated, and logged to the console during startup in `startup.go`, following the same pattern as all other environment variables. Previously both were read directly from the environment at call-time inside `database.go` (`getCheckpointInterval()` / `getSlowQueryThreshold()`). The parsed values flow through `Config` into `database.Options` (`SlowQueryThresholdMs`) and directly into `StartCheckpointWorker(ctx, interval)`, which now receives the interval as a parameter rather than reading the environment itself. The package-level `observeQuery()` function has been converted to a `(*Database).observeQuery()` method so it can read `d.slowQueryThreshold` from the struct instead of calling `os.Getenv` on every query. [#395](https://github.com/djryanj/media-viewer/issues/395)
+
+### Fixed
+
+- feat(database): background WAL checkpoint worker that runs a `RESTART` checkpoint on a configurable interval (default 30 seconds, tunable via `WAL_CHECKPOINT_INTERVAL_SECONDS`). A final checkpoint is also run at shutdown before closing the database. `RESTART` mode resets the WAL write position after checkpointing, preventing the WAL file from growing unboundedly when readers are continuously active. [#395](https://github.com/djryanj/media-viewer/issues/395)
+
 ## [0.15.2] - 03-02-2026
 
 ### Tests
@@ -22,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- feat(database): background WAL checkpoint worker that runs a `PASSIVE` checkpoint on a configurable interval (default 5 minutes, tunable via `WAL_CHECKPOINT_INTERVAL_SECONDS`). A final checkpoint is also run at shutdown before closing the database.
 - feat(metrics): three new WAL checkpoint metrics: `media_viewer_db_wal_checkpoint_total` (counter), `media_viewer_db_wal_checkpoint_duration_seconds` (histogram), and `media_viewer_db_wal_pages` (gauge with `log`/`checkpointed`/`busy` labels) to track checkpoint health and WAL file size over time.
 
 ## [0.15.1] - 03-01-2026

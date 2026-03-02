@@ -3031,9 +3031,7 @@ func TestStartCheckpointWorker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	t.Setenv("WAL_CHECKPOINT_INTERVAL_SECONDS", "0.05") // 50ms for fast test
-
 	// Should return immediately; goroutine exits when ctx is canceled.
-	db.StartCheckpointWorker(ctx)
+	db.StartCheckpointWorker(ctx, 50*time.Millisecond)
 	<-ctx.Done() // wait for the worker context to expire
 }
