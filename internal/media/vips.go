@@ -97,14 +97,16 @@ func InitVips() error {
 	vips.LoggingSettings(logHandler, vipsLogLevel)
 
 	// Start vips with conservative memory settings
-	vips.Startup(&vips.Config{
+	if err := vips.Startup(&vips.Config{
 		ConcurrencyLevel: 1,                // Process one image at a time to control memory
 		MaxCacheMem:      50 * 1024 * 1024, // 50MB cache
 		MaxCacheSize:     100,              // Max 100 operations cached
 		ReportLeaks:      false,
 		CacheTrace:       false,
 		CollectStats:     false,
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to start libvips: %w", err)
+	}
 
 	vipsInitialized = true
 	vipsAvailable = true
