@@ -43,7 +43,7 @@ Complete reference for all environment variables supported by Media Viewer.
 | `LOG_STATIC_FILES`                | `false`        | Log static file requests                                        |
 | `LOG_HEALTH_CHECKS`               | `true`         | Log health check requests                                       |
 | `SLOW_QUERY_THRESHOLD_MS`         | `100`          | Threshold (ms) for logging slow database queries                |
-| `WAL_CHECKPOINT_INTERVAL_SECONDS` | `300`          | Interval (seconds) between background WAL checkpoint operations |
+| `WAL_CHECKPOINT_INTERVAL_SECONDS` | `30`           | Interval (seconds) between background WAL checkpoint operations |
 
 ## Paths
 
@@ -621,13 +621,13 @@ SLOW_QUERY_THRESHOLD_MS=100
 Interval in seconds between background WAL (Write-Ahead Log) checkpoint operations.
 
 ```bash
-WAL_CHECKPOINT_INTERVAL_SECONDS=300
+WAL_CHECKPOINT_INTERVAL_SECONDS=30
 ```
 
-- Default: `300` (5 minutes)
-- Auto-checkpointing is disabled at the connection level (`wal_autocheckpoint=0`) to prevent checkpoint I/O from blocking write-commit transactions. This background worker performs `PASSIVE` checkpoints instead, which fold WAL pages back into the main database file without blocking readers.
-- Lower this value if the WAL file (`media_viewer_db_size_bytes{file="wal"}`) grows large between checkpoints — a large WAL increases read latency.
-- Raise this value to reduce checkpoint frequency on slow storage (NFS, spinning disk).
+- Default: `30` (30 seconds)
+- Auto-checkpointing is disabled at the connection level (`wal_autocheckpoint=0`) to prevent checkpoint I/O from blocking write-commit transactions. This background worker performs `RESTART` checkpoints: it waits for any active read transactions to finish, flushes all WAL pages to the main database file, then resets the WAL write position back to the start of the file — keeping the WAL from growing unboundedly.
+- Lower this value if the WAL file (`media_viewer_db_wal_pages{type="log"}`) is still growing large between checkpoints.
+- Raise this value to reduce checkpoint frequency on slow storage (NFS, spinning disk). A higher value allows the WAL file to grow larger, which increases read overhead.
 - A final checkpoint is also run at shutdown regardless of this interval.
 
 ## Duration Format

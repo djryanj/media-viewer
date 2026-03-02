@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,14 +25,11 @@ func TestSlowQueryLogging(t *testing.T) {
 		log.SetFlags(oldFlags)
 	}()
 
-	// Set slow query threshold to 0 for testing
-	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "0")
-	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
-
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 	dbOpts := &Options{
-		MmapDisabled: false, // Set to true if you want to disable mmap
+		MmapDisabled:         false,
+		SlowQueryThresholdMs: 0.001, // ~0ms — every query will be logged as slow
 	}
 	db, _, err := New(context.Background(), dbPath, dbOpts)
 	if err != nil {
@@ -70,36 +66,31 @@ func TestSlowQueryLogging(t *testing.T) {
 func TestSlowQueryThresholdConfiguration(t *testing.T) {
 	tests := []struct {
 		name         string
-		envValue     string
-		expectedSec  float64
+		thresholdSec float64
 		shouldLog    bool
 		queryTimeSec float64
 	}{
 		{
-			name:         "Default 100ms threshold",
-			envValue:     "",
-			expectedSec:  0.1,
+			name:         "Default 100ms threshold — fast query not logged",
+			thresholdSec: 0.1,
 			shouldLog:    false,
 			queryTimeSec: 0.05,
 		},
 		{
-			name:         "Custom 50ms threshold - slow query",
-			envValue:     "50",
-			expectedSec:  0.05,
+			name:         "50ms threshold — slow query logged",
+			thresholdSec: 0.05,
 			shouldLog:    true,
 			queryTimeSec: 0.06,
 		},
 		{
-			name:         "Custom 500ms threshold - fast query",
-			envValue:     "500",
-			expectedSec:  0.5,
+			name:         "500ms threshold — fast query not logged",
+			thresholdSec: 0.5,
 			shouldLog:    false,
 			queryTimeSec: 0.2,
 		},
 		{
-			name:         "Zero threshold - log everything",
-			envValue:     "0",
-			expectedSec:  0.0,
+			name:         "Zero threshold — every query logged",
+			thresholdSec: 0.0,
 			shouldLog:    true,
 			queryTimeSec: 0.001,
 		},
@@ -107,14 +98,10 @@ func TestSlowQueryThresholdConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				os.Setenv("SLOW_QUERY_THRESHOLD_MS", tt.envValue)
-				defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
-			}
+			db := &Database{slowQueryThreshold: tt.thresholdSec}
 
-			threshold := getSlowQueryThreshold()
-			if threshold != tt.expectedSec {
-				t.Errorf("Expected threshold=%v, got %v", tt.expectedSec, threshold)
+			if db.slowQueryThreshold != tt.thresholdSec {
+				t.Errorf("Expected threshold=%v, got %v", tt.thresholdSec, db.slowQueryThreshold)
 			}
 
 			var logBuf bytes.Buffer
@@ -123,7 +110,7 @@ func TestSlowQueryThresholdConfiguration(t *testing.T) {
 			defer log.SetOutput(oldOutput)
 
 			// Simulate query timing using the new closure pattern
-			done := observeQuery("test_operation")
+			done := db.observeQuery("test_operation")
 			time.Sleep(time.Duration(tt.queryTimeSec * float64(time.Second)))
 			done(nil)
 
@@ -521,9 +508,6 @@ func TestListDirectory_FolderCountAccuracy(t *testing.T) {
 // TestObserveQuerySlowQueryThresholdRespected verifies that queries below
 // the threshold are NOT logged as slow, and queries above ARE logged.
 func TestObserveQuerySlowQueryThresholdRespected(t *testing.T) {
-	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "100")
-	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
-
 	var logBuf bytes.Buffer
 	oldOutput := log.Writer()
 	oldFlags := log.Flags()
@@ -534,8 +518,10 @@ func TestObserveQuerySlowQueryThresholdRespected(t *testing.T) {
 		log.SetFlags(oldFlags)
 	}()
 
+	db := &Database{slowQueryThreshold: 0.1} // 100ms
+
 	// Fast query — should NOT be logged as slow
-	done := observeQuery("fast_query")
+	done := db.observeQuery("fast_query")
 	done(nil)
 
 	logOutput := logBuf.String()
@@ -546,7 +532,7 @@ func TestObserveQuerySlowQueryThresholdRespected(t *testing.T) {
 	logBuf.Reset()
 
 	// Slow query — should be logged
-	done = observeQuery("slow_query")
+	done = db.observeQuery("slow_query")
 	time.Sleep(120 * time.Millisecond)
 	done(nil)
 
@@ -562,8 +548,7 @@ func TestObserveQuerySlowQueryThresholdRespected(t *testing.T) {
 // TestObserveQueryErrorStatusInLog verifies that error status and message
 // appear correctly in slow query log output.
 func TestObserveQueryErrorStatusInLog(t *testing.T) {
-	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "0")
-	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
+	db := &Database{slowQueryThreshold: 0} // log every query
 
 	var logBuf bytes.Buffer
 	oldOutput := log.Writer()
@@ -576,7 +561,7 @@ func TestObserveQueryErrorStatusInLog(t *testing.T) {
 	}()
 
 	// Success case
-	done := observeQuery("log_status_success")
+	done := db.observeQuery("log_status_success")
 	done(nil)
 
 	logOutput := logBuf.String()
@@ -587,7 +572,7 @@ func TestObserveQueryErrorStatusInLog(t *testing.T) {
 	logBuf.Reset()
 
 	// Error case
-	done = observeQuery("log_status_error")
+	done = db.observeQuery("log_status_error")
 	done(errors.New("context deadline exceeded"))
 
 	logOutput = logBuf.String()
@@ -602,8 +587,7 @@ func TestObserveQueryErrorStatusInLog(t *testing.T) {
 // TestObserveQueryOperationNameInLog verifies the operation name appears
 // correctly in slow query log output.
 func TestObserveQueryOperationNameInLog(t *testing.T) {
-	os.Setenv("SLOW_QUERY_THRESHOLD_MS", "0")
-	defer os.Unsetenv("SLOW_QUERY_THRESHOLD_MS")
+	db := &Database{slowQueryThreshold: 0} // log every query
 
 	operations := []string{
 		"upsert_file",
@@ -623,7 +607,7 @@ func TestObserveQueryOperationNameInLog(t *testing.T) {
 				log.SetFlags(oldFlags)
 			}()
 
-			done := observeQuery(op)
+			done := db.observeQuery(op)
 			done(nil)
 
 			logOutput := logBuf.String()

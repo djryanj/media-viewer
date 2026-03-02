@@ -83,7 +83,9 @@ type Config struct {
 	TranscodingEnabled bool
 
 	// Database options
-	DBMmapDisabled bool // Disable SQLite mmap for unreliable storage (Longhorn, NFS)
+	DBMmapDisabled        bool          // Disable SQLite mmap for unreliable storage (Longhorn, NFS)
+	WALCheckpointInterval time.Duration // Interval between background WAL checkpoint operations
+	SlowQueryThresholdMs  float64       // Threshold (ms) above which queries are logged as slow
 
 	// WebAuthn configuration
 	WebAuthnEnabled       bool
@@ -113,6 +115,8 @@ type rawConfig struct {
 	logHealthChecks       bool
 	metricsEnabled        bool
 	dbMmapDisabled        bool
+	walCheckpointInterval string
+	slowQueryThresholdMs  string
 	webAuthnRPID          string
 	webAuthnRPDisplayName string
 	webAuthnRPOrigins     string
@@ -137,6 +141,8 @@ func loadRawConfig() *rawConfig {
 		logHealthChecks:       getEnvBool("LOG_HEALTH_CHECKS", true),
 		metricsEnabled:        getEnvBool("METRICS_ENABLED", true),
 		dbMmapDisabled:        getEnvBool("DB_MMAP_DISABLED", false),
+		walCheckpointInterval: getEnv("WAL_CHECKPOINT_INTERVAL_SECONDS", "30"),
+		slowQueryThresholdMs:  getEnv("SLOW_QUERY_THRESHOLD_MS", "100"),
 		webAuthnRPID:          getEnv("WEBAUTHN_RP_ID", ""),
 		webAuthnRPDisplayName: getEnv("WEBAUTHN_RP_DISPLAY_NAME", "Media Viewer"),
 		webAuthnRPOrigins:     getEnv("WEBAUTHN_RP_ORIGINS", ""),
@@ -161,6 +167,8 @@ func logRawConfig(rc *rawConfig) {
 	if rc.dbMmapDisabled {
 		logging.Info("    (SIGBUS protection enabled — recommended for Longhorn/NFS/network storage)")
 	}
+	logging.Info("  WAL_CHECKPOINT_INTERVAL_SECONDS: %ss", rc.walCheckpointInterval)
+	logging.Info("  SLOW_QUERY_THRESHOLD_MS:         %sms", rc.slowQueryThresholdMs)
 	logging.Info("  INDEX_INTERVAL:          %s", rc.indexInterval)
 	logging.Info("  THUMBNAIL_INTERVAL:      %s", rc.thumbnailInterval)
 	logging.Info("  POLL_INTERVAL:           %s", rc.pollInterval)
@@ -200,21 +208,25 @@ func logWebAuthnConfig(rc *rawConfig) {
 
 // parsedDurations holds all parsed time.Duration values.
 type parsedDurations struct {
-	indexInterval     time.Duration
-	thumbnailInterval time.Duration
-	pollInterval      time.Duration
-	sessionDuration   time.Duration
-	sessionCleanup    time.Duration
+	indexInterval         time.Duration
+	thumbnailInterval     time.Duration
+	pollInterval          time.Duration
+	sessionDuration       time.Duration
+	sessionCleanup        time.Duration
+	walCheckpointInterval time.Duration
+	slowQueryThresholdMs  float64
 }
 
 // parseDurations parses all duration strings from the raw config.
 func parseDurations(rc *rawConfig) parsedDurations {
 	return parsedDurations{
-		indexInterval:     parseDurationWithDefault(rc.indexInterval, "INDEX_INTERVAL", 30*time.Minute),
-		thumbnailInterval: parseDurationWithDefault(rc.thumbnailInterval, "THUMBNAIL_INTERVAL", 6*time.Hour),
-		pollInterval:      parseDurationWithDefault(rc.pollInterval, "POLL_INTERVAL", 30*time.Second),
-		sessionDuration:   parseDurationWithDefault(rc.sessionDuration, "SESSION_DURATION", 5*time.Minute),
-		sessionCleanup:    parseDurationWithDefault(rc.sessionCleanup, "SESSION_CLEANUP_INTERVAL", 1*time.Minute),
+		indexInterval:         parseDurationWithDefault(rc.indexInterval, "INDEX_INTERVAL", 30*time.Minute),
+		thumbnailInterval:     parseDurationWithDefault(rc.thumbnailInterval, "THUMBNAIL_INTERVAL", 6*time.Hour),
+		pollInterval:          parseDurationWithDefault(rc.pollInterval, "POLL_INTERVAL", 30*time.Second),
+		sessionDuration:       parseDurationWithDefault(rc.sessionDuration, "SESSION_DURATION", 5*time.Minute),
+		sessionCleanup:        parseDurationWithDefault(rc.sessionCleanup, "SESSION_CLEANUP_INTERVAL", 1*time.Minute),
+		walCheckpointInterval: parseFloatSecondsWithDefault(rc.walCheckpointInterval, "WAL_CHECKPOINT_INTERVAL_SECONDS", 30*time.Second),
+		slowQueryThresholdMs:  parseFloatWithDefault(rc.slowQueryThresholdMs, "SLOW_QUERY_THRESHOLD_MS", 100),
 	}
 }
 
@@ -227,6 +239,36 @@ func parseDurationWithDefault(value, name string, defaultVal time.Duration) time
 		return defaultVal
 	}
 	return d
+}
+
+// parseFloatSecondsWithDefault parses a float string representing seconds,
+// logging a warning and returning the default if parsing fails or the value
+// is non-positive.
+func parseFloatSecondsWithDefault(value, name string, defaultVal time.Duration) time.Duration {
+	secs, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		logging.Warn("  Invalid %s %q, using default: %v", name, value, defaultVal)
+		return defaultVal
+	}
+	if secs <= 0 {
+		return defaultVal
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
+// parseFloatWithDefault parses a float string, logging a warning and returning
+// the default if parsing fails. Unlike parseFloatSecondsWithDefault, zero is a
+// valid value (e.g. SLOW_QUERY_THRESHOLD_MS=0 means log every query).
+func parseFloatWithDefault(value, name string, defaultVal float64) float64 {
+	f, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		logging.Warn("  Invalid %s %q, using default: %v", name, value, defaultVal)
+		return defaultVal
+	}
+	if f < 0 {
+		return defaultVal
+	}
+	return f
 }
 
 // parseWebAuthnConfig parses and validates WebAuthn configuration.
@@ -333,6 +375,8 @@ func LoadConfig() (*Config, error) {
 		TranscoderLogDir:      rc.transcoderLogDir,
 		GPUAccel:              rc.gpuAccel,
 		DBMmapDisabled:        rc.dbMmapDisabled,
+		WALCheckpointInterval: durations.walCheckpointInterval,
+		SlowQueryThresholdMs:  durations.slowQueryThresholdMs,
 		WebAuthnEnabled:       webAuthnEnabled,
 		WebAuthnRPID:          rc.webAuthnRPID,
 		WebAuthnRPDisplayName: rc.webAuthnRPDisplayName,
