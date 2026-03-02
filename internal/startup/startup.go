@@ -244,11 +244,6 @@ func parseWebAuthnConfig(rc *rawConfig) (enabled bool, origins []string) {
 		origins = []string{"https://" + rc.webAuthnRPID}
 	}
 
-	if len(origins) == 0 {
-		logging.Warn("  WebAuthn RP ID set but no origins configured, WebAuthn disabled")
-		return false, nil
-	}
-
 	return true, origins
 }
 

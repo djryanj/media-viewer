@@ -1,9 +1,13 @@
 package streaming
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
@@ -481,17 +485,25 @@ func TestTimeoutWriterChunkedWrites(t *testing.T) {
 	}
 }
 
-func TestTimeoutWriterCloseIdempotent(_ *testing.T) {
+func TestTimeoutWriterCloseIdempotent(t *testing.T) {
 	ctx := context.Background()
 	w := httptest.NewRecorder()
 	config := DefaultTimeoutWriterConfig()
 
 	tw := NewTimeoutWriter(ctx, w, config)
 
-	// Close multiple times should not panic
-	tw.Close()
-	tw.Close()
-	tw.Close()
+	// First close: normal path sets tw.closed=true.
+	if err := tw.Close(); err != nil {
+		t.Fatalf("first Close() returned unexpected error: %v", err)
+	}
+	// Second close: exercises the `if tw.closed { return nil }` guard (writer.go:239).
+	if err := tw.Close(); err != nil {
+		t.Errorf("second Close() returned unexpected error: %v", err)
+	}
+	// Third call for good measure.
+	if err := tw.Close(); err != nil {
+		t.Errorf("third Close() returned unexpected error: %v", err)
+	}
 }
 
 func BenchmarkTimeoutWriterWrite(b *testing.B) {
@@ -519,5 +531,228 @@ func BenchmarkTimeoutWriterCreation(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		tw := NewTimeoutWriter(ctx, w, config)
 		tw.Close()
+	}
+}
+
+// =============================================================================
+// blockingResponseWriter — simulates a slow/stalled client
+// =============================================================================
+
+// blockingResponseWriter is a minimal http.ResponseWriter whose Write blocks
+// until the unblock channel is closed, simulating a stalled client.
+type blockingResponseWriter struct {
+	header  http.Header
+	unblock chan struct{}
+}
+
+func newBlockingResponseWriter() *blockingResponseWriter {
+	return &blockingResponseWriter{
+		header:  make(http.Header),
+		unblock: make(chan struct{}),
+	}
+}
+
+func (b *blockingResponseWriter) Header() http.Header { return b.header }
+func (b *blockingResponseWriter) WriteHeader(_ int)   {}
+func (b *blockingResponseWriter) Write(p []byte) (int, error) {
+	<-b.unblock
+	return len(p), nil
+}
+
+// =============================================================================
+// Write-timeout and context-cancel coverage
+// =============================================================================
+
+// TestTimeoutWriterWriteTimeout verifies that a stalled write returns
+// ErrWriteTimeout once WriteTimeout elapses.
+func TestTimeoutWriterWriteTimeout(t *testing.T) {
+	brw := newBlockingResponseWriter()
+	config := DefaultTimeoutWriterConfig()
+	config.WriteTimeout = 100 * time.Millisecond
+	config.IdleTimeout = 0 // disable idle checker interference
+
+	tw := NewTimeoutWriter(context.Background(), brw, config)
+	defer tw.Close()
+
+	_, err := tw.Write([]byte("data that will never be written"))
+	if !errors.Is(err, ErrWriteTimeout) {
+		t.Errorf("expected ErrWriteTimeout, got %v", err)
+	}
+}
+
+// TestTimeoutWriterContextCancelDuringWrite verifies that canceling the parent
+// context while a write is blocked returns ErrClientGone.
+func TestTimeoutWriterContextCancelDuringWrite(t *testing.T) {
+	brw := newBlockingResponseWriter()
+	config := DefaultTimeoutWriterConfig()
+	config.WriteTimeout = 5 * time.Second // long enough to not fire first
+	config.IdleTimeout = 0
+
+	ctx, cancel := context.WithCancel(context.Background())
+	tw := NewTimeoutWriter(ctx, brw, config)
+	defer tw.Close()
+
+	// Cancel the context while the write is blocked in the goroutine.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := tw.Write([]byte("blocked write"))
+	if !errors.Is(err, ErrClientGone) {
+		t.Errorf("expected ErrClientGone, got %v", err)
+	}
+}
+
+// =============================================================================
+// Idle-timeout coverage
+// =============================================================================
+
+// TestTimeoutWriterIdleTimeout verifies that the idle checker cancels the
+// context and subsequent writes fail after IdleTimeout elapses without activity.
+func TestTimeoutWriterIdleTimeout(t *testing.T) {
+	w := httptest.NewRecorder()
+	config := DefaultTimeoutWriterConfig()
+	config.IdleTimeout = 200 * time.Millisecond // ticker fires every 50 ms
+	config.WriteTimeout = 30 * time.Second
+
+	tw := NewTimeoutWriter(context.Background(), w, config)
+	defer tw.Close()
+
+	// Successful first write sets lastWrite.
+	if _, err := tw.Write([]byte("initial")); err != nil {
+		t.Fatalf("initial write failed: %v", err)
+	}
+
+	// Wait long enough for the idle checker to detect inactivity and cancel.
+	time.Sleep(500 * time.Millisecond)
+
+	// Subsequent write must fail after the idle timeout fired.
+	_, err := tw.Write([]byte("post-idle write"))
+	if err == nil {
+		t.Fatal("expected error after idle timeout, got nil")
+	}
+}
+
+// =============================================================================
+// StreamWithTimeout coverage
+// =============================================================================
+
+// TestStreamWithTimeout verifies the happy path: data is copied and headers set.
+func TestStreamWithTimeout(t *testing.T) {
+	w := httptest.NewRecorder()
+	data := []byte("stream content for timeout writer")
+	config := DefaultTimeoutWriterConfig()
+
+	err := StreamWithTimeout(context.Background(), w, bytes.NewReader(data), config)
+	if err != nil {
+		t.Fatalf("StreamWithTimeout returned unexpected error: %v", err)
+	}
+
+	if got := w.Body.Bytes(); !bytes.Equal(got, data) {
+		t.Errorf("body mismatch: got %q, want %q", got, data)
+	}
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("expected X-Content-Type-Options=nosniff, got %q", got)
+	}
+}
+
+// TestStreamWithTimeoutWriterTimeout verifies that StreamWithTimeout surfaces
+// ErrWriteTimeout when the underlying ResponseWriter stalls.
+func TestStreamWithTimeoutWriterTimeout(t *testing.T) {
+	brw := newBlockingResponseWriter()
+	config := DefaultTimeoutWriterConfig()
+	config.WriteTimeout = 100 * time.Millisecond
+	config.IdleTimeout = 0
+
+	data := bytes.Repeat([]byte("x"), 1024)
+	err := StreamWithTimeout(context.Background(), brw, bytes.NewReader(data), config)
+	if !errors.Is(err, ErrWriteTimeout) {
+		t.Errorf("expected ErrWriteTimeout from StreamWithTimeout, got %v", err)
+	}
+}
+
+// TestStreamWithTimeoutReturnsReaderError verifies that a reader error is
+// propagated back to the caller of StreamWithTimeout.
+func TestStreamWithTimeoutReaderError(t *testing.T) {
+	w := httptest.NewRecorder()
+	config := DefaultTimeoutWriterConfig()
+
+	expectedErr := errors.New("injected reader error")
+	r := &errorReader{err: expectedErr}
+
+	err := StreamWithTimeout(context.Background(), w, r, config)
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("expected injected reader error, got %v", err)
+	}
+}
+
+// errorReader is an io.Reader that always returns an error.
+type errorReader struct{ err error }
+
+func (e *errorReader) Read(_ []byte) (int, error) { return 0, e.err }
+
+// Ensure errorReader implements io.Reader (compile-time check).
+var _ io.Reader = (*errorReader)(nil)
+
+// TestTimeoutWriterMaxDurationExceeded verifies that Write returns ErrWriteTimeout
+// when the stream has exceeded its configured MaxDuration (writer.go:110-112).
+func TestTimeoutWriterMaxDurationExceeded(t *testing.T) {
+	w := httptest.NewRecorder()
+	config := DefaultTimeoutWriterConfig()
+	config.MaxDuration = 50 * time.Millisecond
+
+	tw := NewTimeoutWriter(context.Background(), w, config)
+
+	// Wait until MaxDuration has elapsed.
+	time.Sleep(100 * time.Millisecond)
+
+	_, err := tw.Write([]byte("late data"))
+	if !errors.Is(err, ErrWriteTimeout) {
+		t.Errorf("expected ErrWriteTimeout after MaxDuration exceeded, got %v", err)
+	}
+}
+
+// cancelOnFirstWrite is a ResponseWriter that invokes cancel() exactly once on
+// the first Write call and then delegates to the embedded ResponseRecorder.
+// Used to trigger context cancellation mid-stream in writeChunked tests.
+type cancelOnFirstWrite struct {
+	*httptest.ResponseRecorder
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (c *cancelOnFirstWrite) Write(p []byte) (int, error) {
+	c.once.Do(c.cancel)
+	return c.ResponseRecorder.Write(p)
+}
+
+// TestWriteChunkedContextCancelBetweenChunks verifies that writeChunked returns
+// contextError() when the context is canceled after the first chunk is written
+// but before the second chunk's context-check select fires (writer.go:129-130).
+// Strategy: a custom ResponseWriter calls cancel() on its first Write; the
+// second chunk iteration then sees ctx.Done() closed and returns ErrClientGone.
+func TestWriteChunkedContextCancelBetweenChunks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	w := &cancelOnFirstWrite{
+		ResponseRecorder: httptest.NewRecorder(),
+		cancel:           cancel,
+	}
+
+	config := DefaultTimeoutWriterConfig()
+	// ChunkSize must be smaller than the payload so at least two chunks are needed.
+	config.ChunkSize = 64
+	config.WriteTimeout = 5 * time.Second
+
+	tw := NewTimeoutWriter(ctx, w, config)
+
+	// 200 bytes > 2 * ChunkSize: first chunk (64 B) succeeds and cancels ctx;
+	// the second iteration's select sees ctx.Done() and returns ErrClientGone.
+	payload := make([]byte, 200)
+	_, err := tw.Write(payload)
+	if !errors.Is(err, ErrClientGone) {
+		t.Errorf("expected ErrClientGone when context canceled between chunks, got %v", err)
 	}
 }

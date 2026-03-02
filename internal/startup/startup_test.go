@@ -1,10 +1,15 @@
 package startup
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"media-viewer/internal/database"
+
+	"github.com/gorilla/mux"
 )
 
 func TestGetBuildInfo(t *testing.T) {
@@ -786,6 +791,273 @@ func TestParsedDurationsZeroValue(t *testing.T) {
 }
 
 // =============================================================================
+// resolveDirectories — error paths
+// =============================================================================
+
+// TestResolveDirectories_MediaDirIsFile covers the media-directory warning path
+// (startup.go:277-279): mediaDir points to a file → ensureDirectory returns an
+// error but resolveDirectories only logs a Warn and continues.
+func TestResolveDirectories_MediaDirIsFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file where mediaDir would be — ensureDirectory returns "not a directory"
+	mediaFile := filepath.Join(tmpDir, "media_file")
+	if err := os.WriteFile(mediaFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// databaseDir must be valid (writable dir) so the function succeeds overall.
+	dbDir := filepath.Join(tmpDir, "database")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	rc := &rawConfig{
+		mediaDir:    mediaFile, // file, not dir
+		cacheDir:    tmpDir,
+		databaseDir: dbDir,
+	}
+
+	// Should succeed — media dir failure is a warning, not an error.
+	_, _, _, err := resolveDirectories(rc)
+	if err != nil {
+		t.Errorf("expected nil error when mediaDir is a file (warning only), got: %v", err)
+	}
+}
+
+// TestResolveDirectories_DatabaseDirIsFile covers the database-directory error
+// path (startup.go:282-284): databaseDir points to an existing file →
+// ensureDirectory returns an error and resolveDirectories propagates it.
+func TestResolveDirectories_DatabaseDirIsFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file where databaseDir would be.
+	dbFile := filepath.Join(tmpDir, "db_file")
+	if err := os.WriteFile(dbFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	rc := &rawConfig{
+		mediaDir:    tmpDir,
+		cacheDir:    tmpDir,
+		databaseDir: dbFile, // file, not dir
+	}
+
+	_, _, _, err := resolveDirectories(rc)
+	if err == nil {
+		t.Error("expected error when databaseDir is a file")
+	}
+}
+
+// =============================================================================
+// ensureDirectory — error paths
+// =============================================================================
+
+// TestEnsureDirectoryPathIsFile covers the "path exists but is not a
+// directory" branch (startup.go:701-703).
+func TestEnsureDirectoryPathIsFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "not_a_dir")
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	err := ensureDirectory(filePath, "test")
+	if err == nil {
+		t.Fatal("expected error for path that is a file, got nil")
+	}
+}
+
+// =============================================================================
+// setupOptionalDir — failure paths
+// =============================================================================
+
+// TestSetupOptionalDirMkdirAllFails covers the MkdirAll failure branch
+// (startup.go:362-365): the target path contains a file component so
+// os.MkdirAll cannot create a directory there.
+func TestSetupOptionalDirMkdirAllFails(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file that blocks the directory creation.
+	blockFile := filepath.Join(tmpDir, "blockfile")
+	if err := os.WriteFile(blockFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Passing a path whose parent component is a file causes MkdirAll to fail.
+	target := filepath.Join(blockFile, "nested")
+	result := setupOptionalDir(target, "test")
+	if result {
+		t.Error("expected setupOptionalDir to return false when MkdirAll fails")
+	}
+}
+
+// TestSetupOptionalDirWriteTestFails covers the write-test failure branch
+// (startup.go:367-372) when the directory exists but is not writable.
+func TestSetupOptionalDirWriteTestFails(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping write-permission test when running as root")
+	}
+	tmpDir := t.TempDir()
+	target := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(target, 0o555); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(target, 0o755) }) //nolint:errcheck
+
+	result := setupOptionalDir(target, "test")
+	if result {
+		t.Error("expected setupOptionalDir to return false for read-only directory")
+	}
+}
+
+// =============================================================================
+// Log init / lifecycle helpers — should not panic
+// =============================================================================
+
+func TestLogDatabaseInitNilInfo(_ *testing.T) {
+	// Covers LogDatabaseInit with nil dbInfo (the nil guard).
+	LogDatabaseInit(0, nil)
+}
+
+func TestLogDatabaseInitFullInfo(_ *testing.T) {
+	// Covers LogDatabaseInit with a fully-populated Info including warning fields.
+	LogDatabaseInit(42*time.Millisecond, &database.Info{
+		Path:              "/data/media.db",
+		PermissionWarning: "some permission warning",
+		SQLiteVersion:     "3.40.0",
+		MmapStatus:        "mmap enabled",
+		MmapWarning:       "some mmap warning",
+	})
+}
+
+func TestLogTranscoderInitDisabled(_ *testing.T) {
+	LogTranscoderInit(false)
+}
+
+func TestLogTranscoderInitEnabled(_ *testing.T) {
+	// FFmpeg may or may not be present; the function must not panic either way.
+	LogTranscoderInit(true)
+}
+
+func TestLogThumbnailInitDisabled(_ *testing.T) {
+	LogThumbnailInit(false)
+}
+
+func TestLogThumbnailInitEnabled(_ *testing.T) {
+	LogThumbnailInit(true)
+}
+
+func TestLogIndexerInit(_ *testing.T) {
+	LogIndexerInit(30*time.Minute, 30*time.Second)
+}
+
+func TestLogIndexerStarted(_ *testing.T) {
+	LogIndexerStarted()
+}
+
+// =============================================================================
+// GetRoutes / LogHTTPRoutes
+// =============================================================================
+
+func TestGetRoutesEmpty(t *testing.T) {
+	router := mux.NewRouter()
+	routes, err := GetRoutes(router)
+	if err != nil {
+		t.Fatalf("GetRoutes on empty router failed: %v", err)
+	}
+	if len(routes) != 0 {
+		t.Errorf("expected 0 routes for empty router, got %d", len(routes))
+	}
+}
+
+func TestGetRoutesWithRoutes(t *testing.T) {
+	router := mux.NewRouter()
+	router.HandleFunc("/api/v1/files", func(_ http.ResponseWriter, _ *http.Request) {}).Methods("GET").Name("list-files")
+	router.HandleFunc("/api/v1/files/{id}", func(_ http.ResponseWriter, _ *http.Request) {}).Methods("GET", "DELETE")
+	router.HandleFunc("/health", func(_ http.ResponseWriter, _ *http.Request) {})
+
+	routes, err := GetRoutes(router)
+	if err != nil {
+		t.Fatalf("GetRoutes failed: %v", err)
+	}
+	if len(routes) == 0 {
+		t.Error("expected routes to be returned")
+	}
+}
+
+func TestLogHTTPRoutesNoDebug(_ *testing.T) {
+	router := mux.NewRouter()
+	router.HandleFunc("/api/v1/files", func(_ http.ResponseWriter, _ *http.Request) {}).Methods("GET")
+	router.HandleFunc("/static/{path:.*}", func(_ http.ResponseWriter, _ *http.Request) {})
+	LogHTTPRoutes(router, false, false)
+}
+
+func TestLogHTTPRoutesStaticAndHealth(_ *testing.T) {
+	router := mux.NewRouter()
+	router.HandleFunc("/api/v1/search", func(_ http.ResponseWriter, _ *http.Request) {}).Methods("GET")
+	LogHTTPRoutes(router, true, true)
+}
+
+// =============================================================================
+// LogServerStarted
+// =============================================================================
+
+func TestLogServerStartedMetricsEnabled(_ *testing.T) {
+	LogServerStarted(ServerConfig{
+		Port:            "8080",
+		MetricsPort:     "9090",
+		MetricsEnabled:  true,
+		StartupDuration: 250 * time.Millisecond,
+	})
+}
+
+func TestLogServerStartedMetricsDisabled(_ *testing.T) {
+	LogServerStarted(ServerConfig{
+		Port:           "8080",
+		MetricsEnabled: false,
+	})
+}
+
+// =============================================================================
+// Shutdown log helpers
+// =============================================================================
+
+func TestLogShutdownFunctions(_ *testing.T) {
+	LogShutdownInitiated("SIGTERM")
+	LogShutdownStep("stopping indexer")
+	LogShutdownStepComplete("stopped indexer")
+	LogShutdownComplete()
+}
+
+// =============================================================================
+// getRouteGroup
+// =============================================================================
+
+func TestGetRouteGroup(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/api/v1/files", "api/v1"},
+		{"/api/search", "api/search"},
+		{"/health", "health"},
+		{"/static/js/app.js", "static"},
+		{"/", ""},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := getRouteGroup(tt.path)
+			if got != tt.want {
+				t.Errorf("getRouteGroup(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // Benchmarks
 // =============================================================================
 
@@ -834,5 +1106,115 @@ func BenchmarkLoadRawConfig(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = loadRawConfig()
+	}
+}
+
+// =============================================================================
+// LoadConfig integration test
+// =============================================================================
+
+// TestLoadConfigBasic exercises LoadConfig() end-to-end with all required env vars.
+func TestLoadConfigBasic(t *testing.T) {
+	tmpDir := t.TempDir()
+	mediaDir := filepath.Join(tmpDir, "media")
+	cacheDir := filepath.Join(tmpDir, "cache")
+	dbDir := filepath.Join(tmpDir, "database")
+
+	// Create the directories so resolveDirectories succeeds
+	for _, dir := range []string{mediaDir, cacheDir, dbDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	t.Setenv("MEDIA_DIR", mediaDir)
+	t.Setenv("CACHE_DIR", cacheDir)
+	t.Setenv("DATABASE_DIR", dbDir)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.MediaDir != mediaDir {
+		t.Errorf("want MediaDir %q, got %q", mediaDir, cfg.MediaDir)
+	}
+	if cfg.DatabaseDir != dbDir {
+		t.Errorf("want DatabaseDir %q, got %q", dbDir, cfg.DatabaseDir)
+	}
+	if cfg.DatabasePath != filepath.Join(dbDir, "media.db") {
+		t.Errorf("want DatabasePath %q, got %q", filepath.Join(dbDir, "media.db"), cfg.DatabasePath)
+	}
+	// Thumbnails and transcoding should be enabled (dirs were created and are writable)
+	if !cfg.ThumbnailsEnabled {
+		t.Error("expected ThumbnailsEnabled to be true")
+	}
+	if !cfg.TranscodingEnabled {
+		t.Error("expected TranscodingEnabled to be true")
+	}
+}
+
+// TestLoadConfigWithDisabledOptionalDirs tests LoadConfig when optional dirs are not writable.
+// This covers the enabledString(false) branch.
+func TestLoadConfigWithDisabledOptionalDirs(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: test requires non-root user for permission check")
+	}
+
+	tmpDir := t.TempDir()
+	mediaDir := filepath.Join(tmpDir, "media")
+	dbDir := filepath.Join(tmpDir, "database")
+	cacheDir := filepath.Join(tmpDir, "cache-readonly")
+
+	os.MkdirAll(mediaDir, 0o755)
+	os.MkdirAll(dbDir, 0o755)
+	// Create cache dir as read-only so optional dirs (thumbnails, transcoding) can't be created
+	if err := os.MkdirAll(cacheDir, 0o555); err != nil {
+		t.Fatalf("failed to create read-only cache dir: %v", err)
+	}
+	defer os.Chmod(cacheDir, 0o755) //nolint:errcheck
+
+	t.Setenv("MEDIA_DIR", mediaDir)
+	t.Setenv("CACHE_DIR", cacheDir)
+	t.Setenv("DATABASE_DIR", dbDir)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig should not fail even with disabled optional dirs, got: %v", err)
+	}
+
+	// With read-only cache dir, thumbnails and transcoding should be disabled
+	if cfg.ThumbnailsEnabled {
+		t.Error("expected ThumbnailsEnabled=false with read-only cache dir")
+	}
+	if cfg.TranscodingEnabled {
+		t.Error("expected TranscodingEnabled=false with read-only cache dir")
+	}
+}
+func TestLoadConfigDirectoryError(t *testing.T) {
+	// Skip on privileged builds (e.g., running as root has full fs access)
+	if os.Getuid() == 0 {
+		t.Skip("skipping: test requires non-root user for permission check")
+	}
+
+	tmpDir := t.TempDir()
+	mediaDir := filepath.Join(tmpDir, "media")
+	cacheDir := filepath.Join(tmpDir, "cache")
+	dbDir := filepath.Join(tmpDir, "database")
+	os.MkdirAll(mediaDir, 0o755)
+	os.MkdirAll(cacheDir, 0o755)
+	// Create database dir with no write permission
+	if err := os.MkdirAll(dbDir, 0o400); err != nil {
+		t.Fatalf("failed to create read-only dbDir: %v", err)
+	}
+	defer os.Chmod(dbDir, 0o755) //nolint:errcheck
+
+	t.Setenv("MEDIA_DIR", mediaDir)
+	t.Setenv("CACHE_DIR", cacheDir)
+	t.Setenv("DATABASE_DIR", dbDir)
+
+	_, err := LoadConfig()
+	if err == nil {
+		t.Error("expected LoadConfig to return error for read-only database dir")
 	}
 }

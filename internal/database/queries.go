@@ -41,6 +41,8 @@ const (
 	FilterTypeClause = " AND f.type = ?"
 	// TagPrefix is the prefix used for tag search queries.
 	TagPrefix = "tag:"
+	// rootDirName is the display name used for the root media directory.
+	rootDirName = "Media"
 )
 
 // ListOptions specifies options for listing directory contents.
@@ -321,7 +323,7 @@ func (d *Database) buildDirectoryListing(ctx context.Context, opts ListOptions, 
 
 	dirName := filepath.Base(opts.Path)
 	if opts.Path == "" {
-		dirName = "Media"
+		dirName = rootDirName
 	}
 
 	listing := &DirectoryListing{
@@ -349,7 +351,7 @@ func (d *Database) buildDirectoryListing(ctx context.Context, opts ListOptions, 
 // buildBreadcrumb constructs breadcrumb navigation from a file path.
 func buildBreadcrumb(path string) []PathPart {
 	breadcrumb := []PathPart{
-		{Name: "Media", Path: ""},
+		{Name: rootDirName, Path: ""},
 	}
 
 	if path == "" {

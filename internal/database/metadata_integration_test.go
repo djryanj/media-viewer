@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestGetMetadataIntegration(t *testing.T) {
@@ -227,5 +228,64 @@ func TestMetadataConcurrencyIntegration(t *testing.T) {
 		if value != expectedValue {
 			t.Errorf("Expected %s=%s, got %s", key, expectedValue, value)
 		}
+	}
+}
+
+// TestGetLastThumbnailRunNoValue tests GetLastThumbnailRun when no value has been set.
+func TestGetLastThumbnailRunNoValue(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Should return zero time, no error when key doesn't exist
+	ts, err := db.GetLastThumbnailRun(ctx)
+	if err != nil {
+		t.Fatalf("GetLastThumbnailRun on empty DB failed: %v", err)
+	}
+	if !ts.IsZero() {
+		t.Errorf("Expected zero time, got %v", ts)
+	}
+}
+
+// TestSetAndGetLastThumbnailRun tests round-trip of SetLastThumbnailRun / GetLastThumbnailRun.
+func TestSetAndGetLastThumbnailRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Set a specific time
+	now := time.Now().Truncate(time.Second) // RFC3339 has second precision
+	if err := db.SetLastThumbnailRun(ctx, now); err != nil {
+		t.Fatalf("SetLastThumbnailRun failed: %v", err)
+	}
+
+	// Get returns matching time
+	ts, err := db.GetLastThumbnailRun(ctx)
+	if err != nil {
+		t.Fatalf("GetLastThumbnailRun failed: %v", err)
+	}
+	if !ts.Equal(now) {
+		t.Errorf("Expected time %v, got %v", now, ts)
+	}
+
+	// Set zero time — should store empty value
+	if err := db.SetLastThumbnailRun(ctx, time.Time{}); err != nil {
+		t.Fatalf("SetLastThumbnailRun with zero time failed: %v", err)
+	}
+
+	ts2, err := db.GetLastThumbnailRun(ctx)
+	if err != nil {
+		t.Fatalf("GetLastThumbnailRun after zero time set failed: %v", err)
+	}
+	if !ts2.IsZero() {
+		t.Errorf("Expected zero time after clearing, got %v", ts2)
 	}
 }

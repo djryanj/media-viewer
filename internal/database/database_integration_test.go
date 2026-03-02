@@ -44,6 +44,20 @@ func setupTestDB(t testing.TB, opts ...*Options) (db *Database, dbPath string) {
 // New() signature & Options integration tests
 // ---------------------------------------------------------------------------
 
+// TestNewDatabaseInvalidPath covers the writer.PingContext failure path in New()
+// (database.go:135-148) and its cleanup code. The intermediate directory does
+// not exist, so SQLite cannot create the database file and PingContext returns
+// an error, exercising the writer/reader close-on-failure branches.
+func TestNewDatabaseInvalidPath(t *testing.T) {
+	// Use a path whose parent directory does not exist — SQLite will fail to
+	// open/create the file when PingContext triggers the first connection.
+	dbPath := filepath.Join(t.TempDir(), "nonexistent_subdir", "test.db")
+	_, _, err := New(context.Background(), dbPath, nil)
+	if err == nil {
+		t.Error("expected error when the database path is in a non-existent directory")
+	}
+}
+
 func TestNewDatabase(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
@@ -2796,5 +2810,154 @@ func BenchmarkBeginEndBatch(b *testing.B) {
 		if err = db.EndBatch(batch, err); err != nil {
 			b.Fatalf("EndBatch failed: %v", err)
 		}
+	}
+}
+
+func TestGetStatsInitiallyZero(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	stats := db.GetStats()
+	if stats.TotalFiles != 0 {
+		t.Errorf("expected TotalFiles=0 initially, got %d", stats.TotalFiles)
+	}
+	if stats.TotalFolders != 0 {
+		t.Errorf("expected TotalFolders=0 initially, got %d", stats.TotalFolders)
+	}
+	if stats.TotalTags != 0 {
+		t.Errorf("expected TotalTags=0 initially, got %d", stats.TotalTags)
+	}
+}
+
+func TestUpdateStatsAndGetStats(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	newStats := IndexStats{
+		TotalFiles:   42,
+		TotalFolders: 7,
+		TotalTags:    3,
+	}
+	db.UpdateStats(newStats)
+
+	retrieved := db.GetStats()
+	if retrieved.TotalFiles != 42 {
+		t.Errorf("expected TotalFiles=42, got %d", retrieved.TotalFiles)
+	}
+	if retrieved.TotalFolders != 7 {
+		t.Errorf("expected TotalFolders=7, got %d", retrieved.TotalFolders)
+	}
+	if retrieved.TotalTags != 3 {
+		t.Errorf("expected TotalTags=3, got %d", retrieved.TotalTags)
+	}
+}
+
+func TestUpdateStatsOverwrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	db.UpdateStats(IndexStats{TotalFiles: 10, TotalFolders: 2, TotalTags: 1})
+	db.UpdateStats(IndexStats{TotalFiles: 99, TotalFolders: 15, TotalTags: 5})
+
+	retrieved := db.GetStats()
+	if retrieved.TotalFiles != 99 {
+		t.Errorf("expected TotalFiles=99 after overwrite, got %d", retrieved.TotalFiles)
+	}
+	if retrieved.TotalFolders != 15 {
+		t.Errorf("expected TotalFolders=15 after overwrite, got %d", retrieved.TotalFolders)
+	}
+}
+
+func TestRebuildFTSIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Insert some files so FTS has something to rebuild
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	files := []MediaFile{
+		{Path: "/media/rebuild1.mp4", Name: "rebuild1.mp4", Size: 1000, Type: FileTypeVideo},
+		{Path: "/media/rebuild2.jpg", Name: "rebuild2.jpg", Size: 500, Type: FileTypeImage},
+	}
+	for _, f := range files {
+		if err := batch.UpsertFile(ctx, &f); err != nil {
+			t.Fatalf("UpsertFile failed: %v", err)
+		}
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch failed: %v", err)
+	}
+
+	// RebuildFTS should succeed on a properly initialized database
+	if err := db.RebuildFTS(); err != nil {
+		t.Errorf("RebuildFTS failed: %v", err)
+	}
+}
+
+func TestRebuildFTSOnEmptyDatabase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// RebuildFTS should also succeed on an empty database
+	if err := db.RebuildFTS(); err != nil {
+		t.Errorf("RebuildFTS on empty database failed: %v", err)
+	}
+}
+
+func TestVacuumIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	if err := db.Vacuum(); err != nil {
+		t.Errorf("Vacuum failed: %v", err)
+	}
+}
+
+func TestBatchInserterAccessors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	defer func() { _ = db.EndBatch(batch, nil) }()
+
+	// BatchInserter.Tx() should return the underlying transaction
+	tx := batch.Tx()
+	if tx == nil {
+		t.Error("expected non-nil transaction from Tx()")
+	}
+
+	// BatchInserter.StartTime() should return a non-zero time
+	startTime := batch.StartTime()
+	if startTime.IsZero() {
+		t.Error("expected non-zero time from StartTime()")
 	}
 }
