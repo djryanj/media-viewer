@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -35,6 +34,10 @@ func registerDriver(opts *Options) {
 					"PRAGMA cache_size=10000",
 					"PRAGMA temp_store=MEMORY",
 					"PRAGMA busy_timeout=30000",
+					// Disable automatic checkpointing so that checkpoint I/O never
+					// blocks a committing writer. The background checkpoint worker
+					// (StartCheckpointWorker) runs PASSIVE checkpoints on a timer.
+					"PRAGMA wal_autocheckpoint=0",
 				}
 				if mmapDisabled {
 					pragmas = append(pragmas, "PRAGMA mmap_size=0")
@@ -50,15 +53,6 @@ func registerDriver(opts *Options) {
 	})
 }
 
-func getSlowQueryThreshold() float64 {
-	if thresholdStr := os.Getenv("SLOW_QUERY_THRESHOLD_MS"); thresholdStr != "" {
-		if threshold, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
-			return threshold / 1000.0
-		}
-	}
-	return 0.1
-}
-
 // preparedStmts holds pre-compiled SQL statements for hot-path queries.
 // These are prepared once during initialization against the reader pool
 // and reused for every call, eliminating repeated query parsing.
@@ -72,18 +66,20 @@ type preparedStmts struct {
 
 // Database manages all database operations for the media viewer.
 type Database struct {
-	reader       *sql.DB
-	writer       *sql.DB
-	dbPath       string
-	stats        IndexStats
-	statsMu      sync.RWMutex
-	mmapDisabled bool
-	stmts        preparedStmts
+	reader             *sql.DB
+	writer             *sql.DB
+	dbPath             string
+	stats              IndexStats
+	statsMu            sync.RWMutex
+	mmapDisabled       bool
+	stmts              preparedStmts
+	slowQueryThreshold float64 // seconds; queries exceeding this are logged as slow
 }
 
 // Options holds configuration options for database initialization.
 type Options struct {
-	MmapDisabled bool
+	MmapDisabled         bool
+	SlowQueryThresholdMs float64 // Threshold in ms above which queries are logged as slow (0 = use default 100ms)
 }
 
 // Info holds diagnostic info about the database initialization
@@ -95,7 +91,7 @@ type Info struct {
 	MmapWarning       string
 }
 
-func observeQuery(operation string) func(error) {
+func (d *Database) observeQuery(operation string) func(error) {
 	start := time.Now()
 	return func(err error) {
 		duration := time.Since(start).Seconds()
@@ -106,12 +102,56 @@ func observeQuery(operation string) func(error) {
 		metrics.DBQueryTotal.WithLabelValues(operation, status).Inc()
 		metrics.DBQueryDuration.WithLabelValues(operation).Observe(duration)
 
-		threshold := getSlowQueryThreshold()
-		if duration > threshold {
+		if duration > d.slowQueryThreshold {
 			logging.Warn("Slow query detected: operation=%s duration=%.3fs status=%s error=%v",
 				operation, duration, status, err)
 		}
 	}
+}
+
+// closeConnectionPools closes both database pools, logging any errors as warnings.
+func closeConnectionPools(writer, reader *sql.DB) {
+	if cerr := writer.Close(); cerr != nil {
+		logging.Warn("failed to close writer: %v", cerr)
+	}
+	if cerr := reader.Close(); cerr != nil {
+		logging.Warn("failed to close reader: %v", cerr)
+	}
+}
+
+// openConnectionPools opens and configures the writer (max 1 conn) and reader
+// (max 16 conns) pools. On failure it closes any pool that was already opened.
+func openConnectionPools(dbPath string) (writer, reader *sql.DB, err error) {
+	writer, err = sql.Open(driverName, dbPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open writer database: %w", err)
+	}
+	writer.SetMaxOpenConns(1)
+	writer.SetMaxIdleConns(1)
+	writer.SetConnMaxLifetime(0)
+
+	reader, err = sql.Open(driverName, dbPath)
+	if err != nil {
+		if cerr := writer.Close(); cerr != nil {
+			logging.Warn("failed to close writer after reader open failure: %v", cerr)
+		}
+		return nil, nil, fmt.Errorf("failed to open reader database: %w", err)
+	}
+	reader.SetMaxOpenConns(16)
+	reader.SetMaxIdleConns(8)
+	reader.SetConnMaxLifetime(time.Hour)
+	return writer, reader, nil
+}
+
+// pingConnectionPools verifies that both pools can reach the database.
+func pingConnectionPools(ctx context.Context, writer, reader *sql.DB) error {
+	if err := writer.PingContext(ctx); err != nil {
+		return fmt.Errorf("failed to ping writer database: %w", err)
+	}
+	if err := reader.PingContext(ctx); err != nil {
+		return fmt.Errorf("failed to ping reader database: %w", err)
+	}
+	return nil
 }
 
 // New creates a new Database instance and returns diagnostic info for logging.
@@ -131,45 +171,17 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 		logging.Debug("SQLite mmap enabled (default — standard performance mode)")
 	}
 
-	writer, err := sql.Open(driverName, dbPath)
+	writer, reader, err := openConnectionPools(dbPath)
 	if err != nil {
-		return nil, info, fmt.Errorf("failed to open writer database: %w", err)
+		return nil, info, err
 	}
-	writer.SetMaxOpenConns(1)
-	writer.SetMaxIdleConns(1)
-	writer.SetConnMaxLifetime(0)
-
-	reader, err := sql.Open(driverName, dbPath)
-	if err != nil {
-		if cerr := writer.Close(); cerr != nil {
-			logging.Warn("failed to close writer after reader open failure: %v", cerr)
-		}
-		return nil, info, fmt.Errorf("failed to open reader database: %w", err)
-	}
-	reader.SetMaxOpenConns(16)
-	reader.SetMaxIdleConns(8)
-	reader.SetConnMaxLifetime(time.Hour)
 
 	pingCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	if err := writer.PingContext(pingCtx); err != nil {
-		if cerr := writer.Close(); cerr != nil {
-			logging.Warn("failed to close writer: %v", cerr)
-		}
-		if cerr := reader.Close(); cerr != nil {
-			logging.Warn("failed to close reader: %v", cerr)
-		}
-		return nil, info, fmt.Errorf("failed to ping writer database: %w", err)
-	}
-	if err := reader.PingContext(pingCtx); err != nil {
-		if cerr := writer.Close(); cerr != nil {
-			logging.Warn("failed to close writer: %v", cerr)
-		}
-		if cerr := reader.Close(); cerr != nil {
-			logging.Warn("failed to close reader: %v", cerr)
-		}
-		return nil, info, fmt.Errorf("failed to ping reader database: %w", err)
+	if err := pingConnectionPools(pingCtx, writer, reader); err != nil {
+		closeConnectionPools(writer, reader)
+		return nil, info, err
 	}
 
 	d := &Database{
@@ -179,23 +191,21 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 		mmapDisabled: isMmapDisabled,
 	}
 
+	// Set slow-query threshold; default 100 ms. A non-zero option value is used
+	// as-is; zero means "not configured, use the default."
+	if opts != nil && opts.SlowQueryThresholdMs > 0 {
+		d.slowQueryThreshold = opts.SlowQueryThresholdMs / 1000.0
+	} else {
+		d.slowQueryThreshold = 0.1 // 100 ms
+	}
+
 	if err := d.initialize(ctx); err != nil {
-		if cerr := writer.Close(); cerr != nil {
-			logging.Warn("failed to close writer: %v", cerr)
-		}
-		if cerr := reader.Close(); cerr != nil {
-			logging.Warn("failed to close reader: %v", cerr)
-		}
+		closeConnectionPools(writer, reader)
 		return nil, info, fmt.Errorf("failed to initialize database schema: %w", err)
 	}
 
 	if err := d.prepareStatements(ctx); err != nil {
-		if cerr := writer.Close(); cerr != nil {
-			logging.Warn("failed to close writer: %v", cerr)
-		}
-		if cerr := reader.Close(); cerr != nil {
-			logging.Warn("failed to close reader: %v", cerr)
-		}
+		closeConnectionPools(writer, reader)
 		return nil, info, fmt.Errorf("failed to prepare statements: %w", err)
 	}
 
@@ -382,7 +392,7 @@ func (d *Database) CheckStorageHealth() {
 }
 
 func (d *Database) initialize(ctx context.Context) error {
-	done := observeQuery("initialize_schema")
+	done := d.observeQuery("initialize_schema")
 
 	schema := `
 	CREATE TABLE IF NOT EXISTS files (
@@ -539,7 +549,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	if !columnExists {
 		logging.Info("Migrating database: adding content_updated_at column to files table")
 
-		done := observeQuery("migrate_add_content_updated_at")
+		done := d.observeQuery("migrate_add_content_updated_at")
 		_, err = d.writer.ExecContext(ctx, `
 			ALTER TABLE files ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT 0
 		`)
@@ -548,7 +558,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 			return fmt.Errorf("failed to add content_updated_at column: %w", err)
 		}
 
-		done = observeQuery("migrate_init_content_updated_at")
+		done = d.observeQuery("migrate_init_content_updated_at")
 		_, err = d.writer.ExecContext(ctx, `
 			UPDATE files SET content_updated_at = updated_at
 		`)
@@ -574,7 +584,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	if !setupCompleteExists {
 		logging.Info("Migrating database: adding setup_complete column to users table")
 
-		done := observeQuery("migrate_add_setup_complete")
+		done := d.observeQuery("migrate_add_setup_complete")
 		_, err = d.writer.ExecContext(ctx, `
 			ALTER TABLE users ADD COLUMN setup_complete INTEGER NOT NULL DEFAULT 0
 		`)
@@ -583,7 +593,7 @@ func (d *Database) runMigrations(ctx context.Context) error {
 			return fmt.Errorf("failed to add setup_complete column: %w", err)
 		}
 
-		done = observeQuery("migrate_init_setup_complete")
+		done = d.observeQuery("migrate_init_setup_complete")
 		_, err = d.writer.ExecContext(ctx, `
 			UPDATE users SET setup_complete = 1 WHERE id IS NOT NULL
 		`)
@@ -598,6 +608,69 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	return err
 }
 
+// Checkpoint runs a TRUNCATE WAL checkpoint: it waits for any active readers
+// to finish their current read transaction, flushes all WAL pages to the main
+// database file, resets the WAL write position back to the start of the file,
+// and then truncates the WAL file to zero bytes on disk. This is the only mode
+// that actually reduces the WAL file's physical size — RESTART resets the write
+// position so SQLite can reuse WAL space, but the file stays at its high-water
+// mark. PASSIVE mode neither resets the write position nor shrinks the file.
+// Returns the total number of WAL pages (log) and the number successfully
+// checkpointed. A non-zero busy value means a reader held a lock that
+// prevented completion within the busy_timeout; the WAL was partially
+// checkpointed but was not truncated.
+func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err error) {
+	start := time.Now()
+	var busy int
+	// wal_checkpoint returns one row: (busy, log, checkpointed)
+	err = d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &log, &checkpointed)
+	duration := time.Since(start).Seconds()
+
+	metrics.DBWALCheckpointTotal.Inc()
+	metrics.DBWALCheckpointDuration.Observe(duration)
+	metrics.DBWALPages.WithLabelValues("log").Set(float64(log))
+	metrics.DBWALPages.WithLabelValues("checkpointed").Set(float64(checkpointed))
+	metrics.DBWALPages.WithLabelValues("busy").Set(float64(busy))
+
+	if err != nil {
+		return 0, 0, fmt.Errorf("wal checkpoint: %w", err)
+	}
+
+	logging.Debug("WAL checkpoint: busy=%d log=%d checkpointed=%d duration=%.3fs",
+		busy, log, checkpointed, duration)
+	if busy != 0 {
+		logging.Debug("WAL checkpoint incomplete: active reader prevented WAL truncation (log=%d checkpointed=%d)",
+			log, checkpointed)
+	}
+	return log, checkpointed, nil
+}
+
+// StartCheckpointWorker launches a background goroutine that runs a RESTART
+// WAL checkpoint on the given interval. The goroutine exits when ctx is
+// canceled.
+func (d *Database) StartCheckpointWorker(ctx context.Context, interval time.Duration) {
+	logging.Info("WAL checkpoint worker started (interval=%s)", interval)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cpCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+				log, checkpointed, err := d.Checkpoint(cpCtx)
+				cancel()
+				if err != nil {
+					logging.Warn("WAL checkpoint failed: %v", err)
+				} else {
+					logging.Debug("Periodic WAL checkpoint complete: log=%d checkpointed=%d", log, checkpointed)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
 // Close closes prepared statements and both database connection pools.
 func (d *Database) Close() error {
 	d.closeStatements()
@@ -609,6 +682,7 @@ func (d *Database) Close() error {
 // BatchInserter wraps a write transaction with pre-prepared statements
 // for efficient batch indexing operations.
 type BatchInserter struct {
+	db        *Database
 	tx        *sql.Tx
 	upsert    *sql.Stmt
 	del       *sql.Stmt
@@ -640,7 +714,7 @@ const deleteQuery = `DELETE FROM files WHERE updated_at < ?`
 
 // BeginBatch starts a batch indexing transaction with pre-prepared statements.
 func (d *Database) BeginBatch(ctx context.Context) (*BatchInserter, error) {
-	done := observeQuery("begin_transaction")
+	done := d.observeQuery("begin_transaction")
 	tx, err := d.writer.BeginTx(ctx, nil)
 	done(err)
 	if err != nil {
@@ -667,6 +741,7 @@ func (d *Database) BeginBatch(ctx context.Context) (*BatchInserter, error) {
 	}
 
 	return &BatchInserter{
+		db:        d,
 		tx:        tx,
 		upsert:    upsertStmt,
 		del:       delStmt,
@@ -686,7 +761,7 @@ func (b *BatchInserter) StartTime() time.Time {
 
 // UpsertFile inserts or updates a file record using the pre-prepared statement.
 func (b *BatchInserter) UpsertFile(ctx context.Context, file *MediaFile) error {
-	done := observeQuery("upsert_file")
+	done := b.db.observeQuery("upsert_file")
 
 	result, err := b.upsert.ExecContext(ctx,
 		file.Name,
@@ -710,7 +785,7 @@ func (b *BatchInserter) UpsertFile(ctx context.Context, file *MediaFile) error {
 
 // DeleteMissingFiles removes files that weren't seen during indexing.
 func (b *BatchInserter) DeleteMissingFiles(ctx context.Context, cutoffTime time.Time) (int64, error) {
-	done := observeQuery("delete_missing_files")
+	done := b.db.observeQuery("delete_missing_files")
 
 	result, err := b.del.ExecContext(ctx, cutoffTime.Unix())
 	done(err)
@@ -740,7 +815,7 @@ func (d *Database) EndBatch(b *BatchInserter, err error) error {
 	if err != nil {
 		metrics.DBTransactionDuration.WithLabelValues("rollback").Observe(duration)
 
-		done := observeQuery("rollback")
+		done := d.observeQuery("rollback")
 		rbErr := b.tx.Rollback()
 		done(rbErr)
 
@@ -752,7 +827,7 @@ func (d *Database) EndBatch(b *BatchInserter, err error) error {
 
 	metrics.DBTransactionDuration.WithLabelValues("commit").Observe(duration)
 
-	done := observeQuery("commit")
+	done := d.observeQuery("commit")
 	commitErr := b.tx.Commit()
 	done(commitErr)
 
@@ -764,7 +839,7 @@ func (d *Database) GetFileByPath(ctx context.Context, path string) (*MediaFile, 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	done := observeQuery("get_file_by_path")
+	done := d.observeQuery("get_file_by_path")
 
 	var file MediaFile
 	var modTime int64
@@ -802,7 +877,7 @@ func (d *Database) RebuildFTS() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	done := observeQuery("rebuild_fts")
+	done := d.observeQuery("rebuild_fts")
 	_, err := d.writer.ExecContext(ctx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
 	done(err)
 
@@ -825,7 +900,7 @@ func (d *Database) BulkIndexBegin(ctx context.Context) error {
 		"DROP TRIGGER IF EXISTS files_au",
 		"DROP TRIGGER IF EXISTS files_ad",
 	}
-	done := observeQuery("bulk_index_begin")
+	done := d.observeQuery("bulk_index_begin")
 	var firstErr error
 	for _, stmt := range dropStmts {
 		if _, err := d.writer.ExecContext(ctx, stmt); err != nil && firstErr == nil {
@@ -844,7 +919,7 @@ func (d *Database) BulkIndexEnd(ctx context.Context) error {
 	rebuildCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	done := observeQuery("bulk_index_end_rebuild")
+	done := d.observeQuery("bulk_index_end_rebuild")
 	_, rebuildErr := d.writer.ExecContext(rebuildCtx, "INSERT INTO files_fts(files_fts) VALUES('rebuild')")
 	done(rebuildErr)
 	if rebuildErr != nil {
@@ -866,7 +941,7 @@ func (d *Database) BulkIndexEnd(ctx context.Context) error {
 			INSERT INTO files_fts(rowid, name, path) VALUES (new.id, new.name, new.path);
 		END`,
 	}
-	done2 := observeQuery("bulk_index_end_triggers")
+	done2 := d.observeQuery("bulk_index_end_triggers")
 	var triggerErr error
 	for _, stmt := range triggerStmts {
 		if _, err := d.writer.ExecContext(ctx, stmt); err != nil && triggerErr == nil {
@@ -877,8 +952,8 @@ func (d *Database) BulkIndexEnd(ctx context.Context) error {
 
 	// Checkpoint the WAL after bulk inserts to prevent it growing unbounded.
 	// PASSIVE mode checkpoints without blocking any readers; it is non-fatal
-	// because a checkpoint will happen implicitly on the next write anyway.
-	if _, cpErr := d.writer.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); cpErr != nil {
+	// because a checkpoint will happen implicitly via the background worker anyway.
+	if _, _, cpErr := d.Checkpoint(ctx); cpErr != nil {
 		logging.Warn("WAL checkpoint after bulk index failed (non-fatal): %v", cpErr)
 	}
 
@@ -890,7 +965,7 @@ func (d *Database) Vacuum() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	done := observeQuery("vacuum")
+	done := d.observeQuery("vacuum")
 	_, err := d.writer.ExecContext(ctx, "VACUUM")
 	done(err)
 

@@ -57,7 +57,7 @@ func (d *Database) GetOrCreateTag(ctx context.Context, name string) (*Tag, error
 
 // AddTagToFile adds a tag to a file.
 func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) error {
-	done := observeQuery("add_tag_to_file")
+	done := d.observeQuery("add_tag_to_file")
 
 	tagName = strings.TrimSpace(tagName)
 	if tagName == "" {
@@ -112,7 +112,7 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 
 // RemoveTagFromFile removes a tag from a file.
 func (d *Database) RemoveTagFromFile(ctx context.Context, filePath, tagName string) error {
-	done := observeQuery("remove_tag_from_file")
+	done := d.observeQuery("remove_tag_from_file")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -160,7 +160,7 @@ func (d *Database) GetFileTags(ctx context.Context, filePath string) ([]string, 
 
 // SetFileTags replaces all tags for a file.
 func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []string) error {
-	done := observeQuery("set_file_tags")
+	done := d.observeQuery("set_file_tags")
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -225,7 +225,7 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 
 // GetAllTags returns all tags with item counts.
 func (d *Database) GetAllTags(ctx context.Context) ([]Tag, error) {
-	done := observeQuery("get_all_tags")
+	done := d.observeQuery("get_all_tags")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -271,7 +271,7 @@ func (d *Database) GetAllTags(ctx context.Context) ([]Tag, error) {
 
 // GetFilesByTag returns all files with a specific tag.
 func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, pageSize int) (*SearchResult, error) {
-	done := observeQuery("get_files_by_tag")
+	done := d.observeQuery("get_files_by_tag")
 
 	if page < 1 {
 		page = 1
@@ -375,7 +375,7 @@ func (d *Database) GetFilesByTag(ctx context.Context, tagName string, page, page
 
 // DeleteTag removes a tag and all its associations.
 func (d *Database) DeleteTag(ctx context.Context, tagName string) error {
-	done := observeQuery("delete_tag")
+	done := d.observeQuery("delete_tag")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -387,7 +387,7 @@ func (d *Database) DeleteTag(ctx context.Context, tagName string) error {
 
 // RenameTag renames a tag.
 func (d *Database) RenameTag(ctx context.Context, oldName, newName string) error {
-	done := observeQuery("rename_tag")
+	done := d.observeQuery("rename_tag")
 
 	newName = strings.TrimSpace(newName)
 	if newName == "" {
@@ -440,7 +440,7 @@ type TagWithCount struct {
 
 // GetAllTagsWithCounts returns all tags with their usage counts.
 func (d *Database) GetAllTagsWithCounts(ctx context.Context) ([]TagWithCount, error) {
-	done := observeQuery("get_all_tags_with_counts")
+	done := d.observeQuery("get_all_tags_with_counts")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -479,7 +479,7 @@ func (d *Database) GetAllTagsWithCounts(ctx context.Context) ([]TagWithCount, er
 
 // GetUnusedTags returns tags that are not associated with any files.
 func (d *Database) GetUnusedTags(ctx context.Context) ([]string, error) {
-	done := observeQuery("get_unused_tags")
+	done := d.observeQuery("get_unused_tags")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -518,7 +518,7 @@ func (d *Database) GetUnusedTags(ctx context.Context) ([]string, error) {
 
 // RenameTagEverywhere renames a tag and updates all file associations.
 func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName string) (int, error) {
-	done := observeQuery("rename_tag_everywhere")
+	done := d.observeQuery("rename_tag_everywhere")
 
 	oldName = strings.TrimSpace(oldName)
 	newName = strings.TrimSpace(newName)
@@ -625,7 +625,7 @@ func (d *Database) RenameTagEverywhere(ctx context.Context, oldName, newName str
 
 // DeleteTagEverywhere removes a tag and all its file associations.
 func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int, error) {
-	done := observeQuery("delete_tag_everywhere")
+	done := d.observeQuery("delete_tag_everywhere")
 
 	tagName = strings.TrimSpace(tagName)
 	if tagName == "" {
@@ -685,7 +685,7 @@ func (d *Database) DeleteTagEverywhere(ctx context.Context, tagName string) (int
 
 // BulkAddTagsToFiles adds tags to multiple files in a single transaction.
 func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
-	done := observeQuery("bulk_add_tags_to_files")
+	done := d.observeQuery("bulk_add_tags_to_files")
 
 	if len(tagNames) == 0 {
 		done(nil)
@@ -757,7 +757,7 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames [
 
 // BulkRemoveTagsFromFiles removes tags from multiple files in a single transaction.
 func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNames []string) (int, []error, error) {
-	done := observeQuery("bulk_remove_tags_from_files")
+	done := d.observeQuery("bulk_remove_tags_from_files")
 
 	if len(tagNames) == 0 {
 		done(nil)
@@ -836,7 +836,7 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNa
 
 // GetBatchFileTags returns tags for multiple files in a single query.
 func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (map[string][]string, error) {
-	done := observeQuery("get_batch_file_tags")
+	done := d.observeQuery("get_batch_file_tags")
 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

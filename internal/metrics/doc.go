@@ -79,7 +79,6 @@
 //   - GoMemLimit: Gauge of configured GOMEMLIMIT
 //   - GoMemAllocBytes: Gauge of current heap allocation
 //   - GoMemSysBytes: Gauge of total memory from OS
-//   - GoGCRuns: Counter of completed GC cycles
 //   - MemoryUsageRatio: Gauge of memory usage as ratio of limit (0.0-1.0)
 //   - MemoryPaused: Gauge indicating if processing is paused due to memory pressure
 //   - MemoryGCPauses: Counter of times processing was paused for memory

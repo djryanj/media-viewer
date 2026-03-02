@@ -134,7 +134,7 @@ jobs:
 
             - name: Upload coverage
               if: always()
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: release-unit-coverage
                   path: coverage-unit.out
@@ -164,7 +164,7 @@ jobs:
 
             - name: Upload frontend unit coverage
               if: always()
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: release-frontend-unit-coverage
                   path: static/coverage/
@@ -200,7 +200,7 @@ jobs:
 
             - name: Upload coverage
               if: always()
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: release-integration-coverage
                   path: coverage-integration.out
@@ -250,7 +250,7 @@ jobs:
               run: make build
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -281,7 +281,7 @@ jobs:
               run: npm ci
 
             - name: Download backend binary
-              uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+              uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
               with:
                   name: media-viewer-binary
                   path: .
@@ -356,7 +356,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: backend-server-logs
                   path: /tmp/backend-logs/
@@ -364,7 +364,7 @@ jobs:
 
             - name: Upload Playwright report
               if: always()
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: playwright-report
                   path: static/e2e/playwright-report/
@@ -537,7 +537,7 @@ jobs:
                   output-file: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
 
             - name: Upload SBOM as artifact
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: sbom
                   path: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
@@ -566,7 +566,7 @@ jobs:
                   output-file: ${{ github.event.repository.name }}-${{ needs.docker-nvidia.outputs.version }}-nvidia-sbom.spdx.json
 
             - name: Upload SBOM as artifact
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: sbom-nvidia
                   path: ${{ github.event.repository.name }}-${{ needs.docker-nvidia.outputs.version }}-nvidia-sbom.spdx.json
@@ -583,20 +583,20 @@ jobs:
                   fetch-depth: 0
 
             - name: Download SBOM artifact
-              uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+              uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
               with:
                   name: sbom
                   path: ./artifacts
 
             - name: Download NVIDIA SBOM artifact
-              uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+              uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
               with:
                   name: sbom-nvidia
                   path: ./artifacts
 
             - name: Generate changelog
               id: changelog
-              uses: mikepenz/release-changelog-builder-action@6faf020194b7c8853f9e55c4fd92e40b02122a04 # v6
+              uses: mikepenz/release-changelog-builder-action@a34a8009a9588bb86b02a873cf592440e96a5da8 # v6
               with:
                   configuration: .github/changelog-config.json
               env:

@@ -94,13 +94,19 @@ func main() {
 	// Initialize database
 	dbStart := time.Now()
 	dbOpts := &database.Options{
-		MmapDisabled: config.DBMmapDisabled,
+		MmapDisabled:         config.DBMmapDisabled,
+		SlowQueryThresholdMs: config.SlowQueryThresholdMs,
 	}
 	db, dbInfo, err := database.New(bgCtx, config.DatabasePath, dbOpts)
 	if err != nil {
 		startup.LogFatal("Failed to initialize database: %v", err)
 	}
 	startup.LogDatabaseInit(time.Since(dbStart), dbInfo)
+
+	// Start background WAL checkpoint worker (auto-checkpointing is disabled at
+	// connection level; this worker runs RESTART checkpoints on a timer to keep
+	// the WAL file from growing unboundedly without blocking writers).
+	db.StartCheckpointWorker(bgCtx, config.WALCheckpointInterval)
 
 	// Clean up expired sessions periodically (use configured interval)
 	go func() {
@@ -433,6 +439,10 @@ func handleShutdown(srv, metricsSrv *http.Server, db *database.Database, idx *in
 	}
 
 	startup.LogShutdownStep("Closing database")
+	// Final WAL checkpoint before closing so the WAL is compacted into the main file.
+	if _, _, cerr := db.Checkpoint(ctx); cerr != nil {
+		logging.Warn("Final WAL checkpoint failed: %v", cerr)
+	}
 	if err := db.Close(); err != nil {
 		logging.Warn("Database close error: %v", err)
 	} else {

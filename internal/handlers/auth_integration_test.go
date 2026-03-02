@@ -851,3 +851,176 @@ func TestConcurrentPasswordChangeIntegration(t *testing.T) {
 		t.Errorf("Expected valid response after concurrent changes, got %d", w.Code)
 	}
 }
+
+// =============================================================================
+// AuthMiddleware Tests
+// =============================================================================
+
+func TestAuthMiddlewarePublicPaths(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	// Public paths that should bypass auth
+	publicPaths := []string{
+		"/api/auth/login",
+		"/api/auth/setup",
+		"/login.html",
+		"/css/login.css",
+		"/js/login.js",
+		"/js/webauthn.js",
+		"/health",
+		"/healthz",
+		"/livez",
+		"/readyz",
+		"/manifest.json",
+		"/sw.js",
+		"/icons/icon-192.png",
+		"/favicon.ico",
+	}
+
+	nextCalled := false
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := h.AuthMiddleware(nextHandler)
+
+	for _, path := range publicPaths {
+		nextCalled = false
+		req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, req)
+
+		if !nextCalled {
+			t.Errorf("path %q: expected next handler to be called (public path)", path)
+		}
+		if w.Code != http.StatusOK {
+			t.Errorf("path %q: expected status 200, got %d", path, w.Code)
+		}
+	}
+}
+
+func TestAuthMiddlewareAPIWithoutCookie(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for API without cookie, got %d", w.Code)
+	}
+}
+
+func TestAuthMiddlewareNonAPIWithoutCookie(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/index.html", http.NoBody)
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Errorf("expected 302 redirect for non-API without cookie, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/login.html" {
+		t.Errorf("expected redirect to /login.html, got %q", loc)
+	}
+}
+
+func TestAuthMiddlewareWithInvalidSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	// API path with invalid cookie
+	req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "invalid-session-token"})
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for invalid session (API), got %d", w.Code)
+	}
+
+	// Non-API path with invalid cookie → redirect
+	req2 := httptest.NewRequest(http.MethodGet, "/index.html", http.NoBody)
+	req2.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "invalid-session-token"})
+	w2 := httptest.NewRecorder()
+	middleware.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusFound {
+		t.Errorf("expected 302 redirect for invalid session (non-API), got %d", w2.Code)
+	}
+}
+
+func TestAuthMiddlewareWithValidSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create user and login to get a valid session token
+	if err := h.db.CreateUser(ctx, "testpassword"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	user, err := h.db.ValidatePassword(ctx, "testpassword")
+	if err != nil {
+		t.Fatalf("ValidatePassword failed: %v", err)
+	}
+	session, err := h.db.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	nextCalled := false
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.Token})
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if !nextCalled {
+		t.Error("expected next handler to be called with valid session")
+	}
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 with valid session, got %d", w.Code)
+	}
+}

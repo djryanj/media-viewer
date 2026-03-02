@@ -1388,3 +1388,197 @@ func TestBulkOperationsInteractionIntegration(t *testing.T) {
 		}
 	})
 }
+
+// TestSetTagColorIntegration tests setting a color on a tag.
+func TestSetTagColorIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create a tag first
+	_, err := db.GetOrCreateTag(ctx, "colorful")
+	if err != nil {
+		t.Fatalf("GetOrCreateTag failed: %v", err)
+	}
+
+	// Set the color
+	if err := db.SetTagColor(ctx, "colorful", "#ff0000"); err != nil {
+		t.Fatalf("SetTagColor failed: %v", err)
+	}
+
+	// Verify the color was set by getting all tags
+	tags, err := db.GetAllTags(ctx)
+	if err != nil {
+		t.Fatalf("GetAllTags failed: %v", err)
+	}
+
+	found := false
+	for _, tag := range tags {
+		if tag.Name == "colorful" {
+			found = true
+			if tag.Color != "#ff0000" {
+				t.Errorf("Expected color '#ff0000', got '%s'", tag.Color)
+			}
+		}
+	}
+	if !found {
+		t.Error("Expected to find 'colorful' tag in GetAllTags")
+	}
+
+	// Update the color
+	if err := db.SetTagColor(ctx, "colorful", "#00ff00"); err != nil {
+		t.Fatalf("SetTagColor update failed: %v", err)
+	}
+
+	// Verify update via GetAllTagsWithCounts
+	tagsWithCounts, err := db.GetAllTagsWithCounts(ctx)
+	if err != nil {
+		t.Fatalf("GetAllTagsWithCounts failed: %v", err)
+	}
+
+	for _, tag := range tagsWithCounts {
+		if tag.Name == "colorful" {
+			if tag.Color != "#00ff00" {
+				t.Errorf("Expected updated color '#00ff00', got '%s'", tag.Color)
+			}
+			return
+		}
+	}
+	t.Error("Did not find 'colorful' tag after color update")
+}
+
+// TestGetTagCountIntegration tests GetTagCount.
+func TestGetTagCountIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Initially zero tags
+	count := db.GetTagCount(ctx)
+	if count != 0 {
+		t.Errorf("Expected 0 tags initially, got %d", count)
+	}
+
+	// Create two tags
+	_, _ = db.GetOrCreateTag(ctx, "tagA")
+	_, _ = db.GetOrCreateTag(ctx, "tagB")
+
+	count = db.GetTagCount(ctx)
+	if count != 2 {
+		t.Errorf("Expected 2 tags after creation, got %d", count)
+	}
+
+	// Delete one
+	_ = db.DeleteTag(ctx, "tagA")
+
+	count = db.GetTagCount(ctx)
+	if count != 1 {
+		t.Errorf("Expected 1 tag after deletion, got %d", count)
+	}
+}
+
+// TestBulkRemoveTagsNonExistentIntegration tests BulkRemoveTagsFromFiles with len(tagIDs)==0 path.
+func TestBulkRemoveTagsNonExistentIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Remove tags that have never been created — resolveTagIDs returns empty slice
+	count, errs, err := db.BulkRemoveTagsFromFiles(
+		ctx,
+		[]string{"/test/file1.mp4", "/test/file2.mp4"},
+		[]string{"nonexistent1", "nonexistent2"},
+	)
+	if err != nil {
+		t.Fatalf("BulkRemoveTagsFromFiles unexpected error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Errorf("Expected no per-file errors, got %v", errs)
+	}
+	if count != 0 {
+		t.Errorf("Expected 0 removals, got %d", count)
+	}
+}
+
+// TestSetTagColorCaseInsensitiveIntegration tests that SetTagColor works case-insensitively.
+func TestSetTagColorCaseInsensitiveIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create tag with lowercase name
+	_, err := db.GetOrCreateTag(ctx, "mixedcase")
+	if err != nil {
+		t.Fatalf("GetOrCreateTag failed: %v", err)
+	}
+
+	// Set color using different case
+	if err := db.SetTagColor(ctx, "MIXEDCASE", "#123456"); err != nil {
+		t.Fatalf("SetTagColor (uppercase) failed: %v", err)
+	}
+
+	// Verify
+	tags, _ := db.GetAllTags(ctx)
+	for _, tag := range tags {
+		if tag.Name == "mixedcase" {
+			if tag.Color != "#123456" {
+				t.Errorf("Expected color '#123456', got '%s'", tag.Color)
+			}
+			return
+		}
+	}
+	t.Error("Did not find 'mixedcase' tag after case-insensitive color set")
+}
+
+// TestGetFilesByTagFavoriteIntegration tests that GetFilesByTag includes is_favorite flag.
+func TestGetFilesByTagFavoriteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	file := MediaFile{
+		Name:       "fav.jpg",
+		Path:       "fav.jpg",
+		ParentPath: "",
+		Type:       FileTypeImage,
+		Size:       1024,
+		ModTime:    time.Now(),
+	}
+	tx, _ := db.BeginBatch(ctx)
+	_ = tx.UpsertFile(ctx, &file)
+	_ = db.EndBatch(tx, nil)
+
+	_ = db.AddTagToFile(ctx, "fav.jpg", "favtag")
+	_ = db.AddFavorite(ctx, "fav.jpg", "fav.jpg", FileTypeImage)
+
+	result, err := db.GetFilesByTag(ctx, "favtag", 1, 10)
+	if err != nil {
+		t.Fatalf("GetFilesByTag failed: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("Expected 1 item, got %d", len(result.Items))
+	}
+	if !result.Items[0].IsFavorite {
+		t.Error("Expected file to be marked as favorite")
+	}
+}

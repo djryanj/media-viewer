@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -191,22 +193,15 @@ func TestCollectMemoryMetrics(t *testing.T) {
 	}()
 
 	collector.collectMemoryMetrics()
-
-	// Call again to test GC counter delta
 	collector.collectMemoryMetrics()
 }
 
-func TestCollectMemoryMetricsMultipleTimes(t *testing.T) {
+func TestCollectMemoryMetricsMultipleTimes(_ *testing.T) {
 	collector := NewCollector(nil, "", 1*time.Second)
 
-	// Collect multiple times to ensure GC counter tracks properly
+	// Collect multiple times to ensure no panic
 	for i := 0; i < 5; i++ {
 		collector.collectMemoryMetrics()
-		// The lastGCCount should be updated each time
-	}
-
-	if collector.lastGCCount == 0 {
-		t.Log("No GC runs detected (expected in short test)")
 	}
 }
 
@@ -477,20 +472,12 @@ func TestCollectorWithVeryLongInterval(t *testing.T) {
 	collector.Stop()
 }
 
-func TestCollectorMemoryMetricsConsistency(t *testing.T) {
+func TestCollectorMemoryMetricsConsistency(_ *testing.T) {
 	collector := NewCollector(nil, "", 1*time.Second)
 
 	// Collect twice and verify no panic
 	collector.collectMemoryMetrics()
-	firstGCCount := collector.lastGCCount
-
 	collector.collectMemoryMetrics()
-	secondGCCount := collector.lastGCCount
-
-	// GC count should not decrease
-	if secondGCCount < firstGCCount {
-		t.Errorf("GC count decreased: %d -> %d", firstGCCount, secondGCCount)
-	}
 }
 
 func TestCollectorDBSizeWithSymlink(t *testing.T) {
@@ -1054,6 +1041,120 @@ func TestObserverConcurrentAccess(t *testing.T) {
 // =============================================================================
 // InitializeMetrics Tests
 // =============================================================================
+
+// =============================================================================
+// collectMemoryMetrics branch coverage
+// =============================================================================
+
+// TestCollectMemoryMetricsGCBranch verifies that collectMemoryMetrics runs
+// without panic when NumGC > 0.
+func TestCollectMemoryMetricsGCBranch(_ *testing.T) {
+	// Force at least one GC so memStats.NumGC > 0.
+	runtime.GC()
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	collector.collectMemoryMetrics()
+}
+
+// TestCollectMemoryMetricsGCPauseLastSecondBranch verifies the
+// "if memStats.NumGC > 0" branch by ensuring at least one GC has occurred.
+func TestCollectMemoryMetricsGCPauseLastSecondBranch(_ *testing.T) {
+	runtime.GC()
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	// With NumGC > 0, the idx / GoGCPauseLastSeconds path is exercised.
+	collector.collectMemoryMetrics()
+}
+
+// TestCollectMemoryMetricsMemoryLimit verifies the
+// "if limit > 0 && limit < 1<<62" branch by setting a finite soft memory limit.
+func TestCollectMemoryMetricsMemoryLimit(t *testing.T) {
+	// Set a finite soft memory limit (512 MB) so the branch is entered.
+	// Restore the previous limit when done.
+	const limitBytes = 512 * 1024 * 1024
+	old := debug.SetMemoryLimit(limitBytes)
+	t.Cleanup(func() { debug.SetMemoryLimit(old) })
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	// Should not panic; GoMemLimit metric should be set.
+	collector.collectMemoryMetrics()
+}
+
+// =============================================================================
+// getDirSizeWithRetry error-path coverage
+// =============================================================================
+
+// TestGetDirSizeWithRetrySubdirPermissionError verifies that a subdirectory
+// that cannot be read is silently skipped ("Failed to walk subdirectory" log)
+// and the rest of the walk continues successfully.
+func TestGetDirSizeWithRetrySubdirPermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("running as root — directory permissions are not enforced, skipping")
+	}
+
+	tmpDir := t.TempDir()
+
+	// One readable file at the top level.
+	readableFile := filepath.Join(tmpDir, "readable.txt")
+	if err := os.WriteFile(readableFile, make([]byte, 100), 0o644); err != nil {
+		t.Fatalf("failed to create readable file: %v", err)
+	}
+
+	// One subdirectory with no read/execute permissions.
+	unreadableDir := filepath.Join(tmpDir, "unreadable")
+	if err := os.MkdirAll(unreadableDir, 0o000); err != nil {
+		t.Fatalf("failed to create unreadable dir: %v", err)
+	}
+	t.Cleanup(func() {
+		// Restore permissions so TempDir cleanup can remove it.
+		os.Chmod(unreadableDir, 0o755)
+	})
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	size, err := collector.getDirSizeWithRetry(tmpDir)
+
+	// The walk must succeed overall (not return an error).
+	if err != nil {
+		t.Fatalf("getDirSizeWithRetry returned unexpected error: %v", err)
+	}
+
+	// Only the readable file's bytes should be counted.
+	if size != 100 {
+		t.Errorf("expected size=100, got %d", size)
+	}
+}
+
+// TestGetDirSizeWithRetryDanglingSymlink verifies the "Failed to stat file"
+// branch via a dangling symlink: ReadDirWithRetry lists it, IsDir() is false,
+// then StatWithRetry (os.Stat) follows the symlink and fails → error path.
+func TestGetDirSizeWithRetryDanglingSymlink(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// One normal file.
+	normalFile := filepath.Join(tmpDir, "normal.txt")
+	if err := os.WriteFile(normalFile, make([]byte, 50), 0o644); err != nil {
+		t.Fatalf("failed to create normal file: %v", err)
+	}
+
+	// One dangling symlink (target does not exist).
+	danglingLink := filepath.Join(tmpDir, "dangling.mp4")
+	if err := os.Symlink("/does/not/exist/target.mp4", danglingLink); err != nil {
+		t.Skipf("cannot create symlink (may not be supported): %v", err)
+	}
+
+	collector := NewCollector(nil, "", 1*time.Second)
+	size, err := collector.getDirSizeWithRetry(tmpDir)
+
+	// The walk should succeed; the dangling symlink silently contributes 0 bytes.
+	if err != nil {
+		t.Fatalf("getDirSizeWithRetry returned unexpected error: %v", err)
+	}
+
+	// Only the normal file should be counted.
+	if size != 50 {
+		t.Errorf("expected size=50 (normal file only), got %d", size)
+	}
+}
 
 func TestInitializeMetrics(t *testing.T) {
 	defer func() {

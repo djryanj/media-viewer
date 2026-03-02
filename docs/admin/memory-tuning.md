@@ -99,7 +99,7 @@ Impact: Application is ~9% slower than optimal
 
 ### GC Frequency
 
-**Metric:** `rate(media_viewer_go_gc_runs_total[5m])`
+**Metric:** `rate(go_gc_duration_seconds_count[5m])`
 
 **What it measures:** How many garbage collections occur per second.
 
@@ -256,7 +256,7 @@ Watch Prometheus metrics:
 media_viewer_go_gc_cpu_fraction * 100
 
 # GC frequency (per second)
-rate(media_viewer_go_gc_runs_total[5m])
+rate(go_gc_duration_seconds_count[5m])
 
 # Memory pressure
 media_viewer_memory_usage_ratio * 100
@@ -423,10 +423,10 @@ With manual `runtime.GC()` calls in hot paths:
 media_viewer_go_gc_cpu_fraction * 100
 
 # GC frequency (per second)
-rate(media_viewer_go_gc_runs_total[5m])
+rate(go_gc_duration_seconds_count[5m])
 
 # Average GC pause time (milliseconds)
-rate(media_viewer_go_gc_pause_total_seconds[5m]) * 1000
+rate(go_gc_duration_seconds_sum[5m]) * 1000
 
 # Memory pressure (% of limit)
 media_viewer_go_memalloc_bytes / media_viewer_go_memlimit_bytes * 100
@@ -474,7 +474,7 @@ The dashboard includes:
 
 # Excessive GC frequency
 - alert: ExcessiveGC
-  expr: rate(media_viewer_go_gc_runs_total[5m]) > 10
+  expr: rate(go_gc_duration_seconds_count[5m]) > 10
   for: 10m
   annotations:
       summary: 'More than 10 GCs per second'

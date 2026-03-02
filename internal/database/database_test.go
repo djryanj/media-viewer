@@ -44,7 +44,8 @@ func TestObserveQuery(t *testing.T) {
 			t.Parallel()
 
 			// Record the query using the new closure pattern - this should not panic
-			done := observeQuery(tt.operation)
+			db := &Database{slowQueryThreshold: 0.1}
+			done := db.observeQuery(tt.operation)
 			time.Sleep(1 * time.Millisecond) // Ensure some duration
 			done(tt.err)
 		})
@@ -56,13 +57,14 @@ func TestObserveQueryMetrics(t *testing.T) {
 	t.Parallel()
 
 	operation := "test_metrics_operation"
+	db := &Database{slowQueryThreshold: 0.1}
 
 	// Test success case
-	done := observeQuery(operation)
+	done := db.observeQuery(operation)
 	done(nil)
 
 	// Test error case
-	done = observeQuery(operation)
+	done = db.observeQuery(operation)
 	done(errors.New("test error"))
 
 	// If we got here without panicking, the test passes
@@ -73,9 +75,10 @@ func TestObserveQueryWithZeroDuration(t *testing.T) {
 	t.Parallel()
 
 	operation := "instant_query"
+	db := &Database{slowQueryThreshold: 0.1}
 
 	// Record immediately (near-zero duration)
-	done := observeQuery(operation)
+	done := db.observeQuery(operation)
 	done(nil)
 
 	// Should not panic even with zero/near-zero duration
@@ -408,10 +411,11 @@ func TestMetricsIntegration(t *testing.T) {
 	}
 
 	// Test that metrics calls don't panic
-	done := observeQuery("test_integration")
+	db := &Database{slowQueryThreshold: 0.1}
+	done := db.observeQuery("test_integration")
 	done(nil)
 
-	done = observeQuery("test_integration")
+	done = db.observeQuery("test_integration")
 	done(errors.New("test error"))
 
 	// If we got here without panicking, test passes
@@ -505,10 +509,11 @@ func TestRegisterDriverIdempotent(t *testing.T) {
 // BenchmarkObserveQuery benchmarks the query recording overhead
 func BenchmarkObserveQuery(b *testing.B) {
 	operation := "benchmark_operation"
+	db := &Database{slowQueryThreshold: 0.1}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		done := observeQuery(operation)
+		done := db.observeQuery(operation)
 		done(nil)
 	}
 }
@@ -517,10 +522,11 @@ func BenchmarkObserveQuery(b *testing.B) {
 func BenchmarkObserveQueryWithError(b *testing.B) {
 	operation := "benchmark_operation"
 	err := errors.New("test error")
+	db := &Database{slowQueryThreshold: 0.1}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		done := observeQuery(operation)
+		done := db.observeQuery(operation)
 		done(err)
 	}
 }
@@ -528,11 +534,12 @@ func BenchmarkObserveQueryWithError(b *testing.B) {
 // BenchmarkObserveQueryConcurrent benchmarks concurrent query recording
 func BenchmarkObserveQueryConcurrent(b *testing.B) {
 	operation := "benchmark_operation"
+	db := &Database{slowQueryThreshold: 0.1}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			done := observeQuery(operation)
+			done := db.observeQuery(operation)
 			done(nil)
 		}
 	})
@@ -543,7 +550,8 @@ func BenchmarkObserveQueryConcurrent(b *testing.B) {
 func TestObserveQueryClosureTimingAccuracy(t *testing.T) {
 	t.Parallel()
 
-	done := observeQuery("timing_accuracy_test")
+	db := &Database{slowQueryThreshold: 0.1}
+	done := db.observeQuery("timing_accuracy_test")
 
 	// Sleep a known duration so the closure captures real elapsed time
 	time.Sleep(10 * time.Millisecond)
@@ -557,11 +565,13 @@ func TestObserveQueryClosureTimingAccuracy(t *testing.T) {
 func TestObserveQueryIndependentClosures(t *testing.T) {
 	t.Parallel()
 
+	db := &Database{slowQueryThreshold: 0.1}
+
 	// Start two queries at different times
-	done1 := observeQuery("independent_first")
+	done1 := db.observeQuery("independent_first")
 	time.Sleep(5 * time.Millisecond)
 
-	done2 := observeQuery("independent_second")
+	done2 := db.observeQuery("independent_second")
 	time.Sleep(5 * time.Millisecond)
 
 	// Finish in reverse order — each closure should be independent
@@ -576,16 +586,18 @@ func TestObserveQueryIndependentClosures(t *testing.T) {
 func TestObserveQueryStatusLabels(t *testing.T) {
 	t.Parallel()
 
+	db := &Database{slowQueryThreshold: 0.1}
+
 	// Success case
-	done := observeQuery("status_success")
+	done := db.observeQuery("status_success")
 	done(nil)
 
 	// Error case
-	done = observeQuery("status_error")
+	done = db.observeQuery("status_error")
 	done(errors.New("something went wrong"))
 
 	// Wrapped error case
-	done = observeQuery("status_wrapped_error")
+	done = db.observeQuery("status_wrapped_error")
 	done(errors.New("outer: inner error"))
 }
 
@@ -595,7 +607,8 @@ func TestObserveQueryStatusLabels(t *testing.T) {
 func TestObserveQueryDoubleDone(t *testing.T) {
 	t.Parallel()
 
-	done := observeQuery("double_done_test")
+	db := &Database{slowQueryThreshold: 0.1}
+	done := db.observeQuery("double_done_test")
 	done(nil)
 
 	// Second call should not panic
@@ -607,8 +620,10 @@ func TestObserveQueryDoubleDone(t *testing.T) {
 func TestObserveQueryReturnsImmediately(t *testing.T) {
 	t.Parallel()
 
+	db := &Database{slowQueryThreshold: 0.1}
+
 	start := time.Now()
-	done := observeQuery("instant_return_test")
+	done := db.observeQuery("instant_return_test")
 	elapsed := time.Since(start)
 
 	// observeQuery() should return in well under 1ms
@@ -624,6 +639,7 @@ func TestObserveQueryReturnsImmediately(t *testing.T) {
 func TestObserveQueryVariousOperationNames(t *testing.T) {
 	t.Parallel()
 
+	db := &Database{slowQueryThreshold: 0.1}
 	operations := []string{
 		"upsert_file",
 		"list_directory",
@@ -638,7 +654,7 @@ func TestObserveQueryVariousOperationNames(t *testing.T) {
 	}
 
 	for _, op := range operations {
-		done := observeQuery(op)
+		done := db.observeQuery(op)
 		done(nil)
 	}
 }
@@ -657,7 +673,8 @@ func TestObserveQueryConcurrentClosureSafety(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 
-			done := observeQuery("concurrent_safety_test")
+			db := &Database{slowQueryThreshold: 0.1}
+			done := db.observeQuery("concurrent_safety_test")
 			time.Sleep(time.Duration(id%5) * time.Millisecond)
 
 			var err error

@@ -526,7 +526,6 @@ func TestMemoryMetrics(t *testing.T) {
 		{"GoMemLimit", GoMemLimit},
 		{"GoMemAllocBytes", GoMemAllocBytes},
 		{"GoMemSysBytes", GoMemSysBytes},
-		{"GoGCRuns", GoGCRuns},
 	}
 
 	for _, tt := range tests {
@@ -564,10 +563,6 @@ func TestMemoryMetricOperations(t *testing.T) {
 
 	t.Run("GoMemSysBytes", func(_ *testing.T) {
 		GoMemSysBytes.Set(200 * 1024 * 1024) // 200MB
-	})
-
-	t.Run("GoGCRuns", func(_ *testing.T) {
-		GoGCRuns.Add(10)
 	})
 }
 
@@ -891,12 +886,6 @@ func BenchmarkMemoryMetrics(b *testing.B) {
 	b.Run("Memory usage ratio", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			MemoryUsageRatio.Set(0.75)
-		}
-	})
-
-	b.Run("GC runs counter", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			GoGCRuns.Add(1)
 		}
 	})
 }

@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1457,5 +1458,276 @@ func BenchmarkSanitizeLogField_LongUserAgent(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		sanitizeLogField(input)
+	}
+}
+
+// =============================================================================
+// Additional compression middleware tests (bypass paths + edge cases)
+// =============================================================================
+
+// TestCompressionSkipsWebSocketUpgrade verifies that requests with an Upgrade
+// header are passed through without any gzip wrapping.
+func TestCompressionSkipsWebSocketUpgrade(t *testing.T) {
+	body := strings.Repeat("hello", 500)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(body))
+	})
+
+	middleware := Compression(DefaultCompressionConfig())
+	req := httptest.NewRequest("GET", "/ws", http.NoBody)
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Upgrade", "websocket")
+	w := httptest.NewRecorder()
+
+	middleware(handler).ServeHTTP(w, req)
+
+	if enc := w.Header().Get("Content-Encoding"); enc == "gzip" {
+		t.Error("expected no gzip compression for WebSocket upgrade requests")
+	}
+}
+
+// TestCompressionSkipsSSERequests verifies that Server-Sent Event requests are
+// passed through without gzip wrapping.
+func TestCompressionSkipsSSERequests(t *testing.T) {
+	body := strings.Repeat("data: event\n\n", 100)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(body))
+	})
+
+	middleware := Compression(DefaultCompressionConfig())
+	req := httptest.NewRequest("GET", "/events", http.NoBody)
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept", "text/event-stream")
+	w := httptest.NewRecorder()
+
+	middleware(handler).ServeHTTP(w, req)
+
+	if enc := w.Header().Get("Content-Encoding"); enc == "gzip" {
+		t.Error("expected no gzip compression for SSE requests")
+	}
+}
+
+// TestGzipResponseWriterWriteHeaderTwice verifies that a second WriteHeader
+// call after finalize has run is silently ignored (idempotent guard).
+func TestGzipResponseWriterWriteHeaderTwice(t *testing.T) {
+	w := httptest.NewRecorder()
+	config := DefaultCompressionConfig()
+	grw := newGzipResponseWriter(w, config)
+	defer grw.Close()
+
+	// Trigger finalize via a large write (no Content-Type → no compression).
+	grw.Write([]byte(strings.Repeat("x", config.MinSize+1)))
+
+	// headerWritten is now true; second WriteHeader must be a no-op.
+	grw.WriteHeader(http.StatusNotFound)
+
+	if grw.statusCode != http.StatusOK {
+		t.Errorf("status code changed after second WriteHeader: got %d, want %d",
+			grw.statusCode, http.StatusOK)
+	}
+}
+
+// TestCompressionNoContentType verifies that responses without a Content-Type
+// header are never compressed, even when the body exceeds MinSize.
+func TestCompressionNoContentType(t *testing.T) {
+	w := httptest.NewRecorder()
+	config := DefaultCompressionConfig()
+	grw := newGzipResponseWriter(w, config)
+	defer grw.Close()
+
+	data := []byte(strings.Repeat("x", config.MinSize+1))
+	if _, err := grw.Write(data); err != nil {
+		t.Fatalf("Write returned unexpected error: %v", err)
+	}
+
+	if enc := w.Header().Get("Content-Encoding"); enc == "gzip" {
+		t.Error("expected no gzip encoding when Content-Type is absent")
+	}
+}
+
+// TestGzipResponseWriterWriteAfterFinalizeNoCompress verifies the fast path
+// inside Write when the writer has already finalized without compression:
+// subsequent writes flow directly to the underlying ResponseWriter.
+func TestGzipResponseWriterWriteAfterFinalizeNoCompress(t *testing.T) {
+	w := httptest.NewRecorder()
+	config := DefaultCompressionConfig()
+	grw := newGzipResponseWriter(w, config)
+	defer grw.Close()
+
+	// First write: large enough to trigger finalize; no Content-Type → no compression.
+	first := []byte(strings.Repeat("a", config.MinSize+1))
+	if _, err := grw.Write(first); err != nil {
+		t.Fatalf("first Write failed: %v", err)
+	}
+
+	// Second write: headerWritten=true, wroteBody=true, shouldCompress=false →
+	// must go directly to ResponseWriter.Write (the previously uncovered line).
+	second := []byte("second write after finalize")
+	if _, err := grw.Write(second); err != nil {
+		t.Fatalf("second Write failed: %v", err)
+	}
+
+	want := bytes.Join([][]byte{first, second}, nil)
+	if got := w.Body.Bytes(); !bytes.Equal(got, want) {
+		t.Errorf("body mismatch after two writes: got %d bytes, want %d bytes",
+			len(got), len(want))
+	}
+}
+
+// =============================================================================
+// gzipResponseWriter Push tests
+// =============================================================================
+
+// mockHTTPPusher wraps ResponseRecorder and implements http.Pusher.
+type mockHTTPPusher struct {
+	*httptest.ResponseRecorder
+	lastTarget string
+}
+
+func (m *mockHTTPPusher) Push(target string, _ *http.PushOptions) error {
+	m.lastTarget = target
+	return nil
+}
+
+// TestGzipResponseWriterPushNotSupported verifies that Push returns
+// http.ErrNotSupported when the underlying writer is not an http.Pusher.
+func TestGzipResponseWriterPushNotSupported(t *testing.T) {
+	w := httptest.NewRecorder() // does not implement http.Pusher
+	config := DefaultCompressionConfig()
+	grw := newGzipResponseWriter(w, config)
+
+	err := grw.Push("/resource", nil)
+	if !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("expected http.ErrNotSupported, got %v", err)
+	}
+}
+
+// TestGzipResponseWriterPushSupported verifies that Push delegates to the
+// underlying http.Pusher when it is available.
+func TestGzipResponseWriterPushSupported(t *testing.T) {
+	mp := &mockHTTPPusher{ResponseRecorder: httptest.NewRecorder()}
+	config := DefaultCompressionConfig()
+	grw := newGzipResponseWriter(mp, config)
+
+	if err := grw.Push("/resource.css", nil); err != nil {
+		t.Errorf("unexpected error from Push: %v", err)
+	}
+	if mp.lastTarget != "/resource.css" {
+		t.Errorf("expected Push target /resource.css, got %q", mp.lastTarget)
+	}
+}
+
+// =============================================================================
+// responseWriter.Flush, getClientIP, and shouldSkip coverage
+// =============================================================================
+
+// TestResponseWriterFlushDelegates verifies that Flush() calls through to the
+// underlying http.Flusher when the ResponseWriter supports it.  httptest.ResponseRecorder
+// implements http.Flusher, so this exercises the `if f, ok := ...; ok` branch
+// in responseWriter.Flush (logging.go lines 43-46).
+func TestResponseWriterFlushDelegates(t *testing.T) {
+	w := httptest.NewRecorder()
+	rw := newResponseWriter(w)
+	// Should not panic and should mark the recorder as flushed.
+	rw.Flush()
+	if !w.Flushed {
+		t.Error("expected underlying ResponseRecorder to be marked flushed")
+	}
+}
+
+// TestGetClientIPXForwardedForWithComma verifies that the first IP in a
+// comma-separated X-Forwarded-For header is returned.
+func TestGetClientIPXForwardedForWithComma(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.1, 192.168.1.1")
+	got := getClientIP(r)
+	if got != "1.2.3.4" {
+		t.Errorf("expected 1.2.3.4, got %q", got)
+	}
+}
+
+// TestGetClientIPXForwardedForNoComma verifies that a single-entry
+// X-Forwarded-For header (no comma) is returned trimmed.
+func TestGetClientIPXForwardedForNoComma(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	r.Header.Set("X-Forwarded-For", "  5.6.7.8  ")
+	got := getClientIP(r)
+	if got != "5.6.7.8" {
+		t.Errorf("expected 5.6.7.8, got %q", got)
+	}
+}
+
+// TestGetClientIPXRealIP verifies the X-Real-IP fallback path.
+func TestGetClientIPXRealIP(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	r.Header.Set("X-Real-IP", "10.0.0.99")
+	got := getClientIP(r)
+	if got != "10.0.0.99" {
+		t.Errorf("expected 10.0.0.99, got %q", got)
+	}
+}
+
+// TestShouldSkipReturnsFalse verifies that shouldSkip returns false when no
+// skip condition matches (exercises the bare `return false` on logging.go:249).
+func TestShouldSkipReturnsFalse(t *testing.T) {
+	config := LoggingConfig{
+		SkipPaths:       []string{"/admin"},
+		SkipExtensions:  []string{".css", ".js"},
+		LogStaticFiles:  false,
+		LogHealthChecks: true,
+	}
+	// Path doesn't match any skip condition: not under /admin, not a static
+	// extension, not a health-check path.
+	if shouldSkip("/api/files", config) {
+		t.Error("expected shouldSkip to return false for /api/files")
+	}
+}
+
+// =============================================================================
+// Flush on active gzip writer (compression.go:201-217)
+// =============================================================================
+
+// TestGzipResponseWriterFlushAfterCompress verifies that Flush() exercises the
+// g.gzipWriter != nil branch (compression.go:209-211) when finalize() has
+// already been called and took the compress path.
+//
+// Steps:
+//  1. Create a gzipResponseWriter backed by a ResponseRecorder.
+//  2. Set a compressible Content-Type so finalize() chooses gzip.
+//  3. Write more than MinSize bytes — Write() calls finalize() internally,
+//     which sets g.gzipWriter.
+//  4. Call Flush() — g.headerWritten is true so we skip the inner finalize();
+//     g.gzipWriter != nil so the gzip-flush branch executes.
+//  5. The underlying ResponseRecorder (which also implements http.Flusher) is
+//     flushed, asserting that the whole Flush() path ran.
+func TestGzipResponseWriterFlushAfterCompress(t *testing.T) {
+	w := httptest.NewRecorder()
+	config := DefaultCompressionConfig()
+	grw := newGzipResponseWriter(w, config)
+
+	// Set a compressible type before writing.
+	grw.Header().Set("Content-Type", "text/html")
+
+	// Write MinSize+1 bytes so Write() triggers finalize() → compress path.
+	body := strings.Repeat("x", config.MinSize+1)
+	if _, err := grw.Write([]byte(body)); err != nil {
+		t.Fatalf("Write() failed: %v", err)
+	}
+
+	// Sanity-check: the compress path must have been taken.
+	if grw.gzipWriter == nil {
+		t.Fatal("expected gzipWriter to be non-nil after writing compressible content > MinSize")
+	}
+
+	// Flush() should exercise the g.gzipWriter != nil branch (lines 209-211)
+	// and delegate to the underlying recorder's Flush (lines 215-217).
+	grw.Flush()
+
+	if !w.Flushed {
+		t.Error("expected underlying ResponseRecorder to be flushed after grw.Flush()")
 	}
 }
