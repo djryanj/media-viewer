@@ -35,6 +35,10 @@ func registerDriver(opts *Options) {
 					"PRAGMA cache_size=10000",
 					"PRAGMA temp_store=MEMORY",
 					"PRAGMA busy_timeout=30000",
+					// Disable automatic checkpointing so that checkpoint I/O never
+					// blocks a committing writer. The background checkpoint worker
+					// (StartCheckpointWorker) runs PASSIVE checkpoints on a timer.
+					"PRAGMA wal_autocheckpoint=0",
 				}
 				if mmapDisabled {
 					pragmas = append(pragmas, "PRAGMA mmap_size=0")
@@ -48,6 +52,17 @@ func registerDriver(opts *Options) {
 			},
 		})
 	})
+}
+
+// getCheckpointInterval returns the WAL checkpoint interval from the
+// WAL_CHECKPOINT_INTERVAL_SECONDS environment variable, defaulting to 5 minutes.
+func getCheckpointInterval() time.Duration {
+	if s := os.Getenv("WAL_CHECKPOINT_INTERVAL_SECONDS"); s != "" {
+		if secs, err := strconv.ParseFloat(s, 64); err == nil && secs > 0 {
+			return time.Duration(secs * float64(time.Second))
+		}
+	}
+	return 5 * time.Minute
 }
 
 func getSlowQueryThreshold() float64 {
@@ -598,6 +613,63 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	return err
 }
 
+// Checkpoint runs a PASSIVE WAL checkpoint: pages are flushed to the main
+// database file without blocking active readers. Returns the total number of
+// WAL pages (log) and the number of pages successfully checkpointed.
+// A non-zero busy value means at least one reader held a read lock that
+// prevented a full checkpoint from completing.
+func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err error) {
+	start := time.Now()
+	var busy int
+	// wal_checkpoint returns one row: (busy, log, checkpointed)
+	err = d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &log, &checkpointed)
+	duration := time.Since(start).Seconds()
+
+	metrics.DBWALCheckpointTotal.Inc()
+	metrics.DBWALCheckpointDuration.Observe(duration)
+	metrics.DBWALPages.WithLabelValues("log").Set(float64(log))
+	metrics.DBWALPages.WithLabelValues("checkpointed").Set(float64(checkpointed))
+	metrics.DBWALPages.WithLabelValues("busy").Set(float64(busy))
+
+	if err != nil {
+		return 0, 0, fmt.Errorf("wal checkpoint: %w", err)
+	}
+
+	logging.Debug("WAL checkpoint: busy=%d log=%d checkpointed=%d duration=%.3fs",
+		busy, log, checkpointed, duration)
+	if busy != 0 {
+		logging.Debug("WAL checkpoint was partial (active readers prevented full checkpoint)")
+	}
+	return log, checkpointed, nil
+}
+
+// StartCheckpointWorker launches a background goroutine that runs a PASSIVE
+// WAL checkpoint on the interval defined by WAL_CHECKPOINT_INTERVAL_SECONDS
+// (default: 5 minutes). The goroutine exits when ctx is canceled.
+func (d *Database) StartCheckpointWorker(ctx context.Context) {
+	interval := getCheckpointInterval()
+	logging.Info("WAL checkpoint worker started (interval=%s)", interval)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cpCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+				log, checkpointed, err := d.Checkpoint(cpCtx)
+				cancel()
+				if err != nil {
+					logging.Warn("WAL checkpoint failed: %v", err)
+				} else {
+					logging.Debug("Periodic WAL checkpoint complete: log=%d checkpointed=%d", log, checkpointed)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
 // Close closes prepared statements and both database connection pools.
 func (d *Database) Close() error {
 	d.closeStatements()
@@ -877,8 +949,8 @@ func (d *Database) BulkIndexEnd(ctx context.Context) error {
 
 	// Checkpoint the WAL after bulk inserts to prevent it growing unbounded.
 	// PASSIVE mode checkpoints without blocking any readers; it is non-fatal
-	// because a checkpoint will happen implicitly on the next write anyway.
-	if _, cpErr := d.writer.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); cpErr != nil {
+	// because a checkpoint will happen implicitly via the background worker anyway.
+	if _, _, cpErr := d.Checkpoint(ctx); cpErr != nil {
 		logging.Warn("WAL checkpoint after bulk index failed (non-fatal): %v", cpErr)
 	}
 

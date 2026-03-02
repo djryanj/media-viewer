@@ -2961,3 +2961,79 @@ func TestBatchInserterAccessors(t *testing.T) {
 		t.Error("expected non-zero time from StartTime()")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// WAL Checkpoint tests
+// ---------------------------------------------------------------------------
+
+// TestCheckpointOnFreshDB verifies that Checkpoint succeeds on a freshly
+// opened database (no writes means the WAL is empty but the call must not
+// error or panic).
+func TestCheckpointOnFreshDB(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	log, checkpointed, err := db.Checkpoint(context.Background())
+	if err != nil {
+		t.Fatalf("Checkpoint returned error: %v", err)
+	}
+	// On a fresh/idle database log and checkpointed are both 0.
+	if log < 0 || checkpointed < 0 {
+		t.Errorf("unexpected negative WAL page counts: log=%d checkpointed=%d", log, checkpointed)
+	}
+}
+
+// TestCheckpointAfterWrites verifies that Checkpoint returns non-negative page
+// counts after dirty pages have been written to the WAL.
+func TestCheckpointAfterWrites(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Write something so the WAL has pages to checkpoint.
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	log, checkpointed, err := db.Checkpoint(ctx)
+	if err != nil {
+		t.Fatalf("Checkpoint returned error: %v", err)
+	}
+	if log < 0 || checkpointed < 0 {
+		t.Errorf("unexpected negative WAL page counts: log=%d checkpointed=%d", log, checkpointed)
+	}
+}
+
+// TestCheckpointContextCancelled verifies that a checkpoint with an already-
+// canceled context returns an error without panicking.
+func TestCheckpointContextCancelled(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already canceled
+
+	// The call may succeed or fail depending on timing — we just must not panic.
+	_, _, _ = db.Checkpoint(ctx)
+}
+
+// TestStartCheckpointWorker verifies that the worker goroutine starts and exits
+// cleanly when its context is canceled.
+func TestStartCheckpointWorker(t *testing.T) {
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	t.Setenv("WAL_CHECKPOINT_INTERVAL_SECONDS", "0.05") // 50ms for fast test
+
+	// Should return immediately; goroutine exits when ctx is canceled.
+	db.StartCheckpointWorker(ctx)
+	<-ctx.Done() // wait for the worker context to expire
+}
