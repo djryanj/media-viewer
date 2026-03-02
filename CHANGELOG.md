@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [TBD] - Unreleased
+
+### Changed
+
+- chore(deps): update mikepenz/release-changelog-builder-action digest to a34a800 ([#386](https://github.com/djryanj/media-viewer/pull/386))
+
 ## [0.15.3] - 03-02-2026
 
 ### Changed
@@ -22,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 
 - test(backend): 126 new test functions resulting in coverage improvement from ~71% to ~77.2%. [#370](https://github.com/djryanj/media-viewer/issues/370)
--
 
 ### Changed
 
