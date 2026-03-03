@@ -1031,11 +1031,13 @@ describe('Lightbox Integration', () => {
             };
             Lightbox.openWithItems([file], 0);
 
-            const refreshSpy = vi.spyOn(_Tags, 'refreshGalleryItemTags');
+            // removeTagFromDrawer now calls updateGalleryItemTagsDOM directly with
+            // the already-updated file.tags array, avoiding a redundant round-trip.
+            const updateSpy = vi.spyOn(_Tags, 'updateGalleryItemTagsDOM');
 
             await Lightbox.removeTagFromDrawer('/photos/photo.jpg', 'old');
 
-            expect(refreshSpy).toHaveBeenCalledWith('/photos/photo.jpg');
+            expect(updateSpy).toHaveBeenCalledWith('/photos/photo.jpg', []);
         });
     });
 

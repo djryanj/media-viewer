@@ -751,9 +751,6 @@ const Lightbox = {
         this.userHidOverlays = true;
         this.showUIOverlays();
 
-        // Re-initialize Lucide icons now that drawer is visible
-        lucide.createIcons({ nodes: [this.elements.tagsDrawer] });
-
         // Push history state
         if (typeof HistoryManager !== 'undefined') {
             HistoryManager.pushState('lightbox-drawer');
@@ -878,11 +875,13 @@ const Lightbox = {
                     this.renderDrawerTags(file);
                     this.updateTagSummary(file);
                     this.updateTagButton(file);
-                }
-
-                if (typeof Tags !== 'undefined') {
-                    Tags.refreshGalleryItemTags(path);
-                    Tags.loadAllTags();
+                    // file.tags is already correct — update the gallery card directly
+                    // instead of making a redundant GET /api/tags/file round-trip.
+                    // Removing a tag never creates new tags, so loadAllTags() is
+                    // also unnecessary here.
+                    if (typeof Tags !== 'undefined') {
+                        Tags.updateGalleryItemTagsDOM(path, file.tags);
+                    }
                 }
 
                 if (typeof Gallery !== 'undefined' && Gallery.showToast) {
@@ -932,10 +931,16 @@ const Lightbox = {
                 input.value = '';
                 this.elements.drawerSuggestions.classList.add('hidden');
 
+                // file.tags already contains the new tag — update the gallery card
+                // directly instead of making a redundant GET /api/tags/file round-trip.
+                // Also invalidate allTagSuggestions so a newly-added tag appears in
+                // autocomplete on next drawer open; still call loadAllTags() so the
+                // Tags modal's suggestion list also reflects any new tag.
                 if (typeof Tags !== 'undefined') {
-                    Tags.refreshGalleryItemTags(file.path);
+                    Tags.updateGalleryItemTagsDOM(file.path, file.tags);
                     Tags.loadAllTags();
                 }
+                this.allTagSuggestions = [];
             }
         } catch (error) {
             console.error('Error adding tag:', error);

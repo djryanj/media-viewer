@@ -362,12 +362,14 @@ const Tags = {
             }
 
             this.renderBulkTags(Array.from(commonTags), Array.from(allUniqueTags));
+            return tagsByPath;
         } catch (error) {
             console.error('Error loading bulk tags:', error);
             this.currentTagsList = [];
             this.allUniqueTags = [];
             this.tagSources = new Map();
             this.renderBulkTags([], []);
+            return null;
         }
     },
 
@@ -443,10 +445,11 @@ const Tags = {
             if (response.ok) {
                 const _result = await response.json();
 
-                // Reload tags to reflect the change
-                await this.loadBulkTags(this.bulkPaths);
+                // Reload tags to reflect the change; reuse the returned tagsByPath map
+                // to avoid a second POST /api/tags/query round-trip.
+                const tagsByPath = await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
-                await this.batchRefreshGalleryItemTags(this.bulkPaths);
+                await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
 
                 Gallery.showToast(`Applied "${tagName}" to all ${this.bulkPaths.length} items`);
             } else {
@@ -620,7 +623,9 @@ const Tags = {
             if (response.ok) {
                 await this.loadFileTags(this.currentPath);
                 await this.loadAllTags();
-                this.refreshGalleryItemTags(this.currentPath);
+                // currentTagsList is freshly populated by loadFileTags(); update the
+                // gallery card directly instead of making a second GET /api/tags/file.
+                this.updateGalleryItemTagsDOM(this.currentPath, this.currentTagsList);
             }
         } catch (error) {
             console.error('Error adding tag:', error);
@@ -642,10 +647,11 @@ const Tags = {
 
             if (response.ok) {
                 const result = await response.json();
-                await this.loadBulkTags(this.bulkPaths);
+                // Reuse the tagsByPath map already fetched by loadBulkTags() to
+                // update gallery cards without a second POST /api/tags/query.
+                const tagsByPath = await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
-
-                await this.batchRefreshGalleryItemTags(this.bulkPaths);
+                await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
 
                 Gallery.showToast(`Added "${tagName}" to ${result.success} items`);
             } else {
@@ -673,7 +679,9 @@ const Tags = {
             if (response.ok) {
                 await this.loadFileTags(this.currentPath);
                 await this.loadAllTags();
-                this.refreshGalleryItemTags(this.currentPath);
+                // currentTagsList is freshly populated by loadFileTags(); update the
+                // gallery card directly instead of making a second GET /api/tags/file.
+                this.updateGalleryItemTagsDOM(this.currentPath, this.currentTagsList);
             }
         } catch (error) {
             console.error('Error removing tag:', error);
@@ -695,10 +703,11 @@ const Tags = {
 
             if (response.ok) {
                 const result = await response.json();
-                await this.loadBulkTags(this.bulkPaths);
+                // Reuse the tagsByPath map already fetched by loadBulkTags() to
+                // update gallery cards without a second POST /api/tags/query.
+                const tagsByPath = await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
-
-                await this.batchRefreshGalleryItemTags(this.bulkPaths);
+                await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
 
                 Gallery.showToast(`Removed "${tagName}" from ${result.success} items`);
             } else {
@@ -711,14 +720,35 @@ const Tags = {
     },
 
     /**
-     * Batch refresh tags for multiple gallery items using a single API call
+     * Batch refresh tags for multiple gallery items.
+     *
+     * @param {string[]} paths - Paths to refresh.
+     * @param {Object|null} prefetchedTagsByPath - Optional pre-fetched {path: tags[]}
+     *   map.  When supplied the API call is skipped entirely, eliminating a
+     *   redundant round-trip in callers that already have the data (e.g.
+     *   addBulkTag / removeBulkTag which call loadBulkTags first).
      */
-    async batchRefreshGalleryItemTags(paths) {
-        const visiblePaths = paths.filter((path) =>
-            document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`)
+    async batchRefreshGalleryItemTags(paths, prefetchedTagsByPath = null) {
+        // Prefer the O(1) InfiniteScroll path-to-element map for presence checks
+        // instead of O(n) querySelector scans that degrade in large galleries
+        // (e.g. 8 000+ DOM nodes after a scrubber jump to item 8 000).
+        const visiblePaths = paths.filter(
+            (path) =>
+                (typeof InfiniteScroll !== 'undefined' &&
+                    InfiniteScroll._galleryItemsByPath?.has(path)) ||
+                document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`)
         );
 
         if (visiblePaths.length === 0) return;
+
+        // If the caller already has the tag data, use it without another round-trip.
+        if (prefetchedTagsByPath) {
+            for (const path of visiblePaths) {
+                const tags = prefetchedTagsByPath[path] || [];
+                this.updateGalleryItemTagsDOM(path, tags);
+            }
+            return;
+        }
 
         try {
             const response = await fetchWithTimeout('/api/tags/query', {
@@ -747,45 +777,49 @@ const Tags = {
      * Update the DOM for a single gallery item's tags (no API call)
      */
     updateGalleryItemTagsDOM(path, tags) {
-        document
-            .querySelectorAll(`.gallery-item[data-path="${CSS.escape(path)}"]`)
-            .forEach((item) => {
-                const tagButton = item.querySelector('.tag-button');
-                if (tagButton) {
-                    tagButton.classList.toggle('has-tags', tags && tags.length > 0);
-                }
+        // Prefer the O(1) InfiniteScroll path-to-element map over a full DOM scan
+        // to avoid O(n) degradation when thousands of items are in the DOM.
+        const item =
+            (typeof InfiniteScroll !== 'undefined' &&
+                InfiniteScroll._galleryItemsByPath?.get(path)) ||
+            document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
+        if (!item) return;
 
-                const mobileTagsContainer = item.querySelector(
-                    '.gallery-item-mobile-info .gallery-item-tags'
-                );
-                if (mobileTagsContainer) {
-                    this.renderTagsInContainer(mobileTagsContainer, tags, path, true);
-                } else if (tags && tags.length > 0) {
-                    const mobileInfo = item.querySelector('.gallery-item-mobile-info');
-                    if (mobileInfo) {
-                        const newContainer = document.createElement('div');
-                        newContainer.className = 'gallery-item-tags';
-                        this.renderTagsInContainer(newContainer, tags, path, true);
-                        mobileInfo.appendChild(newContainer);
-                    }
-                }
+        const tagButton = item.querySelector('.tag-button');
+        if (tagButton) {
+            tagButton.classList.toggle('has-tags', tags && tags.length > 0);
+        }
 
-                const desktopInfo = item.querySelector('.gallery-item-info');
-                if (desktopInfo) {
-                    let desktopTagsContainer = desktopInfo.querySelector('.gallery-item-tags');
+        const mobileTagsContainer = item.querySelector(
+            '.gallery-item-mobile-info .gallery-item-tags'
+        );
+        if (mobileTagsContainer) {
+            this.renderTagsInContainer(mobileTagsContainer, tags, path, true);
+        } else if (tags && tags.length > 0) {
+            const mobileInfo = item.querySelector('.gallery-item-mobile-info');
+            if (mobileInfo) {
+                const newContainer = document.createElement('div');
+                newContainer.className = 'gallery-item-tags';
+                this.renderTagsInContainer(newContainer, tags, path, true);
+                mobileInfo.appendChild(newContainer);
+            }
+        }
 
-                    if (tags && tags.length > 0) {
-                        if (!desktopTagsContainer) {
-                            desktopTagsContainer = document.createElement('div');
-                            desktopTagsContainer.className = 'gallery-item-tags';
-                            desktopInfo.appendChild(desktopTagsContainer);
-                        }
-                        this.renderTagsInContainer(desktopTagsContainer, tags, path, false);
-                    } else if (desktopTagsContainer) {
-                        desktopTagsContainer.innerHTML = '';
-                    }
+        const desktopInfo = item.querySelector('.gallery-item-info');
+        if (desktopInfo) {
+            let desktopTagsContainer = desktopInfo.querySelector('.gallery-item-tags');
+
+            if (tags && tags.length > 0) {
+                if (!desktopTagsContainer) {
+                    desktopTagsContainer = document.createElement('div');
+                    desktopTagsContainer.className = 'gallery-item-tags';
+                    desktopInfo.appendChild(desktopTagsContainer);
                 }
-            });
+                this.renderTagsInContainer(desktopTagsContainer, tags, path, false);
+            } else if (desktopTagsContainer) {
+                desktopTagsContainer.innerHTML = '';
+            }
+        }
     },
 
     /**
