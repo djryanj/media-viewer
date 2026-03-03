@@ -700,4 +700,186 @@ describe('Tags Module', () => {
             expect(Tags.elements.copyAllTagsBtn.title).toContain('Ctrl+Shift+C');
         });
     });
+
+    // =========================================
+    // updateGalleryItemTagsDOM() — O(1) map path
+    // =========================================
+    describe('updateGalleryItemTagsDOM()', () => {
+        afterEach(() => {
+            delete globalThis.InfiniteScroll;
+        });
+
+        test('uses InfiniteScroll._galleryItemsByPath map when available', () => {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.dataset.path = '/img1.jpg';
+            item.innerHTML = `
+                <div class="gallery-item-info"></div>
+            `;
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map([['/img1.jpg', item]]),
+            };
+
+            Tags.updateGalleryItemTagsDOM('/img1.jpg', ['nature']);
+
+            const desktopTags = item.querySelector('.gallery-item-tags');
+            expect(desktopTags).not.toBeNull();
+            expect(desktopTags.textContent).toContain('nature');
+        });
+
+        test('falls back to querySelector when InfiniteScroll is undefined', () => {
+            delete globalThis.InfiniteScroll;
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.dataset.path = '/dom-only.jpg';
+            item.innerHTML = `<div class="gallery-item-info"></div>`;
+            document.body.appendChild(item);
+
+            Tags.updateGalleryItemTagsDOM('/dom-only.jpg', ['dom-tag']);
+
+            const desktopTags = item.querySelector('.gallery-item-tags');
+            expect(desktopTags).not.toBeNull();
+            expect(desktopTags.textContent).toContain('dom-tag');
+
+            item.remove();
+        });
+
+        test('falls back to querySelector when path is not in the map', () => {
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map(), // empty — path absent
+            };
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.dataset.path = '/fallback.jpg';
+            item.innerHTML = `<div class="gallery-item-info"></div>`;
+            document.body.appendChild(item);
+
+            Tags.updateGalleryItemTagsDOM('/fallback.jpg', ['fallback-tag']);
+
+            const desktopTags = item.querySelector('.gallery-item-tags');
+            expect(desktopTags).not.toBeNull();
+            expect(desktopTags.textContent).toContain('fallback-tag');
+
+            item.remove();
+        });
+
+        test('map element takes precedence over a DOM element with the same path', () => {
+            const mapItem = document.createElement('div');
+            mapItem.className = 'gallery-item';
+            mapItem.dataset.path = '/shared.jpg';
+            mapItem.innerHTML = `<div class="gallery-item-info"></div>`;
+
+            const domItem = document.createElement('div');
+            domItem.className = 'gallery-item';
+            domItem.dataset.path = '/shared.jpg';
+            domItem.innerHTML = `<div class="gallery-item-info"></div>`;
+            document.body.appendChild(domItem);
+
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map([['/shared.jpg', mapItem]]),
+            };
+
+            Tags.updateGalleryItemTagsDOM('/shared.jpg', ['from-map']);
+
+            expect(mapItem.querySelector('.gallery-item-tags')).not.toBeNull();
+            expect(mapItem.querySelector('.gallery-item-tags').textContent).toContain('from-map');
+            // The DOM element that was NOT in the map should be untouched
+            expect(domItem.querySelector('.gallery-item-tags')).toBeNull();
+
+            domItem.remove();
+        });
+
+        test('does nothing when path is not in map and not in DOM', () => {
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map(),
+            };
+            // Should not throw
+            expect(() => Tags.updateGalleryItemTagsDOM('/missing.jpg', ['tag'])).not.toThrow();
+        });
+    });
+
+    // =========================================
+    // batchRefreshGalleryItemTags() — O(1) map path
+    // =========================================
+    describe('batchRefreshGalleryItemTags()', () => {
+        afterEach(() => {
+            delete globalThis.InfiniteScroll;
+        });
+
+        test('uses InfiniteScroll map to filter visible paths', async () => {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.dataset.path = '/visible.jpg';
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map([['/visible.jpg', item]]),
+            };
+
+            globalThis.fetchWithTimeout = vi.fn().mockResolvedValue({
+                ok: true,
+                json: vi.fn().mockResolvedValue({ '/visible.jpg': ['landscape'] }),
+            });
+
+            await Tags.batchRefreshGalleryItemTags(['/visible.jpg', '/not-in-map.jpg']);
+
+            // Only the path present in the map should have been sent to the API
+            expect(fetchWithTimeout).toHaveBeenCalledOnce();
+            const body = JSON.parse(fetchWithTimeout.mock.calls[0][1].body);
+            expect(body.paths).toEqual(['/visible.jpg']);
+            expect(body.paths).not.toContain('/not-in-map.jpg');
+        });
+
+        test('returns early without API call when no paths are visible', async () => {
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map(), // nothing loaded
+            };
+
+            globalThis.fetchWithTimeout = vi.fn();
+
+            await Tags.batchRefreshGalleryItemTags(['/gone.jpg']);
+
+            expect(fetchWithTimeout).not.toHaveBeenCalled();
+        });
+
+        test('falls back to querySelector when InfiniteScroll is undefined', async () => {
+            delete globalThis.InfiniteScroll;
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.setAttribute('data-path', '/dom-item.jpg');
+            document.body.appendChild(item);
+
+            globalThis.fetchWithTimeout = vi.fn().mockResolvedValue({
+                ok: true,
+                json: vi.fn().mockResolvedValue({ '/dom-item.jpg': ['travel'] }),
+            });
+
+            await Tags.batchRefreshGalleryItemTags(['/dom-item.jpg']);
+
+            expect(fetchWithTimeout).toHaveBeenCalledOnce();
+            const body = JSON.parse(fetchWithTimeout.mock.calls[0][1].body);
+            expect(body.paths).toContain('/dom-item.jpg');
+
+            item.remove();
+        });
+
+        test('uses prefetchedTagsByPath directly and makes no API call', async () => {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.dataset.path = '/prefetched.jpg';
+            item.innerHTML = `<div class="gallery-item-info"></div>`;
+            globalThis.InfiniteScroll = {
+                _galleryItemsByPath: new Map([['/prefetched.jpg', item]]),
+            };
+
+            globalThis.fetchWithTimeout = vi.fn();
+
+            await Tags.batchRefreshGalleryItemTags(['/prefetched.jpg'], {
+                '/prefetched.jpg': ['already-fetched'],
+            });
+
+            expect(fetchWithTimeout).not.toHaveBeenCalled();
+            const desktopTags = item.querySelector('.gallery-item-tags');
+            expect(desktopTags).not.toBeNull();
+            expect(desktopTags.textContent).toContain('already-fetched');
+        });
+    });
 });
