@@ -1525,16 +1525,17 @@ func TestGetMediaInDirectory_WithFavoritesAndTags(t *testing.T) {
 	}
 }
 
-func TestGetAllMediaFiles(t *testing.T) {
+func TestGetMediaFilesForThumbnailsPaged(t *testing.T) {
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
 
 	files := []MediaFile{
-		{Name: "image.jpg", Path: "image.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
-		{Name: "video.mp4", Path: "video.mp4", ParentPath: "", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
+		{Name: "a.jpg", Path: "a.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
+		{Name: "b.mp4", Path: "b.mp4", ParentPath: "", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
 		{Name: "folder", Path: "folder", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
+		{Name: "c.jpg", Path: "folder/c.jpg", ParentPath: "folder", Type: FileTypeImage, Size: 512, ModTime: time.Now()},
 	}
 
 	tx, _ := db.BeginBatch(ctx)
@@ -1543,41 +1544,44 @@ func TestGetAllMediaFiles(t *testing.T) {
 	}
 	_ = db.EndBatch(tx, nil)
 
-	allFiles, err := db.GetAllMediaFiles()
+	// First page: limit 2
+	page1, err := db.GetMediaFilesForThumbnailsPaged(ctx, 0, 2)
 	if err != nil {
-		t.Fatalf("GetAllMediaFiles failed: %v", err)
+		t.Fatalf("GetMediaFilesForThumbnailsPaged page 1 failed: %v", err)
+	}
+	if len(page1) != 2 {
+		t.Errorf("page 1: got %d files, want 2", len(page1))
 	}
 
-	if len(allFiles) != 3 {
-		t.Errorf("Got %d files, want 3", len(allFiles))
-	}
-}
-
-func TestGetAllMediaFilesForThumbnails(t *testing.T) {
-	db, _ := setupTestDB(t)
-	defer db.Close()
-
-	ctx := context.Background()
-
-	files := []MediaFile{
-		{Name: "image.jpg", Path: "image.jpg", ParentPath: "", Type: FileTypeImage, Size: 1024, ModTime: time.Now()},
-		{Name: "video.mp4", Path: "video.mp4", ParentPath: "", Type: FileTypeVideo, Size: 2048, ModTime: time.Now()},
-		{Name: "folder", Path: "folder", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
-	}
-
-	tx, _ := db.BeginBatch(ctx)
-	for i := range files {
-		_ = tx.UpsertFile(ctx, &files[i])
-	}
-	_ = db.EndBatch(tx, nil)
-
-	thumbnailFiles, err := db.GetAllMediaFilesForThumbnails()
+	// Second page
+	page2, err := db.GetMediaFilesForThumbnailsPaged(ctx, 2, 2)
 	if err != nil {
-		t.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
+		t.Fatalf("GetMediaFilesForThumbnailsPaged page 2 failed: %v", err)
+	}
+	if len(page2) != 2 {
+		t.Errorf("page 2: got %d files, want 2", len(page2))
 	}
 
-	if len(thumbnailFiles) != 3 {
-		t.Errorf("Got %d files, want 3", len(thumbnailFiles))
+	// Third page should be empty
+	page3, err := db.GetMediaFilesForThumbnailsPaged(ctx, 4, 2)
+	if err != nil {
+		t.Fatalf("GetMediaFilesForThumbnailsPaged page 3 failed: %v", err)
+	}
+	if len(page3) != 0 {
+		t.Errorf("page 3: got %d files, want 0 (empty terminal page)", len(page3))
+	}
+
+	// All pages combined should cover all 4 files, ordered by path
+	all := make([]MediaFile, 0, len(page1)+len(page2))
+	all = append(all, page1...)
+	all = append(all, page2...)
+	if len(all) != 4 {
+		t.Errorf("total files across pages: got %d, want 4", len(all))
+	}
+	for i := 1; i < len(all); i++ {
+		if all[i].Path < all[i-1].Path {
+			t.Errorf("files not ordered by path: %q before %q", all[i-1].Path, all[i].Path)
+		}
 	}
 }
 

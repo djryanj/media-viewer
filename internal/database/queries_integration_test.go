@@ -1082,8 +1082,9 @@ func TestSearchPaginationIntegration(t *testing.T) {
 	}
 }
 
-// TestGetAllMediaFilesForThumbnailsIntegration tests GetAllMediaFilesForThumbnails ordering.
-func TestGetAllMediaFilesForThumbnailsIntegration(t *testing.T) {
+// TestGetMediaFilesForThumbnailsPagedIntegration tests GetMediaFilesForThumbnailsPaged
+// pagination, ordering, and terminal-page behavior.
+func TestGetMediaFilesForThumbnailsPagedIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -1106,21 +1107,32 @@ func TestGetAllMediaFilesForThumbnailsIntegration(t *testing.T) {
 	}
 	_ = db.EndBatch(tx, nil)
 
-	result, err := db.GetAllMediaFilesForThumbnails()
-	if err != nil {
-		t.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
-	}
-	if len(result) != 4 {
-		t.Errorf("Expected 4 files (images + videos + folders), got %d", len(result))
+	// Collect all files via paging (page size smaller than total to exercise pagination)
+	var all []MediaFile
+	const pageSize = 2
+	for offset := 0; ; {
+		page, err := db.GetMediaFilesForThumbnailsPaged(ctx, offset, pageSize)
+		if err != nil {
+			t.Fatalf("GetMediaFilesForThumbnailsPaged failed at offset %d: %v", offset, err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		all = append(all, page...)
+		offset += len(page)
+		if len(page) < pageSize {
+			break
+		}
 	}
 
-	// Verify root-level items come before deeper items (shorter path depth first)
-	for i := 0; i+1 < len(result); i++ {
-		depthI := strings.Count(result[i].Path, "/")
-		depthJ := strings.Count(result[i+1].Path, "/")
-		if depthI > depthJ {
-			t.Errorf("Files not ordered by depth: %s (depth %d) before %s (depth %d)",
-				result[i].Path, depthI, result[i+1].Path, depthJ)
+	if len(all) != 4 {
+		t.Errorf("Expected 4 files total across pages, got %d", len(all))
+	}
+
+	// Verify files are ordered by path ASC across pages
+	for i := 1; i < len(all); i++ {
+		if all[i].Path < all[i-1].Path {
+			t.Errorf("files not ordered by path: %q before %q", all[i-1].Path, all[i].Path)
 		}
 	}
 }
