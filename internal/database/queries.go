@@ -1509,21 +1509,26 @@ func (d *Database) GetSubfolders(ctx context.Context, parentPath string) ([]Medi
 	return folders, nil
 }
 
-// GetAllMediaFiles returns all media files (images, videos, folders) for thumbnail rebuilding.
-func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
-	done := d.observeQuery("get_all_media_files")
+// GetMediaFilesForThumbnailsPaged returns a page of media files (images, videos, folders)
+// for thumbnail generation, ordered by path. A stable ORDER BY path ASC is used rather
+// than depth-first ordering: it is index-friendly (no computed expression), and any folder
+// thumbnail that depends on not-yet-generated child content self-corrects on the next
+// periodic run — an acceptable trade-off for the rare initial case on a fresh installation.
+func (d *Database) GetMediaFilesForThumbnailsPaged(ctx context.Context, offset, limit int) ([]MediaFile, error) {
+	done := d.observeQuery("get_media_files_for_thumbnails_paged")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	query := `
 		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
 		FROM files
 		WHERE type IN (?, ?, ?)
-		ORDER BY path
+		ORDER BY path ASC
+		LIMIT ? OFFSET ?
 	`
 
-	rows, err := d.reader.QueryContext(ctx, query, FileTypeImage, FileTypeVideo, FileTypeFolder)
+	rows, err := d.reader.QueryContext(ctx, query, FileTypeFolder, FileTypeImage, FileTypeVideo, limit, offset)
 	if err != nil {
 		done(err)
 		return nil, fmt.Errorf("failed to query media files: %w", err)
@@ -1534,72 +1539,7 @@ func (d *Database) GetAllMediaFiles() ([]MediaFile, error) {
 		}
 	}()
 
-	files := make([]MediaFile, 0, 2048)
-	for rows.Next() {
-		var f MediaFile
-		var modTime int64
-		var mimeType sql.NullString
-
-		err := rows.Scan(
-			&f.ID,
-			&f.Name,
-			&f.Path,
-			&f.ParentPath,
-			&f.Type,
-			&f.Size,
-			&modTime,
-			&mimeType,
-		)
-		if err != nil {
-			logging.Warn("error scanning media file row: %v", err)
-			continue
-		}
-
-		f.ModTime = time.Unix(modTime, 0)
-		if mimeType.Valid {
-			f.MimeType = mimeType.String
-		}
-
-		files = append(files, f)
-	}
-
-	if err := rows.Err(); err != nil {
-		done(err)
-		return nil, fmt.Errorf("error iterating media file rows: %w", err)
-	}
-
-	done(nil)
-	return files, nil
-}
-
-// GetAllMediaFilesForThumbnails returns all media files ordered by path depth (root first).
-func (d *Database) GetAllMediaFilesForThumbnails() ([]MediaFile, error) {
-	done := d.observeQuery("get_all_media_files_for_thumbnails")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	query := `
-		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
-		FROM files
-		WHERE type IN (?, ?, ?)
-		ORDER BY
-			(LENGTH(path) - LENGTH(REPLACE(path, '/', ''))) ASC,
-			path ASC
-	`
-
-	rows, err := d.reader.QueryContext(ctx, query, FileTypeFolder, FileTypeImage, FileTypeVideo)
-	if err != nil {
-		done(err)
-		return nil, fmt.Errorf("failed to query media files: %w", err)
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			logging.Error("error closing rows: %v", err)
-		}
-	}()
-
-	files := make([]MediaFile, 0, 2048)
+	files := make([]MediaFile, 0, limit)
 	for rows.Next() {
 		var f MediaFile
 		var modTime int64
