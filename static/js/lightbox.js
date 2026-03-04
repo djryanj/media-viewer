@@ -41,6 +41,7 @@ const Lightbox = {
     drawerTouchStartY: 0,
     drawerIsDragging: false,
     allTagSuggestions: [], // Cached tag list for autocomplete
+    drawerHighlightedIndex: -1, // Keyboard-nav index for drawer suggestions
 
     // Pinch-to-zoom state
     zoom: {
@@ -446,12 +447,55 @@ const Lightbox = {
         this.elements.drawerTagInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                const highlighted = this.elements.drawerSuggestions.querySelector(
+                    '.drawer-suggestion.active'
+                );
+                if (highlighted) {
+                    this.elements.drawerTagInput.value = highlighted.dataset.tag;
+                    this.elements.drawerSuggestions.classList.add('hidden');
+                    this.drawerHighlightedIndex = -1;
+                }
                 this.addTagFromDrawer();
+            } else if (e.key === 'Tab') {
+                if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
+                    e.preventDefault();
+                    const items =
+                        this.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+                    const idx = this.drawerHighlightedIndex >= 0 ? this.drawerHighlightedIndex : 0;
+                    if (items[idx]) {
+                        this.elements.drawerTagInput.value = items[idx].dataset.tag;
+                        this.elements.drawerSuggestions.classList.add('hidden');
+                        this.drawerHighlightedIndex = -1;
+                        this.addTagFromDrawer();
+                    }
+                }
+            } else if (e.key === 'ArrowDown') {
+                if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
+                    e.preventDefault();
+                    const items =
+                        this.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+                    if (items.length > 0) {
+                        this.drawerHighlightedIndex = Math.min(
+                            this.drawerHighlightedIndex + 1,
+                            items.length - 1
+                        );
+                        this.updateDrawerSuggestionHighlight();
+                    }
+                }
+            } else if (e.key === 'ArrowUp') {
+                if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
+                    e.preventDefault();
+                    if (this.drawerHighlightedIndex > 0) {
+                        this.drawerHighlightedIndex--;
+                        this.updateDrawerSuggestionHighlight();
+                    }
+                }
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
                 if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
                     this.elements.drawerSuggestions.classList.add('hidden');
+                    this.drawerHighlightedIndex = -1;
                 } else {
                     this.closeTagsDrawer();
                 }
@@ -934,13 +978,14 @@ const Lightbox = {
                 // file.tags already contains the new tag — update the gallery card
                 // directly instead of making a redundant GET /api/tags/file round-trip.
                 // Also invalidate allTagSuggestions so a newly-added tag appears in
-                // autocomplete on next drawer open; still call loadAllTags() so the
-                // Tags modal's suggestion list also reflects any new tag.
+                // autocomplete; reload the cache immediately so suggestions keep working
+                // while the drawer remains open.
                 if (typeof Tags !== 'undefined') {
                     Tags.updateGalleryItemTagsDOM(file.path, file.tags);
                     Tags.loadAllTags();
                 }
                 this.allTagSuggestions = [];
+                this.loadTagSuggestionsCache();
             }
         } catch (error) {
             console.error('Error adding tag:', error);
@@ -962,7 +1007,15 @@ const Lightbox = {
         }
     },
 
+    updateDrawerSuggestionHighlight() {
+        const items = this.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+        items.forEach((item, i) => {
+            item.classList.toggle('active', i === this.drawerHighlightedIndex);
+        });
+    },
+
     showDrawerSuggestions(query) {
+        this.drawerHighlightedIndex = -1;
         query = query.trim().toLowerCase();
         if (query.length === 0) {
             this.elements.drawerSuggestions.classList.add('hidden');
