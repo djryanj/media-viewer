@@ -539,7 +539,13 @@ select:focus {
 
 .main-content {
     padding: 0;
-    padding-bottom: 3rem;
+
+    /* 5rem: accommodates the fixed .selection-toolbar (tallest bottom element) so
+       padding-bottom never needs to change when entering selection mode.  A
+       constant value means no CSS transition fires on the property, eliminating
+       the non-compositor layout animation that previously caused a ~188ms
+       LongTask on every selection-mode entry. */
+    padding-bottom: 5rem;
     max-width: 1800px;
     margin: 0 auto;
 }
@@ -547,7 +553,7 @@ select:focus {
 @media (width >= 900px) {
     .main-content {
         padding: 1rem;
-        padding-bottom: 4rem;
+        padding-bottom: 5rem;
     }
 }
 
@@ -559,6 +565,8 @@ select:focus {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 2px;
+    position: relative; /* needed so .selection-overlay is positioned relative to the gallery */
+    isolation: isolate; /* forms a stacking context so z-index on .selection-overlay and .selected items is scoped */
 }
 
 .gallery-item {
@@ -566,6 +574,8 @@ select:focus {
     background: var(--bg-secondary);
     overflow: hidden;
     user-select: none;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 200px;
 }
 
 .gallery-item-thumb {
@@ -577,6 +587,13 @@ select:focus {
     justify-content: center;
     background: var(--bg-tertiary);
     overflow: hidden;
+
+    /* Suppress spurious non-compositor transitions (outline-*, opacity, etc.)
+       that fire when .selected is added or outline changes on hover, caused by
+       the @media (prefers-reduced-motion: reduce) rule setting
+       transition-duration: 0.01ms !important on *.  The img child has its own
+       transition: opacity rule and is unaffected. */
+    transition: none;
 }
 
 .gallery-item-thumb:active {
@@ -5823,9 +5840,20 @@ select:focus {
     align-items: center;
     justify-content: center;
     z-index: 15;
-    transition: all 0.15s ease;
     cursor: pointer;
+
+    /* Checkboxes are hidden by default and revealed as a group on selection-mode
+       entry.  JS injects a lightweight <style> element whose single rule is
+       '.selection-checkbox { opacity: 1 }'; because that rule uses a direct
+       class selector Firefox's invalidation only re-styles the ~6 600 matching
+       elements rather than walking the full ~68 000-node gallery subtree the way
+       CSS custom-property inheritance would.
+       transition: none prevents simultaneous opacity animations that would
+       cascade through the @media (prefers-reduced-motion: reduce) rule's
+       `transition-duration: 0.01ms !important` on *, each of which would spawn
+       a transitionend style recalculation (~508 ms LongTask). */
     opacity: 0%;
+    transition: none;
     pointer-events: auto;
 }
 
@@ -5837,7 +5865,6 @@ select:focus {
     color: transparent;
     font-size: 0.75rem;
     font-weight: bold;
-    transition: color 0.15s ease;
 }
 
 .gallery-item.selected .selection-checkbox {
@@ -5845,7 +5872,6 @@ select:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px white;
     opacity: 100%;
-    animation: selection-pulse 0.2s ease;
 }
 
 .gallery-item.selected .selection-checkbox .checkbox-icon {
@@ -5857,40 +5883,72 @@ select:focus {
     display: none;
 }
 
-@keyframes selection-pulse {
-    0% {
-        transform: scale(1);
-    }
+/* Selection mode styling.
+   Three properties that must change on mode entry are handled entirely via JS
+   to avoid CSS style-invalidation traversing the gallery's full ~66 000-node
+   subtree:
 
-    50% {
-        transform: scale(1.1);
-    }
+   1. OVERLAY  enterSelectionMode() calls gallery.appendChild(overlayDiv) where
+      overlayDiv has class 'selection-overlay'.  The div is removed on exit.
+      This replaces the old .gallery.selection-mode::after pseudo-element rule:
+      having any descendant rule on .gallery.selection-mode caused Firefox to
+      re-evaluate styles for all ~66 000 gallery descendants (~402 ms LongTask).
 
-    100% {
-        transform: scale(1);
-    }
-}
+   2. SELECTED ITEM Z-INDEX  processPendingUpdates() sets element.style.zIndex
+      = '2' when marking an item selected and '' on deselect.  This replaces
+      '.gallery.selection-mode .gallery-item.selected { z-index: 2 }' which
+      required traversing all ~8 800 .gallery-item elements.
 
-/* Selection mode styling */
-body.selection-mode .gallery-item:not(.selected) {
-    opacity: 70%;
-}
+   3. CHECKBOX OPACITY  enterSelectionMode() injects a <style> element into
+      <head> containing a single '.selection-checkbox { opacity: 1 }' rule and
+      re-enables it via .disabled = false on every subsequent entry.  Because
+      the rule uses a direct class selector, Firefox's invalidation only
+      touches the ~6 600 matching elements rather than walking the full ~68 000-
+      node gallery subtree via CSS custom-property inheritance.
 
-body.selection-mode .gallery-item.selected {
-    opacity: 100%;
+   With no descendant rules on .gallery.selection-mode at all, Firefox sees no
+   rules to resolve when the class is toggled and skips the subtree traversal
+   entirely — on both desktop and touch.  The formerly-descendant touch rule
+   '@media (hover:none) and (pointer:coarse) { .gallery.selection-mode
+   .gallery-item { min-height:80px } }' was identified via profiling as causing
+   a 308 ms / 73 083-element Styles pass: Firefox builds invalidation sets from
+   ALL rules including those inside non-matching @media blocks, so the mere
+   existence of that rule triggered a full-subtree traversal on every class
+   toggle.  It is now plain '.gallery-item { min-height:80px }' in the same
+   coarse-pointer media query, suppressing the traversal completely.
+
+   .main-content padding-bottom is permanently 5rem so no transition fires on
+   mode entry.  .stats-bar is hidden via JS classList, keeping that change
+   outside the style-invalidation path. */
+
+/* Overlay div injected by JS (enterSelectionMode) — sits above gallery items,
+   below selected items.  Requires .gallery { position: relative }. */
+.selection-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / 30%);
+    z-index: 1;
+    pointer-events: none;
 }
 
 .gallery-item.selected .gallery-item-thumb {
     outline: 3px solid var(--accent);
     outline-offset: -3px;
+
+    /* Suppress outline-color / outline-width / outline-offset transitions that
+       would fire when the first gallery item gets .selected added.  These are
+       non-compositor transitions that run on the main thread. */
+    transition: none;
 }
 
-body.selection-mode .main-content {
-    padding-bottom: 5rem;
-}
-
-body.selection-mode .stats-bar {
-    display: none;
+/* Toggled by enterSelectionMode() / exitSelectionMode() via JS classList.
+   Using visibility: hidden instead of display: none avoids triggering a
+   layout reflow on the fixed-position stats bar.
+   transition: none suppresses the non-compositor visibility transition that
+   would fire from the .stats-bar { transition: all … } rule in the cascade. */
+.stats-bar.selection-hidden {
+    visibility: hidden;
+    transition: none;
 }
 
 @media (width <= 480px) {
@@ -5938,10 +5996,28 @@ body.selection-mode .stats-bar {
 }
 
 @media (hover: none) and (pointer: coarse) {
-    body.selection-mode .gallery-item {
+    /* Previously .gallery.selection-mode .gallery-item { min-height: 80px }.
+       That descendant rule caused Firefox to traverse all ~66 000 gallery-
+       subtree nodes when gallery.classList.add('selection-mode') fired,
+       producing a 308 ms / 73 083-element Styles pass on every mode entry.
+       Firefox builds selector-invalidation sets from ALL rules including those
+       inside non-matching media queries; the mere existence of a
+       .gallery.selection-mode descendant rule triggers a full-subtree
+       traversal on class toggle.  Making min-height unconditional on touch
+       removes the only remaining descendant rule on .gallery.selection-mode so
+       the class toggle has near-zero style cost on desktop and coarse-pointer
+       devices alike.  Items in the 3-column grid are always ≥ ~120 px tall so
+       the 80 px floor has no visible effect outside selection mode. */
+    .gallery-item {
         min-height: 80px;
     }
 
+    /* On touch/coarse-pointer devices, keep checkboxes partially visible (60%)
+       so they are always discoverable.  Same specificity as the default
+       .selection-checkbox { opacity: 0 } rule above but declared later in the
+       stylesheet so it wins the cascade on matching devices.  The JS-injected
+       selection-mode stylesheet (appended to <head> after this file) overrides
+       this to opacity: 1 in selection mode because it is later in cascade order. */
     .selection-checkbox {
         opacity: 60%;
     }
@@ -5949,11 +6025,6 @@ body.selection-mode .stats-bar {
     .selection-checkbox .checkbox-icon {
         font-size: 0.875rem;
     }
-}
-
-/* Always show checkbox in selection mode */
-body.selection-mode .selection-checkbox {
-    opacity: 100%;
 }
 
 /* Ensure clicks on the icon pass through to the checkbox container */

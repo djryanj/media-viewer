@@ -16,6 +16,17 @@ const ItemSelection = {
     dragStartIndex: -1,
     elements: {},
 
+    // DOM element injected over the gallery during selection mode (overlay div,
+    // replaces the old .gallery.selection-mode::after pseudo-element approach).
+    _selectionOverlay: null,
+
+    // <style> element injected into <head> when selection mode is active.
+    // Contains a single '.selection-checkbox { opacity: 1 }' rule so that
+    // Firefox's invalidation only re-styles the ~6 600 matching elements rather
+    // than walking the full ~68 000-node gallery subtree via CSS custom-property
+    // inheritance.  Created once on first use and toggled via .disabled.
+    _cbStyleEl: null,
+
     longPressTimer: null,
     longPressTriggered: false,
     longPressDuration: 500,
@@ -106,6 +117,11 @@ const ItemSelection = {
             selectAllBtn: document.getElementById('selection-all-btn'),
             closeBtn: document.querySelector('.selection-close-btn'),
             gallery: document.getElementById('gallery'),
+            // Cached so enterSelectionMode / exitSelectionMode can toggle
+            // visibility without going through the CSS body.selection-mode
+            // selector (which would widen the style-invalidation traversal to
+            // the whole document).
+            statsBar: document.querySelector('.stats-bar'),
         };
     },
 
@@ -387,17 +403,61 @@ const ItemSelection = {
         this.allSelectablePaths = null;
         this._taggableCount = 0;
 
-        document.body.classList.add('selection-mode');
-        this.elements.toolbar.classList.remove('hidden');
-
-        this.applySelectionStateToVisibleItems();
-
+        // Select the initial element first so the user sees instant visual feedback
+        // (the .selected highlight) before the expensive body.selection-mode cascade fires.
         if (initialElement) {
             this.selectItem(initialElement);
         }
 
-        // Immediate toolbar update — one-time call when entering selection mode
-        this.updateToolbar();
+        // Frame 1: inject overlay, toggle class, show toolbar.
+        // These are all cheap operations (no descendant CSS rules on
+        // .gallery.selection-mode, small element subtrees for toolbar/stats-bar).
+        // Checkbox opacity is intentionally NOT revealed here — see Frame 2 below.
+        requestAnimationFrame(() => {
+            // 1. Inject the semi-transparent overlay div.
+            //    Using a real DOM element instead of .gallery.selection-mode::after
+            //    means .gallery.selection-mode has no descendant CSS rules on
+            //    desktop — Firefox skips the gallery subtree traversal entirely
+            //    when the class is toggled.
+            const overlay = document.createElement('div');
+            overlay.className = 'selection-overlay';
+            this.elements.gallery.appendChild(overlay);
+            this._selectionOverlay = overlay;
+
+            // 2. The .selection-mode class is still added for the touch-device
+            //    min-height media query; on desktop it matches no descendant
+            //    rules so the style traversal cost is near-zero.
+            this.elements.gallery.classList.add('selection-mode');
+
+            this.elements.toolbar.classList.remove('hidden');
+            if (this.elements.statsBar) {
+                this.elements.statsBar.classList.add('selection-hidden');
+            }
+            this.updateToolbar();
+
+            // Frame 2: show all selection checkboxes.
+            // Enabling a pre-created <style> element whose single rule is
+            // '.selection-checkbox { opacity: 1 }' causes Firefox to invalidate
+            // only the ~6 600 elements that directly match that class selector.
+            // This replaces the previous approach of setting a CSS custom property
+            // on .gallery, which forced a full ~68 000-node subtree traversal
+            // because Firefox must walk every descendant to propagate inherited
+            // custom-property values.
+            // Guard: if the user exited selection mode between the two RAFs
+            // (e.g. immediately released after the long-press threshold), skip.
+            requestAnimationFrame(() => {
+                if (!this.isActive) return;
+                if (!this._cbStyleEl) {
+                    const s = document.createElement('style');
+                    s.id = 'selection-checkboxes-visible';
+                    s.textContent = '.selection-checkbox { opacity: 1 }';
+                    document.head.appendChild(s);
+                    this._cbStyleEl = s;
+                } else {
+                    this._cbStyleEl.disabled = false;
+                }
+            });
+        });
 
         if (typeof HistoryManager !== 'undefined') {
             HistoryManager.pushState('selection');
@@ -412,6 +472,23 @@ const ItemSelection = {
         if (!this.isActive) return;
 
         this.isActive = false;
+
+        // Clear selected DOM state from only the items we know are selected, using the
+        // O(1) InfiniteScroll path map when available rather than scanning the full
+        // DOM (which may contain 8 000+ nodes in large galleries).
+        // Must run before selectedData is cleared below.
+        this.selectedData.forEach((_data, path) => {
+            const el =
+                (typeof InfiniteScroll !== 'undefined' &&
+                    InfiniteScroll._galleryItemsByPath?.get(path)) ||
+                document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
+            if (!el) return;
+            el.classList.remove('selected');
+            el.style.zIndex = ''; // clear inline z-index set by processPendingUpdates
+            const cb = el.querySelector('.select-checkbox');
+            if (cb) cb.checked = false;
+        });
+
         this.selectedPaths.clear();
         this.selectedData.clear();
         this.isAllSelected = false;
@@ -428,17 +505,19 @@ const ItemSelection = {
             this._toolbarUpdateScheduled = false;
         }
 
-        document.body.classList.remove('selection-mode');
+        // Remove the overlay div and hide all checkboxes.
+        if (this._selectionOverlay) {
+            this._selectionOverlay.remove();
+            this._selectionOverlay = null;
+        }
+        if (this._cbStyleEl) {
+            this._cbStyleEl.disabled = true;
+        }
+        this.elements.gallery.classList.remove('selection-mode');
+        if (this.elements.statsBar) {
+            this.elements.statsBar.classList.remove('selection-hidden');
+        }
         this.elements.toolbar.classList.add('hidden');
-
-        // Clear selected state from all items (checkboxes are permanent)
-        document.querySelectorAll('.gallery-item.selected').forEach((item) => {
-            item.classList.remove('selected');
-        });
-
-        document.querySelectorAll('.select-checkbox:checked').forEach((cb) => {
-            cb.checked = false;
-        });
     },
 
     exitSelectionModeWithHistory() {
@@ -457,6 +536,10 @@ const ItemSelection = {
      */
     applySelectionStateToVisibleItems() {
         if (!this.isActive) return;
+
+        // Common case: fresh entry always clears selectedPaths first, so there
+        // is nothing to mark.  Skip the O(n) querySelectorAll entirely.
+        if (this.selectedPaths.size === 0) return;
 
         const gallery = this.elements.gallery;
         const items = gallery.querySelectorAll('.gallery-item:not(.skeleton)');
@@ -494,6 +577,7 @@ const ItemSelection = {
             const path = item.dataset.path;
             if (this.selectedPaths.has(path)) {
                 item.classList.add('selected');
+                item.style.zIndex = '2'; // keep in sync with processPendingUpdates
             }
         });
     },
@@ -628,11 +712,16 @@ const ItemSelection = {
 
     processPendingUpdates() {
         this.pendingUpdates.forEach(({ path, isSelected }) => {
-            const element = document.querySelector(
-                `.gallery-item[data-path="${CSS.escape(path)}"]`
-            );
+            const element =
+                (typeof InfiniteScroll !== 'undefined' &&
+                    InfiniteScroll._galleryItemsByPath?.get(path)) ||
+                document.querySelector(`.gallery-item[data-path="${CSS.escape(path)}"]`);
             if (element) {
                 element.classList.toggle('selected', isSelected);
+                // z-index: 2 raises selected items above the .selection-overlay
+                // div.  Set inline rather than via a CSS descendant rule to avoid
+                // the .gallery.selection-mode .gallery-item traversal cost.
+                element.style.zIndex = isSelected ? '2' : '';
                 const checkbox = element.querySelector('.select-checkbox');
                 if (checkbox) {
                     checkbox.checked = isSelected;

@@ -39,6 +39,15 @@ describe('ItemSelection Module', () => {
             createIcons: vi.fn(),
         };
 
+        // Run requestAnimationFrame callbacks synchronously so deferred DOM
+        // mutations in enterSelectionMode (body class, toolbar reveal) fire
+        // within the same call, keeping unit test assertions synchronous.
+        globalThis.requestAnimationFrame = (cb) => {
+            cb(0);
+            return 0;
+        };
+        globalThis.cancelAnimationFrame = () => {};
+
         // Mock HistoryManager
         globalThis.HistoryManager = {
             pushState: vi.fn(),
@@ -271,9 +280,9 @@ describe('ItemSelection Module', () => {
             expect(ItemSelection.isAllSelected).toBe(false);
         });
 
-        test('adds selection-mode class to body', () => {
+        test('adds selection-mode class to gallery', () => {
             ItemSelection.enterSelectionMode();
-            expect(globalThis.document.body.classList.contains('selection-mode')).toBe(true);
+            expect(ItemSelection.elements.gallery.classList.contains('selection-mode')).toBe(true);
         });
 
         test('pushes history state', () => {
@@ -320,23 +329,23 @@ describe('ItemSelection Module', () => {
             expect(ItemSelection.allSelectablePaths).toBeNull();
         });
 
-        test('removes selection-mode class from body', () => {
+        test('removes selection-mode class from gallery', () => {
             ItemSelection.isActive = true;
-            globalThis.document.body.classList.add('selection-mode');
+            ItemSelection.elements.gallery.classList.add('selection-mode');
 
             ItemSelection.exitSelectionMode();
 
-            expect(globalThis.document.body.classList.contains('selection-mode')).toBe(false);
+            expect(ItemSelection.elements.gallery.classList.contains('selection-mode')).toBe(false);
         });
 
         test('does nothing if not active', () => {
             ItemSelection.isActive = false;
-            const classList = globalThis.document.body.classList;
-            const initialClasses = classList.value;
+            const gallery = ItemSelection.elements.gallery;
+            const hadClass = gallery.classList.contains('selection-mode');
 
             ItemSelection.exitSelectionMode();
 
-            expect(classList.value).toBe(initialClasses);
+            expect(gallery.classList.contains('selection-mode')).toBe(hadClass);
         });
     });
 
