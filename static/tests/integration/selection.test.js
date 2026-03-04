@@ -113,6 +113,15 @@ describe('ItemSelection Integration', () => {
         // Mock navigator.vibrate
         global.navigator.vibrate = vi.fn();
 
+        // Run requestAnimationFrame callbacks synchronously so that the deferred
+        // gallery.selection-mode class addition in enterSelectionMode fires during
+        // the same call rather than requiring explicit timer flushing in every test.
+        global.requestAnimationFrame = (cb) => {
+            cb(0);
+            return 0;
+        };
+        global.cancelAnimationFrame = () => {};
+
         // Load and initialize ItemSelection
         await loadModules();
     });
@@ -171,7 +180,7 @@ describe('ItemSelection Integration', () => {
             ItemSelection.enterSelectionMode();
 
             expect(ItemSelection.isActive).toBe(true);
-            expect(document.body.classList.contains('selection-mode')).toBe(true);
+            expect(ItemSelection.elements.gallery.classList.contains('selection-mode')).toBe(true);
             expect(ItemSelection.elements.toolbar.classList.contains('hidden')).toBe(false);
         });
 
@@ -221,7 +230,7 @@ describe('ItemSelection Integration', () => {
             ItemSelection.exitSelectionMode();
 
             expect(ItemSelection.isActive).toBe(false);
-            expect(document.body.classList.contains('selection-mode')).toBe(false);
+            expect(ItemSelection.elements.gallery.classList.contains('selection-mode')).toBe(false);
             expect(ItemSelection.elements.toolbar.classList.contains('hidden')).toBe(true);
         });
 
@@ -553,7 +562,7 @@ describe('ItemSelection Integration', () => {
         });
 
         it('should disable tag button when no items selected', () => {
-            // No selectItem call — toolbar was updated synchronously in enterSelectionMode
+            // No selectItem call — updateToolbar() runs immediately via the deferred RAF in enterSelectionMode
             expect(ItemSelection.elements.tagBtn.disabled).toBe(true);
         });
 
@@ -1156,11 +1165,23 @@ describe('ItemSelection Integration', () => {
         });
 
         it('should schedule DOM updates via requestAnimationFrame', () => {
+            // Override the synchronous RAF mock with a capturing stub so the
+            // callback is queued but not fired yet — letting us assert on the
+            // transient pendingUpdates state before the flush runs.
+            const rafCallbacks = [];
+            vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((cb) => {
+                rafCallbacks.push(cb);
+                return rafCallbacks.length;
+            });
+
             const item = document.querySelector('.gallery-item[data-type="image"]');
             ItemSelection.selectItem(item);
 
-            // pendingUpdates should have an entry
+            // pendingUpdates should have an entry before the RAF fires
             expect(ItemSelection.pendingUpdates.size).toBeGreaterThan(0);
+
+            // Flush queued callbacks so subsequent tests start clean
+            rafCallbacks.forEach((cb) => cb(0));
         });
     });
 
@@ -1170,6 +1191,15 @@ describe('ItemSelection Integration', () => {
         });
 
         it('should debounce toolbar updates', () => {
+            // Override the synchronous RAF mock with a capturing stub so the
+            // scheduled toolbar callback is queued but not fired yet — letting
+            // us assert that _toolbarUpdateScheduled is true while pending.
+            const rafCallbacks = [];
+            vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((cb) => {
+                rafCallbacks.push(cb);
+                return rafCallbacks.length;
+            });
+
             const updateToolbarSpy = vi.spyOn(ItemSelection, 'updateToolbar');
 
             // Select multiple items rapidly
@@ -1180,6 +1210,9 @@ describe('ItemSelection Integration', () => {
             // (it uses scheduleToolbarUpdate which defers via rAF)
             // The spy counts direct calls only
             expect(ItemSelection._toolbarUpdateScheduled).toBe(true);
+
+            // Flush queued callbacks so subsequent tests start clean
+            rafCallbacks.forEach((cb) => cb(0));
         });
 
         it('should reset taggable count on exit', () => {
