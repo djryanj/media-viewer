@@ -527,6 +527,31 @@ describe('Lightbox Integration', () => {
             expect(openSpy).toHaveBeenCalled();
         });
 
+        it('should focus the tag input on desktop when drawer opens', async () => {
+            // Simulate a non-touch (desktop) environment
+            delete window.ontouchstart;
+            const focusSpy = vi.spyOn(Lightbox.elements.drawerTagInput, 'focus');
+
+            Lightbox.openTagsDrawer();
+
+            // Focus is deferred via requestAnimationFrame
+            await vi.waitFor(() => expect(focusSpy).toHaveBeenCalled());
+        });
+
+        it('should not focus the tag input on touch devices when drawer opens', async () => {
+            // Simulate a touch device
+            window.ontouchstart = () => {};
+            const focusSpy = vi.spyOn(Lightbox.elements.drawerTagInput, 'focus');
+
+            Lightbox.openTagsDrawer();
+
+            // Give rAF a chance to fire (it shouldn't)
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            expect(focusSpy).not.toHaveBeenCalled();
+
+            delete window.ontouchstart;
+        });
+
         it('should populate drawer with current file tags', () => {
             Lightbox.openTagsDrawer();
 

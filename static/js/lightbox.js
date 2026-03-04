@@ -791,6 +791,13 @@ const Lightbox = {
         this.elements.drawerTagInput.value = '';
         this.elements.drawerSuggestions.classList.add('hidden');
 
+        // Focus the tag input on desktop (non-touch) so the user can type immediately
+        if (!('ontouchstart' in window)) {
+            requestAnimationFrame(() => {
+                this.elements.drawerTagInput.focus();
+            });
+        }
+
         // Show overlays while drawer is open
         this.userHidOverlays = true;
         this.showUIOverlays();
