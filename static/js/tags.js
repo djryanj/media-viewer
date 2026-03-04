@@ -723,7 +723,7 @@ const Tags = {
      * Batch refresh tags for multiple gallery items.
      *
      * @param {string[]} paths - Paths to refresh.
-     * @param {Object|null} prefetchedTagsByPath - Optional pre-fetched {path: tags[]}
+     * @param {object|null} prefetchedTagsByPath - Optional pre-fetched {path: tags[]}
      *   map.  When supplied the API call is skipped entirely, eliminating a
      *   redundant round-trip in callers that already have the data (e.g.
      *   addBulkTag / removeBulkTag which call loadBulkTags first).
