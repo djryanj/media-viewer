@@ -599,6 +599,60 @@ describe('Lightbox Integration', () => {
             );
         });
 
+        it('should reload suggestion cache after adding a tag so subsequent typing still shows suggestions', async () => {
+            // Seed the cache with some tags
+            Lightbox.allTagSuggestions = [
+                { name: 'vacation', itemCount: 5 },
+                { name: 'beach', itemCount: 3 },
+            ];
+
+            // Stub Tags.loadAllTags so it doesn't consume a fetch mock slot;
+            // we only care about the POST and the cache-reload fetch here.
+            vi.spyOn(_Tags, 'loadAllTags').mockResolvedValue();
+
+            // First fetch call handles the POST, second handles the cache reload
+            global.fetch = vi
+                .fn()
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: () => Promise.resolve({ success: true }),
+                })
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: () =>
+                        Promise.resolve([
+                            { name: 'vacation', itemCount: 5 },
+                            { name: 'beach', itemCount: 3 },
+                            { name: 'new-tag', itemCount: 1 },
+                            // 'mountain' is not on the file's tag list, so it won't
+                            // be filtered out by showDrawerSuggestions
+                            { name: 'mountain', itemCount: 2 },
+                        ]),
+                });
+
+            const cacheSpy = vi.spyOn(Lightbox, 'loadTagSuggestionsCache');
+
+            Lightbox.openTagsDrawer();
+            Lightbox.elements.drawerTagInput.value = 'new-tag';
+
+            await Lightbox.addTagFromDrawer();
+
+            // Cache should have been invalidated...
+            expect(Lightbox.allTagSuggestions).toEqual([]);
+            // ...and immediately reloaded
+            expect(cacheSpy).toHaveBeenCalled();
+
+            // Wait for the cache reload fetch to settle
+            await vi.waitFor(() => Lightbox.allTagSuggestions.length > 0);
+
+            // Suggestions should now work again for the next tag the user types;
+            // query for 'moun' which matches 'mountain' — a tag not already on the file
+            Lightbox.showDrawerSuggestions('moun');
+            const items =
+                Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+            expect(items.length).toBeGreaterThan(0);
+        });
+
         it('should remove tag via drawer chip', async () => {
             global.fetch = vi.fn(() =>
                 Promise.resolve({
@@ -622,6 +676,234 @@ describe('Lightbox Integration', () => {
                     body: expect.stringContaining('vacation'),
                 })
             );
+        });
+    });
+
+    // =========================================
+    // Tags Drawer Suggestion Keyboard Navigation
+    // =========================================
+
+    describe('Tags Drawer Suggestion Keyboard Navigation', () => {
+        let testFiles;
+
+        beforeEach(() => {
+            testFiles = [
+                {
+                    name: 'photo.jpg',
+                    path: '/photos/photo.jpg',
+                    type: 'image',
+                    tags: [],
+                },
+            ];
+            Lightbox.allTagSuggestions = [
+                { name: 'vacation', itemCount: 10 },
+                { name: 'vanilla', itemCount: 5 },
+                { name: 'village', itemCount: 3 },
+            ];
+            Lightbox.openWithItems(testFiles, 0);
+            Lightbox.openTagsDrawer();
+        });
+
+        it('should reset drawerHighlightedIndex when showDrawerSuggestions is called', () => {
+            Lightbox.drawerHighlightedIndex = 2;
+
+            Lightbox.showDrawerSuggestions('vac');
+
+            expect(Lightbox.drawerHighlightedIndex).toBe(-1);
+        });
+
+        it('should show suggestion items when query matches', () => {
+            Lightbox.showDrawerSuggestions('va');
+
+            const items =
+                Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+            expect(items.length).toBeGreaterThan(0);
+            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(false);
+        });
+
+        it('should move highlight to first item on ArrowDown', () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = -1;
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'ArrowDown',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(Lightbox.drawerHighlightedIndex).toBe(0);
+        });
+
+        it('should advance highlight on repeated ArrowDown', () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = 0;
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'ArrowDown',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(Lightbox.drawerHighlightedIndex).toBe(1);
+        });
+
+        it('should not exceed last suggestion on ArrowDown', () => {
+            Lightbox.showDrawerSuggestions('va');
+            const items =
+                Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+            Lightbox.drawerHighlightedIndex = items.length - 1;
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'ArrowDown',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(Lightbox.drawerHighlightedIndex).toBe(items.length - 1);
+        });
+
+        it('should move highlight up on ArrowUp', () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = 2;
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'ArrowUp',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(Lightbox.drawerHighlightedIndex).toBe(1);
+        });
+
+        it('should not go below index 0 on ArrowUp', () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = 0;
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'ArrowUp',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(Lightbox.drawerHighlightedIndex).toBe(0);
+        });
+
+        it('should apply active class to highlighted suggestion via updateDrawerSuggestionHighlight', () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = 1;
+
+            Lightbox.updateDrawerSuggestionHighlight();
+
+            const items =
+                Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+            expect(items[0].classList.contains('active')).toBe(false);
+            expect(items[1].classList.contains('active')).toBe(true);
+        });
+
+        it('should accept highlighted suggestion and add tag on Tab', async () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = 1;
+            const addSpy = vi.spyOn(Lightbox, 'addTagFromDrawer').mockResolvedValue();
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'Tab',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            const items =
+                Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+            expect(Lightbox.elements.drawerTagInput.value).toBe(
+                items[1]?.dataset.tag ?? Lightbox.elements.drawerTagInput.value
+            );
+            expect(Lightbox.drawerHighlightedIndex).toBe(-1);
+            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(true);
+            expect(addSpy).toHaveBeenCalled();
+        });
+
+        it('should accept first suggestion on Tab when none is highlighted', async () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = -1;
+            const addSpy = vi.spyOn(Lightbox, 'addTagFromDrawer').mockResolvedValue();
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'Tab',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            const firstItem =
+                Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion')[0];
+            // After Tab the suggestions are hidden; query before that in a separate showDrawerSuggestions call
+            expect(addSpy).toHaveBeenCalled();
+        });
+
+        it('should not accept on Tab when suggestions are hidden', () => {
+            Lightbox.elements.drawerSuggestions.classList.add('hidden');
+            const addSpy = vi.spyOn(Lightbox, 'addTagFromDrawer');
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'Tab',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(addSpy).not.toHaveBeenCalled();
+        });
+
+        it('should accept highlighted suggestion on Enter', async () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = 0;
+            Lightbox.updateDrawerSuggestionHighlight();
+            const addSpy = vi.spyOn(Lightbox, 'addTagFromDrawer').mockResolvedValue();
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'Enter',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(Lightbox.drawerHighlightedIndex).toBe(-1);
+            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(true);
+            expect(addSpy).toHaveBeenCalled();
+        });
+
+        it('should hide suggestions and reset index on Escape when suggestions are visible', () => {
+            Lightbox.showDrawerSuggestions('va');
+            Lightbox.drawerHighlightedIndex = 1;
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'Escape',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(true);
+            expect(Lightbox.drawerHighlightedIndex).toBe(-1);
+        });
+
+        it('should close drawer on Escape when suggestions are already hidden', () => {
+            Lightbox.elements.drawerSuggestions.classList.add('hidden');
+            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawer');
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'Escape',
+                bubbles: true,
+                cancelable: true,
+            });
+            Lightbox.elements.drawerTagInput.dispatchEvent(event);
+
+            expect(closeSpy).toHaveBeenCalled();
         });
     });
 

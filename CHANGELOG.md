@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.15.4] - Unreleased
 
+### Added
+
+- feat(frontend): In the lightbox tags drawer and the tag modal, pressing **Tab** now accepts the currently highlighted suggestion (or the first suggestion if none is highlighted) and immediately adds the tag, matching common autocomplete conventions. **ArrowDown** / **ArrowUp** navigate the suggestion list and highlight items; **Enter** also accepts highlighted suggestions. [#399](https://github.com/djryanj/media-viewer/issues/399)
+
 ### Fixed
 
 - perf(frontend): Tag operations (add, remove, merge, and bulk apply) in the Tags modal and the lightbox drawer now make fewer API requests. Gallery cards update from locally-available tag data without re-fetching from the server, and element lookups use an O(1) map instead of scanning all gallery items. [#399](https://github.com/djryanj/media-viewer/issues/399)

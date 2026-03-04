@@ -1,6 +1,7 @@
 const Tags = {
     allTags: [],
     elements: {},
+    highlightedSuggestionIndex: -1, // Keyboard-nav index for tag suggestions
 
     // Bulk tagging state
     isBulkMode: false,
@@ -67,12 +68,57 @@ const Tags = {
             this.elements.tagInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
+                    const highlighted =
+                        this.elements.tagSuggestions.querySelector('.tag-suggestion.active');
+                    if (highlighted) {
+                        this.elements.tagInput.value = highlighted.dataset.tag;
+                        this.elements.tagSuggestions.classList.add('hidden');
+                        this.highlightedSuggestionIndex = -1;
+                    }
                     this.addTagFromInput();
+                } else if (e.key === 'Tab') {
+                    if (!this.elements.tagSuggestions.classList.contains('hidden')) {
+                        e.preventDefault();
+                        const items =
+                            this.elements.tagSuggestions.querySelectorAll('.tag-suggestion');
+                        const idx =
+                            this.highlightedSuggestionIndex >= 0
+                                ? this.highlightedSuggestionIndex
+                                : 0;
+                        if (items[idx]) {
+                            this.elements.tagInput.value = items[idx].dataset.tag;
+                            this.elements.tagSuggestions.classList.add('hidden');
+                            this.highlightedSuggestionIndex = -1;
+                            this.addTagFromInput();
+                        }
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    if (!this.elements.tagSuggestions.classList.contains('hidden')) {
+                        e.preventDefault();
+                        const items =
+                            this.elements.tagSuggestions.querySelectorAll('.tag-suggestion');
+                        if (items.length > 0) {
+                            this.highlightedSuggestionIndex = Math.min(
+                                this.highlightedSuggestionIndex + 1,
+                                items.length - 1
+                            );
+                            this.updateSuggestionHighlight();
+                        }
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    if (!this.elements.tagSuggestions.classList.contains('hidden')) {
+                        e.preventDefault();
+                        if (this.highlightedSuggestionIndex > 0) {
+                            this.highlightedSuggestionIndex--;
+                            this.updateSuggestionHighlight();
+                        }
+                    }
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!this.elements.tagSuggestions.classList.contains('hidden')) {
                         this.elements.tagSuggestions.classList.add('hidden');
+                        this.highlightedSuggestionIndex = -1;
                     } else {
                         this.closeModalWithHistory();
                     }
@@ -540,7 +586,15 @@ const Tags = {
         this.updateCopyButtonState();
     },
 
+    updateSuggestionHighlight() {
+        const items = this.elements.tagSuggestions.querySelectorAll('.tag-suggestion');
+        items.forEach((item, i) => {
+            item.classList.toggle('active', i === this.highlightedSuggestionIndex);
+        });
+    },
+
     showSuggestions(query) {
+        this.highlightedSuggestionIndex = -1;
         query = query.trim().toLowerCase();
 
         if (query.length === 0) {
