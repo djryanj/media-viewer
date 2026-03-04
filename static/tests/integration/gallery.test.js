@@ -61,6 +61,18 @@ describe('Gallery and Media Integration', () => {
             }
         });
 
+        it('should return pagination envelope fields with media listing', async () => {
+            const result = await getMediaFiles('');
+
+            expect(result.success).toBe(true);
+            // total must be a number >= number of items returned in this page
+            expect(typeof result.total).toBe('number');
+            expect(result.total).toBeGreaterThanOrEqual(result.data.length);
+            // offset and limit are numbers (limit may be 0 meaning "all")
+            expect(typeof result.offset).toBe('number');
+            expect(typeof result.limit).toBe('number');
+        });
+
         it('should handle listing non-existent directory', async () => {
             const result = await listFiles('nonexistent-dir-' + Date.now());
 

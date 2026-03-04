@@ -452,6 +452,257 @@ func TestGetMediaInDirectoryLargeDataset(t *testing.T) {
 	}
 }
 
+// TestGetMediaInDirectoryPagedFirstPage verifies that offset=0 with a small
+// limit returns the first window and the correct total count.
+func TestGetMediaInDirectoryPagedFirstPage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Insert 5 files
+	dir := "paged/first"
+	for i := 1; i <= 5; i++ {
+		f := MediaFile{
+			Name:       fmt.Sprintf("img%02d.jpg", i),
+			Path:       fmt.Sprintf("%s/img%02d.jpg", dir, i),
+			ParentPath: dir,
+			Type:       FileTypeImage,
+			Size:       int64(i * 1024),
+			ModTime:    time.Now(),
+			MimeType:   "image/jpeg",
+		}
+		tx, _ := db.BeginBatch(ctx)
+		_ = tx.UpsertFile(ctx, &f)
+		_ = db.EndBatch(tx, nil)
+	}
+
+	// Fetch first page of 3
+	items, total, err := db.GetMediaInDirectoryPaged(ctx, dir, SortByName, SortAsc, 0, 3)
+	if err != nil {
+		t.Fatalf("GetMediaInDirectoryPaged failed: %v", err)
+	}
+
+	if len(items) != 3 {
+		t.Errorf("Expected 3 items, got %d", len(items))
+	}
+	if total != 5 {
+		t.Errorf("Expected total=5, got %d", total)
+	}
+	if items[0].Name != "img01.jpg" {
+		t.Errorf("Expected first item img01.jpg, got %s", items[0].Name)
+	}
+}
+
+// TestGetMediaInDirectoryPagedSecondPage verifies that offset skips the right
+// number of rows and that the window is non-overlapping with page 1.
+func TestGetMediaInDirectoryPagedSecondPage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	dir := "paged/second"
+	for i := 1; i <= 6; i++ {
+		f := MediaFile{
+			Name:       fmt.Sprintf("file%02d.jpg", i),
+			Path:       fmt.Sprintf("%s/file%02d.jpg", dir, i),
+			ParentPath: dir,
+			Type:       FileTypeImage,
+			Size:       int64(i * 512),
+			ModTime:    time.Now(),
+			MimeType:   "image/jpeg",
+		}
+		tx, _ := db.BeginBatch(ctx)
+		_ = tx.UpsertFile(ctx, &f)
+		_ = db.EndBatch(tx, nil)
+	}
+
+	page1, total1, err := db.GetMediaInDirectoryPaged(ctx, dir, SortByName, SortAsc, 0, 3)
+	if err != nil {
+		t.Fatalf("page 1 failed: %v", err)
+	}
+	page2, total2, err := db.GetMediaInDirectoryPaged(ctx, dir, SortByName, SortAsc, 3, 3)
+	if err != nil {
+		t.Fatalf("page 2 failed: %v", err)
+	}
+
+	if total1 != 6 || total2 != 6 {
+		t.Errorf("Expected total=6 for both pages, got %d and %d", total1, total2)
+	}
+	if len(page1) != 3 || len(page2) != 3 {
+		t.Errorf("Expected 3 items per page, got %d and %d", len(page1), len(page2))
+	}
+
+	// Pages must not overlap
+	p1Names := map[string]bool{}
+	for _, f := range page1 {
+		p1Names[f.Name] = true
+	}
+	for _, f := range page2 {
+		if p1Names[f.Name] {
+			t.Errorf("Overlap: %s appears in both pages", f.Name)
+		}
+	}
+
+	// Combined pages form the full sorted list
+	combined := make([]MediaFile, 0, len(page1)+len(page2))
+	combined = append(combined, page1...)
+	combined = append(combined, page2...)
+	for i, f := range combined {
+		want := fmt.Sprintf("file%02d.jpg", i+1)
+		if f.Name != want {
+			t.Errorf("Position %d: got %s, want %s", i, f.Name, want)
+		}
+	}
+}
+
+// TestGetMediaInDirectoryPagedNoLimit verifies that limit=0 returns all items
+// and that len(items) == total.
+func TestGetMediaInDirectoryPagedNoLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	dir := "paged/nolimit"
+	const count = 8
+	tx, _ := db.BeginBatch(ctx)
+	for i := 1; i <= count; i++ {
+		f := MediaFile{
+			Name:       fmt.Sprintf("media%02d.jpg", i),
+			Path:       fmt.Sprintf("%s/media%02d.jpg", dir, i),
+			ParentPath: dir,
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+			MimeType:   "image/jpeg",
+		}
+		_ = tx.UpsertFile(ctx, &f)
+	}
+	_ = db.EndBatch(tx, nil)
+
+	items, total, err := db.GetMediaInDirectoryPaged(ctx, dir, SortByName, SortAsc, 0, 0)
+	if err != nil {
+		t.Fatalf("GetMediaInDirectoryPaged (limit=0) failed: %v", err)
+	}
+
+	if total != count {
+		t.Errorf("Expected total=%d, got %d", count, total)
+	}
+	if len(items) != count {
+		t.Errorf("Expected %d items (limit=0 means all), got %d", count, len(items))
+	}
+}
+
+// TestGetMediaInDirectoryPagedOffsetBeyondEnd verifies that an offset beyond
+// the total returns an empty items slice while preserving the correct total.
+func TestGetMediaInDirectoryPagedOffsetBeyondEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	dir := "paged/beyond"
+	for i := 1; i <= 3; i++ {
+		f := MediaFile{
+			Name:       fmt.Sprintf("beyond%02d.jpg", i),
+			Path:       fmt.Sprintf("%s/beyond%02d.jpg", dir, i),
+			ParentPath: dir,
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+			MimeType:   "image/jpeg",
+		}
+		tx, _ := db.BeginBatch(ctx)
+		_ = tx.UpsertFile(ctx, &f)
+		_ = db.EndBatch(tx, nil)
+	}
+
+	// Offset > total
+	items, total, err := db.GetMediaInDirectoryPaged(ctx, dir, SortByName, SortAsc, 100, 10)
+	if err != nil {
+		t.Fatalf("GetMediaInDirectoryPaged failed: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total=3, got %d", total)
+	}
+	if len(items) != 0 {
+		t.Errorf("Expected 0 items for offset beyond end, got %d", len(items))
+	}
+}
+
+// TestGetMediaInDirectoryPagedSortingPreserved verifies that sort order is
+// consistent across pages (i.e., name order is stable when paging).
+func TestGetMediaInDirectoryPagedSortingPreserved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	dir := "paged/sort"
+	names := []string{"zebra.jpg", "alpha.jpg", "mango.jpg", "berry.jpg", "kiwi.jpg"}
+	tx, _ := db.BeginBatch(ctx)
+	for _, name := range names {
+		f := MediaFile{
+			Name:       name,
+			Path:       fmt.Sprintf("%s/%s", dir, name),
+			ParentPath: dir,
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+			MimeType:   "image/jpeg",
+		}
+		_ = tx.UpsertFile(ctx, &f)
+	}
+	_ = db.EndBatch(tx, nil)
+
+	// Fetch by name asc in two pages of 3 and 2
+	p1, _, err := db.GetMediaInDirectoryPaged(ctx, dir, SortByName, SortAsc, 0, 3)
+	if err != nil {
+		t.Fatalf("page 1 failed: %v", err)
+	}
+	p2, _, err := db.GetMediaInDirectoryPaged(ctx, dir, SortByName, SortAsc, 3, 3)
+	if err != nil {
+		t.Fatalf("page 2 failed: %v", err)
+	}
+
+	all := make([]MediaFile, 0, len(p1)+len(p2))
+	all = append(all, p1...)
+	all = append(all, p2...)
+	want := []string{"alpha.jpg", "berry.jpg", "kiwi.jpg", "mango.jpg", "zebra.jpg"}
+
+	if len(all) != len(want) {
+		t.Fatalf("Combined pages: expected %d items, got %d", len(want), len(all))
+	}
+	for i, w := range want {
+		if all[i].Name != w {
+			t.Errorf("Position %d: got %s, want %s", i, all[i].Name, w)
+		}
+	}
+}
+
 // TestGetMediaInDirectoryDefaultParameters verifies default sort parameters.
 func TestGetMediaInDirectoryDefaultParameters(t *testing.T) {
 	if testing.Short() {

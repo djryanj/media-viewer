@@ -802,7 +802,19 @@ const InfiniteScroll = {
             const timeoutId = setTimeout(() => controller.abort(), 5000);
             const response = await fetch(`/api/media?${params}`, { signal: controller.signal });
             clearTimeout(timeoutId);
-            if (response.ok) MediaApp.state.mediaFiles = await response.json();
+            if (response.ok) {
+                const data = await response.json();
+                MediaApp.state.mediaFiles = data.items ?? [];
+                if (data.total > MediaApp.state.mediaFiles.length) {
+                    MediaApp._fetchRemainingMediaFiles(
+                        MediaApp.state.currentPath,
+                        MediaApp.state.currentSort.field,
+                        MediaApp.state.currentSort.order,
+                        data.total,
+                        MediaApp.state.mediaFiles.length
+                    );
+                }
+            }
         } catch (error) {
             if (error.name !== 'AbortError' && !(error instanceof TypeError)) {
                 console.error('Error updating media files:', error);

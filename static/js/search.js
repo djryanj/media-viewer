@@ -902,9 +902,14 @@ const Search = {
         const parentPath = path.substring(0, path.lastIndexOf('/')) || '';
 
         try {
-            const response = await fetch(`/api/media?path=${encodeURIComponent(parentPath)}`);
+            // Use limit=0 to retrieve the full ordered list — the item may be
+            // anywhere in the directory and we need the correct index for prev/next.
+            const response = await fetch(
+                `/api/media?path=${encodeURIComponent(parentPath)}&limit=0`
+            );
             if (response.ok) {
-                const mediaFiles = await response.json();
+                const data = await response.json();
+                const mediaFiles = data.items ?? [];
                 const index = mediaFiles.findIndex((f) => f.path === path);
                 if (index >= 0) {
                     Lightbox.openWithItems(mediaFiles, index);

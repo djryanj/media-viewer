@@ -202,7 +202,13 @@ export async function listFiles(path = '') {
 /**
  * Get media files in directory
  * @param {string} path - Directory path
- * @returns {Promise<{success: boolean, data: any}>}
+ * @returns {Promise<{success: boolean, status: number, data: Array, total: number, offset: number, limit: number}>}
+ *
+ * The /api/media endpoint returns a MediaFilesPage envelope:
+ *   { items: [], total: N, offset: N, limit: N }
+ * This helper normalises the response so callers continue to receive a flat
+ * array in `data` (backwards-compatible) while also exposing `total`,
+ * `offset`, and `limit` for pagination-aware tests.
  */
 export async function getMediaFiles(path = '') {
     const url = path
@@ -210,12 +216,20 @@ export async function getMediaFiles(path = '') {
         : TEST_CONFIG.API.FILES.MEDIA;
 
     const response = await apiRequest(url);
-    const data = await response.json().catch(() => ({}));
+    const raw = await response.json().catch(() => ({}));
+
+    // Normalise: /api/media now returns { items, total, offset, limit }.
+    // Fall back to treating raw as an array for forward-compatibility.
+    const items = Array.isArray(raw) ? raw : (raw.items ?? []);
+    const total = typeof raw.total === 'number' ? raw.total : items.length;
 
     return {
         success: response.ok,
         status: response.status,
-        data,
+        data: items,
+        total,
+        offset: raw.offset ?? 0,
+        limit: raw.limit ?? 0,
     };
 }
 
