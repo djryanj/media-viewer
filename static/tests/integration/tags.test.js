@@ -776,6 +776,189 @@ describe('Tags Integration Tests', () => {
         });
     });
 
+    describe('Tag Suggestions Keyboard Navigation', () => {
+        let keydownHandler;
+        let mockSuggestionItems;
+
+        beforeEach(() => {
+            Tags.cacheElements();
+            Tags.allTags = [
+                { name: 'vacation', itemCount: 10 },
+                { name: 'vanilla', itemCount: 5 },
+                { name: 'village', itemCount: 3 },
+            ];
+
+            // Create mock suggestion items with classList.toggle support
+            mockSuggestionItems = ['vacation', 'vanilla', 'village'].map((name) => ({
+                dataset: { tag: name },
+                classList: { toggle: vi.fn(), contains: vi.fn() },
+                addEventListener: vi.fn(),
+            }));
+            mockElements['tag-suggestions'].querySelectorAll = vi.fn(() => mockSuggestionItems);
+            mockElements['tag-suggestions'].querySelector = vi.fn(() => null);
+
+            // Reset the mock call history so we can find the keydown handler
+            mockElements['tag-input'].addEventListener.mockReset();
+            Tags.bindEvents();
+            const calls = mockElements['tag-input'].addEventListener.mock.calls;
+            const keydownCall = calls.find((call) => call[0] === 'keydown');
+            keydownHandler = keydownCall?.[1];
+        });
+
+        it('should reset highlightedSuggestionIndex when showing new suggestions', () => {
+            Tags.highlightedSuggestionIndex = 2;
+
+            Tags.showSuggestions('vac');
+
+            expect(Tags.highlightedSuggestionIndex).toBe(-1);
+        });
+
+        it('should move highlight down on ArrowDown', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false); // not hidden
+            Tags.highlightedSuggestionIndex = -1;
+
+            keydownHandler({ key: 'ArrowDown', preventDefault: vi.fn() });
+
+            expect(Tags.highlightedSuggestionIndex).toBe(0);
+        });
+
+        it('should advance highlight further on repeated ArrowDown', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = 0;
+
+            keydownHandler({ key: 'ArrowDown', preventDefault: vi.fn() });
+
+            expect(Tags.highlightedSuggestionIndex).toBe(1);
+        });
+
+        it('should not exceed last suggestion index on ArrowDown', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = 2; // already at last of 3 items
+
+            keydownHandler({ key: 'ArrowDown', preventDefault: vi.fn() });
+
+            expect(Tags.highlightedSuggestionIndex).toBe(2);
+        });
+
+        it('should move highlight up on ArrowUp', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = 2;
+
+            keydownHandler({ key: 'ArrowUp', preventDefault: vi.fn() });
+
+            expect(Tags.highlightedSuggestionIndex).toBe(1);
+        });
+
+        it('should not go below index 0 on ArrowUp', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = 0;
+
+            keydownHandler({ key: 'ArrowUp', preventDefault: vi.fn() });
+
+            expect(Tags.highlightedSuggestionIndex).toBe(0);
+        });
+
+        it('should do nothing on ArrowDown when suggestions are hidden', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => true); // hidden
+            Tags.highlightedSuggestionIndex = -1;
+
+            keydownHandler({ key: 'ArrowDown', preventDefault: vi.fn() });
+
+            expect(Tags.highlightedSuggestionIndex).toBe(-1);
+        });
+
+        it('should accept highlighted suggestion and add tag on Tab', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = 1;
+            const addSpy = vi.spyOn(Tags, 'addTagFromInput').mockResolvedValue();
+
+            keydownHandler({ key: 'Tab', preventDefault: vi.fn() });
+
+            expect(mockElements['tag-input'].value).toBe('vanilla');
+            expect(Tags.highlightedSuggestionIndex).toBe(-1);
+            expect(mockElements['tag-suggestions'].classList.add).toHaveBeenCalledWith('hidden');
+            expect(addSpy).toHaveBeenCalled();
+        });
+
+        it('should accept first suggestion on Tab when none is highlighted', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = -1;
+            const addSpy = vi.spyOn(Tags, 'addTagFromInput').mockResolvedValue();
+
+            keydownHandler({ key: 'Tab', preventDefault: vi.fn() });
+
+            expect(mockElements['tag-input'].value).toBe('vacation');
+            expect(addSpy).toHaveBeenCalled();
+        });
+
+        it('should not accept on Tab when suggestions are hidden', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => true);
+            const addSpy = vi.spyOn(Tags, 'addTagFromInput');
+
+            keydownHandler({ key: 'Tab', preventDefault: vi.fn() });
+
+            expect(addSpy).not.toHaveBeenCalled();
+        });
+
+        it('should accept highlighted suggestion on Enter', () => {
+            Tags.highlightedSuggestionIndex = 0;
+            mockElements['tag-suggestions'].querySelector = vi.fn(() => ({
+                dataset: { tag: 'vacation' },
+            }));
+            const addSpy = vi.spyOn(Tags, 'addTagFromInput').mockResolvedValue();
+
+            keydownHandler({ key: 'Enter', preventDefault: vi.fn() });
+
+            expect(mockElements['tag-input'].value).toBe('vacation');
+            expect(Tags.highlightedSuggestionIndex).toBe(-1);
+            expect(mockElements['tag-suggestions'].classList.add).toHaveBeenCalledWith('hidden');
+            expect(addSpy).toHaveBeenCalled();
+        });
+
+        it('should hide suggestions and reset index on Escape when suggestions are showing', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = 1;
+
+            keydownHandler({
+                key: 'Escape',
+                preventDefault: vi.fn(),
+                stopPropagation: vi.fn(),
+            });
+
+            expect(mockElements['tag-suggestions'].classList.add).toHaveBeenCalledWith('hidden');
+            expect(Tags.highlightedSuggestionIndex).toBe(-1);
+        });
+
+        it('should toggle active class correctly via updateSuggestionHighlight', () => {
+            Tags.highlightedSuggestionIndex = 1;
+
+            Tags.updateSuggestionHighlight();
+
+            expect(mockSuggestionItems[0].classList.toggle).toHaveBeenCalledWith('active', false);
+            expect(mockSuggestionItems[1].classList.toggle).toHaveBeenCalledWith('active', true);
+            expect(mockSuggestionItems[2].classList.toggle).toHaveBeenCalledWith('active', false);
+        });
+
+        it('should call updateSuggestionHighlight on ArrowDown', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            const updateSpy = vi.spyOn(Tags, 'updateSuggestionHighlight');
+
+            keydownHandler({ key: 'ArrowDown', preventDefault: vi.fn() });
+
+            expect(updateSpy).toHaveBeenCalled();
+        });
+
+        it('should call updateSuggestionHighlight on ArrowUp when index > 0', () => {
+            mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
+            Tags.highlightedSuggestionIndex = 1;
+            const updateSpy = vi.spyOn(Tags, 'updateSuggestionHighlight');
+
+            keydownHandler({ key: 'ArrowUp', preventDefault: vi.fn() });
+
+            expect(updateSpy).toHaveBeenCalled();
+        });
+    });
+
     describe('Highlight Match', () => {
         it('should highlight matching text', () => {
             const result = Tags.highlightMatch('vacation', 'vac');

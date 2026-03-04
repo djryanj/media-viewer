@@ -2384,7 +2384,8 @@ select:focus {
 }
 
 .drawer-suggestion:hover,
-.drawer-suggestion:active {
+.drawer-suggestion:active,
+.drawer-suggestion.active {
     background: var(--bg-tertiary);
 }
 
@@ -4061,7 +4062,8 @@ select:focus {
 }
 
 .tag-suggestion:hover,
-.tag-suggestion:active {
+.tag-suggestion:active,
+.tag-suggestion.active {
     background: var(--bg-secondary);
 }
 
