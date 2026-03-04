@@ -163,7 +163,7 @@ func (d *Database) fetchDirectoryItems(ctx context.Context, opts ListOptions) ([
 	sortColumn := getSortColumn(opts.SortField)
 	sortDir := SortAscStr
 	if opts.SortOrder == SortDesc {
-		sortDir = "DESC"
+		sortDir = SortDescStr
 	}
 
 	offset := (opts.Page - 1) * opts.PageSize
@@ -179,10 +179,10 @@ func (d *Database) fetchDirectoryItems(ctx context.Context, opts ListOptions) ([
 	}
 
 	allowedColumns := map[string]bool{
-		"f.name COLLATE NOCASE": true,
-		"f.mod_time":            true,
-		"f.size":                true,
-		"f.type":                true,
+		NameCollationStr: true,
+		"f.mod_time":     true,
+		"f.size":         true,
+		"f.type":         true,
 	}
 	allowedSortDirs := map[string]bool{
 		SortAscStr:  true,
@@ -1135,38 +1135,38 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 	}
 
 	sortColumn := getSortColumn(sortField)
-	sortDir := "ASC"
+	sortDir := SortAscStr
 	if sortOrder == SortDesc {
-		sortDir = "DESC"
+		sortDir = SortDescStr
 	}
 
 	if sortColumn == NameCollation {
-		sortColumn = "f.name COLLATE NOCASE"
+		sortColumn = NameCollationStr
 	} else {
 		sortColumn = "f." + sortColumn
 	}
 
 	// Validate against allowlists
 	allowedColumns := map[string]bool{
-		"f.name COLLATE NOCASE": true,
-		"f.mod_time":            true,
-		"f.size":                true,
-		"f.type":                true,
+		NameCollationStr: true,
+		"f.mod_time":     true,
+		"f.size":         true,
+		"f.type":         true,
 	}
 	allowedSortDirs := map[string]bool{
-		"ASC":  true,
-		"DESC": true,
+		SortAscStr:  true,
+		SortDescStr: true,
 	}
 	if !allowedColumns[sortColumn] {
-		sortColumn = "f.name COLLATE NOCASE"
+		sortColumn = NameCollationStr
 	}
 	if !allowedSortDirs[sortDir] {
-		sortDir = "ASC"
+		sortDir = SortAscStr
 	}
 
 	secondarySort := ""
 	if sortField != SortByName && sortField != "" {
-		secondarySort = ", f.name COLLATE NOCASE ASC"
+		secondarySort = ", " + NameCollationStr + " ASC"
 	}
 
 	query := fmt.Sprintf(`
@@ -1227,6 +1227,153 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 
 	done(nil)
 	return files, nil
+}
+
+// GetMediaInDirectoryPaged returns media files in a directory with optional pagination and the
+// total count of matching files.  When limit <= 0 all files are returned (identical to
+// GetMediaInDirectory) and Total == len(Items).  When limit > 0 only the window
+// [offset, offset+limit) is returned; Total reflects the full unpaged count.
+func (d *Database) GetMediaInDirectoryPaged(ctx context.Context, parentPath string, sortField SortField, sortOrder SortOrder, offset, limit int) ([]MediaFile, int, error) {
+	done := d.observeQuery("get_media_in_directory_paged")
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if sortField == "" {
+		sortField = SortByName
+	}
+	if sortOrder == "" {
+		sortOrder = SortAsc
+	}
+
+	sortColumn := getSortColumn(sortField)
+	sortDir := SortAscStr
+	if sortOrder == SortDesc {
+		sortDir = SortDescStr
+	}
+
+	if sortColumn == NameCollation {
+		sortColumn = NameCollationStr
+	} else {
+		sortColumn = "f." + sortColumn
+	}
+
+	allowedColumns := map[string]bool{
+		NameCollationStr: true,
+		"f.mod_time":     true,
+		"f.size":         true,
+		"f.type":         true,
+	}
+	allowedSortDirs := map[string]bool{SortAscStr: true, SortDescStr: true}
+	if !allowedColumns[sortColumn] {
+		sortColumn = NameCollationStr
+	}
+	if !allowedSortDirs[sortDir] {
+		sortDir = SortAscStr
+	}
+
+	secondarySort := ""
+	if sortField != SortByName && sortField != "" {
+		secondarySort = ", " + NameCollationStr + " ASC"
+	}
+
+	// Count total matching files first (needed for the pagination envelope).
+	var total int
+	countQuery := `SELECT COUNT(*) FROM files WHERE parent_path = ? AND type IN ('image', 'video')`
+	if err := d.reader.QueryRowContext(ctx, countQuery, parentPath).Scan(&total); err != nil {
+		done(err)
+		return nil, 0, fmt.Errorf("get_media_in_directory_paged count: %w", err)
+	}
+
+	// Build the data query, appending LIMIT/OFFSET only when pagination is requested.
+	var dataQuery string
+	if limit > 0 {
+		dataQuery = fmt.Sprintf(`
+			SELECT
+				f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+				EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+				(SELECT GROUP_CONCAT(t.name, ',')
+				 FROM file_tags ft
+				 JOIN tags t ON ft.tag_id = t.id
+				 WHERE ft.file_path = f.path) AS tags
+			FROM files f
+			WHERE f.parent_path = ? AND f.type IN ('image', 'video')
+			ORDER BY %s %s%s
+			LIMIT ? OFFSET ?
+		`, sortColumn, sortDir, secondarySort) //nolint:gosec // sortColumn/sortDir validated above
+	} else {
+		dataQuery = fmt.Sprintf(`
+			SELECT
+				f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+				EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+				(SELECT GROUP_CONCAT(t.name, ',')
+				 FROM file_tags ft
+				 JOIN tags t ON ft.tag_id = t.id
+				 WHERE ft.file_path = f.path) AS tags
+			FROM files f
+			WHERE f.parent_path = ? AND f.type IN ('image', 'video')
+			ORDER BY %s %s%s
+		`, sortColumn, sortDir, secondarySort) //nolint:gosec // sortColumn/sortDir validated above
+	}
+
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		rows, err = d.reader.QueryContext(ctx, dataQuery, parentPath, limit, offset)
+	} else {
+		rows, err = d.reader.QueryContext(ctx, dataQuery, parentPath)
+	}
+	if err != nil {
+		done(err)
+		return nil, 0, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
+
+	capacity := total
+	if limit > 0 && limit < capacity {
+		capacity = limit
+	}
+	if capacity < 0 {
+		capacity = 0
+	}
+	files := make([]MediaFile, 0, capacity)
+
+	for rows.Next() {
+		var file MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+		var isFavorite int
+		var tagsString sql.NullString
+
+		if err := rows.Scan(
+			&file.ID, &file.Name, &file.Path, &file.ParentPath,
+			&file.Type, &file.Size, &modTime, &mimeType,
+			&isFavorite, &tagsString,
+		); err != nil {
+			done(err)
+			return nil, 0, err
+		}
+
+		file.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			file.MimeType = mimeType.String
+		}
+		file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		file.IsFavorite = isFavorite == 1
+
+		if tagsString.Valid && tagsString.String != "" {
+			file.Tags = strings.Split(tagsString.String, ",")
+		}
+
+		files = append(files, file)
+	}
+
+	done(nil)
+	return files, total, nil
 }
 
 // GetMediaFilesInFolder returns media files directly within a folder (for folder thumbnails).

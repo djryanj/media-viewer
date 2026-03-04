@@ -181,7 +181,16 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, listing)
 }
 
-// GetMediaFiles returns all media files (images and videos) in a directory for lightbox viewing
+// defaultMediaPageSize is the number of media files returned per page by GetMediaFiles.
+// Directories smaller than this get a single complete response; larger directories
+// are served in pages so the lightbox can open quickly while the rest streams in
+// the background on the client side.
+const defaultMediaPageSize = 500
+
+// GetMediaFiles returns media files (images and videos) in a directory for lightbox viewing.
+// Supports optional cursor-based pagination via the offset and limit query parameters.
+// The response envelope is always MediaFilesPage; the client uses Total to decide
+// whether to fetch additional pages.
 func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	parentPath := r.URL.Query().Get("path")
@@ -196,38 +205,60 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 		sortOrder = database.SortAsc
 	}
 
-	logging.Debug("GetMediaFiles: path=%s, sort=%s, order=%s", parentPath, sortField, sortOrder)
+	limit := defaultMediaPageSize
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
+		limit = l
+	}
+	// limit=0 in the query string means "no limit — return everything"
+	if r.URL.Query().Get("limit") == "0" {
+		limit = 0
+	}
 
-	files, err := h.db.GetMediaInDirectory(ctx, parentPath, sortField, sortOrder)
+	offset := 0
+	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o >= 0 {
+		offset = o
+	}
+
+	logging.Debug("GetMediaFiles: path=%s, sort=%s, order=%s, offset=%d, limit=%d",
+		parentPath, sortField, sortOrder, offset, limit)
+
+	items, total, err := h.db.GetMediaInDirectoryPaged(ctx, parentPath, sortField, sortOrder, offset, limit)
 	if err != nil {
 		logging.Error("GetMediaFiles error: %v", err)
 		http.Error(w, "Failed to get media files", http.StatusInternalServerError)
 		return
 	}
 
-	if files == nil {
-		files = []database.MediaFile{}
+	if items == nil {
+		items = []database.MediaFile{}
 	}
 
-	// Generate ETag based on directory state for HTTP caching
-	// Include: path, sort params, file count, and latest modification time
-	// This ensures the ETag changes when directory contents change
+	page := database.MediaFilesPage{
+		Items:  items,
+		Total:  total,
+		Offset: offset,
+		Limit:  limit,
+	}
+
+	// Generate ETag based on directory state for HTTP caching.
+	// Include: path, sort params, offset, limit, page item count, total count,
+	// and latest modification time so the ETag changes when contents change.
 	lastModTime := int64(0)
-	for i := range files {
-		if files[i].ModTime.Unix() > lastModTime {
-			lastModTime = files[i].ModTime.Unix()
+	for i := range items {
+		if items[i].ModTime.Unix() > lastModTime {
+			lastModTime = items[i].ModTime.Unix()
 		}
 	}
 
 	var tagFingerprint strings.Builder
-	for i := range files {
-		if len(files[i].Tags) > 0 {
-			tagFingerprint.WriteString(files[i].Path + ":" + strings.Join(files[i].Tags, ",") + ";")
+	for i := range items {
+		if len(items[i].Tags) > 0 {
+			tagFingerprint.WriteString(items[i].Path + ":" + strings.Join(items[i].Tags, ",") + ";")
 		}
 	}
 
-	etagData := fmt.Sprintf("%s_%s_%s_%d_%d_%s",
-		parentPath, sortField, sortOrder, len(files), lastModTime,
+	etagData := fmt.Sprintf("%s_%s_%s_%d_%d_%d_%d_%d_%s",
+		parentPath, sortField, sortOrder, offset, limit, total, len(items), lastModTime,
 		tagFingerprint.String())
 	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
 	// Set cache headers
@@ -245,9 +276,10 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return full response
-	logging.Debug("GetMediaFiles: serving %s (%d files, ETag: %s)", parentPath, len(files), etag)
+	logging.Debug("GetMediaFiles: serving %s (%d/%d files, offset=%d, ETag: %s)",
+		parentPath, len(items), total, offset, etag)
 	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, files)
+	writeJSON(w, page)
 }
 
 // GetFile serves a file from the media directory
