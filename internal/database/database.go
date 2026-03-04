@@ -73,7 +73,8 @@ type Database struct {
 	statsMu            sync.RWMutex
 	mmapDisabled       bool
 	stmts              preparedStmts
-	slowQueryThreshold float64 // seconds; queries exceeding this are logged as slow
+	slowQueryThreshold float64  // seconds; queries exceeding this are logged as slow
+	sessionExtendTimes sync.Map // token-hash → last-extend unix timestamp (int64)
 }
 
 // Options holds configuration options for database initialization.

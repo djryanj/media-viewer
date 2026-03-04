@@ -272,19 +272,24 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Extend session (sliding expiration)
-		if err := h.db.ExtendSession(ctx, cookie.Value); err != nil {
-			logging.Debug("Failed to extend session: %v", err)
-		} else {
-			// Update cookie expiration
-			http.SetCookie(w, &http.Cookie{
-				Name:     SessionCookieName,
-				Value:    cookie.Value,
-				Path:     "/",
-				Expires:  time.Now().Add(database.GetSessionDuration()),
-				HttpOnly: true,
-				SameSite: http.SameSiteStrictMode,
-			})
+		// Extend session (sliding expiration) only for API requests.
+		// Static files, HTML pages, and browser-asset fetches are not meaningful
+		// user-activity signals and would otherwise generate hundreds of
+		// concurrent DB writes on every gallery page load.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			if err := h.db.ExtendSession(ctx, cookie.Value); err != nil {
+				logging.Debug("Failed to extend session: %v", err)
+			} else {
+				// Update cookie expiration
+				http.SetCookie(w, &http.Cookie{
+					Name:     SessionCookieName,
+					Value:    cookie.Value,
+					Path:     "/",
+					Expires:  time.Now().Add(database.GetSessionDuration()),
+					HttpOnly: true,
+					SameSite: http.SameSiteStrictMode,
+				})
+			}
 		}
 
 		next.ServeHTTP(w, r)
