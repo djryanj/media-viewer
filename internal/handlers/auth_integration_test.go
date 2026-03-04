@@ -1024,3 +1024,87 @@ func TestAuthMiddlewareWithValidSession(t *testing.T) {
 		t.Errorf("expected 200 with valid session, got %d", w.Code)
 	}
 }
+func TestAuthMiddlewareExtendsSessionForAPIRequestsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	if err := h.db.CreateUser(ctx, "testpassword"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	user, err := h.db.ValidatePassword(ctx, "testpassword")
+	if err != nil {
+		t.Fatalf("ValidatePassword failed: %v", err)
+	}
+	session, err := h.db.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	// API request — session cookie should be refreshed in the response.
+	req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.Token})
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	setCookie := w.Header().Get("Set-Cookie")
+	if setCookie == "" {
+		t.Error("expected Set-Cookie header for API request but got none")
+	}
+}
+
+func TestAuthMiddlewareDoesNotExtendSessionForNonAPIRequestsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	if err := h.db.CreateUser(ctx, "testpassword"); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	user, err := h.db.ValidatePassword(ctx, "testpassword")
+	if err != nil {
+		t.Fatalf("ValidatePassword failed: %v", err)
+	}
+	session, err := h.db.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	// Non-API request (static asset) — cookie must NOT be updated, but the
+	// request should still be served normally because the session is valid.
+	req := httptest.NewRequest(http.MethodGet, "/index.html", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.Token})
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-API request with valid session, got %d", w.Code)
+	}
+
+	setCookie := w.Header().Get("Set-Cookie")
+	if setCookie != "" {
+		t.Errorf("expected no Set-Cookie header for non-API request, but got: %s", setCookie)
+	}
+}

@@ -34,6 +34,12 @@ type Session struct {
 // DefaultSessionDuration is the default session length if not configured.
 const DefaultSessionDuration = 5 * time.Minute
 
+// sessionExtendCooldown is the minimum interval between session-extension DB
+// writes for the same token. Calls that arrive within this window are no-ops
+// at the in-memory level, avoiding a write-storm when many concurrent requests
+// (thumbnails, static assets) all pass through AuthMiddleware simultaneously.
+const sessionExtendCooldown = 60 * time.Second
+
 var sessionDuration = DefaultSessionDuration
 
 // SetSessionDuration configures the session duration.
@@ -263,19 +269,32 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 }
 
 // ExtendSession extends the expiration time of an existing session.
+// A 60-second in-memory cooldown is applied per token so that bursts of
+// concurrent requests (thumbnails, static assets) do not each generate a
+// separate DB write; only the first call in any 60-second window hits the DB.
 func (d *Database) ExtendSession(ctx context.Context, token string) error {
-	done := d.observeQuery("extend_session")
-
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
 	tokenBytes, err := hex.DecodeString(token)
 	if err != nil {
-		done(err)
 		return fmt.Errorf("invalid token format: %w", err)
 	}
 	hash := sha256.Sum256(tokenBytes)
 	tokenHash := hex.EncodeToString(hash[:])
+
+	// Cooldown: skip the DB write if this token was extended recently.
+	// Return before calling observeQuery so cooldown-skipped calls are not
+	// counted in the extend_session metric (only real DB writes should appear).
+	if lastRaw, ok := d.sessionExtendTimes.Load(tokenHash); ok {
+		if lastTS, ok := lastRaw.(int64); ok {
+			if time.Since(time.Unix(lastTS, 0)) < sessionExtendCooldown {
+				return nil
+			}
+		}
+	}
+
+	done := d.observeQuery("extend_session")
+
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
 
 	newExpiresAt := time.Now().Add(sessionDuration)
 
@@ -296,6 +315,7 @@ func (d *Database) ExtendSession(ctx context.Context, token string) error {
 		return err
 	}
 
+	d.sessionExtendTimes.Store(tokenHash, time.Now().Unix())
 	done(nil)
 	return nil
 }
@@ -314,6 +334,9 @@ func (d *Database) deleteSessionByHash(ctx context.Context, tokenHash string) er
 		return fmt.Errorf("session not found")
 	}
 
+	// Remove the cooldown entry so a new session with the same token hash
+	// (extremely unlikely but possible) starts fresh.
+	d.sessionExtendTimes.Delete(tokenHash)
 	return nil
 }
 

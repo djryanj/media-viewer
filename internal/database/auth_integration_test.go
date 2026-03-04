@@ -331,6 +331,70 @@ func TestExtendSessionIntegration(t *testing.T) {
 	}
 }
 
+func TestExtendSessionCooldownIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	_ = db.CreateUser(ctx, "password")
+	user, _ := db.ValidatePassword(ctx, "password")
+	session, _ := db.CreateSession(ctx, user.ID)
+
+	// First extend — hits the database and records the timestamp.
+	if err := db.ExtendSession(ctx, session.Token); err != nil {
+		t.Fatalf("first ExtendSession failed: %v", err)
+	}
+
+	// Second extend immediately — should be skipped by the cooldown but still
+	// return nil (not an error from the caller's perspective).
+	if err := db.ExtendSession(ctx, session.Token); err != nil {
+		t.Fatalf("second ExtendSession (cooldown skip) should return nil, got: %v", err)
+	}
+
+	// Session should remain valid after both calls.
+	validUser, err := db.ValidateSession(ctx, session.Token)
+	if err != nil {
+		t.Fatalf("ValidateSession after cooldown-skipped extend failed: %v", err)
+	}
+	if validUser == nil {
+		t.Error("expected valid user after cooldown-skipped extend")
+	}
+}
+
+func TestExtendSessionCooldownClearedOnDeleteIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	_ = db.CreateUser(ctx, "password")
+	user, _ := db.ValidatePassword(ctx, "password")
+	session, _ := db.CreateSession(ctx, user.ID)
+
+	// Prime the cooldown cache.
+	if err := db.ExtendSession(ctx, session.Token); err != nil {
+		t.Fatalf("ExtendSession failed: %v", err)
+	}
+
+	// Delete the session — this should also clear the in-memory cooldown entry.
+	if err := db.DeleteSession(ctx, session.Token); err != nil {
+		t.Fatalf("DeleteSession failed: %v", err)
+	}
+
+	// Session must now be invalid.
+	_, err := db.ValidateSession(ctx, session.Token)
+	if err == nil {
+		t.Error("session should be invalid after deletion")
+	}
+}
+
 func TestDeleteSessionIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
