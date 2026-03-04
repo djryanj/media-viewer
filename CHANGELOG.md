@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.15.5] - Unreleased
 
+
+### Changed
+
+- build(deps): bump renovatebot/github-action from 46.1.2 to 46.1.3 ([#406](https://github.com/djryanj/media-viewer/pull/406))
 ### Fixed
 
 - fix(backend): In the gallery view with the **All** filter active, videos were always displayed after all images regardless of the selected sort field (name, date, or size). The `ORDER BY f.type ASC` optimisation introduced in 0.15.4 ([#408](https://github.com/djryanj/media-viewer/issues/408)) sorted images before videos lexicographically as a side-effect, while the lightbox `/api/media` endpoint (which uses a separate query) correctly interleaved them. The primary sort key has been changed back to `CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END ASC` so that only folders are pinned first and images/videos are interleaved by the user-selected sort field. Three expression indexes (`idx_files_folder_first_name`, `_date`, `_size`) have been added to allow SQLite to satisfy the `ORDER BY` without a post-scan sort step, preserving the query performance improvement from 0.15.4. Regression tests added to both `buildListDirQuery` (unit) and `ListDirectory`/`GetMediaInDirectoryPaged` (integration) to prevent recurrence. [#418](https://github.com/djryanj/media-viewer/issues/418)
