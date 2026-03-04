@@ -476,6 +476,8 @@ const MediaApp = {
                 path: path,
                 sort: field,
                 order: order,
+                // Server default page size is 500; large directories are
+                // streamed in background pages by _fetchRemainingMediaFiles.
             });
 
             const controller = new AbortController();
@@ -492,12 +494,58 @@ const MediaApp = {
                 return;
             }
             if (response.ok) {
-                this.state.mediaFiles = await response.json();
+                const data = await response.json();
+                // Response is always a MediaFilesPage envelope { items, total, offset, limit }.
+                this.state.mediaFiles = data.items ?? [];
+                if (data.total > this.state.mediaFiles.length) {
+                    this._fetchRemainingMediaFiles(
+                        path,
+                        field,
+                        order,
+                        data.total,
+                        this.state.mediaFiles.length
+                    );
+                }
             }
         } catch (error) {
             console.error('Error loading media files:', error);
             this.state.mediaFiles = [];
         }
+    },
+
+    /**
+     * Background-fetch remaining pages of media files and push them onto the
+     * SAME state.mediaFiles array so that any Lightbox instance already holding
+     * a reference to the array automatically sees the new entries.
+     */
+    _fetchRemainingMediaFiles(path, field, order, total, loaded) {
+        (async () => {
+            let offset = loaded;
+            const limit = 500; // must match defaultMediaPageSize on the server
+            while (offset < total) {
+                // Abort if the user navigated to a different directory.
+                if (this.state.currentPath !== path) return;
+                try {
+                    const params = new URLSearchParams({ path, sort: field, order, offset, limit });
+                    const response = await fetch(`/api/media?${params}`);
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const newItems = data.items;
+                    if (!newItems || newItems.length === 0) return;
+                    // Guard again after the await in case navigation happened.
+                    if (this.state.currentPath !== path) return;
+                    // Mutate in-place: Lightbox.items is a reference to this
+                    // same array, so it will see the appended entries.
+                    this.state.mediaFiles.push(...newItems);
+                    offset += newItems.length;
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error('Error fetching remaining media files:', err);
+                    }
+                    return;
+                }
+            }
+        })();
     },
 
     async loadVersion() {

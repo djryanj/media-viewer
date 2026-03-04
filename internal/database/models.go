@@ -80,6 +80,15 @@ type PathPart struct {
 	Path string `json:"path"`
 }
 
+// MediaFilesPage represents a paginated slice of media files returned by GetMediaInDirectoryPaged.
+// When Limit is 0 the query was unbounded and Total == len(Items).
+type MediaFilesPage struct {
+	Items  []MediaFile `json:"items"`
+	Total  int         `json:"total"`
+	Offset int         `json:"offset"`
+	Limit  int         `json:"limit"`
+}
+
 // SearchResult represents the results of a search query.
 type SearchResult struct {
 	Items      []MediaFile `json:"items"`

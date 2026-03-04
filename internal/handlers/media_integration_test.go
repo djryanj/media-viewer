@@ -490,14 +490,14 @@ func TestGetMediaFilesIntegration(t *testing.T) {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
 
-	var files []database.MediaFile
-	if err := json.NewDecoder(w.Body).Decode(&files); err != nil {
+	var page database.MediaFilesPage
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
 	// Should only have image and video (not playlist or other)
-	if len(files) != 2 {
-		t.Errorf("expected 2 media files, got %d", len(files))
+	if len(page.Items) != 2 {
+		t.Errorf("expected 2 media files, got %d", len(page.Items))
 	}
 }
 
@@ -519,18 +519,178 @@ func TestGetMediaFilesWithPathIntegration(t *testing.T) {
 
 	h.GetMediaFiles(w, req)
 
-	var files []database.MediaFile
-	if err := json.NewDecoder(w.Body).Decode(&files); err != nil {
+	var page database.MediaFilesPage
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
 	// Should only have 2 files from folder1
-	if len(files) != 2 {
-		t.Errorf("expected 2 media files from folder1, got %d", len(files))
+	if len(page.Items) != 2 {
+		t.Errorf("expected 2 media files from folder1, got %d", len(page.Items))
 	}
 }
 
-// TestGetFileIntegration tests serving a file
+// TestGetMediaFilesPaginationIntegration verifies that the limit parameter
+// restricts the items returned while total reflects the full directory count.
+func TestGetMediaFilesPaginationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Insert 5 files in the same directory
+	for i := 1; i <= 5; i++ {
+		addTestMediaFile(t, h, fmt.Sprintf("pagdir/img%02d.jpg", i), database.FileTypeImage, fmt.Sprintf("content%d", i))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media?path=pagdir&limit=3", http.NoBody)
+	w := httptest.NewRecorder()
+	h.GetMediaFiles(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var page database.MediaFilesPage
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(page.Items) != 3 {
+		t.Errorf("expected 3 items (limit=3), got %d", len(page.Items))
+	}
+	if page.Total != 5 {
+		t.Errorf("expected total=5, got %d", page.Total)
+	}
+	if page.Limit != 3 {
+		t.Errorf("expected limit=3 in envelope, got %d", page.Limit)
+	}
+	if page.Offset != 0 {
+		t.Errorf("expected offset=0 in envelope, got %d", page.Offset)
+	}
+}
+
+// TestGetMediaFilesLimitZeroIntegration verifies that limit=0 returns all items
+// in the directory and total equals len(items).
+func TestGetMediaFilesLimitZeroIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	const count = 7
+	for i := 1; i <= count; i++ {
+		addTestMediaFile(t, h, fmt.Sprintf("alldir/media%02d.jpg", i), database.FileTypeImage, fmt.Sprintf("data%d", i))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media?path=alldir&limit=0", http.NoBody)
+	w := httptest.NewRecorder()
+	h.GetMediaFiles(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var page database.MediaFilesPage
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(page.Items) != count {
+		t.Errorf("expected all %d items with limit=0, got %d", count, len(page.Items))
+	}
+	if page.Total != count {
+		t.Errorf("expected total=%d, got %d", count, page.Total)
+	}
+}
+
+// TestGetMediaFilesOffsetIntegration verifies that two successive pages with
+// matching limit+offset cover the full set without overlap.
+func TestGetMediaFilesOffsetIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	for i := 1; i <= 6; i++ {
+		addTestMediaFile(t, h, fmt.Sprintf("offdir/file%02d.jpg", i), database.FileTypeImage, fmt.Sprintf("c%d", i))
+	}
+
+	// Page 1: offset=0, limit=3
+	req1 := httptest.NewRequest(http.MethodGet, "/api/media?path=offdir&limit=3&offset=0", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.GetMediaFiles(w1, req1)
+
+	// Page 2: offset=3, limit=3
+	req2 := httptest.NewRequest(http.MethodGet, "/api/media?path=offdir&limit=3&offset=3", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.GetMediaFiles(w2, req2)
+
+	var page1, page2 database.MediaFilesPage
+	if err := json.NewDecoder(w1.Body).Decode(&page1); err != nil {
+		t.Fatalf("page 1 decode failed: %v", err)
+	}
+	if err := json.NewDecoder(w2.Body).Decode(&page2); err != nil {
+		t.Fatalf("page 2 decode failed: %v", err)
+	}
+
+	if len(page1.Items) != 3 {
+		t.Errorf("page 1: expected 3 items, got %d", len(page1.Items))
+	}
+	if len(page2.Items) != 3 {
+		t.Errorf("page 2: expected 3 items, got %d", len(page2.Items))
+	}
+	if page1.Total != 6 || page2.Total != 6 {
+		t.Errorf("expected total=6 for both pages, got %d and %d", page1.Total, page2.Total)
+	}
+
+	// No overlap
+	p1Paths := map[string]bool{}
+	for _, f := range page1.Items {
+		p1Paths[f.Path] = true
+	}
+	for _, f := range page2.Items {
+		if p1Paths[f.Path] {
+			t.Errorf("overlap: %s appears in both pages", f.Path)
+		}
+	}
+}
+
+// TestGetMediaFilesEnvelopeFieldsIntegration verifies that all four envelope
+// fields (items, total, offset, limit) are present in the JSON response.
+func TestGetMediaFilesEnvelopeFieldsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	addTestMediaFile(t, h, "envdir/photo.jpg", database.FileTypeImage, "img")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media?path=envdir", http.NoBody)
+	w := httptest.NewRecorder()
+	h.GetMediaFiles(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// Decode as raw map to verify presence of all envelope keys
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(w.Body).Decode(&raw); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+
+	for _, key := range []string{"items", "total", "offset", "limit"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("missing required envelope field %q in response", key)
+		}
+	}
+}
+
 func TestGetFileIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -1172,13 +1332,13 @@ func TestCompleteMediaFlowIntegration(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.GetMediaFiles(w, req)
 
-	var mediaFiles []database.MediaFile
-	if err := json.NewDecoder(w.Body).Decode(&mediaFiles); err != nil {
+	var mediaPage database.MediaFilesPage
+	if err := json.NewDecoder(w.Body).Decode(&mediaPage); err != nil {
 		t.Fatalf("failed to decode media files: %v", err)
 	}
 
-	if len(mediaFiles) != 3 {
-		t.Errorf("expected 3 media files, got %d", len(mediaFiles))
+	if len(mediaPage.Items) != 3 {
+		t.Errorf("expected 3 media files, got %d", len(mediaPage.Items))
 	}
 
 	// Step 4: Serve a specific file
@@ -1431,24 +1591,24 @@ func TestGetMediaFilesSortingIntegration(t *testing.T) {
 	wAsc := httptest.NewRecorder()
 	h.GetMediaFiles(wAsc, reqAsc)
 
-	var filesAsc []database.MediaFile
-	if err := json.NewDecoder(wAsc.Body).Decode(&filesAsc); err != nil {
+	var pageAsc database.MediaFilesPage
+	if err := json.NewDecoder(wAsc.Body).Decode(&pageAsc); err != nil {
 		t.Fatalf("failed to decode ascending response: %v", err)
 	}
 
-	if len(filesAsc) != 3 {
-		t.Fatalf("expected 3 files, got %d", len(filesAsc))
+	if len(pageAsc.Items) != 3 {
+		t.Fatalf("expected 3 files, got %d", len(pageAsc.Items))
 	}
 
 	// Verify ascending order: a_ < b_ < c_
-	if !strings.HasPrefix(filesAsc[0].Path, "a_") {
-		t.Errorf("ascending: expected first file to start with 'a_', got %s", filesAsc[0].Path)
+	if !strings.HasPrefix(pageAsc.Items[0].Path, "a_") {
+		t.Errorf("ascending: expected first file to start with 'a_', got %s", pageAsc.Items[0].Path)
 	}
-	if !strings.HasPrefix(filesAsc[1].Path, "b_") {
-		t.Errorf("ascending: expected second file to start with 'b_', got %s", filesAsc[1].Path)
+	if !strings.HasPrefix(pageAsc.Items[1].Path, "b_") {
+		t.Errorf("ascending: expected second file to start with 'b_', got %s", pageAsc.Items[1].Path)
 	}
-	if !strings.HasPrefix(filesAsc[2].Path, "c_") {
-		t.Errorf("ascending: expected third file to start with 'c_', got %s", filesAsc[2].Path)
+	if !strings.HasPrefix(pageAsc.Items[2].Path, "c_") {
+		t.Errorf("ascending: expected third file to start with 'c_', got %s", pageAsc.Items[2].Path)
 	}
 
 	// Test descending sort by name
@@ -1456,23 +1616,23 @@ func TestGetMediaFilesSortingIntegration(t *testing.T) {
 	wDesc := httptest.NewRecorder()
 	h.GetMediaFiles(wDesc, reqDesc)
 
-	var filesDesc []database.MediaFile
-	if err := json.NewDecoder(wDesc.Body).Decode(&filesDesc); err != nil {
+	var pageDesc database.MediaFilesPage
+	if err := json.NewDecoder(wDesc.Body).Decode(&pageDesc); err != nil {
 		t.Fatalf("failed to decode descending response: %v", err)
 	}
 
-	if len(filesDesc) != 3 {
-		t.Fatalf("expected 3 files, got %d", len(filesDesc))
+	if len(pageDesc.Items) != 3 {
+		t.Fatalf("expected 3 files, got %d", len(pageDesc.Items))
 	}
 
 	// Verify descending is the reverse of ascending
-	if filesAsc[0].Path != filesDesc[2].Path {
+	if pageAsc.Items[0].Path != pageDesc.Items[2].Path {
 		t.Errorf("descending: expected last file %s to match ascending first file %s",
-			filesDesc[2].Path, filesAsc[0].Path)
+			pageDesc.Items[2].Path, pageAsc.Items[0].Path)
 	}
-	if filesAsc[2].Path != filesDesc[0].Path {
+	if pageAsc.Items[2].Path != pageDesc.Items[0].Path {
 		t.Errorf("descending: expected first file %s to match ascending last file %s",
-			filesDesc[0].Path, filesAsc[2].Path)
+			pageDesc.Items[0].Path, pageAsc.Items[2].Path)
 	}
 }
 
@@ -1885,18 +2045,18 @@ func TestGetMediaFilesEmptyResultIntegration(t *testing.T) {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
 
-	var files []database.MediaFile
-	if err := json.NewDecoder(w.Body).Decode(&files); err != nil {
+	var page database.MediaFilesPage
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	// Should return empty array
-	if files == nil {
-		t.Error("expected empty array, got nil")
+	// Should return empty items array
+	if page.Items == nil {
+		t.Error("expected empty items array, got nil")
 	}
 
-	if len(files) != 0 {
-		t.Errorf("expected 0 media files, got %d", len(files))
+	if len(page.Items) != 0 {
+		t.Errorf("expected 0 media files, got %d", len(page.Items))
 	}
 }
 

@@ -1892,7 +1892,13 @@ describe('MediaApp Module', () => {
             global.fetch = vi.fn(() =>
                 Promise.resolve({
                     ok: true,
-                    json: () => Promise.resolve(mediaFiles),
+                    json: () =>
+                        Promise.resolve({
+                            items: mediaFiles,
+                            total: mediaFiles.length,
+                            offset: 0,
+                            limit: 500,
+                        }),
                 })
             );
 
@@ -1910,7 +1916,13 @@ describe('MediaApp Module', () => {
             global.fetch = vi.fn(() =>
                 Promise.resolve({
                     ok: true,
-                    json: () => Promise.resolve(mediaFiles),
+                    json: () =>
+                        Promise.resolve({
+                            items: mediaFiles,
+                            total: mediaFiles.length,
+                            offset: 0,
+                            limit: 500,
+                        }),
                 })
             );
 
