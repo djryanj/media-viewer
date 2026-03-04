@@ -10,56 +10,77 @@ import (
 )
 
 // =============================================================================
-// GetAllMediaFilesForThumbnails Benchmarks
+// GetMediaFilesForThumbnailsPaged Benchmarks
 // =============================================================================
 
-// BenchmarkGetAllMediaFilesForThumbnails_Small benchmarks with a small library (500 files)
-func BenchmarkGetAllMediaFilesForThumbnails_Small(b *testing.B) {
+// BenchmarkGetMediaFilesForThumbnailsPaged_Small benchmarks with a small library (500 files)
+func BenchmarkGetMediaFilesForThumbnailsPaged_Small(b *testing.B) {
 	db, cleanup := setupGetAllFilesBenchmark(b, 500)
 	defer cleanup()
 
+	ctx := context.Background()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := db.GetAllMediaFilesForThumbnails()
-		if err != nil {
-			b.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
+		for offset := 0; ; {
+			page, err := db.GetMediaFilesForThumbnailsPaged(ctx, offset, 500)
+			if err != nil {
+				b.Fatalf("GetMediaFilesForThumbnailsPaged failed: %v", err)
+			}
+			if len(page) == 0 || len(page) < 500 {
+				break
+			}
+			offset += len(page)
 		}
 	}
 }
 
-// BenchmarkGetAllMediaFilesForThumbnails_Medium benchmarks with a medium library (2,000 files)
-func BenchmarkGetAllMediaFilesForThumbnails_Medium(b *testing.B) {
+// BenchmarkGetMediaFilesForThumbnailsPaged_Medium benchmarks with a medium library (2,000 files)
+func BenchmarkGetMediaFilesForThumbnailsPaged_Medium(b *testing.B) {
 	db, cleanup := setupGetAllFilesBenchmark(b, 2000)
 	defer cleanup()
 
+	ctx := context.Background()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := db.GetAllMediaFilesForThumbnails()
-		if err != nil {
-			b.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
+		for offset := 0; ; {
+			page, err := db.GetMediaFilesForThumbnailsPaged(ctx, offset, 500)
+			if err != nil {
+				b.Fatalf("GetMediaFilesForThumbnailsPaged failed: %v", err)
+			}
+			if len(page) == 0 || len(page) < 500 {
+				break
+			}
+			offset += len(page)
 		}
 	}
 }
 
-// BenchmarkGetAllMediaFilesForThumbnails_Large benchmarks with a large library (5,000 files)
-func BenchmarkGetAllMediaFilesForThumbnails_Large(b *testing.B) {
+// BenchmarkGetMediaFilesForThumbnailsPaged_Large benchmarks with a large library (5,000 files)
+func BenchmarkGetMediaFilesForThumbnailsPaged_Large(b *testing.B) {
 	db, cleanup := setupGetAllFilesBenchmark(b, 5000)
 	defer cleanup()
 
+	ctx := context.Background()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := db.GetAllMediaFilesForThumbnails()
-		if err != nil {
-			b.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
+		for offset := 0; ; {
+			page, err := db.GetMediaFilesForThumbnailsPaged(ctx, offset, 500)
+			if err != nil {
+				b.Fatalf("GetMediaFilesForThumbnailsPaged failed: %v", err)
+			}
+			if len(page) == 0 || len(page) < 500 {
+				break
+			}
+			offset += len(page)
 		}
 	}
 }
 
-// BenchmarkGetAllMediaFilesForThumbnails_Huge benchmarks with a huge library (10,000 files)
-func BenchmarkGetAllMediaFilesForThumbnails_Huge(b *testing.B) {
+// BenchmarkGetMediaFilesForThumbnailsPaged_Huge benchmarks with a huge library (10,000 files)
+func BenchmarkGetMediaFilesForThumbnailsPaged_Huge(b *testing.B) {
 	if testing.Short() {
 		b.Skip("skipping huge benchmark in short mode")
 	}
@@ -67,12 +88,19 @@ func BenchmarkGetAllMediaFilesForThumbnails_Huge(b *testing.B) {
 	db, cleanup := setupGetAllFilesBenchmark(b, 10000)
 	defer cleanup()
 
+	ctx := context.Background()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := db.GetAllMediaFilesForThumbnails()
-		if err != nil {
-			b.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
+		for offset := 0; ; {
+			page, err := db.GetMediaFilesForThumbnailsPaged(ctx, offset, 500)
+			if err != nil {
+				b.Fatalf("GetMediaFilesForThumbnailsPaged failed: %v", err)
+			}
+			if len(page) == 0 || len(page) < 500 {
+				break
+			}
+			offset += len(page)
 		}
 	}
 }
@@ -343,20 +371,27 @@ func BenchmarkListDirectory_MemoryMedium(b *testing.B) {
 	}
 }
 
-// BenchmarkGetAllMediaFilesForThumbnails_Memory tracks allocations for large file sets
-func BenchmarkGetAllMediaFilesForThumbnails_Memory(b *testing.B) {
+// BenchmarkGetMediaFilesForThumbnailsPaged_Memory tracks per-page allocations,
+// demonstrating that peak heap is O(page_size) not O(library_size).
+func BenchmarkGetMediaFilesForThumbnailsPaged_Memory(b *testing.B) {
 	db, cleanup := setupGetAllFilesBenchmark(b, 2000)
 	defer cleanup()
 
+	ctx := context.Background()
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		files, err := db.GetAllMediaFilesForThumbnails()
-		if err != nil {
-			b.Fatalf("GetAllMediaFilesForThumbnails failed: %v", err)
+		for offset := 0; ; {
+			page, err := db.GetMediaFilesForThumbnailsPaged(ctx, offset, 500)
+			if err != nil {
+				b.Fatalf("GetMediaFilesForThumbnailsPaged failed: %v", err)
+			}
+			if len(page) == 0 || len(page) < 500 {
+				break
+			}
+			offset += len(page)
 		}
-		_ = files
 	}
 }
 
