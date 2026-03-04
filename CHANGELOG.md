@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.15.4] - Unreleased
 
+
+### Changed
+
+- build(deps): bump renovatebot/github-action from 46.1.2 to 46.1.3 ([#406](https://github.com/djryanj/media-viewer/pull/406))
 ### Fixed
 
 - perf(frontend): `batchRefreshGalleryItemTags` and `updateGalleryItemTagsDOM` in `tags.js` performed O(n) `document.querySelector` / `querySelectorAll` scans on every tag add, remove, or merge operation. After scrolling or jumping to item ~8 000 in a 10 000-item gallery the DOM contains 8 000+ nodes, making each attribute-selector scan visibly slow. Both functions now check `InfiniteScroll._galleryItemsByPath` first (the O(1) `Map<path, element>` already maintained by `renderItems` and used by the Lightbox for the same reason), falling back to `querySelector` only when InfiniteScroll is unavailable or the path is absent from the map. `updateGalleryItemTagsDOM` is also simplified from a `querySelectorAll().forEach()` loop to a single-element direct update, since each path maps to exactly one gallery item. [#399](https://github.com/djryanj/media-viewer/issues/399)
