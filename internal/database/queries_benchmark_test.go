@@ -669,6 +669,229 @@ func BenchmarkSearch_WithExclusion(b *testing.B) {
 }
 
 // =============================================================================
+// ListDirectory – targeted subquery and sort benchmarks
+// =============================================================================
+
+// setupBenchmarkDatabaseWithMixedDir creates a database where the queried
+// directory ("mixed_dir") contains both direct image/video files AND
+// named subdirectories, each with their own child files. This is the shape
+// that exercises all three correlated subqueries in fetchDirectoryItems:
+//   - EXISTS(SELECT 1 FROM favorites ...) — once per image/video row
+//   - GROUP_CONCAT tag subquery         — once per image/video row
+//   - COUNT(*) child files subquery     — once per folder row
+//
+// Parameters:
+//
+//	subfolderCount  – number of subdirectory entries in "mixed_dir"
+//	filesPerSubdir  – number of child files in each subdirectory (determines child-count result)
+//	directFiles     – number of image files directly in "mixed_dir"
+//	favoriteRatio   – fraction of direct files added to favorites
+//	avgTagsPerFile  – average number of tags applied to each direct file
+func setupBenchmarkDatabaseWithMixedDir(
+	b *testing.B,
+	subfolderCount, filesPerSubdir, directFiles int,
+	favoriteRatio float64,
+	avgTagsPerFile int,
+) (db *Database, cleanup func()) {
+	b.Helper()
+
+	tmpDir := b.TempDir()
+	dbPath := filepath.Join(tmpDir, "bench.db")
+	db, _, err := New(context.Background(), dbPath, &Options{})
+	if err != nil {
+		b.Fatalf("Failed to create database: %v", err)
+	}
+
+	ctx := context.Background()
+
+	tagNames := []string{"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa"}
+	for _, name := range tagNames {
+		if _, err := db.GetOrCreateTag(ctx, name); err != nil {
+			b.Fatalf("Failed to create tag %q: %v", name, err)
+		}
+	}
+
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		b.Fatalf("Failed to begin batch: %v", err)
+	}
+
+	const parent = "mixed_dir"
+
+	// Insert the parent directory itself.
+	if err := batch.UpsertFile(ctx, &MediaFile{
+		Name: parent, Path: parent, ParentPath: "", Type: FileTypeFolder,
+	}); err != nil {
+		b.Fatalf("Failed to upsert parent dir: %v", err)
+	}
+
+	// Insert subdirectories under mixed_dir, each with filesPerSubdir children.
+	for i := 0; i < subfolderCount; i++ {
+		subdirName := fmt.Sprintf("sub_%03d", i)
+		subdirPath := parent + "/" + subdirName
+		if err := batch.UpsertFile(ctx, &MediaFile{
+			Name: subdirName, Path: subdirPath, ParentPath: parent, Type: FileTypeFolder,
+		}); err != nil {
+			b.Fatalf("Failed to upsert subdir: %v", err)
+		}
+		for j := 0; j < filesPerSubdir; j++ {
+			childName := fmt.Sprintf("child_%05d.jpg", j)
+			childPath := subdirPath + "/" + childName
+			if err := batch.UpsertFile(ctx, &MediaFile{
+				Name: childName, Path: childPath, ParentPath: subdirPath,
+				Type: FileTypeImage, Size: 512 * 1024,
+				ModTime: time.Now().Add(time.Duration(j) * time.Second),
+			}); err != nil {
+				b.Fatalf("Failed to upsert child file: %v", err)
+			}
+		}
+	}
+
+	// Insert direct image files under mixed_dir.
+	directFilePaths := make([]string, 0, directFiles)
+	for i := 0; i < directFiles; i++ {
+		fileName := fmt.Sprintf("img_%05d.jpg", i)
+		filePath := parent + "/" + fileName
+		if err := batch.UpsertFile(ctx, &MediaFile{
+			Name: fileName, Path: filePath, ParentPath: parent,
+			Type: FileTypeImage, Size: int64(1024*1024 + i*1024),
+			ModTime:  time.Now().Add(time.Duration(i) * time.Second),
+			MimeType: "image/jpeg",
+		}); err != nil {
+			b.Fatalf("Failed to upsert direct file: %v", err)
+		}
+		directFilePaths = append(directFilePaths, filePath)
+	}
+
+	if err = db.EndBatch(batch, err); err != nil {
+		b.Fatalf("Failed to end batch: %v", err)
+	}
+
+	// Apply favorites and tags to direct files only (mirrors real usage).
+	for i, fp := range directFilePaths {
+		if float64(i)/float64(len(directFilePaths)) < favoriteRatio {
+			if err := db.AddFavorite(ctx, fp, filepath.Base(fp), FileTypeImage); err != nil {
+				b.Fatalf("Failed to add favorite: %v", err)
+			}
+		}
+		for j := 0; j < avgTagsPerFile && j < len(tagNames); j++ {
+			if err := db.AddTagToFile(ctx, fp, tagNames[(i+j)%len(tagNames)]); err != nil {
+				b.Fatalf("Failed to add tag: %v", err)
+			}
+		}
+	}
+
+	return db, func() {
+		db.Close()
+		os.RemoveAll(tmpDir)
+	}
+}
+
+// BenchmarkListDirectory_MixedContent_SortByName benchmarks a directory that
+// contains both subfolders and image files sorted by name — the most common
+// real-world case. All three correlated subqueries (favorites EXISTS, tag
+// GROUP_CONCAT, folder child COUNT) fire on every page.
+func BenchmarkListDirectory_MixedContent_SortByName(b *testing.B) {
+	// 20 subfolders (each with 50 children → child-COUNT fires 20×),
+	// 200 direct images (favorites + tag subqueries fire 200× per page).
+	db, cleanup := setupBenchmarkDatabaseWithMixedDir(b, 20, 50, 200, 0.25, 3)
+	defer cleanup()
+
+	ctx := context.Background()
+	opts := ListOptions{
+		Path: "mixed_dir", SortField: SortByName, SortOrder: SortAsc,
+		Page: 1, PageSize: 50,
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := db.ListDirectory(ctx, opts); err != nil {
+			b.Fatalf("ListDirectory failed: %v", err)
+		}
+	}
+}
+
+// BenchmarkListDirectory_MixedContent_SortByDate benchmarks the same mixed
+// directory sorted by modification date. Uses the idx_files_media_directory_date
+// covering index (when the CASE WHEN ORDER BY is not present).
+func BenchmarkListDirectory_MixedContent_SortByDate(b *testing.B) {
+	db, cleanup := setupBenchmarkDatabaseWithMixedDir(b, 20, 50, 200, 0.25, 3)
+	defer cleanup()
+
+	ctx := context.Background()
+	opts := ListOptions{
+		Path: "mixed_dir", SortField: SortByDate, SortOrder: SortDesc,
+		Page: 1, PageSize: 50,
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := db.ListDirectory(ctx, opts); err != nil {
+			b.Fatalf("ListDirectory failed: %v", err)
+		}
+	}
+}
+
+// BenchmarkListDirectory_MixedContent_SortBySize benchmarks the same mixed
+// directory sorted by file size.
+func BenchmarkListDirectory_MixedContent_SortBySize(b *testing.B) {
+	db, cleanup := setupBenchmarkDatabaseWithMixedDir(b, 20, 50, 200, 0.25, 3)
+	defer cleanup()
+
+	ctx := context.Background()
+	opts := ListOptions{
+		Path: "mixed_dir", SortField: SortBySize, SortOrder: SortDesc,
+		Page: 1, PageSize: 50,
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := db.ListDirectory(ctx, opts); err != nil {
+			b.Fatalf("ListDirectory failed: %v", err)
+		}
+	}
+}
+
+// BenchmarkListDirectory_ManySubfolders benchmarks a directory composed almost
+// entirely of subfolders (50 subfolders, each with 100 children). The folder
+// child-COUNT correlated subquery dominates because it fires once per folder
+// row with a full index scan of files.parent_path per folder.
+func BenchmarkListDirectory_ManySubfolders(b *testing.B) {
+	db, cleanup := setupBenchmarkDatabaseWithMixedDir(b, 50, 100, 10, 0.1, 1)
+	defer cleanup()
+
+	ctx := context.Background()
+	opts := ListOptions{
+		Path: "mixed_dir", SortField: SortByName, SortOrder: SortAsc,
+		Page: 1, PageSize: 60,
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := db.ListDirectory(ctx, opts); err != nil {
+			b.Fatalf("ListDirectory failed: %v", err)
+		}
+	}
+}
+
+// BenchmarkListDirectory_HighTagDensity benchmarks the GROUP_CONCAT tag
+// subquery cost at near-maximum tag density (9 tags per file, 300 files).
+// With the current per-row subquery design this is the worst case for tag
+// aggregation: 300 JOIN-based subqueries per page.
+func BenchmarkListDirectory_HighTagDensity(b *testing.B) {
+	db, cleanup := setupBenchmarkDatabaseWithMixedDir(b, 5, 20, 300, 0.3, 9)
+	defer cleanup()
+
+	ctx := context.Background()
+	opts := ListOptions{
+		Path: "mixed_dir", SortField: SortByName, SortOrder: SortAsc,
+		Page: 1, PageSize: 50,
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := db.ListDirectory(ctx, opts); err != nil {
+			b.Fatalf("ListDirectory failed: %v", err)
+		}
+	}
+}
+
+// =============================================================================
 // GetFavorites Benchmarks
 // =============================================================================
 

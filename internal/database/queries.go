@@ -86,19 +86,19 @@ func (d *Database) ListDirectory(ctx context.Context, opts ListOptions) (*Direct
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	items, err := d.fetchDirectoryItems(ctx, opts)
+	if err != nil {
+		done(err)
+		return nil, err
+	}
+
 	totalItems, err := d.countDirectoryItems(ctx, opts)
 	if err != nil {
 		done(err)
 		return nil, err
 	}
 
-	logging.Debug("ListDirectory: count=%d, getting items...", totalItems)
-
-	items, err := d.fetchDirectoryItems(ctx, opts)
-	if err != nil {
-		done(err)
-		return nil, err
-	}
+	logging.Debug("ListDirectory: count=%d", totalItems)
 
 	listing := d.buildDirectoryListing(ctx, opts, items, totalItems)
 
@@ -157,71 +157,62 @@ func (d *Database) countDirectoryItems(ctx context.Context, opts ListOptions) (i
 }
 
 // fetchDirectoryItems retrieves the items for the current page.
+//
+// The ORDER BY uses the literal column f.type (alphabetically:
+// 'folder' < 'image' < 'video') instead of a CASE expression so that SQLite
+// can use the covering indexes idx_files_media_directory_name and
+// idx_files_media_directory_date without a post-scan sort step.
+//
+// The query is a pre-compiled prepared statement chosen from the stmts.listDir
+// matrix (2 filter states × 4 sort columns × 2 directions), so no query string
+// is built or parsed at request time.
 func (d *Database) fetchDirectoryItems(ctx context.Context, opts ListOptions) ([]MediaFile, error) {
 	logging.Debug("ListDirectory: executing select query...")
-
-	sortColumn := getSortColumn(opts.SortField)
-	sortDir := SortAscStr
-	if opts.SortOrder == SortDesc {
-		sortDir = SortDescStr
-	}
 
 	offset := (opts.Page - 1) * opts.PageSize
 	if opts.Offset > 0 {
 		offset = opts.Offset
 	}
 
-	var orderColumn string
-	if sortColumn == NameCollation {
-		orderColumn = NameCollationStr
-	} else {
-		orderColumn = "f." + sortColumn
+	// Map opts.SortField to the sortIdx dimension of stmts.listDir.
+	//   0 = name COLLATE NOCASE (default)
+	//   1 = mod_time
+	//   2 = size
+	//   3 = type
+	sortIdx := 0
+	switch getSortColumn(opts.SortField) {
+	case "mod_time":
+		sortIdx = 1
+	case "size":
+		sortIdx = 2
+	case "type":
+		sortIdx = 3
 	}
 
-	allowedColumns := map[string]bool{
-		NameCollationStr: true,
-		"f.mod_time":     true,
-		"f.size":         true,
-		"f.type":         true,
-	}
-	allowedSortDirs := map[string]bool{
-		SortAscStr:  true,
-		SortDescStr: true,
-	}
-	if !allowedColumns[orderColumn] {
-		orderColumn = NameCollationStr
-	}
-	if !allowedSortDirs[sortDir] {
-		sortDir = SortAscStr
-	}
-
-	selectQuery := `
-		SELECT
-			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
-			EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
-			(SELECT GROUP_CONCAT(t.name, ',')
-			 FROM file_tags ft
-			 JOIN tags t ON ft.tag_id = t.id
-			 WHERE ft.file_path = f.path) AS tags,
-			CASE WHEN f.type = 'folder'
-				THEN (SELECT COUNT(*) FROM files WHERE parent_path = f.path)
-				ELSE 0
-			END AS folder_count
-		FROM files f
-		WHERE f.parent_path = ?
-	`
-	selectArgs := []interface{}{opts.Path}
-
+	filterIdx := 0
 	if opts.FilterType != "" {
-		selectQuery += ` AND (f.type = 'folder' OR f.type = ?)`
-		selectArgs = append(selectArgs, opts.FilterType)
+		filterIdx = 1
 	}
 
-	selectQuery += fmt.Sprintf(` ORDER BY (CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END), %s %s`, orderColumn, sortDir) //nolint:gosec
-	selectQuery += ` LIMIT ? OFFSET ?`
-	selectArgs = append(selectArgs, opts.PageSize, offset)
+	dirIdx := 0
+	if opts.SortOrder == SortDesc {
+		dirIdx = 1
+	}
 
-	rows, err := d.reader.QueryContext(ctx, selectQuery, selectArgs...)
+	stmt := d.stmts.listDir[filterIdx][sortIdx][dirIdx]
+
+	// Parameter binding order matches buildListDirQuery positions:
+	//   1. outer WHERE    parent_path = ?
+	//   2. (filtered only) AND clause filterType
+	//   3. LIMIT ?
+	//   4. OFFSET ?
+	args := []interface{}{opts.Path}
+	if opts.FilterType != "" {
+		args = append(args, opts.FilterType)
+	}
+	args = append(args, opts.PageSize, offset)
+
+	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
 		logging.Error("ListDirectory select query failed: %v", err)
 		return nil, fmt.Errorf("select query failed: %w", err)
