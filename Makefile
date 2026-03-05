@@ -23,6 +23,7 @@ GO_TEST := go test -tags '$(BUILD_TAGS)'
 PKG ?= ./...
 TESTARGS ?=
 TESTTIMEOUT ?= 10m
+BENCH ?= .
 
 # PR check configuration
 PR_BASE ?= main
@@ -38,7 +39,7 @@ FORCE ?= 0
         run dev dev-info dev-proxy dev-frontend dev-full \
         test test-short test-package test-failures \
         test-coverage test-coverage-report test-coverage-merge \
-        test-race test-bench test-bench-performance test-bench-large test-performance \
+        test-race test-bench test-bench-package test-bench-performance test-bench-large test-performance \
         test-unit test-integration test-all \
         test-clean \
         pr-check pr-check-all \
@@ -326,6 +327,34 @@ test-race:
 test-bench:
 	@echo "Running benchmarks..."
 	$(GO_TEST) -bench=. -benchmem ./... 2>&1 | tee bench.log
+
+# Run benchmarks for specific packages, with optional benchmark name filter.
+# Automatically resolves short package names (e.g., "database" -> "./internal/database").
+# Examples:
+#   make test-bench-package database
+#   make test-bench-package database BENCH=BenchmarkListDirectory
+#   make test-bench-package database handlers BENCH=Benchmark.*Endpoint
+#   make test-bench-package ./internal/database BENCH=BenchmarkSearch
+test-bench-package:
+	@goals="$(filter-out test-bench-package,$(MAKECMDGOALS))"; \
+	pkgs="$${goals:-$(PKG)}"; \
+	bench="$${BENCH:-.}"; \
+	if [ "$$pkgs" = "./..." ] || [ -z "$$pkgs" ]; then \
+		echo "Running benchmarks for all packages (filter: $$bench)..."; \
+		$(GO_TEST) -bench="$$bench" -benchmem ./... $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee bench-all.log; \
+	else \
+		for pkg in $$pkgs; do \
+			if echo "$$pkg" | grep -q "^\./"; then \
+				pkg_path="$$pkg"; \
+				pkg_name=$$(echo "$$pkg" | sed 's|^.*/||'); \
+			else \
+				pkg_path="./internal/$$pkg"; \
+				pkg_name="$$pkg"; \
+			fi; \
+			echo "Running benchmarks for $$pkg_path (filter: $$bench)... (logging to bench-$$pkg_name.log)"; \
+			$(GO_TEST) -bench="$$bench" -benchmem $$pkg_path $(TESTARGS) -timeout $(TESTTIMEOUT) 2>&1 | tee bench-$$pkg_name.log; \
+		done; \
+	fi
 
 test-bench-performance:
 	@echo "Running performance optimization benchmarks..."
