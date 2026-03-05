@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - build(deps): bump renovatebot/github-action from 46.1.2 to 46.1.3 ([#406](https://github.com/djryanj/media-viewer/pull/406))
 - build(deps): bump actions/setup-node from 6.2.0 to 6.3.0 ([#405](https://github.com/djryanj/media-viewer/pull/405))
+- build(deps): bump docker/setup-qemu-action from 3.7.0 to 4.0.0 ([#404](https://github.com/djryanj/media-viewer/pull/404))
 
 ### Fixed
 
