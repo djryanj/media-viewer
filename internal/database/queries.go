@@ -158,10 +158,11 @@ func (d *Database) countDirectoryItems(ctx context.Context, opts ListOptions) (i
 
 // fetchDirectoryItems retrieves the items for the current page.
 //
-// The ORDER BY uses the literal column f.type (alphabetically:
-// 'folder' < 'image' < 'video') instead of a CASE expression so that SQLite
-// can use the covering indexes idx_files_media_directory_name and
-// idx_files_media_directory_date without a post-scan sort step.
+// The ORDER BY uses CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END to keep
+// folders at the top, while images and videos are interleaved according to
+// the user-selected sort field.  Expression indexes idx_files_folder_first_name,
+// idx_files_folder_first_date, and idx_files_folder_first_size allow SQLite to
+// satisfy the ORDER BY without a post-scan sort step for the common sort columns.
 //
 // The query is a pre-compiled prepared statement chosen from the stmts.listDir
 // matrix (2 filter states × 4 sort columns × 2 directions), so no query string
