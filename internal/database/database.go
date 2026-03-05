@@ -230,6 +230,15 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 // small set of validated constants defined in queries.go; withFilter
 // controls whether the optional AND (f.type = 'folder' OR f.type = ?)
 // clause is appended.
+//
+// Folders are always sorted first via a CASE expression that maps
+// 'folder' → 0 and everything else → 1.  Images and videos are then
+// interleaved according to the user-selected sort field so that, for
+// example, a video dated between two images appears between them in the
+// gallery rather than being pushed to the end of the listing.
+// The expression indexes idx_files_folder_first_name and
+// idx_files_folder_first_date allow SQLite to satisfy the ORDER BY
+// without a post-scan sort step for the two most common sort columns.
 func buildListDirQuery(orderExpr, sortDir string, withFilter bool) string {
 	q := `
 		SELECT
@@ -244,7 +253,7 @@ func buildListDirQuery(orderExpr, sortDir string, withFilter bool) string {
 	if withFilter {
 		q += ` AND (f.type = 'folder' OR f.type = ?)`
 	}
-	q += fmt.Sprintf(` ORDER BY f.type ASC, %s %s LIMIT ? OFFSET ?`, orderExpr, sortDir)
+	q += fmt.Sprintf(` ORDER BY CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END ASC, %s %s LIMIT ? OFFSET ?`, orderExpr, sortDir)
 	return q
 }
 
@@ -487,6 +496,22 @@ func (d *Database) initialize(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_files_media_directory_date ON files(
 		parent_path, type, mod_time, name COLLATE NOCASE,
 		id, path, size, mime_type
+	);
+
+	-- Expression indexes that match the "folders first, then by sort field" ORDER BY
+	-- used by buildListDirQuery.  SQLite (3.9+) can satisfy the ORDER BY clause
+	-- without a post-scan sort step when the index leading columns match exactly.
+	CREATE INDEX IF NOT EXISTS idx_files_folder_first_name ON files(
+		parent_path, (CASE WHEN type = 'folder' THEN 0 ELSE 1 END), name COLLATE NOCASE,
+		id, path, size, mod_time, type, mime_type
+	);
+	CREATE INDEX IF NOT EXISTS idx_files_folder_first_date ON files(
+		parent_path, (CASE WHEN type = 'folder' THEN 0 ELSE 1 END), mod_time, name COLLATE NOCASE,
+		id, path, size, type, mime_type
+	);
+	CREATE INDEX IF NOT EXISTS idx_files_folder_first_size ON files(
+		parent_path, (CASE WHEN type = 'folder' THEN 0 ELSE 1 END), size, name COLLATE NOCASE,
+		id, path, mod_time, type, mime_type
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_files_parent_media_name ON files(

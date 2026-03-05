@@ -1400,20 +1400,42 @@ func TestGetMediaInDirectory_CoveringIndexes(t *testing.T) {
 
 	ctx := context.Background()
 
-	var indexCount int
-	query := `
+	// Verify the legacy covering indexes used by GetMediaInDirectory.
+	var legacyCount int
+	legacyQuery := `
 		SELECT COUNT(*)
 		FROM sqlite_master
 		WHERE type = 'index'
 		AND name IN ('idx_files_media_directory_name', 'idx_files_media_directory_date', 'idx_files_path')
 	`
-	err := db.reader.QueryRowContext(ctx, query).Scan(&indexCount)
+	err := db.reader.QueryRowContext(ctx, legacyQuery).Scan(&legacyCount)
 	if err != nil {
-		t.Fatalf("Failed to check for covering indexes: %v", err)
+		t.Fatalf("Failed to check for legacy covering indexes: %v", err)
+	}
+	if legacyCount != 3 {
+		t.Errorf("Expected 3 legacy covering indexes, got %d", legacyCount)
 	}
 
-	if indexCount != 3 {
-		t.Errorf("Expected 3 covering indexes, got %d", indexCount)
+	// Verify the expression indexes added to support the "folders first, then
+	// interleave by sort field" ORDER BY in fetchDirectoryItems / buildListDirQuery.
+	// If these are missing the ORDER BY CASE expression will force a post-scan sort.
+	var folderFirstCount int
+	folderFirstQuery := `
+		SELECT COUNT(*)
+		FROM sqlite_master
+		WHERE type = 'index'
+		AND name IN (
+			'idx_files_folder_first_name',
+			'idx_files_folder_first_date',
+			'idx_files_folder_first_size'
+		)
+	`
+	err = db.reader.QueryRowContext(ctx, folderFirstQuery).Scan(&folderFirstCount)
+	if err != nil {
+		t.Fatalf("Failed to check for folder-first expression indexes: %v", err)
+	}
+	if folderFirstCount != 3 {
+		t.Errorf("Expected 3 folder-first expression indexes, got %d (idx_files_folder_first_{name,date,size})", folderFirstCount)
 	}
 
 	batch, _ := db.BeginBatch(ctx)
