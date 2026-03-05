@@ -62,6 +62,13 @@ type preparedStmts struct {
 	calcStats           *sql.Stmt
 	countDirItems       *sql.Stmt
 	countDirItemsFilter *sql.Stmt
+	// listDir[filterIdx][sortIdx][dirIdx] holds the 16 prepared SELECT statements
+	// used by fetchDirectoryItems with every ORDER BY / filter combination
+	// pre-compiled so that no per-request query parsing or plan compilation occurs.
+	//   filterIdx: 0 = no type filter,        1 = with type filter
+	//   sortIdx:   0 = name COLLATE NOCASE,    1 = mod_time,  2 = size,  3 = type
+	//   dirIdx:    0 = ASC,                    1 = DESC
+	listDir [2][4][2]*sql.Stmt
 }
 
 // Database manages all database operations for the media viewer.
@@ -218,6 +225,29 @@ func New(ctx context.Context, dbPath string, opts *Options) (*Database, *Info, e
 	return d, info, nil
 }
 
+// buildListDirQuery constructs one of the 16 SELECT variants used by
+// fetchDirectoryItems.  orderExpr and sortDir are always drawn from the
+// small set of validated constants defined in queries.go; withFilter
+// controls whether the optional AND (f.type = 'folder' OR f.type = ?)
+// clause is appended.
+func buildListDirQuery(orderExpr, sortDir string, withFilter bool) string {
+	q := `
+		SELECT
+			f.id, f.name, f.path, f.parent_path, f.type, f.size, f.mod_time, f.mime_type,
+			EXISTS(SELECT 1 FROM favorites WHERE path = f.path) AS is_favorite,
+			(SELECT GROUP_CONCAT(t.name, ',')
+			 FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+			 WHERE ft.file_path = f.path) AS tags,
+			(SELECT COUNT(*) FROM files WHERE parent_path = f.path) AS folder_count
+		FROM files f
+		WHERE f.parent_path = ?`
+	if withFilter {
+		q += ` AND (f.type = 'folder' OR f.type = ?)`
+	}
+	q += fmt.Sprintf(` ORDER BY f.type ASC, %s %s LIMIT ? OFFSET ?`, orderExpr, sortDir)
+	return q
+}
+
 // prepareStatements pre-compiles frequently used queries against the reader pool.
 func (d *Database) prepareStatements(ctx context.Context) error {
 	var err error
@@ -266,22 +296,45 @@ func (d *Database) prepareStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare countDirItemsFilter: %w", err)
 	}
 
+	// Prepare the 16 listDir variants: 4 sort expressions × 2 directions × 2 filter states.
+	sortExprs := []string{NameCollationStr, "f.mod_time", "f.size", "f.type"}
+	sortDirStrs := []string{SortAscStr, SortDescStr}
+	for fi, withFilter := range []bool{false, true} {
+		for si, col := range sortExprs {
+			for di, dir := range sortDirStrs {
+				q := buildListDirQuery(col, dir, withFilter)
+				// Ownership transfers to d.stmts.listDir; closeStatements() closes every slot.
+				d.stmts.listDir[fi][si][di], err = d.reader.PrepareContext(ctx, q) //nolint:sqlclosecheck
+				if err != nil {
+					// Release any already-prepared variants before surfacing the error.
+					d.closeStatements()
+					return fmt.Errorf("prepare listDir[%d][%d][%d]: %w", fi, si, di, err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
 // closeStatements closes all prepared statements.
 func (d *Database) closeStatements() {
-	stmts := []*sql.Stmt{
-		d.stmts.getFileByPath,
-		d.stmts.isFavorite,
-		d.stmts.calcStats,
-		d.stmts.countDirItems,
-		d.stmts.countDirItemsFilter,
-	}
-	for _, s := range stmts {
+	closeStmt := func(s *sql.Stmt) {
 		if s != nil {
 			if cerr := s.Close(); cerr != nil {
 				logging.Warn("failed to close prepared statement: %v", cerr)
+			}
+		}
+	}
+	closeStmt(d.stmts.getFileByPath)
+	closeStmt(d.stmts.isFavorite)
+	closeStmt(d.stmts.calcStats)
+	closeStmt(d.stmts.countDirItems)
+	closeStmt(d.stmts.countDirItemsFilter)
+	for fi := range d.stmts.listDir {
+		for si := range d.stmts.listDir[fi] {
+			for di := range d.stmts.listDir[fi][si] {
+				closeStmt(d.stmts.listDir[fi][si][di])
 			}
 		}
 	}
