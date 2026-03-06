@@ -584,6 +584,188 @@ describe('Lightbox Module', () => {
     });
 
     // =========================================
+    // Swipe-down-to-close
+    // =========================================
+
+    describe('swipe-down-to-close', () => {
+        let lb;
+
+        beforeEach(() => {
+            lb = document.getElementById('lightbox');
+            // Simulate open lightbox
+            lb.classList.remove('hidden');
+            Lightbox.touchStartX = 0;
+            Lightbox.touchStartY = 0;
+            Lightbox.swipeDownTracking = false;
+            Lightbox.swipeDownStartTime = 0;
+            Lightbox.swipeDownLastY = 0;
+            Lightbox._swipeDownAbort = null;
+        });
+
+        test('exposes swipeDownTracking state initialised to false', () => {
+            expect(Lightbox.swipeDownTracking).toBe(false);
+        });
+
+        describe('_applySwipeDownOffset()', () => {
+            test('sets translateY on the lightbox element', () => {
+                Lightbox._applySwipeDownOffset(80);
+                expect(lb.style.transform).toBe('translateY(80px)');
+            });
+
+            test('decreases opacity with offset', () => {
+                Lightbox._applySwipeDownOffset(0);
+                expect(parseFloat(lb.style.opacity)).toBeCloseTo(1, 2);
+
+                Lightbox._applySwipeDownOffset(200);
+                expect(parseFloat(lb.style.opacity)).toBeLessThan(1);
+                expect(parseFloat(lb.style.opacity)).toBeGreaterThan(0.3);
+            });
+
+            test('opacity does not drop below 0.4', () => {
+                Lightbox._applySwipeDownOffset(10000);
+                expect(parseFloat(lb.style.opacity)).toBeGreaterThanOrEqual(0.4);
+            });
+
+            test('offset 0 keeps full opacity', () => {
+                Lightbox._applySwipeDownOffset(0);
+                expect(parseFloat(lb.style.opacity)).toBe(1);
+            });
+        });
+
+        describe('_cancelSwipeDown()', () => {
+            test('clears swipeDownTracking', () => {
+                Lightbox.swipeDownTracking = true;
+                lb.style.transform = 'translateY(60px)';
+                lb.style.opacity = '0.85';
+
+                Lightbox._cancelSwipeDown();
+
+                expect(Lightbox.swipeDownTracking).toBe(false);
+            });
+
+            test('removes swiping-down class and adds swipe-cancel', () => {
+                lb.classList.add('swiping-down');
+
+                Lightbox._cancelSwipeDown();
+
+                expect(lb.classList.contains('swiping-down')).toBe(false);
+                expect(lb.classList.contains('swipe-cancel')).toBe(true);
+            });
+
+            test('resets transform to translateY(0) and opacity to 1', () => {
+                lb.style.transform = 'translateY(90px)';
+                Lightbox._cancelSwipeDown();
+                expect(lb.style.transform).toBe('translateY(0)');
+                expect(lb.style.opacity).toBe('1');
+            });
+
+            test('cleans up classes and inline styles on transitionend', () => {
+                lb.classList.add('swiping-down');
+                Lightbox._cancelSwipeDown();
+
+                // Simulate the CSS transition completing
+                lb.dispatchEvent(new Event('transitionend'));
+
+                expect(lb.classList.contains('swipe-cancel')).toBe(false);
+                expect(lb.style.transform).toBe('');
+                expect(lb.style.opacity).toBe('');
+            });
+        });
+
+        describe('_commitSwipeDown()', () => {
+            test('clears swipeDownTracking', () => {
+                Lightbox.swipeDownTracking = true;
+                Lightbox._commitSwipeDown();
+                expect(Lightbox.swipeDownTracking).toBe(false);
+            });
+
+            test('removes swiping-down and adds swipe-commit class', () => {
+                lb.classList.add('swiping-down');
+                Lightbox._commitSwipeDown();
+                expect(lb.classList.contains('swiping-down')).toBe(false);
+                expect(lb.classList.contains('swipe-commit')).toBe(true);
+            });
+
+            test('sets transform to 100vh and opacity to 0', () => {
+                Lightbox._commitSwipeDown();
+                expect(lb.style.transform).toBe('translateY(100vh)');
+                expect(lb.style.opacity).toBe('0');
+            });
+
+            test('creates _swipeDownAbort AbortController', () => {
+                Lightbox._commitSwipeDown();
+                expect(Lightbox._swipeDownAbort).not.toBeNull();
+                expect(typeof Lightbox._swipeDownAbort.abort).toBe('function');
+            });
+
+            test('calls closeWithHistory() after transitionend fires', () => {
+                const closeSpy = vi
+                    .spyOn(Lightbox, 'closeWithHistory')
+                    .mockImplementation(() => {});
+                Lightbox._commitSwipeDown();
+
+                lb.dispatchEvent(new Event('transitionend'));
+
+                expect(closeSpy).toHaveBeenCalledOnce();
+                closeSpy.mockRestore();
+            });
+
+            test('cleans up classes and styles before calling closeWithHistory()', () => {
+                const closeSpy = vi
+                    .spyOn(Lightbox, 'closeWithHistory')
+                    .mockImplementation(() => {});
+                Lightbox._commitSwipeDown();
+                lb.dispatchEvent(new Event('transitionend'));
+
+                // styles reset BEFORE closeWithHistory is called
+                expect(lb.classList.contains('swipe-commit')).toBe(false);
+                expect(lb.style.transform).toBe('');
+                expect(lb.style.opacity).toBe('');
+                closeSpy.mockRestore();
+            });
+
+            test('aborted listener does not call closeWithHistory()', () => {
+                const closeSpy = vi
+                    .spyOn(Lightbox, 'closeWithHistory')
+                    .mockImplementation(() => {});
+                Lightbox._commitSwipeDown();
+                // Simulate close() aborting the animation mid-flight
+                Lightbox._swipeDownAbort.abort();
+                Lightbox._swipeDownAbort = null;
+                lb.dispatchEvent(new Event('transitionend'));
+
+                expect(closeSpy).not.toHaveBeenCalled();
+                closeSpy.mockRestore();
+            });
+        });
+
+        describe('close() swipe-down cleanup', () => {
+            test('removes swipe classes and resets inline styles', () => {
+                lb.classList.add('swiping-down', 'swipe-commit');
+                lb.style.transform = 'translateY(100vh)';
+                lb.style.opacity = '0';
+
+                Lightbox.close();
+
+                expect(lb.classList.contains('swiping-down')).toBe(false);
+                expect(lb.classList.contains('swipe-commit')).toBe(false);
+                expect(lb.style.transform).toBe('');
+                expect(lb.style.opacity).toBe('');
+            });
+
+            test('aborts pending commit listener to prevent double-close', () => {
+                const abortSpy = vi.fn();
+                Lightbox._swipeDownAbort = { abort: abortSpy };
+
+                Lightbox.close();
+
+                expect(abortSpy).toHaveBeenCalledOnce();
+                expect(Lightbox._swipeDownAbort).toBeNull();
+            });
+        });
+    });
+
+    // =========================================
     // abortCurrentLoad()
     // =========================================
 

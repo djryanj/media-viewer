@@ -1524,6 +1524,28 @@ select:focus {
     display: none;
 }
 
+/* ── Swipe-down-to-close gesture ──────────────────────────────────────── */
+
+/* While the finger is moving: disable transitions so the UI tracks 1:1 */
+.lightbox.swiping-down {
+    will-change: transform, opacity;
+    touch-action: none;
+}
+
+/* Spring back when the gesture is released without crossing the threshold */
+.lightbox.swipe-cancel {
+    transition:
+        transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+        opacity 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Slide off-screen on commit */
+.lightbox.swipe-commit {
+    transition:
+        transform 0.28s cubic-bezier(0.4, 0, 1, 1),
+        opacity 0.2s ease-out;
+}
+
 /* Viewer Clock (Lightbox and Playlist) */
 .viewer-clock {
     position: absolute;
