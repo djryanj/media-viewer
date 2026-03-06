@@ -36,7 +36,9 @@ func registerDriver(opts *Options) {
 					"PRAGMA busy_timeout=30000",
 					// Disable automatic checkpointing so that checkpoint I/O never
 					// blocks a committing writer. The background checkpoint worker
-					// (StartCheckpointWorker) runs PASSIVE checkpoints on a timer.
+					// (StartCheckpointWorker) runs PASSIVE (non-blocking) checkpoints
+					// on a timer. Intentional blocking checkpoints (TRUNCATE) are
+					// performed explicitly via Checkpoint() at shutdown.
 					"PRAGMA wal_autocheckpoint=0",
 				}
 				if mmapDisabled {
@@ -687,6 +689,37 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	return err
 }
 
+// passiveCheckpoint runs a PASSIVE WAL checkpoint: it copies as many WAL
+// frames into the main database file as possible without blocking any reader
+// or writer and without waiting for active transactions to end. It never holds
+// the writer connection open while waiting, so it is safe to call from the
+// background checkpoint worker during a bulk-index write burst.
+//
+// Because it is non-blocking it does not guarantee full checkpoint
+// completion — some frames may be left in the WAL if readers are still active.
+// Those frames are picked up on subsequent runs or by the intentional
+// TRUNCATE checkpoint at shutdown / BulkIndexEnd rebuild.
+func (d *Database) passiveCheckpoint(ctx context.Context) error {
+	start := time.Now()
+	var busy, log, checkpointed int
+	err := d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &log, &checkpointed)
+	duration := time.Since(start).Seconds()
+
+	metrics.DBWALCheckpointTotal.Inc()
+	metrics.DBWALCheckpointDuration.Observe(duration)
+	metrics.DBWALPages.WithLabelValues("log").Set(float64(log))
+	metrics.DBWALPages.WithLabelValues("checkpointed").Set(float64(checkpointed))
+	metrics.DBWALPages.WithLabelValues("busy").Set(float64(busy))
+
+	if err != nil {
+		return fmt.Errorf("passive wal checkpoint: %w", err)
+	}
+
+	logging.Debug("PASSIVE WAL checkpoint: busy=%d log=%d checkpointed=%d duration=%.3fs",
+		busy, log, checkpointed, duration)
+	return nil
+}
+
 // Checkpoint runs a TRUNCATE WAL checkpoint: it waits for any active readers
 // to finish their current read transaction, flushes all WAL pages to the main
 // database file, resets the WAL write position back to the start of the file,
@@ -724,24 +757,29 @@ func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err e
 	return log, checkpointed, nil
 }
 
-// StartCheckpointWorker launches a background goroutine that runs a RESTART
+// StartCheckpointWorker launches a background goroutine that runs a PASSIVE
 // WAL checkpoint on the given interval. The goroutine exits when ctx is
 // canceled.
+//
+// PASSIVE mode is intentional: it copies as many WAL frames as possible
+// without waiting for active readers or holding the writer connection open.
+// Using TRUNCATE (or RESTART) here would block the single writer connection
+// while waiting for all readers to drain, stalling the bulk-index upsert
+// batches that also compete for the writer pool — turning a 1-minute cold
+// index into a 10-minute one when the timer fires mid-run.
 func (d *Database) StartCheckpointWorker(ctx context.Context, interval time.Duration) {
-	logging.Info("WAL checkpoint worker started (interval=%s)", interval)
+	logging.Info("WAL checkpoint worker started (interval=%s, mode=PASSIVE)", interval)
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				cpCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-				log, checkpointed, err := d.Checkpoint(cpCtx)
+				cpCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				err := d.passiveCheckpoint(cpCtx)
 				cancel()
 				if err != nil {
 					logging.Warn("WAL checkpoint failed: %v", err)
-				} else {
-					logging.Debug("Periodic WAL checkpoint complete: log=%d checkpointed=%d", log, checkpointed)
 				}
 			case <-ctx.Done():
 				return
@@ -1030,9 +1068,12 @@ func (d *Database) BulkIndexEnd(ctx context.Context) error {
 	done2(triggerErr)
 
 	// Checkpoint the WAL after bulk inserts to prevent it growing unbounded.
-	// PASSIVE mode checkpoints without blocking any readers; it is non-fatal
-	// because a checkpoint will happen implicitly via the background worker anyway.
-	if _, _, cpErr := d.Checkpoint(ctx); cpErr != nil {
+	// Use PASSIVE so we never block the caller waiting for reader transactions
+	// to drain. Any frames left uncheckpointed are picked up by the background
+	// worker or by the intentional TRUNCATE checkpoint at shutdown.
+	cpCtx, cpCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cpCancel()
+	if cpErr := d.passiveCheckpoint(cpCtx); cpErr != nil {
 		logging.Warn("WAL checkpoint after bulk index failed (non-fatal): %v", cpErr)
 	}
 
