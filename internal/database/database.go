@@ -810,6 +810,15 @@ type BatchInserter struct {
 	upsert    *sql.Stmt
 	del       *sql.Stmt
 	startTime time.Time
+	txType    string // metric label used on successful commit (e.g. "batch_insert", "cleanup")
+}
+
+// SetTxType sets the metric label that will be used for the successful-commit
+// histogram observation in EndBatch.  Call this immediately after BeginBatch
+// to distinguish upsert batches ("batch_insert") from cleanup batches ("cleanup").
+// If not called, EndBatch falls back to the label "commit".
+func (b *BatchInserter) SetTxType(t string) {
+	b.txType = t
 }
 
 const upsertQuery = `
@@ -948,7 +957,11 @@ func (d *Database) EndBatch(b *BatchInserter, err error) error {
 		return err
 	}
 
-	metrics.DBTransactionDuration.WithLabelValues("commit").Observe(duration)
+	commitLabel := b.txType
+	if commitLabel == "" {
+		commitLabel = "commit"
+	}
+	metrics.DBTransactionDuration.WithLabelValues(commitLabel).Observe(duration)
 
 	done := d.observeQuery("commit")
 	commitErr := b.tx.Commit()

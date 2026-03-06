@@ -186,7 +186,7 @@ func (d *Database) fetchDirectoryItems(ctx context.Context, opts ListOptions) ([
 		sortIdx = 1
 	case "size":
 		sortIdx = 2
-	case "type":
+	case string(SortByType):
 		sortIdx = 3
 	}
 
@@ -237,7 +237,7 @@ func getSortColumn(field SortField) string {
 	case SortBySize:
 		return "size"
 	case SortByType:
-		return "type"
+		return string(SortByType)
 	default:
 		return NameCollation
 	}

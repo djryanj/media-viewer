@@ -3,12 +3,15 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Integration tests for database operations with real SQLite database
@@ -3380,4 +3383,104 @@ func TestStartCheckpointWorker(t *testing.T) {
 	// Should return immediately; goroutine exits when ctx is canceled.
 	db.StartCheckpointWorker(ctx, 50*time.Millisecond)
 	<-ctx.Done() // wait for the worker context to expire
+}
+
+// ---------------------------------------------------------------------------
+// SetTxType / EndBatch metric label routing tests
+// ---------------------------------------------------------------------------
+
+// txDurationSampleCount returns the current histogram sample count for the
+// given transaction type label from the global
+// media_viewer_db_transaction_duration_seconds metric.  Because metrics are
+// process-global, callers should compare before/after deltas rather than
+// absolute values.
+func txDurationSampleCount(t *testing.T, txType string) uint64 {
+	t.Helper()
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		// MultiError is non-fatal — some collectors may temporarily fail.
+		var multiError prometheus.MultiError
+		if errors.As(err, &multiError) {
+			t.Fatalf("txDurationSampleCount: Gather: %v", err)
+		}
+	}
+	for _, mf := range mfs {
+		if mf.GetName() != "media_viewer_db_transaction_duration_seconds" {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "type" && lp.GetValue() == txType {
+					return m.GetHistogram().GetSampleCount()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// TestEndBatchDefaultLabelIsCommit verifies that EndBatch records the
+// transaction duration under the "commit" label when SetTxType has not been
+// called, preserving the original behavior for callers that do not opt in.
+func TestEndBatchDefaultLabelIsCommit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	before := txDurationSampleCount(t, "commit")
+
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	after := txDurationSampleCount(t, "commit")
+	if after != before+1 {
+		t.Errorf("commit sample count: want %d, got %d", before+1, after)
+	}
+}
+
+// TestEndBatchSetTxTypeRoutesLabel verifies that SetTxType causes EndBatch to
+// record the duration under the specified label rather than "commit", and that
+// the "commit" series is not incremented as a side effect.
+func TestEndBatchSetTxTypeRoutesLabel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	for _, txType := range []string{"batch_insert", "cleanup"} {
+		t.Run(txType, func(t *testing.T) {
+			beforeTarget := txDurationSampleCount(t, txType)
+			beforeCommit := txDurationSampleCount(t, "commit")
+
+			batch, err := db.BeginBatch(ctx)
+			if err != nil {
+				t.Fatalf("BeginBatch: %v", err)
+			}
+			batch.SetTxType(txType)
+			if err := db.EndBatch(batch, nil); err != nil {
+				t.Fatalf("EndBatch: %v", err)
+			}
+
+			afterTarget := txDurationSampleCount(t, txType)
+			afterCommit := txDurationSampleCount(t, "commit")
+
+			if afterTarget != beforeTarget+1 {
+				t.Errorf("%s sample count: want %d, got %d", txType, beforeTarget+1, afterTarget)
+			}
+			if afterCommit != beforeCommit {
+				t.Errorf("commit unexpectedly incremented: was %d, now %d", beforeCommit, afterCommit)
+			}
+		})
+	}
 }
