@@ -1747,6 +1747,114 @@ describe('Lightbox Module', () => {
 
             expect(Lightbox.tagsDrawerOpen).toBe(false);
         });
+
+        describe('close() scroll restoration', () => {
+            let rafSpy;
+
+            beforeEach(() => {
+                // Execute rAF callbacks synchronously so tests are fully sync
+                rafSpy = vi.fn((cb) => {
+                    cb();
+                    return 0;
+                });
+                vi.stubGlobal('requestAnimationFrame', rafSpy);
+
+                Lightbox.items = [
+                    { path: '/gallery/a.jpg', name: 'a.jpg', type: 'image' },
+                    { path: '/gallery/b.jpg', name: 'b.jpg', type: 'image' },
+                    { path: '/gallery/c.jpg', name: 'c.jpg', type: 'image' },
+                ];
+                Lightbox.currentIndex = 1;
+                Lightbox.useAppMedia = true;
+            });
+
+            afterEach(() => {
+                vi.unstubAllGlobals();
+            });
+
+            test('scrolls current item into view on close', () => {
+                const el = document.createElement('div');
+                el.className = 'gallery-item';
+                el.dataset.path = '/gallery/b.jpg';
+                const scrollSpy = vi.fn();
+                el.scrollIntoView = scrollSpy;
+                document.body.appendChild(el);
+
+                Lightbox.close();
+
+                expect(scrollSpy).toHaveBeenCalledOnce();
+                expect(scrollSpy).toHaveBeenCalledWith({ block: 'center', behavior: 'instant' });
+
+                el.remove();
+            });
+
+            test('scrolls to the item at currentIndex, not the opening index', () => {
+                // User navigated from index 1 to index 2 inside the lightbox
+                Lightbox.currentIndex = 2;
+
+                const elB = document.createElement('div');
+                elB.className = 'gallery-item';
+                elB.dataset.path = '/gallery/b.jpg';
+                const scrollB = vi.fn();
+                elB.scrollIntoView = scrollB;
+
+                const elC = document.createElement('div');
+                elC.className = 'gallery-item';
+                elC.dataset.path = '/gallery/c.jpg';
+                const scrollC = vi.fn();
+                elC.scrollIntoView = scrollC;
+
+                document.body.appendChild(elB);
+                document.body.appendChild(elC);
+
+                Lightbox.close();
+
+                expect(scrollC).toHaveBeenCalledOnce();
+                expect(scrollB).not.toHaveBeenCalled();
+
+                elB.remove();
+                elC.remove();
+            });
+
+            test('does not scroll when useAppMedia is false', () => {
+                Lightbox.useAppMedia = false;
+
+                const el = document.createElement('div');
+                el.className = 'gallery-item';
+                el.dataset.path = '/gallery/b.jpg';
+                const scrollSpy = vi.fn();
+                el.scrollIntoView = scrollSpy;
+                document.body.appendChild(el);
+
+                Lightbox.close();
+
+                expect(rafSpy).not.toHaveBeenCalled();
+                expect(scrollSpy).not.toHaveBeenCalled();
+
+                el.remove();
+            });
+
+            test('does not throw when gallery item is not in the DOM', () => {
+                // The DOM has no matching .gallery-item for the current path
+                expect(() => Lightbox.close()).not.toThrow();
+            });
+
+            test('does not scroll when items array is empty', () => {
+                Lightbox.items = [];
+                Lightbox.currentIndex = 0;
+
+                expect(() => Lightbox.close()).not.toThrow();
+                expect(rafSpy).not.toHaveBeenCalled();
+            });
+
+            test('does not scroll when current item has no path', () => {
+                Lightbox.items = [{ name: 'no-path.jpg', type: 'image' }];
+                Lightbox.currentIndex = 0;
+
+                expect(() => Lightbox.close()).not.toThrow();
+                expect(rafSpy).not.toHaveBeenCalled();
+            });
+        });
     });
 
     // =========================================
