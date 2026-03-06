@@ -1137,6 +1137,84 @@ func TestGetMediaFilesForThumbnailsPagedIntegration(t *testing.T) {
 	}
 }
 
+// TestCountMediaFilesForThumbnailsIntegration verifies that CountMediaFilesForThumbnails
+// returns the exact same population as GetMediaFilesForThumbnailsPaged and that
+// non-eligible types (e.g. playlists) are excluded from the count.
+func TestCountMediaFilesForThumbnailsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Empty database — count must be zero.
+	count, err := db.CountMediaFilesForThumbnails(ctx)
+	if err != nil {
+		t.Fatalf("CountMediaFilesForThumbnails failed on empty db: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("empty db: got count %d, want 0", count)
+	}
+
+	// Insert a mix of types.
+	files := []MediaFile{
+		{Name: "img.jpg", Path: "img.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: time.Now()},
+		{Name: "clip.mp4", Path: "clip.mp4", ParentPath: "", Type: FileTypeVideo, Size: 200, ModTime: time.Now()},
+		{Name: "album", Path: "album", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
+		// Playlists must NOT be counted — they are excluded from thumbnail generation.
+		{Name: "list.wpl", Path: "list.wpl", ParentPath: "", Type: FileTypePlaylist, Size: 50, ModTime: time.Now()},
+	}
+	tx, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	for i := range files {
+		if err := tx.UpsertFile(ctx, &files[i]); err != nil {
+			_ = db.EndBatch(tx, err)
+			t.Fatalf("UpsertFile failed: %v", err)
+		}
+	}
+	if err := db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch failed: %v", err)
+	}
+
+	// Three eligible types (image + video + folder); one playlist which is excluded.
+	const wantEligible = 3
+
+	count, err = db.CountMediaFilesForThumbnails(ctx)
+	if err != nil {
+		t.Fatalf("CountMediaFilesForThumbnails failed: %v", err)
+	}
+	if count != wantEligible {
+		t.Errorf("got count %d, want %d", count, wantEligible)
+	}
+
+	// Verify count agrees with the total returned by the paged query.
+	// This guards against the two functions diverging (e.g. different WHERE clauses).
+	var pagedTotal int
+	for offset := 0; ; {
+		page, pageErr := db.GetMediaFilesForThumbnailsPaged(ctx, offset, 2)
+		if pageErr != nil {
+			t.Fatalf("GetMediaFilesForThumbnailsPaged failed: %v", pageErr)
+		}
+		if len(page) == 0 {
+			break
+		}
+		pagedTotal += len(page)
+		offset += len(page)
+		if len(page) < 2 {
+			break
+		}
+	}
+	if pagedTotal != count {
+		t.Errorf("paged total %d != count %d — CountMediaFilesForThumbnails and GetMediaFilesForThumbnailsPaged disagree",
+			pagedTotal, count)
+	}
+}
+
 // TestGetFoldersWithUpdatedContentsIntegration tests GetFoldersWithUpdatedContents.
 func TestGetFoldersWithUpdatedContentsIntegration(t *testing.T) {
 	if testing.Short() {

@@ -1569,6 +1569,28 @@ func (d *Database) GetMediaFilesForThumbnailsPaged(ctx context.Context, offset, 
 	return files, nil
 }
 
+// CountMediaFilesForThumbnails returns the total number of media files (images, videos,
+// folders) eligible for thumbnail generation. This matches the population returned by
+// GetMediaFilesForThumbnailsPaged so that progress reporting shows an accurate denominator.
+func (d *Database) CountMediaFilesForThumbnails(ctx context.Context) (int, error) {
+	done := d.observeQuery("count_media_files_for_thumbnails")
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	query := `SELECT COUNT(*) FROM files WHERE type IN (?, ?, ?)`
+
+	var count int
+	err := d.reader.QueryRowContext(ctx, query, FileTypeFolder, FileTypeImage, FileTypeVideo).Scan(&count)
+	if err != nil {
+		done(err)
+		return 0, fmt.Errorf("failed to count media files for thumbnails: %w", err)
+	}
+
+	done(nil)
+	return count, nil
+}
+
 // GetFilesUpdatedSince returns media files updated after the given timestamp.
 func (d *Database) GetFilesUpdatedSince(ctx context.Context, since time.Time) ([]MediaFile, error) {
 	done := d.observeQuery("get_files_updated_since")
