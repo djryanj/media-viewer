@@ -25,6 +25,10 @@ type volumeMount struct {
 	name string // volume label (e.g., "media")
 }
 
+// unknownVolume is the fallback label returned by Resolve when a path does not
+// match any configured volume mount.
+const unknownVolume = "unknown"
+
 // NewVolumeResolver creates a resolver from a map of volume name → absolute path.
 // Example:
 //
@@ -57,12 +61,12 @@ func NewVolumeResolver(volumes map[string]string) *VolumeResolver {
 // Returns "unknown" if the path doesn't match any configured volume.
 func (vr *VolumeResolver) Resolve(path string) string {
 	if vr == nil {
-		return "unknown"
+		return unknownVolume
 	}
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "unknown"
+		return unknownVolume
 	}
 
 	for _, mount := range vr.mounts {
@@ -71,7 +75,7 @@ func (vr *VolumeResolver) Resolve(path string) string {
 		}
 	}
 
-	return "unknown"
+	return unknownVolume
 }
 
 var defaultResolver *VolumeResolver
