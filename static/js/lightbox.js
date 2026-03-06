@@ -7,6 +7,13 @@ const Lightbox = {
     touchStartY: 0,
     isSwiping: false,
     lastTouchMoveTime: 0,
+
+    // Vertical swipe-to-close state
+    swipeDownTracking: false, // true once downward axis is committed
+    swipeDownStartTime: 0, // timestamp when tracking began (for velocity)
+    swipeDownLastY: 0, // most-recent screenY during the gesture
+    _swipeDownAbort: null, // AbortController for the commit transitionend listener
+
     useAppMedia: true,
 
     // Loading management
@@ -1268,6 +1275,9 @@ const Lightbox = {
                 this.touchStartY = e.changedTouches[0].screenY;
                 this.isSwiping = false;
                 this.lastTouchMoveTime = 0;
+                this.swipeDownTracking = false;
+                this.swipeDownStartTime = 0;
+                this.swipeDownLastY = 0;
             },
             { passive: true }
         );
@@ -1278,14 +1288,38 @@ const Lightbox = {
                 if (e.target.closest('.video-controls')) return;
                 if (e.target.closest('.lightbox-tags-drawer')) return;
                 if (this.zoom.scale > 1 || this.zoom.isPinching || this.zoom.isPanning) return;
-                const deltaX = Math.abs(e.changedTouches[0].screenX - this.touchStartX);
-                const deltaY = Math.abs(e.changedTouches[0].screenY - this.touchStartY);
-                if (deltaX > deltaY && deltaX > 10) {
-                    this.isSwiping = true;
+
+                const touch = e.changedTouches[0];
+                const rawDeltaX = touch.screenX - this.touchStartX;
+                const rawDeltaY = touch.screenY - this.touchStartY;
+                const deltaX = Math.abs(rawDeltaX);
+                const deltaY = Math.abs(rawDeltaY);
+
+                // Commit to one axis on the first significant movement.
+                if (!this.isSwiping && !this.swipeDownTracking) {
+                    if (deltaX > deltaY && deltaX > 10) {
+                        this.isSwiping = true;
+                    } else if (deltaY > deltaX && deltaY > 10 && rawDeltaY > 0) {
+                        // Dominant downward movement — start swipe-to-close tracking.
+                        this.swipeDownTracking = true;
+                        this.swipeDownStartTime = Date.now();
+                        this.elements.lightbox.classList.add('swiping-down');
+                    }
                 }
+
+                if (this.swipeDownTracking) {
+                    // Prevent browser pull-to-refresh while tracking.
+                    e.preventDefault();
+                    const offset = Math.max(0, rawDeltaY);
+                    this._applySwipeDownOffset(offset);
+                    this.swipeDownLastY = touch.screenY;
+                }
+
                 this.lastTouchMoveTime = Date.now();
             },
-            { passive: true }
+            // passive:false required so we can call preventDefault() when
+            // tracking a downward swipe (prevents browser pull-to-refresh).
+            { passive: false }
         );
 
         this.elements.lightbox.addEventListener(
@@ -1293,6 +1327,21 @@ const Lightbox = {
             (e) => {
                 if (this.zoom.scale > 1) return;
                 if (e.target.closest('.lightbox-tags-drawer')) return;
+
+                if (this.swipeDownTracking) {
+                    const rawDeltaY = e.changedTouches[0].screenY - this.touchStartY;
+                    const offset = Math.max(0, rawDeltaY);
+                    const elapsed = Math.max(1, Date.now() - this.swipeDownStartTime);
+                    const velocity = offset / elapsed; // px / ms
+                    const distThreshold = Math.min(120, window.innerHeight * 0.3);
+                    if (offset > distThreshold || velocity > 0.5) {
+                        this._commitSwipeDown();
+                    } else {
+                        this._cancelSwipeDown();
+                    }
+                    return;
+                }
+
                 if (this.isSwiping) {
                     const timeSinceLastMove = Date.now() - this.lastTouchMoveTime;
                     if (this.lastTouchMoveTime > 0 && timeSinceLastMove > 300) {
@@ -1567,6 +1616,67 @@ const Lightbox = {
         }
     },
 
+    // ── Swipe-to-close helpers ─────────────────────────────────────────────
+
+    /**
+     * Apply a live translateY + opacity to follow the finger.
+     * Called on every touchmove while swipeDownTracking is true.
+     */
+    _applySwipeDownOffset(offset) {
+        const lb = this.elements.lightbox;
+        lb.style.transform = `translateY(${offset}px)`;
+        // Fade from 1 down towards 0.4 over 400 px of travel.
+        lb.style.opacity = String(Math.max(0.4, 1 - offset / 400).toFixed(3));
+    },
+
+    /**
+     * Animate the lightbox back to its original position (gesture cancelled).
+     * Spring-easing gives a satisfying snap-back feel.
+     */
+    _cancelSwipeDown() {
+        this.swipeDownTracking = false;
+        const lb = this.elements.lightbox;
+        lb.classList.remove('swiping-down');
+        lb.classList.add('swipe-cancel');
+        lb.style.transform = 'translateY(0)';
+        lb.style.opacity = '1';
+        lb.addEventListener(
+            'transitionend',
+            () => {
+                lb.classList.remove('swipe-cancel');
+                lb.style.transform = '';
+                lb.style.opacity = '';
+            },
+            { once: true }
+        );
+    },
+
+    /**
+     * Slide the lightbox off screen then close it.
+     * The AbortController lets close() cancel the listener if it is called
+     * directly before the transition finishes.
+     */
+    _commitSwipeDown() {
+        this.swipeDownTracking = false;
+        const lb = this.elements.lightbox;
+        lb.classList.remove('swiping-down');
+        lb.classList.add('swipe-commit');
+        lb.style.transform = 'translateY(100vh)';
+        lb.style.opacity = '0';
+        this._swipeDownAbort = new AbortController();
+        lb.addEventListener(
+            'transitionend',
+            () => {
+                this._swipeDownAbort = null;
+                lb.classList.remove('swipe-commit');
+                lb.style.transform = '';
+                lb.style.opacity = '';
+                this.closeWithHistory();
+            },
+            { once: true, signal: this._swipeDownAbort.signal }
+        );
+    },
+
     open(index) {
         this.useAppMedia = true;
         this.items = MediaApp.state.mediaFiles;
@@ -1626,6 +1736,20 @@ const Lightbox = {
     },
 
     close() {
+        // Abort any in-flight swipe-to-close commit animation so its
+        // transitionend listener does not call closeWithHistory() a second time.
+        if (this._swipeDownAbort) {
+            this._swipeDownAbort.abort();
+            this._swipeDownAbort = null;
+        }
+        this.swipeDownTracking = false;
+        const _lb = this.elements.lightbox;
+        if (_lb) {
+            _lb.classList.remove('swiping-down', 'swipe-cancel', 'swipe-commit');
+            _lb.style.transform = '';
+            _lb.style.opacity = '';
+        }
+
         // Close drawer if open
         if (this.tagsDrawerOpen) {
             this.tagsDrawerOpen = false;
