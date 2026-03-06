@@ -13,7 +13,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		Query:      r.URL.Query().Get("q"),
 		FilterType: r.URL.Query().Get("type"),
 		Page:       1,
-		PageSize:   50,
+		PageSize:   100,
 	}
 
 	if page, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && page > 0 {

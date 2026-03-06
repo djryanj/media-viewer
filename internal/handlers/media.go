@@ -94,7 +94,7 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 		SortOrder:  database.SortOrder(r.URL.Query().Get("order")),
 		FilterType: r.URL.Query().Get("type"),
 		Page:       1,
-		PageSize:   50, // Match frontend infinite scroll batch size
+		PageSize:   100, // Match frontend infinite scroll batch size
 	}
 
 	if page, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && page > 0 {

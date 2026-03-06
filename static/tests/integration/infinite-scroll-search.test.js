@@ -128,7 +128,7 @@ describe('InfiniteScrollSearch Integration Tests', () => {
             expect(global.IntersectionObserver).toHaveBeenCalledWith(
                 expect.any(Function),
                 expect.objectContaining({
-                    rootMargin: '800px',
+                    rootMargin: '1200px',
                     threshold: 0,
                 })
             );

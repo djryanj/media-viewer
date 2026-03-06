@@ -629,11 +629,11 @@ describe('InfiniteScroll Integration', () => {
 
     describe('Configuration', () => {
         it('should use configured batch size', () => {
-            expect(InfiniteScroll.config.batchSize).toBe(50);
+            expect(InfiniteScroll.config.batchSize).toBe(100);
         });
 
         it('should use configured root margin for observer', () => {
-            expect(InfiniteScroll.config.rootMargin).toBe('800px');
+            expect(InfiniteScroll.config.rootMargin).toBe('1200px');
         });
 
         it('should use configured skeleton count', () => {

@@ -96,6 +96,13 @@ describe('Gallery Module', () => {
         globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake-url');
         globalThis.URL.revokeObjectURL = vi.fn();
 
+        // Mock IntersectionObserver (used by gallery image deferred loading)
+        globalThis.IntersectionObserver = vi.fn(function (callback, options) {
+            this.observe = vi.fn();
+            this.unobserve = vi.fn();
+            this.disconnect = vi.fn();
+        });
+
         // Mock CSS.escape
         globalThis.CSS = {
             escape: vi.fn((str) => str.replace(/[[\]]/g, '\\$&')),
@@ -708,10 +715,20 @@ describe('Gallery Module', () => {
             expect(gallery.innerHTML).not.toContain('Previous content');
         });
 
-        test('calls lucide.createIcons()', () => {
+        test('calls lucide.createIcons() scoped to gallery element', () => {
+            const gallery = globalThis.MediaApp.elements.gallery;
+            globalThis.lucide.createIcons.mockClear();
+
             Gallery.render([{ name: 'test.jpg', path: 'test.jpg', type: 'image' }]);
 
-            expect(globalThis.lucide.createIcons).toHaveBeenCalled();
+            expect(globalThis.lucide.createIcons).toHaveBeenCalledWith(
+                expect.objectContaining({ nodes: expect.arrayContaining([gallery]) })
+            );
+            // Must NOT be called with no arguments (unscoped document scan)
+            const unscopedCall = globalThis.lucide.createIcons.mock.calls.find(
+                (args) => args.length === 0
+            );
+            expect(unscopedCall).toBeUndefined();
         });
 
         test('adds checkboxes when ItemSelection is active', () => {
@@ -853,7 +870,9 @@ describe('Gallery Module', () => {
             const img = thumbArea.querySelector('img');
             expect(img).toBeTruthy();
             expect(img.alt).toBe('test.jpg');
-            expect(img.loading).toBe('lazy');
+            // loading="lazy" was replaced by a custom IntersectionObserver;
+            // the img must NOT have loading=lazy set.
+            expect(img.loading).not.toBe('lazy');
             expect(img.draggable).toBe(false);
         });
 
@@ -869,15 +888,88 @@ describe('Gallery Module', () => {
             expect(img.classList.contains('loaded')).toBe(true);
         });
 
-        test('sets img.src directly to the thumbnail API URL', () => {
+        test('stores thumbnail URL in data-src for deferred loading', () => {
             const item = { name: 'test.jpg', path: 'subdir/test.jpg', type: 'image' };
 
             const thumbArea = Gallery.createThumbArea(item);
             const img = thumbArea.querySelector('img');
 
-            // src is assigned directly — loading="lazy" is respected and the browser
-            // can evict decoded bitmaps under memory pressure
-            expect(img.src).toContain('/api/thumbnails/subdir/test.jpg');
+            // URL is in data-src; the IntersectionObserver moves it to src later.
+            expect(img.dataset.src).toContain('/api/thumbnails/subdir/test.jpg');
+            // src should not be the thumbnail URL at construction time.
+            expect(img.src).not.toContain('/api/thumbnails/');
+        });
+
+        test('_observeImage registers img with IntersectionObserver', () => {
+            const observeSpy = vi.fn();
+            // Must use a regular function (not arrow) so it is constructable with `new`.
+            const MockObserver = vi.fn(function () {
+                return { observe: observeSpy, unobserve: vi.fn() };
+            });
+            const OrigObserver = globalThis.IntersectionObserver;
+            globalThis.IntersectionObserver = MockObserver;
+
+            // Re-init the observer so our mock is used.
+            Gallery._imageObserver = null;
+            const img = document.createElement('img');
+            Gallery._observeImage(img);
+
+            expect(MockObserver).toHaveBeenCalledWith(
+                expect.any(Function),
+                expect.objectContaining({ rootMargin: Gallery._imageObserverRootMargin })
+            );
+            expect(observeSpy).toHaveBeenCalledWith(img);
+
+            globalThis.IntersectionObserver = OrigObserver;
+            Gallery._imageObserver = null;
+        });
+
+        test('_observeImage sets img.src from data-src when intersection fires', () => {
+            let observerCallback;
+            const observeSpy = vi.fn();
+            const unobserveSpy = vi.fn();
+            const OrigObserver = globalThis.IntersectionObserver;
+            // Must use a regular function (not arrow) so it is constructable with `new`.
+            globalThis.IntersectionObserver = vi.fn(function (cb) {
+                observerCallback = cb;
+                return { observe: observeSpy, unobserve: unobserveSpy };
+            });
+
+            Gallery._imageObserver = null;
+            const img = document.createElement('img');
+            img.dataset.src = '/api/thumbnails/test.jpg';
+            Gallery._observeImage(img);
+
+            // Simulate intersection
+            observerCallback([{ isIntersecting: true, target: img }]);
+
+            expect(img.src).toContain('/api/thumbnails/test.jpg');
+            expect(img.dataset.src).toBeUndefined();
+            expect(unobserveSpy).toHaveBeenCalledWith(img);
+
+            globalThis.IntersectionObserver = OrigObserver;
+            Gallery._imageObserver = null;
+        });
+
+        test('handleFailure calls lucide.createIcons scoped to iconWrapper only', () => {
+            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
+            globalThis.lucide.createIcons.mockClear();
+
+            const thumbArea = Gallery.createThumbArea(item);
+            const img = thumbArea.querySelector('img');
+            img.dispatchEvent(new Event('error'));
+
+            const calls = globalThis.lucide.createIcons.mock.calls;
+            // At least one call should be the scoped failure call
+            const scopedCall = calls.find(
+                (args) =>
+                    args[0]?.nodes?.length === 1 &&
+                    args[0].nodes[0].classList.contains('gallery-item-icon')
+            );
+            expect(scopedCall).toBeTruthy();
+            // Must NOT have been called with no arguments (unscoped)
+            const unscopedCall = calls.find((args) => args.length === 0);
+            expect(unscopedCall).toBeUndefined();
         });
 
         test('does not call fetch for thumbnail loading', () => {

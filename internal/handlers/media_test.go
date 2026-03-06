@@ -583,7 +583,7 @@ func TestOffsetParsing(t *testing.T) {
 			t.Parallel()
 
 			// Simulate the parsing block from ListFiles.
-			pageSize := 50
+			pageSize := 100
 			if tt.pageSizeParam != "" {
 				if parsed, err := parseInt(tt.pageSizeParam); err == nil && parsed > 0 {
 					pageSize = parsed

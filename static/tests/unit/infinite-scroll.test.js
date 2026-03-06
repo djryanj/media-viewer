@@ -446,12 +446,12 @@ describe('InfiniteScroll Module', () => {
     });
 
     describe('Configuration', () => {
-        test('has default batchSize of 50', () => {
-            expect(InfiniteScroll.config.batchSize).toBe(50);
+        test('has default batchSize of 100', () => {
+            expect(InfiniteScroll.config.batchSize).toBe(100);
         });
 
-        test('has rootMargin of 800px', () => {
-            expect(InfiniteScroll.config.rootMargin).toBe('800px');
+        test('has rootMargin of 1200px', () => {
+            expect(InfiniteScroll.config.rootMargin).toBe('1200px');
         });
 
         test('has skeletonCount of 12', () => {
@@ -1317,7 +1317,7 @@ describe('InfiniteScroll Module', () => {
             }));
             InfiniteScroll.state.loadFailed = false;
             InfiniteScroll.state.isCatchingUp = false;
-            InfiniteScroll.config = { batchSize: 50 };
+            InfiniteScroll.config = { batchSize: 100 };
 
             Object.defineProperty(document.documentElement, 'scrollHeight', {
                 value: 50000,
@@ -1398,27 +1398,83 @@ describe('InfiniteScroll Module', () => {
             InfiniteScroll.state.hasMore = true;
             InfiniteScroll.state.loadFailed = false;
             InfiniteScroll.state.isCatchingUp = false;
+            InfiniteScroll.state.totalItems = 0;
+            InfiniteScroll.state.loadedItems = [];
 
             Object.defineProperty(globalThis.window, 'innerHeight', {
                 value: 800,
                 configurable: true,
             });
+            Object.defineProperty(globalThis.window, 'scrollY', {
+                value: 0,
+                configurable: true,
+            });
+            Object.defineProperty(globalThis.document.documentElement, 'scrollHeight', {
+                value: 800,
+                configurable: true,
+            });
         });
 
-        test('does not call loadMore when sentinel bottom is below zero (above viewport)', () => {
-            const spy = vi.spyOn(InfiniteScroll, 'loadMore').mockResolvedValue(undefined);
-            // bottom < 0 → condition fails
-            sentinel.getBoundingClientRect = () => ({ top: -6000, bottom: -5000 });
+        test('routes to _parallelCatchUp when sentinel is above viewport and target is far ahead', () => {
+            const catchUpSpy = vi
+                .spyOn(InfiniteScroll, '_parallelCatchUp')
+                .mockResolvedValue(undefined);
+            const loadMoreSpy = vi.spyOn(InfiniteScroll, 'loadMore').mockResolvedValue(undefined);
+            // 50 items loaded, 1000 total; user has scrolled 50% of the way down
+            InfiniteScroll.state.totalItems = 1000;
+            InfiniteScroll.state.loadedItems = new Array(50);
+            Object.defineProperty(globalThis.window, 'scrollY', {
+                value: 5000,
+                configurable: true,
+            });
+            Object.defineProperty(globalThis.document.documentElement, 'scrollHeight', {
+                value: 10800,
+                configurable: true,
+            });
+            // scrollY / (scrollHeight - innerHeight) = 5000 / 10000 = 0.5 → targetItem ≈ 500
+            // target (500) > loaded (50) + batchSize (100) = 150 → _parallelCatchUp
+            sentinel.getBoundingClientRect = () => ({ top: -4000, bottom: -3000 });
             InfiniteScroll.checkAndFillViewport();
-            expect(spy).not.toHaveBeenCalled();
+            expect(catchUpSpy).toHaveBeenCalledTimes(1);
+            expect(loadMoreSpy).not.toHaveBeenCalled();
         });
 
-        test('calls loadMore when sentinel is near the bottom of the viewport', () => {
+        test('uses loadMore when sentinel is above viewport but target is within one page', () => {
+            const catchUpSpy = vi
+                .spyOn(InfiniteScroll, '_parallelCatchUp')
+                .mockResolvedValue(undefined);
+            const loadMoreSpy = vi.spyOn(InfiniteScroll, 'loadMore').mockResolvedValue(undefined);
+            // 50 items loaded, 200 total; user scrolled just past sentinel (target ≈ 90 < 50+100=150)
+            InfiniteScroll.state.totalItems = 200;
+            InfiniteScroll.state.loadedItems = new Array(50);
+            Object.defineProperty(globalThis.window, 'scrollY', { value: 450, configurable: true });
+            Object.defineProperty(globalThis.document.documentElement, 'scrollHeight', {
+                value: 1800,
+                configurable: true,
+            });
+            // scrollY / (scrollHeight - innerHeight) = 450 / 1000 = 0.45 → targetItem ≈ 90
+            // target (90) <= loaded (50) + batchSize (100) = 150 → loadMore path
+            sentinel.getBoundingClientRect = () => ({ top: -10, bottom: -5 });
+            InfiniteScroll.checkAndFillViewport();
+            expect(catchUpSpy).not.toHaveBeenCalled();
+            expect(loadMoreSpy).toHaveBeenCalledTimes(1);
+        });
+
+        test('calls loadMore when sentinel is within rootMargin of the viewport bottom', () => {
             const spy = vi.spyOn(InfiniteScroll, 'loadMore').mockResolvedValue(undefined);
-            // top = 790 < 800, bottom = 810 ≥ 0 → triggers load
-            sentinel.getBoundingClientRect = () => ({ top: 790, bottom: 810 });
+            // rootMargin is '1200px', innerHeight is 800 → threshold is 2000
+            // top = 1990 < 2000 → triggers load
+            sentinel.getBoundingClientRect = () => ({ top: 1990, bottom: 2010 });
             InfiniteScroll.checkAndFillViewport();
             expect(spy).toHaveBeenCalledTimes(1);
+        });
+
+        test('does not call loadMore when sentinel is beyond rootMargin', () => {
+            const spy = vi.spyOn(InfiniteScroll, 'loadMore').mockResolvedValue(undefined);
+            // top = 2100 >= innerHeight(800) + rootMargin(1200) = 2000 → no load
+            sentinel.getBoundingClientRect = () => ({ top: 2100, bottom: 2120 });
+            InfiniteScroll.checkAndFillViewport();
+            expect(spy).not.toHaveBeenCalled();
         });
 
         test('calls loadMore when sentinel is within the viewport', () => {
@@ -1426,6 +1482,18 @@ describe('InfiniteScroll Module', () => {
             sentinel.getBoundingClientRect = () => ({ top: 400, bottom: 420 });
             InfiniteScroll.checkAndFillViewport();
             expect(spy).toHaveBeenCalledTimes(1);
+        });
+
+        test('does nothing when isCatchingUp is true', () => {
+            const catchUpSpy = vi
+                .spyOn(InfiniteScroll, '_parallelCatchUp')
+                .mockResolvedValue(undefined);
+            const loadMoreSpy = vi.spyOn(InfiniteScroll, 'loadMore').mockResolvedValue(undefined);
+            InfiniteScroll.state.isCatchingUp = true;
+            sentinel.getBoundingClientRect = () => ({ top: -4000, bottom: -3000 });
+            InfiniteScroll.checkAndFillViewport();
+            expect(catchUpSpy).not.toHaveBeenCalled();
+            expect(loadMoreSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -1501,6 +1569,11 @@ describe('InfiniteScroll Module', () => {
     // =========================================
 
     describe('_cachedGridGeometry — grid geometry cache', () => {
+        const items = [
+            { path: '/img1.jpg', name: 'img1.jpg', type: 'image' },
+            { path: '/img2.jpg', name: 'img2.jpg', type: 'image' },
+        ];
+
         beforeEach(() => {
             InfiniteScroll.elements = {
                 ...InfiniteScroll.elements,
@@ -1510,7 +1583,46 @@ describe('InfiniteScroll Module', () => {
             InfiniteScroll._cachedGridGeometry = null;
         });
 
-        test('renderItems() with append=false sets _cachedGridGeometry to null', () => {
+        test('renderItems() calls lucide.createIcons scoped to new elements only', () => {
+            InfiniteScroll.state.loadedItems = [];
+            globalThis.lucide.createIcons.mockClear();
+
+            InfiniteScroll.renderItems(items, false);
+
+            const calls = globalThis.lucide.createIcons.mock.calls;
+            expect(calls.length).toBeGreaterThan(0);
+            // Every call must be scoped (have a nodes array); none should be unscoped
+            const unscopedCall = calls.find((args) => args.length === 0);
+            expect(unscopedCall).toBeUndefined();
+            // The scoped call should include the gallery item elements
+            const scopedCall = calls.find(
+                (args) => Array.isArray(args[0]?.nodes) && args[0].nodes.length > 0
+            );
+            expect(scopedCall).toBeTruthy();
+        });
+
+        test('renderItems() scoped lucide call contains only newly added elements', () => {
+            // Pre-populate with one item so the gallery already has DOM nodes
+            InfiniteScroll.state.loadedItems = [{ path: '/img0.jpg' }];
+            InfiniteScroll.renderItems(
+                [{ path: '/img0.jpg', name: 'img0.jpg', type: 'image' }],
+                false
+            );
+            globalThis.lucide.createIcons.mockClear();
+
+            // Append one new item
+            InfiniteScroll.state.loadedItems = [{ path: '/img0.jpg' }, { path: '/img1.jpg' }];
+            const newItems = [{ path: '/img1.jpg', name: 'img1.jpg', type: 'image' }];
+            InfiniteScroll.renderItems(newItems, true);
+
+            const calls = globalThis.lucide.createIcons.mock.calls;
+            const scopedCall = calls.find((args) => Array.isArray(args[0]?.nodes));
+            expect(scopedCall).toBeTruthy();
+            // nodes should contain only the one new element, not existing ones
+            expect(scopedCall[0].nodes).toHaveLength(1);
+        });
+
+        test('renderItems() with append=false clears _cachedGridGeometry', () => {
             InfiniteScroll._cachedGridGeometry = { cols: 4, gap: 8, itemSize: 200, rowHeight: 208 };
             InfiniteScroll.state.loadedItems = [];
 

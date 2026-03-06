@@ -295,14 +295,14 @@ func TestSearchOptionsDefaults(t *testing.T) {
 
 	// Test default values used in Search handler
 	defaultPage := 1
-	defaultPageSize := 50
+	defaultPageSize := 100
 
 	if defaultPage != 1 {
 		t.Errorf("Expected default page 1, got %d", defaultPage)
 	}
 
-	if defaultPageSize != 50 {
-		t.Errorf("Expected default page size 50, got %d", defaultPageSize)
+	if defaultPageSize != 100 {
+		t.Errorf("Expected default page size 100, got %d", defaultPageSize)
 	}
 }
 
@@ -381,7 +381,7 @@ func TestSearchEmptyResultHandling(t *testing.T) {
 	// Test that empty query returns empty result with correct structure
 	query := ""
 	page := 1
-	pageSize := 50
+	pageSize := 100
 
 	// Verify empty result structure
 	if query == "" {

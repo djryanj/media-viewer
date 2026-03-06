@@ -5,8 +5,8 @@
 const InfiniteScrollSearch = {
     // Configuration
     config: {
-        batchSize: 50,
-        rootMargin: '800px',
+        batchSize: 100,
+        rootMargin: '1200px',
         skeletonCount: 12,
     },
 
