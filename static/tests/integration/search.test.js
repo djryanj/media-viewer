@@ -125,7 +125,7 @@ describe('Search Integration', () => {
             startSearch: vi.fn(),
             resetState: vi.fn(),
             config: {
-                batchSize: 50,
+                batchSize: 100,
             },
             state: {
                 loadedItems: [],

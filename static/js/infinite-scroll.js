@@ -23,8 +23,8 @@
 const InfiniteScroll = {
     // ── Configuration ────────────────────────────────────────────────────────
     config: {
-        batchSize: 50,
-        rootMargin: '800px',
+        batchSize: 100,
+        rootMargin: '1200px',
         skeletonCount: 12,
     },
 
@@ -651,6 +651,9 @@ const InfiniteScroll = {
                     this._catchUpTarget = 0;
                     this.updateScrollScrubber();
                     this.updateMediaFiles();
+                    // Resume normal sequential loading in case the user is still
+                    // near the bottom after the catch-up scroll.
+                    setTimeout(() => this.checkAndFillViewport(), 100);
                 });
             });
         }
@@ -669,6 +672,7 @@ const InfiniteScroll = {
         }
 
         this.state.isLoading = true;
+        const _itemCountBefore = this.state.loadedItems.length;
         this.showSkeletons();
 
         try {
@@ -705,6 +709,16 @@ const InfiniteScroll = {
             this.updateStats();
             this.updateVirtualSpacer();
             this.updateScrollScrubber();
+            // After each load, re-check whether the sentinel is still within range.
+            // The IntersectionObserver only fires on state *changes*; if the user
+            // fast-scrolled past the sentinel while the fetch was in flight the
+            // observer will not re-fire, so we must do this manually.
+            // Only reschedule when items were actually added — avoids an infinite
+            // timer loop when the server returns an empty page but hasMore is still
+            // true (e.g. deleted files, or the JSDOM test environment).
+            if (this.state.loadedItems.length > _itemCountBefore) {
+                setTimeout(() => this.checkAndFillViewport(), 0);
+            }
         }
     },
 
@@ -721,10 +735,36 @@ const InfiniteScroll = {
 
     async checkAndFillViewport() {
         if (this.state.isLoading || !this.state.hasMore || this.state.loadFailed) return;
+        if (this.state.isCatchingUp) return;
         const sentinel = this.elements.sentinel;
         if (!sentinel) return;
         const rect = sentinel.getBoundingClientRect();
-        if (rect.top < window.innerHeight && rect.bottom >= 0) {
+        const rootMarginPx = parseInt(this.config.rootMargin, 10) || 800;
+        // Trigger if sentinel is within rootMargin of the viewport bottom (normal
+        // approach), OR if we've already scrolled past the sentinel (rect.top < 0
+        // means it's above the viewport — fast-scroll recovery path).
+        if (rect.top < window.innerHeight + rootMarginPx) {
+            // If the sentinel is above the viewport the user has scrolled into the
+            // virtual spacer.  Sequential loadMore() calls (50 items each) would
+            // need many round-trips to catch up.  Instead, calculate the target
+            // item from the current scroll position and call _parallelCatchUp so
+            // the whole gap is bridged in a single offset-based API request.
+            if (rect.top < 0 && this.state.totalItems > 0) {
+                const maxScroll = Math.max(
+                    1,
+                    document.documentElement.scrollHeight - window.innerHeight
+                );
+                const fraction = Math.min(1, window.scrollY / maxScroll);
+                const targetItem = Math.max(
+                    this.state.loadedItems.length + 1,
+                    Math.round(fraction * this.state.totalItems)
+                );
+                if (targetItem > this.state.loadedItems.length + this.config.batchSize) {
+                    this._parallelCatchUp(targetItem);
+                    return;
+                }
+            }
+
             const prevLen = this.state.loadedItems.length;
             await this.loadMore();
             // Only reschedule if items were actually added; avoids infinite loops
@@ -781,7 +821,10 @@ const InfiniteScroll = {
             this._galleryItemsByPath.set(path, element);
         }
 
-        lucide.createIcons();
+        // Scope createIcons to the newly added elements only — an unscoped call
+        // scans every [data-lucide] in the document, which becomes O(n) work on
+        // each batch append as the gallery grows.
+        lucide.createIcons({ nodes: createdElements.map((c) => c.element) });
 
         if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
             const newItems = Array.from(gallery.children).slice(-items.length);

@@ -109,8 +109,8 @@ describe('InfiniteScrollSearch Module', () => {
         });
 
         test('initializes with default config', () => {
-            expect(InfiniteScrollSearch.config.batchSize).toBe(50);
-            expect(InfiniteScrollSearch.config.rootMargin).toBe('800px');
+            expect(InfiniteScrollSearch.config.batchSize).toBe(100);
+            expect(InfiniteScrollSearch.config.rootMargin).toBe('1200px');
             expect(InfiniteScrollSearch.config.skeletonCount).toBe(12);
         });
 
@@ -127,7 +127,7 @@ describe('InfiniteScrollSearch Module', () => {
             expect(globalThis.IntersectionObserver).toHaveBeenCalledWith(
                 expect.any(Function),
                 expect.objectContaining({
-                    rootMargin: '800px',
+                    rootMargin: '1200px',
                     threshold: 0,
                 })
             );

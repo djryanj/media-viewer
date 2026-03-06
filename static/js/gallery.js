@@ -17,6 +17,39 @@ const Gallery = {
         check: 'check',
     },
 
+    // Lazy-load observer for thumbnail images — starts fetching images well
+    // before they scroll into view, independent of the browser's own lazy-load
+    // heuristics (which are opaque and often only kick in within ~500 px).
+    // Using data-src → src means the browser still has a real URL to re-fetch
+    // from HTTP cache under memory pressure, preserving the eviction benefit
+    // of native lazy loading without its unpredictable distance threshold.
+    _imageObserver: null,
+    _imageObserverRootMargin: '1500px',
+
+    _initImageObserver() {
+        if (this._imageObserver) return;
+        this._imageObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) return;
+                    const img = entry.target;
+                    const src = img.dataset.src;
+                    if (src) {
+                        img.src = src;
+                        delete img.dataset.src;
+                    }
+                    this._imageObserver.unobserve(img);
+                });
+            },
+            { rootMargin: this._imageObserverRootMargin, threshold: 0 }
+        );
+    },
+
+    _observeImage(img) {
+        this._initImageObserver();
+        this._imageObserver.observe(img);
+    },
+
     // Thumbnail failure tracking
     thumbnailFailures: {
         count: 0,
@@ -56,12 +89,14 @@ const Gallery = {
             return;
         }
 
+        const fragment = document.createDocumentFragment();
         items.forEach((item) => {
-            const element = this.createGalleryItem(item);
-            gallery.appendChild(element);
+            fragment.appendChild(this.createGalleryItem(item));
         });
+        gallery.appendChild(fragment);
 
-        lucide.createIcons();
+        // Scope to gallery only — all icons here are freshly created.
+        lucide.createIcons({ nodes: [gallery] });
 
         this.setupScrollRetryListener();
 
@@ -148,7 +183,6 @@ const Gallery = {
         // Thumbnail image
         if (item.type === 'folder' || item.type === 'image' || item.type === 'video') {
             const img = document.createElement('img');
-            img.loading = 'lazy';
             img.alt = item.name;
             img.draggable = false;
 
@@ -163,7 +197,7 @@ const Gallery = {
                 iconWrapper.className = 'gallery-item-icon';
                 iconWrapper.appendChild(this.createIcon(this.icons[item.type] || this.icons.other));
                 thumbArea.appendChild(iconWrapper);
-                lucide.createIcons();
+                lucide.createIcons({ nodes: [iconWrapper] });
 
                 this.trackThumbnailFailure({
                     img,
@@ -186,16 +220,17 @@ const Gallery = {
                 }
             };
 
-            // Assign src directly so that loading="lazy" takes effect: the browser only
-            // fetches images near the viewport and can evict decoded bitmaps when under
-            // memory pressure (re-fetching from HTTP cache). The fetch→blob approach
-            // bypasses lazy loading entirely and permanently pins decoded bitmaps in memory
-            // (blob URLs are revoked, so the browser has no URL to re-fetch from).
-            // The URL is already correctly encoded by the path.split/map/join above.
+            // Store the URL in data-src and let _observeImage() defer the
+            // actual fetch until the image is within _imageObserverRootMargin
+            // of the viewport.  This gives a reliable, large preload distance
+            // independent of the browser's own lazy-loading heuristics, while
+            // still using a real URL (not a blob) so the browser can evict and
+            // re-fetch decoded bitmaps from HTTP cache under memory pressure.
             const thumbnailUrl = `/api/thumbnails/${item.path.split('/').map(encodeURIComponent).join('/')}`;
             img.addEventListener('load', handleSuccess, { once: true });
             img.addEventListener('error', handleFailure, { once: true });
-            img.src = thumbnailUrl;
+            img.dataset.src = thumbnailUrl;
+            this._observeImage(img);
 
             thumbArea.appendChild(img);
 
@@ -731,7 +766,7 @@ const Gallery = {
                     this.createIcon(this.icons[item.type] || this.icons.other)
                 );
                 thumbArea.appendChild(newIconWrapper);
-                lucide.createIcons();
+                lucide.createIcons({ nodes: [newIconWrapper] });
 
                 this.trackThumbnailFailure({
                     img,
@@ -752,8 +787,11 @@ const Gallery = {
                 }
             };
 
-            // Same rationale as createThumbArea: direct src preserves lazy loading
-            // and allows the browser to evict decoded bitmaps and re-fetch from cache.
+            // On retry we set img.src directly (with a cache-buster) because
+            // the image has already been observed and is visible — no need to
+            // go through the deferred _imageObserver path again.  Using a real
+            // URL (not a blob) still lets the browser evict the decoded bitmap
+            // and re-fetch from HTTP cache under memory pressure.
             const originalSrc = `/api/thumbnails/${item.path.split('/').map(encodeURIComponent).join('/')}`;
             const cacheBuster = `t=${Date.now()}`;
             const retryUrl = originalSrc + (originalSrc.includes('?') ? '&' : '?') + cacheBuster;
