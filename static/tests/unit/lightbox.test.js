@@ -1855,6 +1855,70 @@ describe('Lightbox Module', () => {
                 expect(rafSpy).not.toHaveBeenCalled();
             });
         });
+
+        describe('background click', () => {
+            let closeWithHistorySpy;
+            let showUIOverlaysSpy;
+
+            beforeEach(() => {
+                // bindEvents() must be called to register the click listener
+                Lightbox.bindEvents();
+
+                closeWithHistorySpy = vi
+                    .spyOn(Lightbox, 'closeWithHistory')
+                    .mockImplementation(() => {});
+                showUIOverlaysSpy = vi.spyOn(Lightbox, 'showUIOverlays').mockImplementation(() => {
+                    Lightbox.uiOverlaysVisible = true;
+                });
+            });
+
+            afterEach(() => {
+                closeWithHistorySpy.mockRestore();
+                showUIOverlaysSpy.mockRestore();
+            });
+
+            test('closes when overlays are visible', () => {
+                Lightbox.uiOverlaysVisible = true;
+
+                Lightbox.elements.lightbox.dispatchEvent(
+                    new MouseEvent('click', { bubbles: true })
+                );
+
+                expect(closeWithHistorySpy).toHaveBeenCalledOnce();
+                expect(showUIOverlaysSpy).not.toHaveBeenCalled();
+            });
+
+            test('restores overlays instead of closing when overlays are hidden', () => {
+                Lightbox.uiOverlaysVisible = false;
+
+                Lightbox.elements.lightbox.dispatchEvent(
+                    new MouseEvent('click', { bubbles: true })
+                );
+
+                expect(showUIOverlaysSpy).toHaveBeenCalledOnce();
+                expect(closeWithHistorySpy).not.toHaveBeenCalled();
+            });
+
+            test('resets userHidOverlays when restoring overlays from background click', () => {
+                Lightbox.uiOverlaysVisible = false;
+                Lightbox.userHidOverlays = true;
+
+                Lightbox.elements.lightbox.dispatchEvent(
+                    new MouseEvent('click', { bubbles: true })
+                );
+
+                expect(Lightbox.userHidOverlays).toBe(false);
+            });
+
+            test('click on child element (not background) does not trigger close', () => {
+                Lightbox.uiOverlaysVisible = true;
+
+                // Click originates from the image, which bubbles up
+                Lightbox.elements.image.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                expect(closeWithHistorySpy).not.toHaveBeenCalled();
+            });
+        });
     });
 
     // =========================================
