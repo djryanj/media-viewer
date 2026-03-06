@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- feat(frontend): Closing the lightbox after navigating through images now scrolls the gallery back to the item that was open, keeping it centred in the viewport. Previously the gallery remained at the scroll position from when the lightbox was first opened. [#420](https://github.com/djryanj/media-viewer/issues/420)
 - feat(frontend): Swiping down in the lightbox now closes it. The lightbox follows the finger in real time, fading slightly as it moves. Releasing before the threshold (120 px or 30 % of screen height) or reversing direction snaps it back; releasing past the threshold or flicking quickly (≥ 0.5 px/ms) slides it off screen and closes it. A fast swipe in the opposite direction (horizontal) is unaffected — the gesture recogniser commits to horizontal or vertical on the first 10 px of movement, keeping swipe-navigation and swipe-to-close mutually exclusive. [#419](https://github.com/djryanj/media-viewer/issues/419)
 
 ### Changed

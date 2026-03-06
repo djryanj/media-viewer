@@ -1761,6 +1761,23 @@ const Lightbox = {
 
         this.elements.lightbox.classList.add('hidden');
         document.body.style.overflow = '';
+
+        // Scroll the gallery so the item that was open is centred in the viewport.
+        // Only applicable when the lightbox was opened from the main gallery (not
+        // a playlist or search-result pop-up).  A requestAnimationFrame lets the
+        // browser finish restoring body overflow before we change scrollY.
+        if (this.useAppMedia) {
+            const currentItem = this.items[this.currentIndex];
+            if (currentItem?.path) {
+                requestAnimationFrame(() => {
+                    const el = document.querySelector(
+                        `.gallery-item[data-path="${CSS.escape(currentItem.path)}"]`
+                    );
+                    el?.scrollIntoView({ block: 'center', behavior: 'instant' });
+                });
+            }
+        }
+
         this.abortCurrentLoad();
         this.clearPreloadCache();
         this.stopAnimationLoopDetection();
