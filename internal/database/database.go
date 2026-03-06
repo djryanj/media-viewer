@@ -705,11 +705,14 @@ func (d *Database) passiveCheckpoint(ctx context.Context) error {
 	err := d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &log, &checkpointed)
 	duration := time.Since(start).Seconds()
 
-	metrics.DBWALCheckpointTotal.Inc()
-	metrics.DBWALCheckpointDuration.Observe(duration)
+	metrics.DBWALCheckpointTotal.WithLabelValues("passive").Inc()
+	metrics.DBWALCheckpointDuration.WithLabelValues("passive").Observe(duration)
 	metrics.DBWALPages.WithLabelValues("log").Set(float64(log))
 	metrics.DBWALPages.WithLabelValues("checkpointed").Set(float64(checkpointed))
 	metrics.DBWALPages.WithLabelValues("busy").Set(float64(busy))
+	if busy > 0 {
+		metrics.DBWALCheckpointBlockedTotal.Inc()
+	}
 
 	if err != nil {
 		return fmt.Errorf("passive wal checkpoint: %w", err)
@@ -738,11 +741,14 @@ func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err e
 	err = d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &log, &checkpointed)
 	duration := time.Since(start).Seconds()
 
-	metrics.DBWALCheckpointTotal.Inc()
-	metrics.DBWALCheckpointDuration.Observe(duration)
+	metrics.DBWALCheckpointTotal.WithLabelValues("truncate").Inc()
+	metrics.DBWALCheckpointDuration.WithLabelValues("truncate").Observe(duration)
 	metrics.DBWALPages.WithLabelValues("log").Set(float64(log))
 	metrics.DBWALPages.WithLabelValues("checkpointed").Set(float64(checkpointed))
 	metrics.DBWALPages.WithLabelValues("busy").Set(float64(busy))
+	if busy > 0 {
+		metrics.DBWALCheckpointBlockedTotal.Inc()
+	}
 
 	if err != nil {
 		return 0, 0, fmt.Errorf("wal checkpoint: %w", err)
@@ -1099,6 +1105,14 @@ func (d *Database) UpdateDBMetrics() {
 	metrics.DBConnectionsOpen.Set(float64(rStats.OpenConnections + wStats.OpenConnections))
 	metrics.DBConnectionsInUse.Set(float64(rStats.InUse + wStats.InUse))
 	metrics.DBConnectionsIdle.Set(float64(rStats.Idle + wStats.Idle))
+
+	// WaitCount and WaitDuration are cumulative since pool creation — expose
+	// as Gauges so Prometheus can compute rate() over any window.
+	// A non-zero rate for DBWriterWaitTotal means callers are queuing for the
+	// single writer connection; during the TRUNCATE regression this counter
+	// would spike to ~80 waits per cold-start index run.
+	metrics.DBWriterWaitTotal.Set(float64(wStats.WaitCount))
+	metrics.DBWriterWaitSeconds.Set(wStats.WaitDuration.Seconds())
 }
 
 func diagnoseDatabasePermissions(dbPath string) error {

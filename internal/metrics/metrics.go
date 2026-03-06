@@ -83,27 +83,73 @@ var (
 
 // WAL checkpoint metrics
 var (
-	DBWALCheckpointTotal = promauto.NewCounter(
+	// DBWALCheckpointTotal counts checkpoint operations by mode.  Use
+	// mode="passive" for the background worker and mode="truncate" for the
+	// explicit shutdown/rebuild checkpoint.  A non-zero rate for
+	// mode="truncate" outside of a planned shutdown is a signal that the
+	// intentional blocking checkpoint is being called on a hot code path.
+	DBWALCheckpointTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "media_viewer_db_wal_checkpoint_total",
-			Help: "Total number of WAL checkpoint operations run by the background worker",
+			Help: "Total number of WAL checkpoint operations by mode (passive or truncate)",
 		},
+		[]string{"mode"}, // "passive", "truncate"
 	)
 
-	DBWALCheckpointDuration = promauto.NewHistogram(
+	// DBWALCheckpointDuration records how long each checkpoint mode takes.
+	// PASSIVE checkpoints should consistently be sub-millisecond.  Any
+	// observation above ~100 ms for mode="passive" indicates resource
+	// pressure; mode="truncate" observations above a few seconds indicate
+	// long-lived reader transactions blocking WAL truncation.
+	DBWALCheckpointDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "media_viewer_db_wal_checkpoint_duration_seconds",
-			Help:    "Duration of WAL checkpoint operations",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10},
+			Help:    "Duration of WAL checkpoint operations by mode (passive or truncate)",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30},
 		},
+		[]string{"mode"}, // "passive", "truncate"
 	)
 
 	DBWALPages = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "media_viewer_db_wal_pages",
-			Help: "WAL page counts from the most recent PASSIVE checkpoint (log=total WAL pages, checkpointed=pages written to main db, busy=1 if blocked by an active reader)",
+			Help: "WAL page counts from the most recent checkpoint (log=total WAL pages, checkpointed=pages written to main db, busy=pages left behind due to active readers)",
 		},
 		[]string{"type"}, // "log", "checkpointed", "busy"
+	)
+
+	// DBWALCheckpointBlockedTotal counts how often any checkpoint completed
+	// with busy > 0 — meaning at least one WAL frame could not be written
+	// back to the main database file because an active reader transaction
+	// held a snapshot of those pages.  A sustained non-zero rate means WAL
+	// frames are accumulating and the WAL file will grow unboundedly until
+	// all readers release their transactions.
+	DBWALCheckpointBlockedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_db_wal_checkpoint_blocked_total",
+			Help: "Total number of WAL checkpoints where at least one frame was left behind due to an active reader transaction (busy > 0)",
+		},
+	)
+
+	// DBWriterWaitTotal and DBWriterWaitSeconds mirror the cumulative
+	// sql.DBStats.WaitCount and WaitDuration for the writer connection pool.
+	// Because MaxOpenConns=1 on the writer, every BeginTx call that has to
+	// wait for the single connection increments WaitCount.  A non-zero rate
+	// (use `rate(…[1m])`) indicates the writer was held for a meaningful
+	// time — for example, by a blocking TRUNCATE checkpoint — while batch
+	// upserts queued up behind it.
+	DBWriterWaitTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_db_writer_wait_total",
+			Help: "Cumulative number of times a caller waited for the writer connection pool (sql.DBStats.WaitCount); use rate() to detect writer contention",
+		},
+	)
+
+	DBWriterWaitSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_db_writer_wait_seconds_total",
+			Help: "Cumulative time callers spent waiting for the writer connection pool (sql.DBStats.WaitDuration); use rate() alongside db_writer_wait_total to compute mean wait latency",
+		},
 	)
 )
 

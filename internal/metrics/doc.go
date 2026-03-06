@@ -23,6 +23,29 @@
 //   - DBConnectionsOpen: Gauge of open database connections
 //   - DBSizeBytes: Gauge of database file sizes (main, WAL, SHM)
 //
+// ## WAL Checkpoint Metrics
+//
+// Monitor SQLite WAL checkpoint behavior.  Unexpected spikes in these metrics
+// are early warning signs of checkpoint-related write stalls.
+//
+//   - DBWALCheckpointTotal: CounterVec by mode ("passive"/"truncate").
+//     A non-zero rate for mode="truncate" outside of a planned restart
+//     indicates the blocking checkpoint is being called on a hot path.
+//   - DBWALCheckpointDuration: HistogramVec by mode.  PASSIVE observations
+//     above ~100 ms indicate I/O pressure; TRUNCATE observations above a few
+//     seconds indicate long-lived reader transactions stalling truncation.
+//   - DBWALPages: GaugeVec — log (total WAL frames), checkpointed (frames
+//     written to main db), busy (frames left behind due to active readers).
+//   - DBWALCheckpointBlockedTotal: Counter incremented when busy > 0 after
+//     any checkpoint.  A sustained non-zero rate means WAL frames are
+//     accumulating because active readers are holding WAL snapshots.
+//   - DBWriterWaitTotal: Gauge mirroring the cumulative sql.DBStats.WaitCount
+//     for the writer connection pool.  Because the writer pool is capped at
+//     one connection (MaxOpenConns=1), any call that arrives while a write is
+//     in progress increments this counter.  Use rate() to detect contention.
+//   - DBWriterWaitSeconds: Gauge mirroring the cumulative WaitDuration for the
+//     writer pool.  Divide by DBWriterWaitTotal rate to get mean wait latency.
+//
 // ## Indexer Metrics
 //
 // Track media library indexing operations:
@@ -169,4 +192,23 @@
 //	media_viewer_thumbnail_generation_files{status="generated"} /
 //	(media_viewer_thumbnail_generation_files{status="generated"} +
 //	 media_viewer_thumbnail_generation_files{status="failed"})
+//
+// WAL checkpoint blocking rate (non-zero rate = WAL frames left behind by
+// active readers; sustained rate means the WAL file is growing):
+//
+//	rate(media_viewer_db_wal_checkpoint_blocked_total[5m])
+//
+// Writer connection wait rate (spike during bulk index = writer was held
+// by a blocking checkpoint):
+//
+//	rate(media_viewer_db_writer_wait_total[1m])
+//
+// Mean writer wait latency per contention event:
+//
+//	rate(media_viewer_db_writer_wait_seconds_total[1m]) /
+//	rate(media_viewer_db_writer_wait_total[1m])
+//
+// TRUNCATE checkpoint durations — alert if > 5 s during normal operation:
+//
+//	histogram_quantile(0.99, rate(media_viewer_db_wal_checkpoint_duration_seconds_bucket{mode="truncate"}[10m]))
 package metrics

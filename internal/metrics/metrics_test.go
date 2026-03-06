@@ -278,6 +278,71 @@ func TestDBQueryDurationBuckets(_ *testing.T) {
 	}
 }
 
+func TestWALCheckpointMetrics(t *testing.T) {
+	t.Run("DBWALCheckpointTotal passive mode", func(_ *testing.T) {
+		DBWALCheckpointTotal.WithLabelValues("passive").Inc()
+	})
+
+	t.Run("DBWALCheckpointTotal truncate mode", func(_ *testing.T) {
+		DBWALCheckpointTotal.WithLabelValues("truncate").Inc()
+	})
+
+	t.Run("DBWALCheckpointDuration passive observe", func(_ *testing.T) {
+		// PASSIVE checkpoints should be sub-millisecond under normal conditions.
+		DBWALCheckpointDuration.WithLabelValues("passive").Observe(0.0001)
+		DBWALCheckpointDuration.WithLabelValues("passive").Observe(0.001)
+	})
+
+	t.Run("DBWALCheckpointDuration truncate observe", func(_ *testing.T) {
+		// TRUNCATE can block for several seconds with active readers.
+		DBWALCheckpointDuration.WithLabelValues("truncate").Observe(0.5)
+		DBWALCheckpointDuration.WithLabelValues("truncate").Observe(15.0)
+	})
+
+	t.Run("DBWALPages gauges", func(_ *testing.T) {
+		DBWALPages.WithLabelValues("log").Set(1024)
+		DBWALPages.WithLabelValues("checkpointed").Set(896)
+		DBWALPages.WithLabelValues("busy").Set(128)
+	})
+
+	t.Run("DBWALCheckpointBlockedTotal", func(_ *testing.T) {
+		// Incremented when busy > 0 after any checkpoint.
+		DBWALCheckpointBlockedTotal.Inc()
+	})
+
+	t.Run("DBWriterWaitTotal cumulative gauge", func(_ *testing.T) {
+		// Mirrors sql.DBStats.WaitCount for the writer pool.
+		DBWriterWaitTotal.Set(42)
+	})
+
+	t.Run("DBWriterWaitSeconds cumulative gauge", func(_ *testing.T) {
+		// Mirrors sql.DBStats.WaitDuration for the writer pool.
+		DBWriterWaitSeconds.Set(3.14)
+	})
+}
+
+func TestWALCheckpointMetricsExist(t *testing.T) {
+	tests := []struct {
+		name   string
+		metric interface{}
+	}{
+		{"DBWALCheckpointTotal", DBWALCheckpointTotal},
+		{"DBWALCheckpointDuration", DBWALCheckpointDuration},
+		{"DBWALPages", DBWALPages},
+		{"DBWALCheckpointBlockedTotal", DBWALCheckpointBlockedTotal},
+		{"DBWriterWaitTotal", DBWriterWaitTotal},
+		{"DBWriterWaitSeconds", DBWriterWaitSeconds},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.metric == nil {
+				t.Errorf("%s metric is nil", tt.name)
+			}
+		})
+	}
+}
+
 func TestThumbnailGenerationDurationBuckets(*testing.T) {
 	// Verify that the duration buckets make sense for thumbnail generation
 	// Expected buckets: 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
