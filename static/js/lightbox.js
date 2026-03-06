@@ -1357,7 +1357,15 @@ const Lightbox = {
 
         this.elements.lightbox.addEventListener('click', (e) => {
             if (e.target === this.elements.lightbox) {
-                this.closeWithHistory();
+                // If controls are hidden a tap anywhere passes through the
+                // invisible buttons to the lightbox background.  The first tap
+                // should restore the controls, not close the lightbox.
+                if (!this.uiOverlaysVisible) {
+                    this.userHidOverlays = false;
+                    this.showUIOverlays();
+                } else {
+                    this.closeWithHistory();
+                }
             }
         });
 
