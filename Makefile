@@ -71,7 +71,7 @@ all: build
 # Go Build Targets
 # =============================================================================
 
-build:
+build: _check-go-version
 	@echo "Building with FTS5 support..."
 	$(GO_BUILD) -ldflags "$(LDFLAGS)" -o media-viewer ./cmd/media-viewer
 
@@ -93,6 +93,28 @@ release-build:
 # Strip a leading 'v' so VERSION=v0.15.0 and VERSION=0.15.0 both work.
 VERSION_NUM = $(patsubst v%,%,$(VERSION))
 VERSION_TAG = v$(VERSION_NUM)
+
+# Internal guard — validates that the local Go toolchain matches go.mod.
+# Catches the common devcontainer/CI drift (e.g. local=1.26.0, CI=1.26.1)
+# before it causes lint or test failures.
+.PHONY: _check-go-version
+_check-go-version:
+	@REQUIRED=$$(grep -E '^go [0-9]' go.mod | awk '{print $$2}'); \
+	CURRENT=$$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+(\.[0-9]+)?' | sed 's/^go//'); \
+	if [ "$$CURRENT" != "$$REQUIRED" ]; then \
+		echo ""; \
+		echo "ERROR: Go version mismatch — builds and linting will diverge from CI"; \
+		echo "  go.mod requires : $$REQUIRED"; \
+		echo "  Local version   : $${CURRENT:-not found}"; \
+		echo ""; \
+		echo "  To fix (devcontainer users):"; \
+		echo "    Cmd/Ctrl+Shift+P → 'Dev Containers: Rebuild Container'"; \
+		echo ""; \
+		echo "  To fix (local install):"; \
+		echo "    Download Go $$REQUIRED from https://go.dev/dl/"; \
+		echo ""; \
+		exit 1; \
+	fi
 
 # Internal guard — validates that VERSION is provided and well-formed.
 .PHONY: _check-version
@@ -169,11 +191,11 @@ tag-release: _check-version
 # Development Targets
 # =============================================================================
 
-run:
+run: _check-go-version
 	@echo "Running with FTS5 support..."
 	$(GO_RUN) ./cmd/media-viewer
 
-dev:
+dev: _check-go-version
 	@echo "Starting Go development server with hot reload..."
 	LOG_LEVEL=debug WEBAUTHN_RP_ID=localhost \
 	WEBAUTHN_RP_DISPLAY_NAME="Media Viewer Dev" \
@@ -183,7 +205,7 @@ dev:
 	SESSION_DURATION=1h \
 	air
 
-dev-info:
+dev-info: _check-go-version
 	@echo "Starting Go development server with info level logging..."
 	LOG_LEVEL=info WEBAUTHN_RP_ID=localhost \
 	WEBAUTHN_RP_DISPLAY_NAME="Media Viewer Dev" \
@@ -214,7 +236,7 @@ dev-full:
 # =============================================================================
 
 # Run all Go tests
-test:
+test: _check-go-version
 	@echo "Running tests..."
 	$(GO_TEST) -v ./... 2>&1 | tee test.log
 
@@ -502,11 +524,11 @@ pr-check-all:
 # Go Lint Targets
 # =============================================================================
 
-lint:
+lint: _check-go-version
 	@echo "Linting Go code..."
 	golangci-lint run --config=.golangci.yml
 
-lint-fix:
+lint-fix: _check-go-version
 	@echo "Fixing Go lint issues..."
 	golangci-lint run --fix --config=.golangci.yml
 
