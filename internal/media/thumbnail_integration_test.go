@@ -2367,6 +2367,80 @@ func upsertTestFile(ctx context.Context, t *testing.T, db *database.Database, fi
 	}
 }
 
+// TestRunGenerationFullTotalFilesIntegration verifies that after a full thumbnail
+// generation run the TotalFiles stat reflects the actual number of eligible files
+// in the database.
+//
+// Regression guard for the bug where TotalFiles was accumulated page-by-page
+// inside the pagination loop (TotalFiles += len(page)) so its value at any point
+// during the run equalled Processed rather than the pre-known total. The fix
+// issues a COUNT(*) query before the loop and sets TotalFiles once.
+func TestRunGenerationFullTotalFilesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	tmpDir := t.TempDir()
+	mediaDir := t.TempDir()
+
+	dbPath := filepath.Join(t.TempDir(), "totalfiles_test.db")
+	db, _, err := database.New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	gen := NewThumbnailGenerator(tmpDir, mediaDir, true, db, 24*time.Hour, nil)
+	ctx := context.Background()
+
+	// Create a handful of real image files and register them in the database.
+	const numFiles = 5
+	files := make([]database.MediaFile, numFiles)
+	for i := range numFiles {
+		filename := filepath.Join(mediaDir, fmt.Sprintf("total_%d.jpg", i))
+		createTestImageFile(t, filename, 100, 100, "jpeg", 80)
+
+		relPath, _ := filepath.Rel(mediaDir, filename)
+		files[i] = database.MediaFile{
+			Path:       relPath,
+			Name:       filepath.Base(filename),
+			ParentPath: "",
+			Type:       database.FileTypeImage,
+		}
+		upsertTestFile(ctx, t, db, files[i])
+	}
+
+	// Also insert a playlist — it must NOT be counted.
+	upsertTestFile(ctx, t, db, database.MediaFile{
+		Path: "list.wpl",
+		Name: "list.wpl",
+		Type: database.FileTypePlaylist,
+		Size: 0,
+	})
+
+	// Run full generation synchronously (incremental=false).
+	gen.runGeneration(false)
+
+	stats := gen.GetStatus().Generation
+	if stats == nil {
+		t.Fatal("GetStatus().Generation is nil after runGeneration")
+	}
+
+	// TotalFiles must equal the number of eligible files (images/videos/folders),
+	// not the number of processed files at any given point in the loop.
+	if stats.TotalFiles != numFiles {
+		t.Errorf("TotalFiles = %d, want %d", stats.TotalFiles, numFiles)
+	}
+
+	// Processed must account for every eligible file.
+	if stats.Processed != numFiles {
+		t.Errorf("Processed = %d, want %d", stats.Processed, numFiles)
+	}
+
+	t.Logf("runGeneration stats: TotalFiles=%d Processed=%d Generated=%d Skipped=%d Failed=%d",
+		stats.TotalFiles, stats.Processed, stats.Generated, stats.Skipped, stats.Failed)
+}
+
 // deleteTestFile simulates removing a file from the index the way the real
 // indexer does: re-upsert only the files to keep, then delete anything
 // not updated since before the re-upsert batch.

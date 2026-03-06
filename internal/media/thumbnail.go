@@ -1302,6 +1302,15 @@ func (t *ThumbnailGenerator) runGeneration(incremental bool) {
 		// small enough that peak heap stays bounded even for very large libraries.
 		const thumbnailFetchPageSize = 500
 
+		totalFiles, countErr := t.db.CountMediaFilesForThumbnails(ctx)
+		if countErr != nil {
+			logging.Warn("Failed to count media files for thumbnail generation, progress denominator will be unknown: %v", countErr)
+		} else {
+			t.generationMu.Lock()
+			t.generationStats.TotalFiles = totalFiles
+			t.generationMu.Unlock()
+		}
+
 		logging.Info("Running full thumbnail generation (streaming %d files per page)", thumbnailFetchPageSize)
 
 		var offset int
@@ -1322,10 +1331,6 @@ func (t *ThumbnailGenerator) runGeneration(incremental bool) {
 			if len(page) == 0 {
 				break
 			}
-
-			t.generationMu.Lock()
-			t.generationStats.TotalFiles += len(page)
-			t.generationMu.Unlock()
 
 			t.processFilesForGeneration(ctx, page, false)
 			offset += len(page)
