@@ -787,6 +787,7 @@ type BatchInserter struct {
 	del       *sql.Stmt
 	startTime time.Time
 	txType    string // metric label used on successful commit (e.g. "batch_insert", "cleanup")
+	runTime   int64  // Unix timestamp passed as updated_at for every upsert in this batch
 }
 
 // SetTxType sets the metric label that will be used for the successful-commit
@@ -797,9 +798,28 @@ func (b *BatchInserter) SetTxType(t string) {
 	b.txType = t
 }
 
+// SetRunTime sets the Unix timestamp that will be stored in updated_at for every
+// UpsertFile call on this batch.  It must be called before the first UpsertFile.
+// Using a caller-supplied value instead of strftime('now') makes the run-marker
+// deterministic regardless of when each individual statement executes.
+func (b *BatchInserter) SetRunTime(t int64) {
+	b.runTime = t
+}
+
+// upsertQuery inserts or updates a file record.
+//
+// updated_at is supplied as an explicit Go-issued parameter (the indexTime Unix
+// second captured before the index run begins).  Using a caller-supplied value
+// rather than strftime('%s','now') makes the run-marker deterministic: every
+// file touched by the same index run carries the same updated_at value,
+// regardless of how long the upserts take.  The cleanup step then reliably
+// removes rows whose updated_at is strictly less than indexTime.Unix().
+//
+// content_updated_at tracks actual content changes and continues to use
+// strftime('now') so it reflects real modification time.
 const upsertQuery = `
 	INSERT INTO files (name, path, parent_path, type, size, mod_time, mime_type, file_hash, updated_at, content_updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
 	ON CONFLICT(path) DO UPDATE SET
 		name = excluded.name,
 		type = excluded.type,
@@ -807,7 +827,7 @@ const upsertQuery = `
 		mod_time = excluded.mod_time,
 		mime_type = excluded.mime_type,
 		file_hash = excluded.file_hash,
-		updated_at = strftime('%s', 'now'),
+		updated_at = excluded.updated_at,
 		content_updated_at = CASE
 			WHEN files.size != excluded.size
 			  OR files.mod_time != excluded.mod_time
@@ -868,6 +888,8 @@ func (b *BatchInserter) StartTime() time.Time {
 }
 
 // UpsertFile inserts or updates a file record using the pre-prepared statement.
+// The updated_at column is set to b.runTime (set via SetRunTime) so that all
+// files touched by the same index run share a single, Go-controlled timestamp.
 func (b *BatchInserter) UpsertFile(ctx context.Context, file *MediaFile) error {
 	done := b.db.observeQuery("upsert_file")
 
@@ -880,6 +902,7 @@ func (b *BatchInserter) UpsertFile(ctx context.Context, file *MediaFile) error {
 		file.ModTime.Unix(),
 		file.MimeType,
 		file.FileHash,
+		b.runTime,
 	)
 	done(err)
 

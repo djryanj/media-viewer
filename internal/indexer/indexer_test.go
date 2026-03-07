@@ -296,8 +296,9 @@ func TestIndexerConstants(t *testing.T) {
 	})
 
 	t.Run("minFilesForReady", func(_ *testing.T) {
-		// Expected: 100 files minimum before server is ready
-		// Ensures initial index has made progress
+		// Expected: 500 items minimum before an empty-database server is ready
+		// Paired with startupReadyTimeout (30s) — whichever fires first unblocks
+		// the health check when the database is empty on first start.
 	})
 
 	t.Run("batchDelay", func(_ *testing.T) {
@@ -394,7 +395,7 @@ func TestHealthStatusReady(t *testing.T) {
 	}{
 		{
 			name:            "Ready with enough files",
-			filesIndexed:    100,
+			filesIndexed:    490,
 			foldersIndexed:  10,
 			initialComplete: false,
 			wantReady:       true,
@@ -420,7 +421,7 @@ func TestHealthStatusReady(t *testing.T) {
 			// Note: This documents the expected behavior
 			// Actual IsReady() implementation checks these conditions
 			totalIndexed := tt.filesIndexed + tt.foldersIndexed
-			isReady := (totalIndexed >= 100) || tt.initialComplete
+			isReady := (totalIndexed >= minFilesForReady) || tt.initialComplete
 
 			if isReady != tt.wantReady {
 				t.Errorf("Expected ready=%v, got %v", tt.wantReady, isReady)
@@ -713,34 +714,81 @@ func TestIsReady(t *testing.T) {
 	db := &database.Database{}
 	idx := New(db, tempDir, 5*time.Minute)
 
-	// Not ready initially
+	// Not ready initially (empty DB, no items indexed yet)
 	if idx.IsReady() {
 		t.Error("Expected IsReady=false initially")
 	}
 
-	// Not ready with few files
-	idx.filesIndexed.Store(50)
-	idx.foldersIndexed.Store(5)
+	// Not ready with fewer than minFilesForReady items
+	idx.filesIndexed.Store(400)
+	idx.foldersIndexed.Store(50)
 	if idx.IsReady() {
-		t.Error("Expected IsReady=false with only 55 items")
+		t.Error("Expected IsReady=false with only 450 items (< 500)")
 	}
 
-	// Ready with enough files
-	idx.filesIndexed.Store(95)
+	// Ready once minFilesForReady items are indexed
+	idx.filesIndexed.Store(490)
 	idx.foldersIndexed.Store(10)
 	if !idx.IsReady() {
-		t.Error("Expected IsReady=true with 105 items")
+		t.Error("Expected IsReady=true with 500 items")
 	}
 
-	// Reset and test with initial complete flag
+	// Reset and test with initialIndexComplete flag
 	idx.filesIndexed.Store(0)
 	idx.foldersIndexed.Store(0)
 	idx.indexMu.Lock()
 	idx.initialIndexComplete = true
 	idx.indexMu.Unlock()
-
 	if !idx.IsReady() {
 		t.Error("Expected IsReady=true with initialIndexComplete=true")
+	}
+}
+
+// TestIsReadyWithExistingDatabase verifies that when the database already held
+// items at startup (startupDBCount > 0) the server is immediately ready,
+// regardless of how many items have been indexed in the current run.
+func TestIsReadyWithExistingDatabase(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	// Simulate a non-empty database at startup time
+	idx.startupDBCount = 1234
+
+	// Should be immediately ready even with zero items indexed so far
+	if !idx.IsReady() {
+		t.Error("Expected IsReady=true when startupDBCount > 0")
+	}
+
+	// Confirm GetHealthStatus agrees
+	status := idx.GetHealthStatus()
+	if !status.Ready {
+		t.Error("Expected GetHealthStatus.Ready=true when startupDBCount > 0")
+	}
+}
+
+// TestIsReadyAfterStartupTimeout verifies that the server becomes ready once
+// startupReadyTimeout has elapsed, even if fewer than minFilesForReady items
+// have been indexed and the initial index is not yet complete.
+func TestIsReadyAfterStartupTimeout(t *testing.T) {
+	tempDir := t.TempDir()
+	db := &database.Database{}
+	idx := New(db, tempDir, 5*time.Minute)
+
+	// Backdate startTime to simulate the timeout having elapsed
+	idx.startTime = time.Now().Add(-(startupReadyTimeout + time.Second))
+
+	// Only a handful of files indexed, initial index not complete
+	idx.filesIndexed.Store(10)
+
+	if !idx.IsReady() {
+		t.Error("Expected IsReady=true after startupReadyTimeout has elapsed")
+	}
+
+	// Confirm GetHealthStatus agrees
+	status := idx.GetHealthStatus()
+	if !status.Ready {
+		t.Error("Expected GetHealthStatus.Ready=true after timeout")
 	}
 }
 
@@ -1126,14 +1174,14 @@ func TestGetHealthStatusWhileIndexing(t *testing.T) {
 	db := &database.Database{}
 	idx := New(db, tempDir, 5*time.Minute)
 
-	// Simulate indexing in progress
+	// Simulate indexing in progress with enough items to cross minFilesForReady
 	idx.indexMu.Lock()
 	idx.isIndexing = true
 	idx.indexMu.Unlock()
-	idx.filesIndexed.Store(150)
+	idx.filesIndexed.Store(480)
 	idx.foldersIndexed.Store(20)
 	idx.indexProgress.Store(IndexProgress{
-		FilesIndexed:   150,
+		FilesIndexed:   480,
 		FoldersIndexed: 20,
 		IsIndexing:     true,
 		StartedAt:      time.Now(),
@@ -1142,13 +1190,13 @@ func TestGetHealthStatusWhileIndexing(t *testing.T) {
 	status := idx.GetHealthStatus()
 
 	if !status.Ready {
-		t.Error("Expected Ready=true (150+20=170 >= 100)")
+		t.Error("Expected Ready=true (480+20=500 >= minFilesForReady)")
 	}
 	if !status.Indexing {
 		t.Error("Expected Indexing=true")
 	}
-	if status.FilesIndexed != 150 {
-		t.Errorf("Expected FilesIndexed=150, got %d", status.FilesIndexed)
+	if status.FilesIndexed != 480 {
+		t.Errorf("Expected FilesIndexed=480, got %d", status.FilesIndexed)
 	}
 	if status.FoldersIndexed != 20 {
 		t.Errorf("Expected FoldersIndexed=20, got %d", status.FoldersIndexed)

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.15.6] - Unreleased
+
+### Changed
+
+- fix(backend): Server startup no longer blocks the health check for an entire index run. If a database exists with items, it returns healthy as soon as the server is online. If it's a new database, the health check will block for 500 items indexed, 30 seconds, or the index being completed, whichever is shorter. The indexer also logs much better what it's doing, whereas before it was kind of a black hole. [#436](https://github.com/djryanj/media-viewer/issues/436)
+
 ## [0.15.5] - 03-07-2026
 
 ### Added

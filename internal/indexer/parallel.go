@@ -119,6 +119,8 @@ func (pw *ParallelWalker) Walk() ([]database.MediaFile, error) {
 	var collectorErr error
 	var mu sync.Mutex
 
+	var walkCount int64
+
 	collectorWg.Add(1)
 	go func() {
 		defer collectorWg.Done()
@@ -132,6 +134,17 @@ func (pw *ParallelWalker) Walk() ([]database.MediaFile, error) {
 				mu.Lock()
 				allFiles = append(allFiles, *result.file)
 				mu.Unlock()
+
+				n := atomic.AddInt64(&walkCount, 1)
+				if n%500 == 0 {
+					elapsed := time.Since(startTime)
+					itemsPerSecond := 0.0
+					if elapsed.Seconds() > 0 {
+						itemsPerSecond = float64(n) / elapsed.Seconds()
+					}
+					logging.Info("Walk progress: %d items discovered (%.0f items/s)",
+						n, itemsPerSecond)
+				}
 			}
 		}
 	}()
