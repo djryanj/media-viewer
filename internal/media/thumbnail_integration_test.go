@@ -2361,6 +2361,7 @@ func upsertTestFile(ctx context.Context, t *testing.T, db *database.Database, fi
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
+	batch.SetRunTime(time.Now().Unix())
 	upsertErr := batch.UpsertFile(ctx, &file)
 	if err := db.EndBatch(batch, upsertErr); err != nil {
 		t.Fatalf("UpsertFile failed: %v", err)
@@ -2463,6 +2464,7 @@ func deleteTestFile(ctx context.Context, t *testing.T, db *database.Database, ke
 	if err != nil {
 		t.Fatalf("BeginBatch failed: %v", err)
 	}
+	batch.SetRunTime(cutoff.Unix())
 
 	for i := range keepFiles {
 		if upsertErr := batch.UpsertFile(ctx, &keepFiles[i]); upsertErr != nil {

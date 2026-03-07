@@ -23,8 +23,11 @@ const (
 	// Number of files to process before committing a batch
 	batchSize = 500
 
-	// Minimum files to index before marking server as ready
-	minFilesForReady = 100
+	// Minimum items to index before marking an empty database as ready
+	minFilesForReady = 500
+
+	// Maximum time to block health checks when starting with an empty database
+	startupReadyTimeout = 30 * time.Second
 
 	// Delay between batches to allow other operations
 	batchDelay = 10 * time.Millisecond
@@ -52,12 +55,23 @@ type Indexer struct {
 	foldersIndexed atomic.Int64
 	indexProgress  atomic.Value
 
+	// currentRunTime is the Unix timestamp stamped onto every upsert's
+	// updated_at column for the duration of the active index run.  It is set
+	// once per run (after the second-boundary sleep) and read by every
+	// processBatch call, which all execute in the same goroutine.
+	currentRunTime atomic.Int64
+
 	// Parallel walker configuration
 	parallelConfig ParallelWalkerConfig
 	useParallel    bool
 
 	// Callback when indexing completes
 	onIndexComplete func()
+
+	// Number of items in the database at the time Start() was called.
+	// When > 0 the server is considered immediately ready, since users can
+	// already browse existing content while the background re-index runs.
+	startupDBCount int64
 
 	// Last known state for lightweight change detection
 	stateMu            sync.RWMutex
@@ -115,6 +129,19 @@ func (idx *Indexer) SetOnIndexComplete(callback func()) {
 
 // Start begins the indexing process.
 func (idx *Indexer) Start() error {
+	// Check how many items are already in the database.  If the database is
+	// non-empty the server is immediately ready for traffic; the background
+	// re-index updates stale entries without blocking the health check.
+	if stats, err := idx.db.CalculateStats(); err == nil {
+		idx.startupDBCount = int64(stats.TotalFiles + stats.TotalFolders)
+	}
+	if idx.startupDBCount > 0 {
+		logging.Info("Database has %d existing items — health check will not block during re-index", idx.startupDBCount)
+	} else {
+		logging.Info("Empty database — health check will block for up to %v or %d items indexed",
+			startupReadyTimeout, minFilesForReady)
+	}
+
 	// Start initial index in background
 	go func() {
 		logging.Info("Starting initial index in background...")
@@ -141,7 +168,23 @@ func (idx *Indexer) Stop() {
 }
 
 // IsReady returns true if the server is ready to accept traffic.
+//
+// Non-blocking rules (applied in order):
+//  1. If the database already had items before startup, return true immediately
+//     so that a background re-index never blocks the health check.
+//  2. For an empty database, block until the startup timeout elapses, enough
+//     items have been indexed, or the initial index finishes — whichever comes
+//     first.
 func (idx *Indexer) IsReady() bool {
+	// Rule 1: existing data — never block.
+	if idx.startupDBCount > 0 {
+		return true
+	}
+
+	// Rule 2: empty database — apply startup caps.
+	if time.Since(idx.startTime) >= startupReadyTimeout {
+		return true
+	}
 	if idx.filesIndexed.Load()+idx.foldersIndexed.Load() >= minFilesForReady {
 		return true
 	}
@@ -167,7 +210,10 @@ func (idx *Indexer) GetHealthStatus() HealthStatus {
 	progress := idx.getProgress()
 
 	status := HealthStatus{
-		Ready:          idx.initialIndexComplete || (idx.filesIndexed.Load()+idx.foldersIndexed.Load() >= minFilesForReady),
+		Ready: idx.startupDBCount > 0 ||
+			idx.initialIndexComplete ||
+			idx.filesIndexed.Load()+idx.foldersIndexed.Load() >= minFilesForReady ||
+			time.Since(idx.startTime) >= startupReadyTimeout,
 		Indexing:       idx.isIndexing,
 		StartTime:      idx.startTime,
 		Uptime:         time.Since(idx.startTime).String(),
@@ -419,6 +465,29 @@ func (idx *Indexer) Index() error {
 	// concurrent read queries crawl even in WAL mode.  By dropping the triggers now
 	// and doing a single bulk rebuild at the end we reduce write amplification from
 	// O(n) to O(1) for FTS.
+	// Advance to the next Unix-second boundary before capturing indexTime.
+	// SQLite stores updated_at at second precision (strftime('%s','now')), so
+	// every file upserted in this run will have updated_at = T where T is the
+	// current second when the upsert executes.  The cleanup query deletes rows
+	// with updated_at < indexTime.Unix(), so indexTime must be > T for any file
+	// from a previous run. By sleeping until the next second boundary we
+	// guarantee that indexTime.Unix() = T+1 while all current-run upserts land
+	// in second T+1 as well — so "updated_at < T+1" reliably targets only files
+	// that were last touched before this run began.
+	// Sleep to the next Unix-second boundary so that indexTime.Unix() is
+	// guaranteed to be strictly greater than indexTime.Unix() from the previous
+	// run (even when two runs complete within the same wall-clock second).
+	// This second value is then stamped onto every upsert's updated_at column
+	// (via currentRunTime / SetRunTime), making the cleanup delete condition
+	// "updated_at < indexTime.Unix()" deterministic regardless of how long
+	// individual SQLite statements take to execute.
+	now := time.Now()
+	if remaining := time.Until(now.Truncate(time.Second).Add(time.Second)); remaining > 0 {
+		time.Sleep(remaining + 2*time.Millisecond)
+	}
+	indexTime := time.Now()
+	idx.currentRunTime.Store(indexTime.Unix())
+
 	bulkCtx := context.Background()
 	if err := idx.db.BulkIndexBegin(bulkCtx); err != nil {
 		// Non-fatal: log and continue.  Indexing will still work, just slower.
@@ -426,8 +495,6 @@ func (idx *Indexer) Index() error {
 	} else {
 		logging.Debug("FTS triggers disabled for bulk index run")
 	}
-
-	indexTime := time.Now()
 
 	var result indexResult
 	var err error
@@ -679,10 +746,15 @@ func (idx *Indexer) processPath(
 
 		time.Sleep(batchDelay)
 
+		// Log progress every 500 items (every batch) with throughput.
 		total := result.totalFiles + result.totalFolders
-		if total%5000 == 0 {
-			logging.Info("Indexed %d files, %d folders...", result.totalFiles, result.totalFolders)
+		elapsed := time.Since(startTime)
+		itemsPerSecond := 0.0
+		if elapsed.Seconds() > 0 {
+			itemsPerSecond = float64(total) / elapsed.Seconds()
 		}
+		logging.Info("Indexing progress: %d files, %d folders (%.0f items/s)",
+			result.totalFiles, result.totalFolders, itemsPerSecond)
 	}
 
 	return nil
@@ -771,6 +843,9 @@ func (idx *Indexer) finalizeIndex(startTime time.Time, totalFiles, totalFolders 
 }
 
 // processBatch processes a batch of files in a single transaction.
+// Every upsert is stamped with idx.currentRunTime so that updated_at is a
+// Go-controlled value rather than SQLite's strftime('now'), which can vary
+// across batches when the race detector slows execution.
 func (idx *Indexer) processBatch(files []database.MediaFile) error {
 	if len(files) == 0 {
 		return nil
@@ -784,6 +859,7 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 		return fmt.Errorf("failed to begin batch transaction: %w", err)
 	}
 	batch.SetTxType("batch_insert")
+	batch.SetRunTime(idx.currentRunTime.Load())
 
 	for i := range files {
 		if err := batch.UpsertFile(ctx, &files[i]); err != nil {

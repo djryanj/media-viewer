@@ -430,11 +430,15 @@ func TestIndexerIncrementalUpdatesIntegration(t *testing.T) {
 		t.Fatalf("Failed to delete file: %v", err)
 	}
 
-	// Wait to ensure timestamps differ significantly for cleanup to work
-	// The cleanup compares file updated_at times (set during index) with indexTime (captured at start of index).
-	// Since files get updated_at set to current database time during processing, we need enough delay
-	// so the third index's indexTime is after all files' updated_at from the second index.
-	time.Sleep(1100 * time.Millisecond)
+	// Ensure the third index run's boundary sleep produces an indexTime.Unix()
+	// value strictly greater than the second run's indexTime.Unix().
+	// Each Index() call sleeps to the next Unix-second boundary, so waiting
+	// for 2 full seconds guarantees a fresh second for run 3's marker.
+	waitStart := time.Now()
+	targetSecond := waitStart.Unix() + 2
+	for time.Now().Unix() < targetSecond {
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	// Third index (should remove deleted file)
 	if err := idx.Index(); err != nil {
@@ -534,8 +538,15 @@ func TestIndexerStopAndRestartIntegration(t *testing.T) {
 	// Start and run index
 	idx.Start()
 
-	// Wait for initial index
-	time.Sleep(500 * time.Millisecond)
+	// Wait for initial index to complete. Index() sleeps up to ~1s at startup
+	// (next Unix-second boundary), so poll instead of using a fixed sleep.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !idx.LastIndexTime().IsZero() {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	// Stop indexer
 	idx.Stop()
