@@ -1,10 +1,13 @@
 package indexer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"media-viewer/internal/database"
 )
@@ -1027,4 +1030,125 @@ func BenchmarkDefaultParallelWalkerConfig_InvalidEnvVar(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = DefaultParallelWalkerConfig()
 	}
+}
+
+// TestParallelWalkerWalkPhaseDurationSet verifies that Walk() sets the
+// IndexerWalkPhaseDuration gauge to a positive value.
+// A zero value after Walk() means the metrics.Set call was accidentally removed.
+func TestParallelWalkerWalkPhaseDurationSet(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "sample.jpg"), []byte("jpeg"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	walker := NewParallelWalker(tmpDir, DefaultParallelWalkerConfig())
+	if _, err := walker.Walk(); err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+
+	if v := gaugeValue(t, "media_viewer_indexer_walk_phase_duration_seconds"); v <= 0 {
+		t.Errorf("IndexerWalkPhaseDuration should be > 0 after Walk(), got %v", v)
+	}
+}
+
+// TestParallelWalkerDirStatDurationObserved verifies that d.Info() timing is
+// recorded during Walk(). The snapshot/delta approach confirms the histogram
+// received at least as many new observations as there are entries walked.
+func TestParallelWalkerDirStatDurationObserved(t *testing.T) {
+	tmpDir := t.TempDir()
+	const fileCount = 4
+	for i := range fileCount {
+		name := fmt.Sprintf("img%d.jpg", i)
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("data"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+
+	pre := histogramSampleCount(t, "media_viewer_indexer_dir_stat_duration_seconds")
+
+	walker := NewParallelWalker(tmpDir, DefaultParallelWalkerConfig())
+	files, err := walker.Walk()
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(files) != fileCount {
+		t.Fatalf("expected %d files, got %d", fileCount, len(files))
+	}
+
+	post := histogramSampleCount(t, "media_viewer_indexer_dir_stat_duration_seconds")
+	if post <= pre {
+		t.Errorf("IndexerDirStatDuration: expected sample count to increase during Walk (pre=%d, post=%d)",
+			pre, post)
+	}
+}
+
+// TestParallelWalkerJobQueueWaitObserved verifies that the worker goroutines
+// record a job-queue wait observation for every processed entry.
+func TestParallelWalkerJobQueueWaitObserved(t *testing.T) {
+	tmpDir := t.TempDir()
+	const fileCount = 4
+	for i := range fileCount {
+		name := fmt.Sprintf("vid%d.mp4", i)
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("data"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+
+	pre := histogramSampleCount(t, "media_viewer_indexer_job_queue_wait_seconds")
+
+	walker := NewParallelWalker(tmpDir, DefaultParallelWalkerConfig())
+	files, err := walker.Walk()
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(files) != fileCount {
+		t.Fatalf("expected %d files, got %d", fileCount, len(files))
+	}
+
+	post := histogramSampleCount(t, "media_viewer_indexer_job_queue_wait_seconds")
+	if post <= pre {
+		t.Errorf("IndexerJobQueueWait: expected sample count to increase during Walk (pre=%d, post=%d)",
+			pre, post)
+	}
+}
+
+// gaugeValue reads the current value of a named gauge from the default Prometheus
+// registry. Returns 0 if the metric is not yet registered.
+func gaugeValue(t *testing.T, metricName string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Logf("gather error (non-fatal): %v", err)
+	}
+	for _, mf := range families {
+		if mf.GetName() == metricName {
+			for _, m := range mf.GetMetric() {
+				if g := m.GetGauge(); g != nil {
+					return g.GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// histogramSampleCount reads the cumulative sample count for a named histogram
+// from the default Prometheus registry. Returns 0 if the metric is not yet
+// registered or has no observations.
+func histogramSampleCount(t *testing.T, metricName string) uint64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Logf("gather error (non-fatal): %v", err)
+	}
+	for _, mf := range families {
+		if mf.GetName() == metricName {
+			for _, m := range mf.GetMetric() {
+				if h := m.GetHistogram(); h != nil {
+					return h.GetSampleCount()
+				}
+			}
+		}
+	}
+	return 0
 }

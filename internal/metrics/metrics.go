@@ -711,4 +711,44 @@ var (
 			Buckets: []float64{1, 2, 3, 5, 10, 15, 20, 30},
 		},
 	)
+
+	// IndexerDirStatDuration measures the latency of each d.Info() call during
+	// the parallel walk.  d.Info() is a direct NFS GETATTR round-trip — the
+	// P99 of this histogram is the per-file NFS latency seen by this pod.
+	// Compare across nodes to isolate NFS vs CPU/scheduling slowness:
+	//   fast stat + slow jobs → CPU starvation (IndexerJobQueueWait will be high)
+	//   slow stat + fast jobs → NFS latency (this histogram will be high)
+	IndexerDirStatDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_indexer_dir_stat_duration_seconds",
+			Help:    "Duration of d.Info() calls during the parallel directory walk (one NFS GETATTR per entry); P99 reflects per-file NFS round-trip latency",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+	)
+
+	// IndexerJobQueueWait measures how long a walk job sits in the buffered
+	// jobs channel before a worker goroutine picks it up.  Under normal
+	// conditions this should be sub-millisecond.  Values above ~10 ms
+	// indicate the Go scheduler is starving the worker goroutines — a sign
+	// of CPU throttling, kernel scheduling pressure, or GOMAXPROCS contention.
+	// If IndexerDirStatDuration is fast but this is high, the bottleneck is
+	// CPU/scheduling, not NFS.
+	IndexerJobQueueWait = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_indexer_job_queue_wait_seconds",
+			Help:    "Time a walk job spent in the worker channel before being picked up; high P99 indicates CPU or goroutine scheduling pressure, not NFS slowness",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+	)
+
+	// IndexerWalkPhaseDuration records the wall-clock time for the walk phase
+	// alone (walkAndEnqueue + workers draining, before DB inserts begin).
+	// Comparing this against IndexerLastRunDuration isolates whether slowness
+	// is in the NFS walk or in the database insert phase.
+	IndexerWalkPhaseDuration = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_indexer_walk_phase_duration_seconds",
+			Help: "Duration of the directory walk phase in the last index run (excludes database insert phase); compare to indexer_last_run_duration_seconds to isolate walk vs DB slowness",
+		},
+	)
 )

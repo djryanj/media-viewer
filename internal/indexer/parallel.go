@@ -52,9 +52,10 @@ func DefaultParallelWalkerConfig() ParallelWalkerConfig {
 
 // fileJob represents a file to be processed
 type fileJob struct {
-	path    string
-	info    os.FileInfo
-	relPath string
+	path       string
+	info       os.FileInfo
+	relPath    string
+	enqueuedAt time.Time // when the job was sent to the jobs channel; used to measure worker queue wait time
 }
 
 // fileResult represents a processed file
@@ -165,6 +166,7 @@ func (pw *ParallelWalker) Walk() ([]database.MediaFile, error) {
 	collectorWg.Wait()
 
 	duration := time.Since(startTime)
+	metrics.IndexerWalkPhaseDuration.Set(duration.Seconds())
 	logging.Info("Parallel walk complete: %d files, %d folders in %v (errors: %d)",
 		pw.filesProcessed.Load(),
 		pw.foldersProcessed.Load(),
@@ -213,8 +215,13 @@ func (pw *ParallelWalker) walkAndEnqueue() error {
 			return nil
 		}
 
-		// Get file info
+		// Time the actual NFS stat call (d.Info() is a GETATTR round-trip).
+		// This directly measures per-file NFS latency independent of CPU load.
+		// If P99 of IndexerDirStatDuration is fast but IndexerJobQueueWait is
+		// high, the bottleneck is CPU/scheduling, not NFS.
+		statStart := time.Now()
 		info, err := d.Info()
+		metrics.IndexerDirStatDuration.Observe(time.Since(statStart).Seconds())
 		if err != nil {
 			logging.Warn("Error getting info for %s: %v", path, err)
 			return nil
@@ -222,7 +229,7 @@ func (pw *ParallelWalker) walkAndEnqueue() error {
 
 		// Send job to workers
 		select {
-		case pw.jobs <- fileJob{path: path, info: info, relPath: relPath}:
+		case pw.jobs <- fileJob{path: path, info: info, relPath: relPath, enqueuedAt: time.Now()}:
 		case <-pw.ctx.Done():
 			return fs.SkipAll
 		}
@@ -243,6 +250,11 @@ func (pw *ParallelWalker) worker(id int) {
 			return
 		default:
 		}
+
+		// Measure how long this job waited in the channel before we picked it up.
+		// High values (>10ms) indicate CPU/goroutine scheduling pressure rather
+		// than NFS slowness — the workers are not getting scheduled promptly.
+		metrics.IndexerJobQueueWait.Observe(time.Since(job.enqueuedAt).Seconds())
 
 		result := pw.processFile(job)
 

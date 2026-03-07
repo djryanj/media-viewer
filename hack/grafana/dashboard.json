@@ -2566,6 +2566,355 @@
                 "x": 0,
                 "y": 47
             },
+            "id": 400,
+            "panels": [],
+            "title": "NFS & Walk Diagnostics",
+            "type": "row"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "description": "Latency of d.Info() calls during the parallel walk \u2014 each call is one NFS GETATTR round-trip. High values (>1ms p99) indicate NFS is slow. If this is fast but Job Queue Wait is high, the bottleneck is CPU/goroutine scheduling, not NFS.",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 10,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "showValues": false,
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "line"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 0.01
+                            },
+                            {
+                                "color": "red",
+                                "value": 0.1
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 48
+            },
+            "id": 401,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "mean",
+                        "max",
+                        "lastNotNull"
+                    ],
+                    "displayMode": "table",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.3.3",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "histogram_quantile(0.99, sum(rate(media_viewer_indexer_dir_stat_duration_seconds_bucket{job=~\"$instance\"}[5m])) by (le))",
+                    "legendFormat": "p99 NFS stat",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "histogram_quantile(0.50, sum(rate(media_viewer_indexer_dir_stat_duration_seconds_bucket{job=~\"$instance\"}[5m])) by (le))",
+                    "legendFormat": "p50 NFS stat",
+                    "refId": "B"
+                }
+            ],
+            "title": "NFS Stat Latency per File (p50/p99)",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "description": "How long each walk job waited in the worker channel before being processed. Normal: sub-millisecond. High values (>10ms p99) indicate worker goroutines are not getting scheduled \u2014 a sign of CPU throttling or kernel scheduling pressure. Compare with NFS Stat Latency: fast stat + high queue wait = CPU starvation.",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 10,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "showValues": false,
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "line"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 0.01
+                            },
+                            {
+                                "color": "red",
+                                "value": 0.1
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 48
+            },
+            "id": 402,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "mean",
+                        "max",
+                        "lastNotNull"
+                    ],
+                    "displayMode": "table",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.3.3",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "histogram_quantile(0.99, sum(rate(media_viewer_indexer_job_queue_wait_seconds_bucket{job=~\"$instance\"}[5m])) by (le))",
+                    "legendFormat": "p99 queue wait",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "histogram_quantile(0.50, sum(rate(media_viewer_indexer_job_queue_wait_seconds_bucket{job=~\"$instance\"}[5m])) by (le))",
+                    "legendFormat": "p50 queue wait",
+                    "refId": "B"
+                }
+            ],
+            "title": "Worker Job Queue Wait (p50/p99)",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+            },
+            "description": "Walk phase duration (NFS walk only, no DB writes) vs total index run duration. Gap between the lines = time spent in DB insert phase. If walk phase dominates, the slowness is NFS or CPU during the walk. If DB insert dominates, investigate database transaction throughput.",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 10,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 6,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "showValues": false,
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 56
+            },
+            "id": 403,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.3.3",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "media_viewer_indexer_walk_phase_duration_seconds{job=~\"$instance\"}",
+                    "legendFormat": "Walk phase",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                    },
+                    "expr": "media_viewer_indexer_last_run_duration_seconds{job=~\"$instance\"}",
+                    "legendFormat": "Total run",
+                    "refId": "B"
+                }
+            ],
+            "title": "Walk Phase vs Total Run Duration",
+            "type": "timeseries"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 64
+            },
             "id": 107,
             "panels": [],
             "title": "Memory",
@@ -2599,7 +2948,7 @@
                 "h": 4,
                 "w": 4,
                 "x": 0,
-                "y": 48
+                "y": 65
             },
             "id": 41,
             "options": {
@@ -2661,7 +3010,7 @@
                 "h": 4,
                 "w": 4,
                 "x": 4,
-                "y": 48
+                "y": 65
             },
             "id": 42,
             "options": {
@@ -2723,7 +3072,7 @@
                 "h": 4,
                 "w": 4,
                 "x": 8,
-                "y": 48
+                "y": 65
             },
             "id": 43,
             "options": {
@@ -2793,7 +3142,7 @@
                 "h": 4,
                 "w": 4,
                 "x": 12,
-                "y": 48
+                "y": 65
             },
             "id": 44,
             "options": {
@@ -2855,7 +3204,7 @@
                 "h": 4,
                 "w": 4,
                 "x": 16,
-                "y": 48
+                "y": 65
             },
             "id": 45,
             "options": {
@@ -2925,7 +3274,7 @@
                 "h": 4,
                 "w": 4,
                 "x": 20,
-                "y": 48
+                "y": 65
             },
             "id": 46,
             "options": {
@@ -3081,7 +3430,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 52
+                "y": 69
             },
             "id": 47,
             "options": {
@@ -3205,7 +3554,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 52
+                "y": 69
             },
             "id": 48,
             "options": {
@@ -3301,7 +3650,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 60
+                "y": 77
             },
             "id": 49,
             "options": {
@@ -3396,7 +3745,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 60
+                "y": 77
             },
             "id": 215,
             "options": {
@@ -3435,7 +3784,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 68
+                "y": 85
             },
             "id": 216,
             "panels": [],
@@ -3482,7 +3831,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 0,
-                "y": 69
+                "y": 86
             },
             "id": 217,
             "options": {
@@ -3556,7 +3905,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 6,
-                "y": 69
+                "y": 86
             },
             "id": 218,
             "options": {
@@ -3630,7 +3979,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 12,
-                "y": 69
+                "y": 86
             },
             "id": 219,
             "options": {
@@ -3705,7 +4054,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 18,
-                "y": 69
+                "y": 86
             },
             "id": 220,
             "options": {
@@ -3813,7 +4162,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 73
+                "y": 90
             },
             "id": 221,
             "options": {
@@ -3941,7 +4290,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 73
+                "y": 90
             },
             "id": 222,
             "options": {
@@ -3991,7 +4340,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 81
+                "y": 98
             },
             "id": 102,
             "panels": [],
@@ -4178,7 +4527,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 82
+                "y": 99
             },
             "id": 21,
             "options": {
@@ -4277,7 +4626,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 82
+                "y": 99
             },
             "id": 238,
             "options": {
@@ -4413,7 +4762,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 90
+                "y": 107
             },
             "id": 23,
             "options": {
@@ -4564,7 +4913,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 90
+                "y": 107
             },
             "id": 22,
             "options": {
@@ -4751,7 +5100,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 98
+                "y": 115
             },
             "id": 270,
             "options": {
@@ -4913,7 +5262,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 98
+                "y": 115
             },
             "id": 271,
             "options": {
@@ -5012,7 +5361,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 106
+                "y": 123
             },
             "id": 237,
             "options": {
@@ -5061,7 +5410,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 114
+                "y": 131
             },
             "id": 106,
             "panels": [],
@@ -5104,7 +5453,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 0,
-                "y": 115
+                "y": 132
             },
             "id": 35,
             "options": {
@@ -5166,7 +5515,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 6,
-                "y": 115
+                "y": 132
             },
             "id": 36,
             "options": {
@@ -5236,7 +5585,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 12,
-                "y": 115
+                "y": 132
             },
             "id": 37,
             "options": {
@@ -5296,7 +5645,7 @@
                 "h": 4,
                 "w": 6,
                 "x": 18,
-                "y": 115
+                "y": 132
             },
             "id": 38,
             "options": {
@@ -5449,7 +5798,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 119
+                "y": 136
             },
             "id": 39,
             "options": {
@@ -5545,7 +5894,7 @@
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 119
+                "y": 136
             },
             "id": 40,
             "options": {
@@ -5624,7 +5973,7 @@
                 "h": 8,
                 "w": 24,
                 "x": 0,
-                "y": 127
+                "y": 144
             },
             "id": 24,
             "options": {
@@ -5665,7 +6014,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 135
+                "y": 152
             },
             "id": 310,
             "panels": [
@@ -5674,7 +6023,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "description": "Rate of WAL checkpoint operations by mode. PASSIVE is the normal background mode and should fire on the configured interval. Any non-zero rate for mode=truncate outside of a planned restart indicates the blocking TRUNCATE checkpoint is being called on a hot code path — this was the root cause of the cold-start indexing regression (#432).",
+                    "description": "Rate of WAL checkpoint operations by mode. PASSIVE is the normal background mode and should fire on the configured interval. Any non-zero rate for mode=truncate outside of a planned restart indicates the blocking TRUNCATE checkpoint is being called on a hot code path \u2014 this was the root cause of the cold-start indexing regression (#432).",
                     "fieldConfig": {
                         "defaults": {
                             "color": {
@@ -5820,7 +6169,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "description": "WAL checkpoint duration percentiles by mode. PASSIVE checkpoints should be sub-millisecond under normal conditions. TRUNCATE duration spikes to seconds or tens of seconds when active reader transactions prevent WAL truncation — a direct indicator of the blocking regression. Alert if mode=truncate p99 exceeds 5 s during normal operation.",
+                    "description": "WAL checkpoint duration percentiles by mode. PASSIVE checkpoints should be sub-millisecond under normal conditions. TRUNCATE duration spikes to seconds or tens of seconds when active reader transactions prevent WAL truncation \u2014 a direct indicator of the blocking regression. Alert if mode=truncate p99 exceeds 5 s during normal operation.",
                     "fieldConfig": {
                         "defaults": {
                             "color": {
@@ -6259,7 +6608,7 @@
                         "type": "prometheus",
                         "uid": "${datasource}"
                     },
-                    "description": "Writer connection pool contention. Because the writer pool has MaxOpenConns=1, every BeginTx() call that arrives while a write is already in progress must queue for the connection — incrementing WaitCount. During the TRUNCATE regression, ~80 batch upserts each queued for up to 30 s; the rate spiked to 2–3 waits/second.\n\nWait Rate: rate of new waits per second (left axis). Mean Wait Latency: WaitDuration / WaitCount as a rolling ratio — spikes above 100 ms indicate the writer was held for a blocking operation.",
+                    "description": "Writer connection pool contention. Because the writer pool has MaxOpenConns=1, every BeginTx() call that arrives while a write is already in progress must queue for the connection \u2014 incrementing WaitCount. During the TRUNCATE regression, ~80 batch upserts each queued for up to 30 s; the rate spiked to 2\u20133 waits/second.\n\nWait Rate: rate of new waits per second (left axis). Mean Wait Latency: WaitDuration / WaitCount as a rolling ratio \u2014 spikes above 100 ms indicate the writer was held for a blocking operation.",
                     "fieldConfig": {
                         "defaults": {
                             "color": {
@@ -6420,7 +6769,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 136
+                "y": 153
             },
             "id": 250,
             "panels": [
@@ -6600,7 +6949,7 @@
                                         "from": 1,
                                         "result": {
                                             "color": "green",
-                                            "text": "Override active ✓"
+                                            "text": "Override active \u2713"
                                         },
                                         "to": 999999
                                     },
@@ -6992,7 +7341,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 137
+                "y": 154
             },
             "id": 110,
             "panels": [
@@ -7250,7 +7599,7 @@
                             "color": "rgba(255,0,255,0.7)"
                         },
                         "filterValues": {
-                            "le": 1e-9
+                            "le": 1e-09
                         },
                         "legend": {
                             "show": true
@@ -7904,7 +8253,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 138
+                "y": 155
             },
             "id": 103,
             "panels": [
@@ -8990,7 +9339,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 139
+                "y": 156
             },
             "id": 111,
             "panels": [
@@ -9398,7 +9747,7 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 140
+                "y": 157
             },
             "id": 300,
             "panels": [],
@@ -9591,7 +9940,7 @@
                 "h": 8,
                 "w": 24,
                 "x": 0,
-                "y": 141
+                "y": 158
             },
             "id": 244,
             "options": {
