@@ -882,4 +882,254 @@ describe('Tags Module', () => {
             expect(desktopTags.textContent).toContain('already-fetched');
         });
     });
+
+    // =========================================
+    // Soft-keyboard / visualViewport fixes
+    // =========================================
+    describe('_bindViewportResize()', () => {
+        let mockViewport;
+
+        beforeEach(() => {
+            // Create a minimal visualViewport mock backed by EventTarget
+            mockViewport = Object.assign(new EventTarget(), { height: 600 });
+            vi.spyOn(mockViewport, 'addEventListener');
+            vi.spyOn(mockViewport, 'removeEventListener');
+            globalThis.window = globalThis.window ?? globalThis;
+            globalThis.window.visualViewport = mockViewport;
+
+            // Reset any previously bound handler and make modal visible
+            Tags._viewportHandler = null;
+            Tags.elements.tagModal.style.height = '';
+            Tags.elements.tagModal.classList.remove('hidden');
+        });
+
+        afterEach(() => {
+            delete globalThis.window.visualViewport;
+        });
+
+        test('registers a resize listener on visualViewport', () => {
+            Tags._bindViewportResize();
+            expect(mockViewport.addEventListener).toHaveBeenCalledWith(
+                'resize',
+                expect.any(Function)
+            );
+        });
+
+        test('stores the handler reference on Tags._viewportHandler', () => {
+            Tags._bindViewportResize();
+            expect(Tags._viewportHandler).toBeTypeOf('function');
+        });
+
+        test('applies the current viewport height immediately on bind', () => {
+            mockViewport.height = 450;
+            Tags._bindViewportResize();
+            expect(Tags.elements.tagModal.style.height).toBe('450px');
+        });
+
+        test('updates modal height when resize event fires', () => {
+            Tags._bindViewportResize();
+            mockViewport.height = 300;
+            mockViewport.dispatchEvent(new Event('resize'));
+            expect(Tags.elements.tagModal.style.height).toBe('300px');
+        });
+
+        test('does not update height when modal is hidden', () => {
+            Tags.elements.tagModal.style.height = '';
+            Tags.elements.tagModal.classList.add('hidden');
+            Tags._bindViewportResize();
+            // handler fires immediately but modal is hidden — height should stay empty
+            expect(Tags.elements.tagModal.style.height).toBe('');
+        });
+
+        test('does nothing when visualViewport is unavailable', () => {
+            delete globalThis.window.visualViewport;
+            expect(() => Tags._bindViewportResize()).not.toThrow();
+            expect(Tags._viewportHandler).toBeNull();
+            expect(Tags.elements.tagModal.style.height).toBe('');
+        });
+    });
+
+    describe('_unbindViewportResize()', () => {
+        let mockViewport;
+
+        beforeEach(() => {
+            mockViewport = Object.assign(new EventTarget(), { height: 600 });
+            vi.spyOn(mockViewport, 'removeEventListener');
+            globalThis.window = globalThis.window ?? globalThis;
+            globalThis.window.visualViewport = mockViewport;
+
+            // Pre-bind so unbind has something to remove
+            Tags._viewportHandler = null;
+            Tags.elements.tagModal.style.height = '';
+            Tags._bindViewportResize();
+        });
+
+        afterEach(() => {
+            delete globalThis.window.visualViewport;
+        });
+
+        test('removes the resize listener from visualViewport', () => {
+            const handler = Tags._viewportHandler;
+            Tags._unbindViewportResize();
+            expect(mockViewport.removeEventListener).toHaveBeenCalledWith('resize', handler);
+        });
+
+        test('clears _viewportHandler to null', () => {
+            Tags._unbindViewportResize();
+            expect(Tags._viewportHandler).toBeNull();
+        });
+
+        test('clears the inline height style from the modal', () => {
+            Tags.elements.tagModal.style.height = '450px';
+            Tags._unbindViewportResize();
+            expect(Tags.elements.tagModal.style.height).toBe('');
+        });
+
+        test('does not throw when called with no prior binding', () => {
+            Tags._unbindViewportResize(); // first call clears it
+            expect(() => Tags._unbindViewportResize()).not.toThrow(); // second call — no-op
+        });
+
+        test('does not throw when visualViewport is unavailable', () => {
+            delete globalThis.window.visualViewport;
+            Tags._viewportHandler = vi.fn();
+            expect(() => Tags._unbindViewportResize()).not.toThrow();
+        });
+    });
+
+    describe('openModal() — viewport and focus behaviour', () => {
+        let mockViewport;
+        let rafCallback;
+
+        beforeEach(() => {
+            // Capture rAF callback instead of executing it synchronously
+            globalThis.requestAnimationFrame = vi.fn((cb) => {
+                rafCallback = cb;
+                return 1;
+            });
+
+            mockViewport = Object.assign(new EventTarget(), { height: 500 });
+            vi.spyOn(mockViewport, 'addEventListener');
+            globalThis.window = globalThis.window ?? globalThis;
+            globalThis.window.visualViewport = mockViewport;
+
+            globalThis.fetchWithTimeout = vi.fn().mockResolvedValue({
+                ok: true,
+                json: vi.fn().mockResolvedValue([]),
+            });
+
+            rafCallback = null;
+        });
+
+        afterEach(() => {
+            delete globalThis.window.visualViewport;
+            delete globalThis.requestAnimationFrame;
+        });
+
+        test('calls _bindViewportResize after showing the modal', async () => {
+            vi.spyOn(Tags, '_bindViewportResize');
+            await Tags.openModal('/img.jpg', 'img.jpg');
+            expect(Tags._bindViewportResize).toHaveBeenCalledOnce();
+        });
+
+        test('modal is visible (not hidden) when _bindViewportResize is called', async () => {
+            let visibleDuringBind = null;
+            vi.spyOn(Tags, '_bindViewportResize').mockImplementation(function () {
+                visibleDuringBind = !this.elements.tagModal.classList.contains('hidden');
+            });
+            await Tags.openModal('/img.jpg', 'img.jpg');
+            expect(visibleDuringBind).toBe(true);
+        });
+
+        test('focus is deferred via requestAnimationFrame, not immediate', async () => {
+            vi.spyOn(Tags.elements.tagInput, 'focus');
+            await Tags.openModal('/img.jpg', 'img.jpg');
+            // focus must NOT have been called yet — it's pending in rAF
+            expect(Tags.elements.tagInput.focus).not.toHaveBeenCalled();
+            expect(globalThis.requestAnimationFrame).toHaveBeenCalledOnce();
+        });
+
+        test('focus is called when the rAF callback fires', async () => {
+            vi.spyOn(Tags.elements.tagInput, 'focus');
+            await Tags.openModal('/img.jpg', 'img.jpg');
+            expect(rafCallback).toBeTypeOf('function');
+            rafCallback(); // simulate browser executing the frame
+            expect(Tags.elements.tagInput.focus).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('openBulkModal() — viewport and focus behaviour', () => {
+        let mockViewport;
+        let rafCallback;
+
+        beforeEach(() => {
+            globalThis.requestAnimationFrame = vi.fn((cb) => {
+                rafCallback = cb;
+                return 1;
+            });
+
+            mockViewport = Object.assign(new EventTarget(), { height: 500 });
+            vi.spyOn(mockViewport, 'addEventListener');
+            globalThis.window = globalThis.window ?? globalThis;
+            globalThis.window.visualViewport = mockViewport;
+
+            globalThis.fetchWithTimeout = vi.fn().mockResolvedValue({
+                ok: true,
+                json: vi.fn().mockResolvedValue({}),
+            });
+
+            rafCallback = null;
+        });
+
+        afterEach(() => {
+            delete globalThis.window.visualViewport;
+            delete globalThis.requestAnimationFrame;
+        });
+
+        test('calls _bindViewportResize after showing the modal', async () => {
+            vi.spyOn(Tags, '_bindViewportResize');
+            await Tags.openBulkModal(['/a.jpg', '/b.jpg'], ['a.jpg', 'b.jpg']);
+            expect(Tags._bindViewportResize).toHaveBeenCalledOnce();
+        });
+
+        test('focus is deferred via requestAnimationFrame', async () => {
+            vi.spyOn(Tags.elements.tagInput, 'focus');
+            await Tags.openBulkModal(['/a.jpg'], ['a.jpg']);
+            expect(Tags.elements.tagInput.focus).not.toHaveBeenCalled();
+            rafCallback();
+            expect(Tags.elements.tagInput.focus).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('closeModal() — viewport cleanup', () => {
+        beforeEach(() => {
+            // Simulate a bound handler so closeModal has something to clean up
+            Tags._viewportHandler = vi.fn();
+            const mockVp = Object.assign(new EventTarget(), { height: 500 });
+            vi.spyOn(mockVp, 'removeEventListener');
+            globalThis.window = globalThis.window ?? globalThis;
+            globalThis.window.visualViewport = mockVp;
+        });
+
+        afterEach(() => {
+            delete globalThis.window.visualViewport;
+        });
+
+        test('calls _unbindViewportResize on close', () => {
+            vi.spyOn(Tags, '_unbindViewportResize');
+            Tags.closeModal();
+            expect(Tags._unbindViewportResize).toHaveBeenCalledOnce();
+        });
+
+        test('clears _viewportHandler after close', () => {
+            Tags.closeModal();
+            expect(Tags._viewportHandler).toBeNull();
+        });
+
+        test('clears modal inline height after close', () => {
+            Tags.elements.tagModal.style.height = '400px';
+            Tags.closeModal();
+            expect(Tags.elements.tagModal.style.height).toBe('');
+        });
+    });
 });

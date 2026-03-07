@@ -21,6 +21,7 @@ describe('Tags Integration Tests', () => {
                     remove: vi.fn(),
                 },
                 addEventListener: vi.fn(),
+                style: { height: '' },
             },
             'tag-modal-close': { addEventListener: vi.fn() },
             'tag-modal-path': { textContent: '' },
@@ -226,6 +227,8 @@ describe('Tags Integration Tests', () => {
         globalThis.CSS = mockCSS;
         globalThis.history = mockHistory;
         globalThis.console = { ...console, error: mockConsole.error };
+        // Execute rAF callbacks synchronously so deferred focus() calls fire
+        globalThis.requestAnimationFrame = (cb) => cb();
 
         // Load the Tags module
         Tags = await loadModuleForTesting('tags', 'Tags');

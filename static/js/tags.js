@@ -3,6 +3,9 @@ const Tags = {
     elements: {},
     highlightedSuggestionIndex: -1, // Keyboard-nav index for tag suggestions
 
+    // Mobile soft-keyboard viewport handler (see _bindViewportResize)
+    _viewportHandler: null,
+
     // Bulk tagging state
     isBulkMode: false,
     bulkPaths: [],
@@ -316,7 +319,10 @@ const Tags = {
 
         this.elements.tagModal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
-        this.elements.tagInput.focus();
+        this._bindViewportResize();
+        // Defer focus by one frame so the modal is painted before the soft
+        // keyboard is triggered — avoids a layout freeze mid-animation on iOS.
+        requestAnimationFrame(() => this.elements.tagInput.focus());
 
         lucide.createIcons();
 
@@ -358,7 +364,8 @@ const Tags = {
 
         this.elements.tagModal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
-        this.elements.tagInput.focus();
+        this._bindViewportResize();
+        requestAnimationFrame(() => this.elements.tagInput.focus());
 
         lucide.createIcons();
 
@@ -507,6 +514,36 @@ const Tags = {
         }
     },
 
+    // _bindViewportResize / _unbindViewportResize
+    // -------------------------------------------------------------------------
+    // On iOS (pre-15.4 especially) the soft keyboard does not shrink `100vh`,
+    // so a `position:fixed; bottom:0` bottom-sheet can sit partly behind the
+    // keyboard.  We listen to visualViewport resize events and clamp the modal
+    // height to the current visual-viewport height as a JS fallback.  Browsers
+    // that already handle this via `dvh` (iOS 15.4+, Chrome 108+) will have
+    // their inline style overridden by the CSS rule anyway, so there's no
+    // double-adjustment.
+    _bindViewportResize() {
+        if (!window.visualViewport || !this.elements.tagModal) return;
+        this._viewportHandler = () => {
+            if (!this.elements.tagModal.classList.contains('hidden')) {
+                this.elements.tagModal.style.height = window.visualViewport.height + 'px';
+            }
+        };
+        window.visualViewport.addEventListener('resize', this._viewportHandler);
+        this._viewportHandler(); // apply immediately in case keyboard is already open
+    },
+
+    _unbindViewportResize() {
+        if (this._viewportHandler && window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', this._viewportHandler);
+            this._viewportHandler = null;
+        }
+        if (this.elements.tagModal) {
+            this.elements.tagModal.style.height = '';
+        }
+    },
+
     closeModal() {
         // Update lightbox tag button if it's open
         if (
@@ -516,6 +553,8 @@ const Tags = {
         ) {
             Lightbox.refreshCurrentItemTags();
         }
+
+        this._unbindViewportResize();
 
         if (this.elements.tagModal) {
             this.elements.tagModal.classList.add('hidden');

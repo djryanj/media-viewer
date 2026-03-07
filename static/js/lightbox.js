@@ -48,6 +48,9 @@ const Lightbox = {
     drawerTouchStartY: 0,
     drawerIsDragging: false,
     allTagSuggestions: [], // Cached tag list for autocomplete
+
+    // Mobile soft-keyboard viewport handler for the tags drawer
+    _drawerViewportHandler: null,
     drawerHighlightedIndex: -1, // Keyboard-nav index for drawer suggestions
 
     // Pinch-to-zoom state
@@ -813,11 +816,15 @@ const Lightbox = {
         if (typeof HistoryManager !== 'undefined') {
             HistoryManager.pushState('lightbox-drawer');
         }
+
+        this._bindDrawerViewportResize();
     },
 
     closeTagsDrawer() {
         if (!this.tagsDrawerOpen) return;
         this.tagsDrawerOpen = false;
+
+        this._unbindDrawerViewportResize();
 
         this.elements.tagsDrawer.classList.remove('open');
         this.elements.drawerBackdrop.classList.remove('open');
@@ -837,6 +844,37 @@ const Lightbox = {
         // Remove history state
         if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('lightbox-drawer')) {
             HistoryManager.removeState('lightbox-drawer');
+        }
+    },
+
+    // _bindDrawerViewportResize / _unbindDrawerViewportResize
+    // -------------------------------------------------------------------------
+    // The lightbox is `position:fixed` and the tags drawer is `position:absolute`
+    // inside it. On iOS (pre-15.4) the soft keyboard does not shrink `100vh`, so
+    // the lightbox stays full layout-viewport height and the drawer's `bottom:0`
+    // anchor sits under the keyboard. We listen to visualViewport resize events
+    // and clamp the lightbox height to the visual-viewport height so that
+    // `bottom:0` of the drawer always resolves to just above the keyboard.
+    // Browsers that support `dvh` (iOS 15.4+, Chrome 108+) handle this via CSS
+    // already; the inline style set here will still be applied but is equivalent.
+    _bindDrawerViewportResize() {
+        if (!window.visualViewport || !this.elements.lightbox) return;
+        this._drawerViewportHandler = () => {
+            if (this.tagsDrawerOpen) {
+                this.elements.lightbox.style.height = window.visualViewport.height + 'px';
+            }
+        };
+        window.visualViewport.addEventListener('resize', this._drawerViewportHandler);
+        this._drawerViewportHandler(); // apply immediately in case keyboard already open
+    },
+
+    _unbindDrawerViewportResize() {
+        if (this._drawerViewportHandler && window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', this._drawerViewportHandler);
+            this._drawerViewportHandler = null;
+        }
+        if (this.elements.lightbox) {
+            this.elements.lightbox.style.height = '';
         }
     },
 

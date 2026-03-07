@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.15.7] - Unreleased
+
+### Fixed
+
+- fix(frontend): Tags modal in both the gallery and lightbox views tended to hide behind the soft keyboard on mobile. This has been fixed. [#439](https://github.com/djryanj/media-viewer/issues/439)
+
 ## [0.15.6] - 03-07-2026
 
 ### Changed

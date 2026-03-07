@@ -1511,7 +1511,12 @@ select:focus {
 
 .lightbox {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0; /* fallback */
+    height: 100vh; /* fallback */
+    height: 100dvh; /* shrinks with soft keyboard (iOS 15.4+, Chrome 108+) */
     background: rgb(0 0 0 / 98%);
     z-index: 1000;
     display: flex;
@@ -2118,7 +2123,8 @@ select:focus {
     bottom: 0;
     left: 0;
     right: 0;
-    max-height: 55vh;
+    max-height: 55vh; /* fallback */
+    max-height: 55dvh; /* tracks visual viewport so drawer stays above soft keyboard */
     background: var(--bg-secondary);
     border-radius: var(--radius) var(--radius) 0 0;
     z-index: 55;
@@ -3929,7 +3935,12 @@ select:focus {
 
 .modal {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0; /* fallback for browsers without dvh support */
+    height: 100vh; /* fallback */
+    height: 100dvh; /* shrinks when soft keyboard opens (iOS 15.4+, Chrome 108+) */
     background: rgb(0 0 0 / 80%);
     display: flex;
     align-items: flex-end;
@@ -3945,7 +3956,8 @@ select:focus {
     background: var(--bg-secondary);
     border-radius: var(--radius) var(--radius) 0 0;
     width: 100%;
-    max-height: 80vh;
+    max-height: 80vh; /* fallback */
+    max-height: 80dvh; /* tracks visual viewport so content stays above soft keyboard */
     overflow: hidden;
     display: flex;
     flex-direction: column;
