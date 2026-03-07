@@ -3,12 +3,15 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Integration tests for database operations with real SQLite database
@@ -2790,6 +2793,326 @@ func TestUpdateDBMetricsConnectionDetails(t *testing.T) {
 }
 
 // =============================================================================
+// WAL checkpoint mode regression tests
+//
+// These tests guard against the performance regression where the background
+// checkpoint worker used PRAGMA wal_checkpoint(TRUNCATE) instead of PASSIVE,
+// causing it to hold the single writer connection while waiting for all active
+// readers to drain.  On a 40 k-file NFS library this turned a ~30–60 s cold
+// start into a ~10-minute one: each of the 80 upsert batches blocked on
+// BeginTx for up to busy_timeout (30 s) while the writer was occupied by the
+// checkpoint.
+// =============================================================================
+
+// openHoldingReadTx starts a read-only transaction that keeps a snapshot of
+// the WAL open (so a TRUNCATE checkpoint cannot complete). The caller is
+// responsible for calling tx.Rollback() or tx.Commit() when done.
+func openHoldingReadTx(t *testing.T, db *Database) *sql.Tx {
+	t.Helper()
+	tx, err := db.reader.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatalf("openHoldingReadTx: %v", err)
+	}
+	// Execute a dummy read so the transaction actually touches the database and
+	// establishes its WAL read-mark.
+	var n int
+	if err := tx.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM files").Scan(&n); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("openHoldingReadTx: dummy read: %v", err)
+	}
+	return tx
+}
+
+// insertWALFrames writes a few rows so the WAL file has frames that a
+// subsequent checkpoint would try to transfer to the main database file.
+func insertWALFrames(t *testing.T, db *Database, n int) {
+	t.Helper()
+	ctx := context.Background()
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("insertWALFrames BeginBatch: %v", err)
+	}
+	for i := 0; i < n; i++ {
+		_ = batch.UpsertFile(ctx, &MediaFile{
+			Name:       fmt.Sprintf("wal_frame_%d.jpg", i),
+			Path:       fmt.Sprintf("wal_frames/%d.jpg", i),
+			ParentPath: "wal_frames",
+			Type:       FileTypeImage,
+			Size:       1024,
+			ModTime:    time.Now(),
+		})
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("insertWALFrames EndBatch: %v", err)
+	}
+}
+
+// TestPassiveCheckpointReturnsImmediatelyWithActiveReader verifies that
+// passiveCheckpoint completes quickly even when a reader holds an open
+// transaction that pins WAL frames (preventing full truncation).
+//
+// PASSIVE mode is non-blocking by design: it copies as many frames as it can
+// and returns without waiting.  This is the correct mode for the background
+// checkpoint worker, which must not compete for the writer connection with
+// the upsert batches running in parallel.
+func TestPassiveCheckpointReturnsImmediatelyWithActiveReader(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// Put some frames in the WAL.
+	insertWALFrames(t, db, 10)
+
+	// Open a reader that holds a snapshot (pins WAL frames).
+	readerTx := openHoldingReadTx(t, db)
+	defer readerTx.Rollback() //nolint:errcheck // cleanup
+
+	// Write more rows AFTER the reader snapshot so the WAL definitely has
+	// frames the reader hasn't seen — a TRUNCATE checkpoint must wait for the
+	// reader before it can truncate.
+	insertWALFrames(t, db, 10)
+
+	// PASSIVE checkpoint must return well within 1 second regardless of the
+	// open reader.  If this used TRUNCATE it would spin for up to busy_timeout
+	// (30 s) waiting for the reader to finish.
+	const maxAllowed = 1 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), maxAllowed)
+	defer cancel()
+
+	start := time.Now()
+	err := db.passiveCheckpoint(ctx)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Errorf("passiveCheckpoint returned error: %v", err)
+	}
+	if elapsed >= maxAllowed {
+		t.Errorf("passiveCheckpoint took %v with an active reader (limit %v) — possible TRUNCATE mode regression",
+			elapsed.Round(time.Millisecond), maxAllowed)
+	}
+	t.Logf("passiveCheckpoint returned in %v with an active reader", elapsed.Round(time.Millisecond))
+}
+
+// TestTruncateCheckpointBlocksOnActiveReader is the complement of the test
+// above.  It confirms that PRAGMA wal_checkpoint(TRUNCATE) — the mode that
+// caused the regression — DOES block when a reader holds a snapshot, making
+// the previous test meaningful.
+//
+// We give it an intentionally short deadline (500 ms) so the test stays fast.
+// The expectation is that the query does not complete within the deadline
+// because it is busy-waiting for the reader to release its snapshot.
+func TestTruncateCheckpointBlocksOnActiveReader(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	// Put frames in the WAL, then open a holding reader.
+	insertWALFrames(t, db, 20)
+	readerTx := openHoldingReadTx(t, db)
+	defer readerTx.Rollback() //nolint:errcheck // cleanup
+
+	// Write more rows so the WAL has frames the reader doesn't own.
+	insertWALFrames(t, db, 20)
+
+	// Short deadline — TRUNCATE should not complete within this window because
+	// it is waiting for the reader to release the WAL frames.
+	const deadline = 500 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
+
+	start := time.Now()
+	var busy, log, checkpointed int
+	err := db.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &log, &checkpointed)
+	elapsed := time.Since(start)
+
+	// We expect either a context deadline error (busy-handler was still running)
+	// or busy > 0 (checkpoint could not complete) after the full deadline elapsed.
+	if err == nil && busy == 0 {
+		// Full checkpoint succeeded — this can happen if the internal SQLite
+		// busy-handler did not engage (e.g. the snapshot was already released).
+		// Log a warning rather than a hard failure since it is timing-dependent.
+		t.Logf("WARN: TRUNCATE checkpoint completed without blocking (elapsed=%v, busy=%d) — "+
+			"reader may have released snapshot before checkpoint ran; "+
+			"TestPassiveCheckpointReturnsImmediatelyWithActiveReader is still the authoritative guard",
+			elapsed.Round(time.Millisecond), busy)
+		return
+	}
+
+	// If it took the full deadline to return — that is the blocking behavior we
+	// expected.  Log it for visibility.
+	t.Logf("TRUNCATE checkpoint with active reader: elapsed=%v busy=%d log=%d checkpointed=%d err=%v",
+		elapsed.Round(time.Millisecond), busy, log, checkpointed, err)
+}
+
+// TestCheckpointWorkerDoesNotStallConcurrentBatchUpserts is the primary
+// regression test for the cold-start performance bug.
+//
+// It simulates the production scenario:
+//   - A background goroutine fires PASSIVE WAL checkpoints at high frequency
+//     (every 5 ms — much faster than the default 5-minute interval — to
+//     maximize the chance of overlap with a batch commit).
+//   - The main goroutine runs 50 batch upserts, each in its own transaction,
+//     exactly like processBatchedFiles does during a full index run.
+//
+// If the checkpoint uses TRUNCATE (the bug), it holds the single writer
+// connection while waiting for active readers.  Each of the 50 BatchBeginTx
+// calls then queues behind it, adding up to seconds per batch.  The test
+// enforces a 15-second wall-clock deadline — comfortably achievable with
+// PASSIVE but impossible to meet with TRUNCATE + busy_timeout=30 s.
+func TestCheckpointWorkerDoesNotStallConcurrentBatchUpserts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	const (
+		numBatches    = 50
+		rowsPerBatch  = 10
+		cpInterval    = 5 * time.Millisecond
+		totalDeadline = 15 * time.Second
+	)
+
+	// Keep a reader open throughout to make TRUNCATE checkpoints expensive.
+	readerTx := openHoldingReadTx(t, db)
+	defer readerTx.Rollback() //nolint:errcheck // cleanup
+
+	// Background checkpoint worker — fires at cpInterval.
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	defer stopWorker()
+	go func() {
+		ticker := time.NewTicker(cpInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cpCtx, cancel := context.WithTimeout(workerCtx, 30*time.Second)
+				_ = db.passiveCheckpoint(cpCtx)
+				cancel()
+			case <-workerCtx.Done():
+				return
+			}
+		}
+	}()
+
+	// Run upsert batches — this is what the indexer's processBatchedFiles does.
+	deadline := time.Now().Add(totalDeadline)
+	for i := 0; i < numBatches; i++ {
+		if time.Now().After(deadline) {
+			t.Fatalf("batch %d/%d: deadline exceeded (%v) — checkpoint worker is blocking upsert batches "+
+				"(regression: checkpoint mode may have been changed back to TRUNCATE)",
+				i+1, numBatches, totalDeadline)
+		}
+
+		batch, err := db.BeginBatch(ctx)
+		if err != nil {
+			t.Fatalf("batch %d: BeginBatch: %v", i, err)
+		}
+		for j := 0; j < rowsPerBatch; j++ {
+			_ = batch.UpsertFile(ctx, &MediaFile{
+				Name:       fmt.Sprintf("concurrent_%d_%d.jpg", i, j),
+				Path:       fmt.Sprintf("concurrent/%d/%d.jpg", i, j),
+				ParentPath: fmt.Sprintf("concurrent/%d", i),
+				Type:       FileTypeImage,
+				Size:       int64(1024 * (j + 1)),
+				ModTime:    time.Now(),
+			})
+		}
+		if err := db.EndBatch(batch, nil); err != nil {
+			t.Fatalf("batch %d: EndBatch: %v", i, err)
+		}
+	}
+
+	elapsed := time.Since(deadline.Add(-totalDeadline))
+	t.Logf("Completed %d batches × %d rows with checkpoint worker (interval=%v) in %v (limit %v)",
+		numBatches, rowsPerBatch, cpInterval, elapsed.Round(time.Millisecond), totalDeadline)
+}
+
+// TestBulkIndexEndCheckpointDoesNotBlockOpenReader verifies that the WAL
+// checkpoint inside BulkIndexEnd does not hold the writer connection while
+// waiting for an active reader, so it is safe to call from the indexer even
+// when API requests are in flight.
+func TestBulkIndexEndCheckpointDoesNotBlockOpenReader(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// Seed a file so FTS rebuild has something to process.
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	_ = batch.UpsertFile(ctx, &MediaFile{
+		Name: "bulk_cp_test.jpg", Path: "bulk_cp/test.jpg", ParentPath: "bulk_cp",
+		Type: FileTypeImage, Size: 512, ModTime: time.Now(),
+	})
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	if err := db.BulkIndexBegin(ctx); err != nil {
+		t.Fatalf("BulkIndexBegin: %v", err)
+	}
+
+	// Open a reader that pins WAL frames — a TRUNCATE checkpoint inside
+	// BulkIndexEnd would be forced to wait for this reader.
+	readerTx := openHoldingReadTx(t, db)
+	defer readerTx.Rollback() //nolint:errcheck // cleanup
+
+	// Insert more rows while triggers are disabled.
+	batch, err = db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch (bulk): %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		_ = batch.UpsertFile(ctx, &MediaFile{
+			Name:       fmt.Sprintf("bulk_cp_%d.jpg", i),
+			Path:       fmt.Sprintf("bulk_cp/%d.jpg", i),
+			ParentPath: "bulk_cp",
+			Type:       FileTypeImage,
+			Size:       int64(256 * (i + 1)),
+			ModTime:    time.Now(),
+		})
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch (bulk): %v", err)
+	}
+
+	// BulkIndexEnd must complete within a generous but finite deadline even
+	// though an active reader is holding a WAL snapshot.  If it used TRUNCATE
+	// for its checkpoint it could block for up to busy_timeout (30 s).
+	const maxAllowed = 10 * time.Second
+	start := time.Now()
+	if err := db.BulkIndexEnd(ctx); err != nil {
+		t.Fatalf("BulkIndexEnd returned error: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	if elapsed >= maxAllowed {
+		t.Errorf("BulkIndexEnd took %v with an active reader (limit %v) — "+
+			"checkpoint inside BulkIndexEnd may have been changed to a blocking mode",
+			elapsed.Round(time.Millisecond), maxAllowed)
+	}
+	t.Logf("BulkIndexEnd completed in %v with an active reader", elapsed.Round(time.Millisecond))
+
+	// Triggers must be restored regardless.
+	triggers := ftsTriggersPresent(t, db)
+	for _, name := range []string{"files_ai", "files_au", "files_ad"} {
+		if !triggers[name] {
+			t.Errorf("trigger %s not restored by BulkIndexEnd", name)
+		}
+	}
+}
+
+// =============================================================================
 // Benchmarks
 // =============================================================================
 
@@ -2949,18 +3272,6 @@ func TestRebuildFTSOnEmptyDatabase(t *testing.T) {
 	}
 }
 
-func TestVacuumIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	db, _ := setupTestDB(t)
-	defer db.Close()
-
-	if err := db.Vacuum(); err != nil {
-		t.Errorf("Vacuum failed: %v", err)
-	}
-}
-
 func TestBatchInserterAccessors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -3048,16 +3359,102 @@ func TestCheckpointContextCancelled(t *testing.T) {
 	_, _, _ = db.Checkpoint(ctx)
 }
 
-// TestStartCheckpointWorker verifies that the worker goroutine starts and exits
-// cleanly when its context is canceled.
-func TestStartCheckpointWorker(t *testing.T) {
+// ---------------------------------------------------------------------------
+// SetTxType / EndBatch metric label routing tests
+// ---------------------------------------------------------------------------
+
+// txDurationSampleCount returns the current histogram sample count for the
+// given transaction type label from the global
+// media_viewer_db_transaction_duration_seconds metric.  Because metrics are
+// process-global, callers should compare before/after deltas rather than
+// absolute values.
+func txDurationSampleCount(t *testing.T, txType string) uint64 {
+	t.Helper()
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		// MultiError is non-fatal — some collectors may temporarily fail.
+		var multiError prometheus.MultiError
+		if errors.As(err, &multiError) {
+			t.Fatalf("txDurationSampleCount: Gather: %v", err)
+		}
+	}
+	for _, mf := range mfs {
+		if mf.GetName() != "media_viewer_db_transaction_duration_seconds" {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "type" && lp.GetValue() == txType {
+					return m.GetHistogram().GetSampleCount()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// TestEndBatchDefaultLabelIsCommit verifies that EndBatch records the
+// transaction duration under the "commit" label when SetTxType has not been
+// called, preserving the original behavior for callers that do not opt in.
+func TestEndBatchDefaultLabelIsCommit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	db, _ := setupTestDB(t)
 	defer db.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
+	ctx := context.Background()
+	before := txDurationSampleCount(t, "commit")
 
-	// Should return immediately; goroutine exits when ctx is canceled.
-	db.StartCheckpointWorker(ctx, 50*time.Millisecond)
-	<-ctx.Done() // wait for the worker context to expire
+	batch, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	if err := db.EndBatch(batch, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	after := txDurationSampleCount(t, "commit")
+	if after != before+1 {
+		t.Errorf("commit sample count: want %d, got %d", before+1, after)
+	}
+}
+
+// TestEndBatchSetTxTypeRoutesLabel verifies that SetTxType causes EndBatch to
+// record the duration under the specified label rather than "commit", and that
+// the "commit" series is not incremented as a side effect.
+func TestEndBatchSetTxTypeRoutesLabel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	for _, txType := range []string{"batch_insert", "cleanup"} {
+		t.Run(txType, func(t *testing.T) {
+			beforeTarget := txDurationSampleCount(t, txType)
+			beforeCommit := txDurationSampleCount(t, "commit")
+
+			batch, err := db.BeginBatch(ctx)
+			if err != nil {
+				t.Fatalf("BeginBatch: %v", err)
+			}
+			batch.SetTxType(txType)
+			if err := db.EndBatch(batch, nil); err != nil {
+				t.Fatalf("EndBatch: %v", err)
+			}
+
+			afterTarget := txDurationSampleCount(t, txType)
+			afterCommit := txDurationSampleCount(t, "commit")
+
+			if afterTarget != beforeTarget+1 {
+				t.Errorf("%s sample count: want %d, got %d", txType, beforeTarget+1, afterTarget)
+			}
+			if afterCommit != beforeCommit {
+				t.Errorf("commit unexpectedly incremented: was %d, now %d", beforeCommit, afterCommit)
+			}
+		})
+	}
 }

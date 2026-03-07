@@ -103,11 +103,6 @@ func main() {
 	}
 	startup.LogDatabaseInit(time.Since(dbStart), dbInfo)
 
-	// Start background WAL checkpoint worker (auto-checkpointing is disabled at
-	// connection level; this worker runs RESTART checkpoints on a timer to keep
-	// the WAL file from growing unboundedly without blocking writers).
-	db.StartCheckpointWorker(bgCtx, config.WALCheckpointInterval)
-
 	// Clean up expired sessions periodically (use configured interval)
 	go func() {
 		ticker := time.NewTicker(config.SessionCleanup)

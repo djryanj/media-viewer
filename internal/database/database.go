@@ -34,10 +34,17 @@ func registerDriver(opts *Options) {
 					"PRAGMA cache_size=10000",
 					"PRAGMA temp_store=MEMORY",
 					"PRAGMA busy_timeout=30000",
-					// Disable automatic checkpointing so that checkpoint I/O never
-					// blocks a committing writer. The background checkpoint worker
-					// (StartCheckpointWorker) runs PASSIVE checkpoints on a timer.
-					"PRAGMA wal_autocheckpoint=0",
+					// Run an automatic PASSIVE checkpoint once the WAL reaches 4000
+					// pages (~16 MB). PASSIVE mode (SQLite's default for autocheckpoint)
+					// never blocks the committing writer — it folds WAL frames into
+					// the main database file opportunistically and returns immediately.
+					// Using a higher threshold than SQLite's default of 1000 pages
+					// (~4 MB) reduces checkpoint frequency under bursty write loads.
+					// Neither autocheckpoint nor the explicit PASSIVE checkpoint in
+					// BulkIndexEnd physically shrinks the WAL file on disk. BulkIndexEnd
+					// schedules an async TRUNCATE checkpoint for that purpose.
+					// A TRUNCATE checkpoint is also performed at shutdown.
+					"PRAGMA wal_autocheckpoint=4000",
 				}
 				if mmapDisabled {
 					pragmas = append(pragmas, "PRAGMA mmap_size=0")
@@ -687,6 +694,42 @@ func (d *Database) runMigrations(ctx context.Context) error {
 	return err
 }
 
+// passiveCheckpoint runs a PASSIVE WAL checkpoint: it copies as many WAL
+// frames into the main database file as possible without blocking any reader
+// or writer and without waiting for active transactions to end.
+//
+// Because it is non-blocking it does not guarantee full checkpoint
+// completion — some frames may be left in the WAL if readers are still active.
+// Remaining frames are picked up by SQLite's autocheckpoint, by the async
+// TRUNCATE checkpoint scheduled by BulkIndexEnd, or by the deliberate
+// TRUNCATE checkpoint at shutdown.
+//
+// PASSIVE mode never physically truncates the WAL file on disk; that requires
+// a TRUNCATE checkpoint (see Checkpoint).
+func (d *Database) passiveCheckpoint(ctx context.Context) error {
+	start := time.Now()
+	var busy, log, checkpointed int
+	err := d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &log, &checkpointed)
+	duration := time.Since(start).Seconds()
+
+	metrics.DBWALCheckpointTotal.WithLabelValues("passive").Inc()
+	metrics.DBWALCheckpointDuration.WithLabelValues("passive").Observe(duration)
+	metrics.DBWALPages.WithLabelValues("log").Set(float64(log))
+	metrics.DBWALPages.WithLabelValues("checkpointed").Set(float64(checkpointed))
+	metrics.DBWALPages.WithLabelValues("busy").Set(float64(busy))
+	if busy > 0 {
+		metrics.DBWALCheckpointBlockedTotal.Inc()
+	}
+
+	if err != nil {
+		return fmt.Errorf("passive wal checkpoint: %w", err)
+	}
+
+	logging.Debug("PASSIVE WAL checkpoint: busy=%d log=%d checkpointed=%d duration=%.3fs",
+		busy, log, checkpointed, duration)
+	return nil
+}
+
 // Checkpoint runs a TRUNCATE WAL checkpoint: it waits for any active readers
 // to finish their current read transaction, flushes all WAL pages to the main
 // database file, resets the WAL write position back to the start of the file,
@@ -705,11 +748,14 @@ func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err e
 	err = d.writer.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &log, &checkpointed)
 	duration := time.Since(start).Seconds()
 
-	metrics.DBWALCheckpointTotal.Inc()
-	metrics.DBWALCheckpointDuration.Observe(duration)
+	metrics.DBWALCheckpointTotal.WithLabelValues("truncate").Inc()
+	metrics.DBWALCheckpointDuration.WithLabelValues("truncate").Observe(duration)
 	metrics.DBWALPages.WithLabelValues("log").Set(float64(log))
 	metrics.DBWALPages.WithLabelValues("checkpointed").Set(float64(checkpointed))
 	metrics.DBWALPages.WithLabelValues("busy").Set(float64(busy))
+	if busy > 0 {
+		metrics.DBWALCheckpointBlockedTotal.Inc()
+	}
 
 	if err != nil {
 		return 0, 0, fmt.Errorf("wal checkpoint: %w", err)
@@ -722,32 +768,6 @@ func (d *Database) Checkpoint(ctx context.Context) (log, checkpointed int, err e
 			log, checkpointed)
 	}
 	return log, checkpointed, nil
-}
-
-// StartCheckpointWorker launches a background goroutine that runs a RESTART
-// WAL checkpoint on the given interval. The goroutine exits when ctx is
-// canceled.
-func (d *Database) StartCheckpointWorker(ctx context.Context, interval time.Duration) {
-	logging.Info("WAL checkpoint worker started (interval=%s)", interval)
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				cpCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-				log, checkpointed, err := d.Checkpoint(cpCtx)
-				cancel()
-				if err != nil {
-					logging.Warn("WAL checkpoint failed: %v", err)
-				} else {
-					logging.Debug("Periodic WAL checkpoint complete: log=%d checkpointed=%d", log, checkpointed)
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
 }
 
 // Close closes prepared statements and both database connection pools.
@@ -766,6 +786,15 @@ type BatchInserter struct {
 	upsert    *sql.Stmt
 	del       *sql.Stmt
 	startTime time.Time
+	txType    string // metric label used on successful commit (e.g. "batch_insert", "cleanup")
+}
+
+// SetTxType sets the metric label that will be used for the successful-commit
+// histogram observation in EndBatch.  Call this immediately after BeginBatch
+// to distinguish upsert batches ("batch_insert") from cleanup batches ("cleanup").
+// If not called, EndBatch falls back to the label "commit".
+func (b *BatchInserter) SetTxType(t string) {
+	b.txType = t
 }
 
 const upsertQuery = `
@@ -904,7 +933,11 @@ func (d *Database) EndBatch(b *BatchInserter, err error) error {
 		return err
 	}
 
-	metrics.DBTransactionDuration.WithLabelValues("commit").Observe(duration)
+	commitLabel := b.txType
+	if commitLabel == "" {
+		commitLabel = "commit"
+	}
+	metrics.DBTransactionDuration.WithLabelValues(commitLabel).Observe(duration)
 
 	done := d.observeQuery("commit")
 	commitErr := b.tx.Commit()
@@ -1029,26 +1062,37 @@ func (d *Database) BulkIndexEnd(ctx context.Context) error {
 	}
 	done2(triggerErr)
 
-	// Checkpoint the WAL after bulk inserts to prevent it growing unbounded.
-	// PASSIVE mode checkpoints without blocking any readers; it is non-fatal
-	// because a checkpoint will happen implicitly via the background worker anyway.
-	if _, _, cpErr := d.Checkpoint(ctx); cpErr != nil {
+	// Checkpoint the WAL after bulk inserts. SQLite's autocheckpoint will also
+	// run PASSIVE checkpoints automatically once the WAL exceeds the configured
+	// threshold, but calling it explicitly here ensures metrics are recorded and
+	// WAL frames are flushed promptly before the indexer signals completion.
+	// PASSIVE mode is used so concurrent reader transactions (e.g. thumbnail
+	// generation) are never blocked.
+	//
+	// PASSIVE mode does not physically shrink the WAL file on disk. After the
+	// passive checkpoint completes, schedule a TRUNCATE checkpoint in the
+	// background. TRUNCATE waits for active reader snapshots to drain (via
+	// SQLite's busy handler) before truncating the file, so it must run off
+	// the BulkIndexEnd critical path to avoid blocking callers. Readers
+	// (thumbnail generation) typically release their WAL snapshot within
+	// milliseconds of the passive checkpoint finishing.
+	// context.WithoutCancel is used so the goroutine is not aborted if the
+	// caller's context is canceled (e.g. a bulk-index timeout) before the
+	// truncation completes.
+	cpCtx, cpCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cpCancel()
+	if cpErr := d.passiveCheckpoint(cpCtx); cpErr != nil {
 		logging.Warn("WAL checkpoint after bulk index failed (non-fatal): %v", cpErr)
 	}
+	go func() {
+		truncCtx, truncCancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer truncCancel()
+		if _, _, cpErr := d.Checkpoint(truncCtx); cpErr != nil {
+			logging.Warn("Post-bulk-index WAL truncation failed (non-fatal): %v", cpErr)
+		}
+	}()
 
 	return errors.Join(rebuildErr, triggerErr)
-}
-
-// Vacuum optimizes the database.
-func (d *Database) Vacuum() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	done := d.observeQuery("vacuum")
-	_, err := d.writer.ExecContext(ctx, "VACUUM")
-	done(err)
-
-	return err
 }
 
 // UpdateDBMetrics updates database connection metrics.
@@ -1058,6 +1102,14 @@ func (d *Database) UpdateDBMetrics() {
 	metrics.DBConnectionsOpen.Set(float64(rStats.OpenConnections + wStats.OpenConnections))
 	metrics.DBConnectionsInUse.Set(float64(rStats.InUse + wStats.InUse))
 	metrics.DBConnectionsIdle.Set(float64(rStats.Idle + wStats.Idle))
+
+	// WaitCount and WaitDuration are cumulative since pool creation — expose
+	// as Gauges so Prometheus can compute rate() over any window.
+	// A non-zero rate for DBWriterWaitTotal means callers are queuing for the
+	// single writer connection; during the TRUNCATE regression this counter
+	// would spike to ~80 waits per cold-start index run.
+	metrics.DBWriterWaitTotal.Set(float64(wStats.WaitCount))
+	metrics.DBWriterWaitSeconds.Set(wStats.WaitDuration.Seconds())
 }
 
 func diagnoseDatabasePermissions(dbPath string) error {

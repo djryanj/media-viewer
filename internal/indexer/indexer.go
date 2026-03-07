@@ -783,6 +783,7 @@ func (idx *Indexer) processBatch(files []database.MediaFile) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin batch transaction: %w", err)
 	}
+	batch.SetTxType("batch_insert")
 
 	for i := range files {
 		if err := batch.UpsertFile(ctx, &files[i]); err != nil {
@@ -805,6 +806,7 @@ func (idx *Indexer) cleanupMissingFiles(indexTime time.Time) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin cleanup transaction: %w", err)
 	}
+	batch.SetTxType("cleanup")
 
 	deleted, err := batch.DeleteMissingFiles(ctx, indexTime)
 	if err != nil {
