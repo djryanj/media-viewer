@@ -996,6 +996,189 @@ describe('Lightbox Module', () => {
             const text = Lightbox.elements.tagSummary.querySelector('.tag-summary-text');
             expect(text.textContent).toContain('+2');
         });
+
+        // ── Soft-keyboard / visualViewport ───────────────────────────────────
+
+        describe('_bindDrawerViewportResize()', () => {
+            let mockViewport;
+
+            beforeEach(() => {
+                mockViewport = Object.assign(new EventTarget(), { height: 600 });
+                vi.spyOn(mockViewport, 'addEventListener');
+                vi.spyOn(mockViewport, 'removeEventListener');
+                globalThis.window = globalThis.window ?? globalThis;
+                globalThis.window.visualViewport = mockViewport;
+
+                Lightbox._drawerViewportHandler = null;
+                Lightbox.elements.lightbox.style.height = '';
+                Lightbox.tagsDrawerOpen = true; // handler only applies height when drawer is open
+            });
+
+            afterEach(() => {
+                delete globalThis.window.visualViewport;
+                Lightbox.tagsDrawerOpen = false;
+            });
+
+            test('registers a resize listener on visualViewport', () => {
+                Lightbox._bindDrawerViewportResize();
+                expect(mockViewport.addEventListener).toHaveBeenCalledWith(
+                    'resize',
+                    expect.any(Function)
+                );
+            });
+
+            test('stores the handler reference on _drawerViewportHandler', () => {
+                Lightbox._bindDrawerViewportResize();
+                expect(Lightbox._drawerViewportHandler).toBeTypeOf('function');
+            });
+
+            test('applies the current viewport height immediately on bind', () => {
+                mockViewport.height = 450;
+                Lightbox._bindDrawerViewportResize();
+                expect(Lightbox.elements.lightbox.style.height).toBe('450px');
+            });
+
+            test('updates lightbox height when resize event fires', () => {
+                Lightbox._bindDrawerViewportResize();
+                mockViewport.height = 320;
+                mockViewport.dispatchEvent(new Event('resize'));
+                expect(Lightbox.elements.lightbox.style.height).toBe('320px');
+            });
+
+            test('does not update height when drawer is closed', () => {
+                Lightbox.tagsDrawerOpen = false;
+                Lightbox._bindDrawerViewportResize();
+                expect(Lightbox.elements.lightbox.style.height).toBe('');
+            });
+
+            test('does nothing when visualViewport is unavailable', () => {
+                delete globalThis.window.visualViewport;
+                expect(() => Lightbox._bindDrawerViewportResize()).not.toThrow();
+                expect(Lightbox._drawerViewportHandler).toBeNull();
+                expect(Lightbox.elements.lightbox.style.height).toBe('');
+            });
+        });
+
+        describe('_unbindDrawerViewportResize()', () => {
+            let mockViewport;
+
+            beforeEach(() => {
+                mockViewport = Object.assign(new EventTarget(), { height: 600 });
+                vi.spyOn(mockViewport, 'removeEventListener');
+                globalThis.window = globalThis.window ?? globalThis;
+                globalThis.window.visualViewport = mockViewport;
+
+                Lightbox._drawerViewportHandler = null;
+                Lightbox.elements.lightbox.style.height = '';
+                Lightbox.tagsDrawerOpen = true;
+                Lightbox._bindDrawerViewportResize(); // pre-bind
+            });
+
+            afterEach(() => {
+                delete globalThis.window.visualViewport;
+                Lightbox.tagsDrawerOpen = false;
+            });
+
+            test('removes the resize listener from visualViewport', () => {
+                const handler = Lightbox._drawerViewportHandler;
+                Lightbox._unbindDrawerViewportResize();
+                expect(mockViewport.removeEventListener).toHaveBeenCalledWith('resize', handler);
+            });
+
+            test('clears _drawerViewportHandler to null', () => {
+                Lightbox._unbindDrawerViewportResize();
+                expect(Lightbox._drawerViewportHandler).toBeNull();
+            });
+
+            test('clears the inline height style from the lightbox', () => {
+                Lightbox.elements.lightbox.style.height = '450px';
+                Lightbox._unbindDrawerViewportResize();
+                expect(Lightbox.elements.lightbox.style.height).toBe('');
+            });
+
+            test('is a no-op when called twice (no throw)', () => {
+                Lightbox._unbindDrawerViewportResize();
+                expect(() => Lightbox._unbindDrawerViewportResize()).not.toThrow();
+            });
+
+            test('does not throw when visualViewport is unavailable', () => {
+                delete globalThis.window.visualViewport;
+                Lightbox._drawerViewportHandler = vi.fn();
+                expect(() => Lightbox._unbindDrawerViewportResize()).not.toThrow();
+            });
+        });
+
+        describe('openTagsDrawer() — viewport binding', () => {
+            let mockViewport;
+
+            beforeEach(() => {
+                mockViewport = Object.assign(new EventTarget(), { height: 500 });
+                vi.spyOn(mockViewport, 'addEventListener');
+                globalThis.window = globalThis.window ?? globalThis;
+                globalThis.window.visualViewport = mockViewport;
+
+                Lightbox.items = [{ path: '/img.jpg', name: 'img.jpg', type: 'image', tags: [] }];
+                Lightbox.currentIndex = 0;
+                Lightbox.tagsDrawerOpen = false;
+                Lightbox._drawerViewportHandler = null;
+                Lightbox.elements.lightbox.style.height = '';
+            });
+
+            afterEach(() => {
+                delete globalThis.window.visualViewport;
+                Lightbox.tagsDrawerOpen = false;
+            });
+
+            test('calls _bindDrawerViewportResize', () => {
+                vi.spyOn(Lightbox, '_bindDrawerViewportResize');
+                Lightbox.openTagsDrawer();
+                expect(Lightbox._bindDrawerViewportResize).toHaveBeenCalledOnce();
+            });
+
+            test('drawer is marked open before _bindDrawerViewportResize fires', () => {
+                let openDuringBind = null;
+                vi.spyOn(Lightbox, '_bindDrawerViewportResize').mockImplementation(function () {
+                    openDuringBind = this.tagsDrawerOpen;
+                });
+                Lightbox.openTagsDrawer();
+                expect(openDuringBind).toBe(true);
+            });
+        });
+
+        describe('closeTagsDrawer() — viewport cleanup', () => {
+            let mockViewport;
+
+            beforeEach(() => {
+                mockViewport = Object.assign(new EventTarget(), { height: 500 });
+                vi.spyOn(mockViewport, 'removeEventListener');
+                globalThis.window = globalThis.window ?? globalThis;
+                globalThis.window.visualViewport = mockViewport;
+
+                Lightbox.tagsDrawerOpen = true;
+                Lightbox._drawerViewportHandler = vi.fn();
+                Lightbox.elements.lightbox.style.height = '500px';
+            });
+
+            afterEach(() => {
+                delete globalThis.window.visualViewport;
+            });
+
+            test('calls _unbindDrawerViewportResize on close', () => {
+                vi.spyOn(Lightbox, '_unbindDrawerViewportResize');
+                Lightbox.closeTagsDrawer();
+                expect(Lightbox._unbindDrawerViewportResize).toHaveBeenCalledOnce();
+            });
+
+            test('clears _drawerViewportHandler after close', () => {
+                Lightbox.closeTagsDrawer();
+                expect(Lightbox._drawerViewportHandler).toBeNull();
+            });
+
+            test('clears lightbox inline height after close', () => {
+                Lightbox.closeTagsDrawer();
+                expect(Lightbox.elements.lightbox.style.height).toBe('');
+            });
+        });
     });
 
     // =========================================
