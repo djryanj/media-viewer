@@ -3272,18 +3272,6 @@ func TestRebuildFTSOnEmptyDatabase(t *testing.T) {
 	}
 }
 
-func TestVacuumIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	db, _ := setupTestDB(t)
-	defer db.Close()
-
-	if err := db.Vacuum(); err != nil {
-		t.Errorf("Vacuum failed: %v", err)
-	}
-}
-
 func TestBatchInserterAccessors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -3369,20 +3357,6 @@ func TestCheckpointContextCancelled(t *testing.T) {
 
 	// The call may succeed or fail depending on timing — we just must not panic.
 	_, _, _ = db.Checkpoint(ctx)
-}
-
-// TestStartCheckpointWorker verifies that the worker goroutine starts and exits
-// cleanly when its context is canceled.
-func TestStartCheckpointWorker(t *testing.T) {
-	db, _ := setupTestDB(t)
-	defer db.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	// Should return immediately; goroutine exits when ctx is canceled.
-	db.StartCheckpointWorker(ctx, 50*time.Millisecond)
-	<-ctx.Done() // wait for the worker context to expire
 }
 
 // ---------------------------------------------------------------------------

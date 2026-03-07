@@ -62,7 +62,7 @@ func InitializeMetrics() {
 
 	// --- DB query operations ---
 	for _, op := range []string{"initialize_schema", "upsert_file", "delete_missing_files",
-		"get_file_by_path", "rebuild_fts", "vacuum", "begin_transaction", "commit", "rollback"} {
+		"get_file_by_path", "rebuild_fts", "begin_transaction", "commit", "rollback"} {
 		DBQueryTotal.WithLabelValues(op, "success")
 		DBQueryTotal.WithLabelValues(op, "error")
 		DBQueryDuration.WithLabelValues(op)

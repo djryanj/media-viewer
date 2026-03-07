@@ -37,7 +37,6 @@ This section covers server administration, configuration, and monitoring for Med
 ### Maintenance
 
 - **Clear Thumbnail Cache**: Use the clear cache button to regenerate all thumbnails
-- **Database Vacuum**: Runs automatically during indexing to reclaim space
 - **Session Cleanup**: Expired sessions are automatically removed
 - **Cache Management**: Monitor cache size via [metrics](metrics.md)
 

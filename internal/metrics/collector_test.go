@@ -1259,7 +1259,7 @@ func TestInitializeMetricsPrePopulatesDBQueryMetrics(t *testing.T) {
 	}()
 
 	ops := []string{"initialize_schema", "upsert_file", "delete_missing_files",
-		"get_file_by_path", "rebuild_fts", "vacuum", "begin_transaction", "commit", "rollback"}
+		"get_file_by_path", "rebuild_fts", "begin_transaction", "commit", "rollback"}
 	for _, op := range ops {
 		DBQueryTotal.WithLabelValues(op, "success").Add(0)
 		DBQueryTotal.WithLabelValues(op, "error").Add(0)
