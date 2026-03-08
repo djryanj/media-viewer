@@ -251,3 +251,166 @@ func TestFavoritesConcurrencyIntegration(t *testing.T) {
 		t.Errorf("Expected 0 favorites after concurrent operations, got %d", count)
 	}
 }
+
+func TestAddFavoritePositionAutoIncrementIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Add three favorites sequentially and verify ascending positions.
+	paths := []string{"/a/first.jpg", "/b/second.jpg", "/c/third.jpg"}
+	for i, p := range paths {
+		if err := db.AddFavorite(ctx, p, "file.jpg", FileTypeImage); err != nil {
+			t.Fatalf("AddFavorite[%d] failed: %v", i, err)
+		}
+	}
+
+	var positions []int
+	rows, err := db.writer.QueryContext(ctx, "SELECT position FROM favorites ORDER BY position ASC")
+	if err != nil {
+		t.Fatalf("query positions: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pos int
+		if err := rows.Scan(&pos); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		positions = append(positions, pos)
+	}
+
+	if len(positions) != 3 {
+		t.Fatalf("expected 3 positions, got %d", len(positions))
+	}
+	for i, pos := range positions {
+		if pos != i {
+			t.Errorf("positions[%d] = %d, want %d", i, pos, i)
+		}
+	}
+}
+
+func TestReorderFavoritesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	files := []struct {
+		path string
+		name string
+	}{
+		{"/movies/alpha.mp4", "alpha.mp4"},
+		{"/photos/beta.jpg", "beta.jpg"},
+		{"/photos/gamma.jpg", "gamma.jpg"},
+	}
+
+	// Insert into files table (required for the INNER JOIN in getFavorites).
+	tx, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	for _, f := range files {
+		_ = tx.UpsertFile(ctx, &MediaFile{
+			Name: f.name, Path: f.path, ParentPath: "/",
+			Type: FileTypeImage, Size: 100, ModTime: time.Now(),
+		})
+	}
+	if err := db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	// Add favorites in alpha, beta, gamma order.
+	for _, f := range files {
+		if err := db.AddFavorite(ctx, f.path, f.name, FileTypeImage); err != nil {
+			t.Fatalf("AddFavorite %s: %v", f.path, err)
+		}
+	}
+
+	// Reorder to gamma, alpha, beta.
+	newOrder := []string{"/photos/gamma.jpg", "/movies/alpha.mp4", "/photos/beta.jpg"}
+	if err := db.ReorderFavorites(ctx, newOrder); err != nil {
+		t.Fatalf("ReorderFavorites: %v", err)
+	}
+
+	// GetFavorites must return them in the new order.
+	favs, err := db.GetFavorites(ctx)
+	if err != nil {
+		t.Fatalf("GetFavorites: %v", err)
+	}
+	if len(favs) != 3 {
+		t.Fatalf("expected 3 favorites, got %d", len(favs))
+	}
+	for i, want := range newOrder {
+		if favs[i].Path != want {
+			t.Errorf("favs[%d].Path = %q, want %q", i, favs[i].Path, want)
+		}
+	}
+}
+
+func TestReorderFavoritesEmptySliceIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// ReorderFavorites with an empty slice must be a no-op (no error).
+	if err := db.ReorderFavorites(ctx, nil); err != nil {
+		t.Errorf("ReorderFavorites(nil) should not error, got %v", err)
+	}
+	if err := db.ReorderFavorites(ctx, []string{}); err != nil {
+		t.Errorf("ReorderFavorites([]) should not error, got %v", err)
+	}
+}
+
+func TestReorderFavoritesPartialSliceIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Add 3 favorites with positions 0,1,2.
+	for i, p := range []string{"/a.jpg", "/b.jpg", "/c.jpg"} {
+		if err := db.AddFavorite(ctx, p, p, FileTypeImage); err != nil {
+			t.Fatalf("AddFavorite[%d]: %v", i, err)
+		}
+	}
+
+	// Reorder only two of the three; the third retains its existing position.
+	// Passing unknown paths must not return an error.
+	if err := db.ReorderFavorites(ctx, []string{"/c.jpg", "/a.jpg"}); err != nil {
+		t.Fatalf("ReorderFavorites: %v", err)
+	}
+
+	rows, err := db.writer.QueryContext(ctx, "SELECT path, position FROM favorites ORDER BY position ASC")
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	posMap := map[string]int{}
+	for rows.Next() {
+		var path string
+		var pos int
+		_ = rows.Scan(&path, &pos)
+		posMap[path] = pos
+	}
+
+	if posMap["/c.jpg"] != 0 {
+		t.Errorf("/c.jpg position = %d, want 0", posMap["/c.jpg"])
+	}
+	if posMap["/a.jpg"] != 1 {
+		t.Errorf("/a.jpg position = %d, want 1", posMap["/a.jpg"])
+	}
+}

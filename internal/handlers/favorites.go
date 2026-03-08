@@ -201,3 +201,33 @@ func (h *Handlers) BulkRemoveFavorites(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, response)
 }
+
+// ReorderFavoritesRequest contains an ordered list of favorite paths.
+// The slice must contain every favorited path; index 0 will become position 0
+// in the strip (leftmost item).
+type ReorderFavoritesRequest struct {
+	Paths []string `json:"paths"`
+}
+
+// ReorderFavorites updates the display order of the favorites strip.
+func (h *Handlers) ReorderFavorites(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req ReorderFavoritesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Paths) == 0 {
+		http.Error(w, "Paths array is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.ReorderFavorites(ctx, req.Paths); err != nil {
+		http.Error(w, "Failed to reorder favorites", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSONStatus(w, "ok")
+}

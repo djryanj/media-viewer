@@ -578,4 +578,216 @@ describe('ItemSelection Module', () => {
             expect(ItemSelection._taggableCount).toBe(3);
         });
     });
+
+    // =========================================================================
+    // Favorites gallery exclusion — items inside #favorites-gallery must never
+    // trigger selection mode or be swept into a drag selection.
+    // =========================================================================
+
+    describe('favorites gallery exclusion', () => {
+        let favGallery;
+        let favItem;
+
+        beforeEach(() => {
+            favGallery = document.createElement('div');
+            favGallery.id = 'favorites-gallery';
+            favItem = document.createElement('div');
+            favItem.className = 'gallery-item';
+            favItem.dataset.path = '/fav/image.jpg';
+            favItem.dataset.type = 'image';
+            favGallery.appendChild(favItem);
+            document.body.appendChild(favGallery);
+
+            // init() is not called during test module load (DOMContentLoaded is
+            // suppressed), so the event listeners are not registered.  Set them
+            // up explicitly so the guard tests exercise real listener code.
+            ItemSelection.setupLongPress();
+            ItemSelection.setupDragSelection();
+        });
+
+        describe('mousedown long-press guard', () => {
+            beforeEach(() => vi.useFakeTimers());
+            afterEach(() => vi.useRealTimers());
+
+            test('long-pressing a favorites item does not enter selection mode', () => {
+                const enterSpy = vi
+                    .spyOn(ItemSelection, 'enterSelectionMode')
+                    .mockImplementation(() => {});
+                favItem.dispatchEvent(
+                    new MouseEvent('mousedown', {
+                        bubbles: true,
+                        button: 0,
+                        clientX: 50,
+                        clientY: 50,
+                    })
+                );
+                vi.advanceTimersByTime(600);
+                expect(enterSpy).not.toHaveBeenCalled();
+            });
+
+            test('long-pressing a regular gallery item still enters selection mode', () => {
+                const enterSpy = vi
+                    .spyOn(ItemSelection, 'enterSelectionMode')
+                    .mockImplementation(() => {});
+                vi.spyOn(ItemSelection, 'startDragSelection').mockImplementation(() => {});
+                const regularItem = document.querySelector('#gallery .gallery-item');
+                regularItem.dispatchEvent(
+                    new MouseEvent('mousedown', {
+                        bubbles: true,
+                        button: 0,
+                        clientX: 50,
+                        clientY: 50,
+                    })
+                );
+                vi.advanceTimersByTime(600);
+                expect(enterSpy).toHaveBeenCalledWith(regularItem);
+            });
+        });
+
+        describe('touchstart long-press guard', () => {
+            beforeEach(() => vi.useFakeTimers());
+            afterEach(() => vi.useRealTimers());
+
+            test('long-pressing a favorites item does not enter selection mode', () => {
+                const enterSpy = vi
+                    .spyOn(ItemSelection, 'enterSelectionMode')
+                    .mockImplementation(() => {});
+                const touch = new Touch({
+                    identifier: 1,
+                    target: favItem,
+                    clientX: 50,
+                    clientY: 50,
+                });
+                favItem.dispatchEvent(
+                    new TouchEvent('touchstart', {
+                        bubbles: true,
+                        touches: [touch],
+                        changedTouches: [touch],
+                    })
+                );
+                vi.advanceTimersByTime(600);
+                expect(enterSpy).not.toHaveBeenCalled();
+            });
+
+            test('long-pressing a regular gallery item still enters selection mode', () => {
+                const enterSpy = vi
+                    .spyOn(ItemSelection, 'enterSelectionMode')
+                    .mockImplementation(() => {});
+                vi.spyOn(ItemSelection, 'startDragSelection').mockImplementation(() => {});
+                const regularItem = document.querySelector('#gallery .gallery-item');
+                const touch = new Touch({
+                    identifier: 1,
+                    target: regularItem,
+                    clientX: 50,
+                    clientY: 50,
+                });
+                regularItem.dispatchEvent(
+                    new TouchEvent('touchstart', {
+                        bubbles: true,
+                        touches: [touch],
+                        changedTouches: [touch],
+                    })
+                );
+                vi.advanceTimersByTime(600);
+                expect(enterSpy).toHaveBeenCalledWith(regularItem);
+            });
+        });
+
+        describe('mousemove drag-selection guard', () => {
+            function setupActiveDrag(dragStartPath = '/path/image1.jpg') {
+                ItemSelection.isActive = true;
+                ItemSelection.isMouseDragging = true;
+                ItemSelection.lastTouchedElement = null;
+                ItemSelection.dragStartElement = document.querySelector(
+                    `#gallery .gallery-item[data-path="${dragStartPath}"]`
+                );
+            }
+
+            test('does not call selectRectangularRegion when hit-test lands on a favorites item', () => {
+                setupActiveDrag();
+                const selectSpy = vi
+                    .spyOn(ItemSelection, 'selectRectangularRegion')
+                    .mockImplementation(() => {});
+                vi.spyOn(document, 'elementFromPoint').mockReturnValue(favItem);
+
+                document.dispatchEvent(
+                    new MouseEvent('mousemove', { bubbles: true, clientX: 50, clientY: 50 })
+                );
+
+                expect(selectSpy).not.toHaveBeenCalled();
+            });
+
+            test('calls selectRectangularRegion when hit-test lands on a regular gallery item', () => {
+                setupActiveDrag('/path/image1.jpg');
+                const targetEl = document.querySelector(
+                    '#gallery .gallery-item[data-path="/path/image2.jpg"]'
+                );
+                const selectSpy = vi
+                    .spyOn(ItemSelection, 'selectRectangularRegion')
+                    .mockImplementation(() => {});
+                vi.spyOn(document, 'elementFromPoint').mockReturnValue(targetEl);
+
+                document.dispatchEvent(
+                    new MouseEvent('mousemove', { bubbles: true, clientX: 50, clientY: 50 })
+                );
+
+                expect(selectSpy).toHaveBeenCalledWith(ItemSelection.dragStartElement, targetEl);
+            });
+        });
+
+        describe('touchmove drag-selection guard', () => {
+            function setupActiveTouchDrag(dragStartPath = '/path/image1.jpg') {
+                ItemSelection.isActive = true;
+                ItemSelection.isDragging = true;
+                ItemSelection.lastTouchedElement = null;
+                ItemSelection.dragStartElement = document.querySelector(
+                    `#gallery .gallery-item[data-path="${dragStartPath}"]`
+                );
+            }
+
+            function dispatchTouchMove(clientX = 50, clientY = 50) {
+                const touch = new Touch({
+                    identifier: 1,
+                    target: document.body,
+                    clientX,
+                    clientY,
+                });
+                document.dispatchEvent(
+                    new TouchEvent('touchmove', {
+                        bubbles: true,
+                        cancelable: true,
+                        touches: [touch],
+                        changedTouches: [touch],
+                    })
+                );
+            }
+
+            test('does not call selectRectangularRegion when hit-test lands on a favorites item', () => {
+                setupActiveTouchDrag();
+                const selectSpy = vi
+                    .spyOn(ItemSelection, 'selectRectangularRegion')
+                    .mockImplementation(() => {});
+                vi.spyOn(document, 'elementFromPoint').mockReturnValue(favItem);
+
+                dispatchTouchMove();
+
+                expect(selectSpy).not.toHaveBeenCalled();
+            });
+
+            test('calls selectRectangularRegion when hit-test lands on a regular gallery item', () => {
+                setupActiveTouchDrag('/path/image1.jpg');
+                const targetEl = document.querySelector(
+                    '#gallery .gallery-item[data-path="/path/image2.jpg"]'
+                );
+                const selectSpy = vi
+                    .spyOn(ItemSelection, 'selectRectangularRegion')
+                    .mockImplementation(() => {});
+                vi.spyOn(document, 'elementFromPoint').mockReturnValue(targetEl);
+
+                dispatchTouchMove();
+
+                expect(selectSpy).toHaveBeenCalledWith(ItemSelection.dragStartElement, targetEl);
+            });
+        });
+    });
 });

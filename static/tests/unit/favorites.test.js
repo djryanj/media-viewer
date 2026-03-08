@@ -710,4 +710,308 @@ describe('Favorites Module', () => {
             expect(Favorites.elements.fadeLeft.classList.contains('hidden')).toBe(true);
         });
     });
+
+    // =========================================================================
+    // Drag-and-drop reordering
+    // =========================================================================
+
+    describe('renderFavorites() drag setup', () => {
+        test('stores rendered favorites in _favorites', () => {
+            const items = [
+                { path: '/a.jpg', name: 'a.jpg', type: 'image' },
+                { path: '/b.jpg', name: 'b.jpg', type: 'image' },
+            ];
+            Favorites.renderFavorites(items);
+            expect(Favorites._favorites).toHaveLength(2);
+            expect(Favorites._favorites[0].path).toBe('/a.jpg');
+        });
+
+        test('sets draggable="true" on each rendered item', () => {
+            const items = [
+                { path: '/a.jpg', name: 'a.jpg', type: 'image' },
+                { path: '/b.jpg', name: 'b.jpg', type: 'image' },
+            ];
+            Favorites.renderFavorites(items);
+            const elements = Favorites.elements.gallery.querySelectorAll('[draggable="true"]');
+            expect(elements.length).toBe(2);
+        });
+    });
+
+    describe('_updateDropIndicator()', () => {
+        function makeItem(path) {
+            const el = document.createElement('div');
+            el.className = 'gallery-item';
+            el.dataset.path = path;
+            return el;
+        }
+
+        test('adds fav-drop-before when clientX is in the left half', () => {
+            const el = makeItem('/a.jpg');
+            Favorites.elements.gallery.appendChild(el);
+            // getBoundingClientRect returns left:100, width:80 → midpoint=140
+            el.getBoundingClientRect = () => ({ left: 100, width: 80 });
+            Favorites._updateDropIndicator(el, 120); // left of midpoint
+            expect(el.classList.contains('fav-drop-before')).toBe(true);
+            expect(el.classList.contains('fav-drop-after')).toBe(false);
+        });
+
+        test('adds fav-drop-after when clientX is in the right half', () => {
+            const el = makeItem('/a.jpg');
+            Favorites.elements.gallery.appendChild(el);
+            el.getBoundingClientRect = () => ({ left: 100, width: 80 });
+            Favorites._updateDropIndicator(el, 160); // right of midpoint
+            expect(el.classList.contains('fav-drop-after')).toBe(true);
+            expect(el.classList.contains('fav-drop-before')).toBe(false);
+        });
+
+        test('clears previous indicators before setting new one', () => {
+            const a = makeItem('/a.jpg');
+            const b = makeItem('/b.jpg');
+            Favorites.elements.gallery.append(a, b);
+            a.getBoundingClientRect = b.getBoundingClientRect = () => ({ left: 0, width: 100 });
+            Favorites._updateDropIndicator(a, 10);
+            expect(a.classList.contains('fav-drop-before')).toBe(true);
+            Favorites._updateDropIndicator(b, 10);
+            // a must no longer have indicator
+            expect(a.classList.contains('fav-drop-before')).toBe(false);
+            expect(b.classList.contains('fav-drop-before')).toBe(true);
+        });
+    });
+
+    describe('_clearDropIndicators()', () => {
+        test('removes fav-drop-before and fav-drop-after from all items', () => {
+            const items = ['fav-drop-before', 'fav-drop-after'].map((cls, i) => {
+                const el = document.createElement('div');
+                el.className = `gallery-item ${cls}`;
+                el.dataset.path = `/p${i}.jpg`;
+                Favorites.elements.gallery.appendChild(el);
+                return el;
+            });
+            Favorites._clearDropIndicators();
+            items.forEach((el) => {
+                expect(el.classList.contains('fav-drop-before')).toBe(false);
+                expect(el.classList.contains('fav-drop-after')).toBe(false);
+            });
+        });
+
+        test('does nothing when gallery is null', () => {
+            Favorites.elements.gallery = null;
+            expect(() => Favorites._clearDropIndicators()).not.toThrow();
+        });
+    });
+
+    describe('_doReorder()', () => {
+        function buildStrip(paths) {
+            Favorites.elements.gallery.innerHTML = '';
+            Favorites._favorites = paths.map((p) => ({ path: p, name: p, type: 'image' }));
+            paths.forEach((p) => {
+                const el = document.createElement('div');
+                el.className = 'gallery-item';
+                el.dataset.path = p;
+                el.getBoundingClientRect = () => ({ left: 0, width: 100 });
+                Favorites.elements.gallery.appendChild(el);
+            });
+        }
+
+        test('moves item before target when clientX is in left half', () => {
+            buildStrip(['/a.jpg', '/b.jpg', '/c.jpg']);
+            const reorderLocalSpy = vi
+                .spyOn(Favorites, '_reorderLocal')
+                .mockImplementation(() => {});
+            const saveOrderSpy = vi.spyOn(Favorites, '_saveOrder').mockResolvedValue();
+
+            const targetEl = Favorites.elements.gallery.querySelector('[data-path="/c.jpg"]');
+            targetEl.getBoundingClientRect = () => ({ left: 100, width: 100 }); // midpoint=150
+            Favorites._doReorder('/a.jpg', targetEl, 120); // left of 150 → insert before c
+
+            expect(reorderLocalSpy).toHaveBeenCalledWith(['/b.jpg', '/a.jpg', '/c.jpg']);
+            expect(saveOrderSpy).toHaveBeenCalledWith(['/b.jpg', '/a.jpg', '/c.jpg']);
+        });
+
+        test('moves item after target when clientX is in right half', () => {
+            buildStrip(['/a.jpg', '/b.jpg', '/c.jpg']);
+            const reorderLocalSpy = vi
+                .spyOn(Favorites, '_reorderLocal')
+                .mockImplementation(() => {});
+            vi.spyOn(Favorites, '_saveOrder').mockResolvedValue();
+
+            const targetEl = Favorites.elements.gallery.querySelector('[data-path="/b.jpg"]');
+            targetEl.getBoundingClientRect = () => ({ left: 0, width: 100 }); // midpoint=50
+            Favorites._doReorder('/a.jpg', targetEl, 80); // right of 50 → insert after b
+
+            expect(reorderLocalSpy).toHaveBeenCalledWith(['/b.jpg', '/a.jpg', '/c.jpg']);
+        });
+
+        test('no-op when dragged path equals target path', () => {
+            buildStrip(['/a.jpg', '/b.jpg']);
+            const reorderLocalSpy = vi
+                .spyOn(Favorites, '_reorderLocal')
+                .mockImplementation(() => {});
+            const targetEl = Favorites.elements.gallery.querySelector('[data-path="/a.jpg"]');
+            Favorites._doReorder('/a.jpg', targetEl, 10);
+            expect(reorderLocalSpy).not.toHaveBeenCalled();
+        });
+
+        test('no-op when dragged path not found in strip', () => {
+            buildStrip(['/a.jpg', '/b.jpg']);
+            const reorderLocalSpy = vi
+                .spyOn(Favorites, '_reorderLocal')
+                .mockImplementation(() => {});
+            const targetEl = Favorites.elements.gallery.querySelector('[data-path="/b.jpg"]');
+            Favorites._doReorder('/unknown.jpg', targetEl, 10);
+            expect(reorderLocalSpy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('_reorderLocal()', () => {
+        test('calls renderFavorites with items in the new order', () => {
+            Favorites._favorites = [
+                { path: '/a.jpg', name: 'a', type: 'image' },
+                { path: '/b.jpg', name: 'b', type: 'image' },
+                { path: '/c.jpg', name: 'c', type: 'image' },
+            ];
+            const renderSpy = vi.spyOn(Favorites, 'renderFavorites').mockImplementation(() => {});
+            Favorites._reorderLocal(['/c.jpg', '/a.jpg', '/b.jpg']);
+            expect(renderSpy).toHaveBeenCalledWith([
+                { path: '/c.jpg', name: 'c', type: 'image' },
+                { path: '/a.jpg', name: 'a', type: 'image' },
+                { path: '/b.jpg', name: 'b', type: 'image' },
+            ]);
+        });
+
+        test('omits paths not in _favorites', () => {
+            Favorites._favorites = [{ path: '/a.jpg', name: 'a', type: 'image' }];
+            const renderSpy = vi.spyOn(Favorites, 'renderFavorites').mockImplementation(() => {});
+            Favorites._reorderLocal(['/unknown.jpg', '/a.jpg']);
+            expect(renderSpy).toHaveBeenCalledWith([{ path: '/a.jpg', name: 'a', type: 'image' }]);
+        });
+    });
+
+    describe('_saveOrder()', () => {
+        test('PUTs ordered paths to /api/favorites/order', async () => {
+            globalThis.fetch.mockResolvedValueOnce({ ok: true });
+            await Favorites._saveOrder(['/c.jpg', '/a.jpg', '/b.jpg']);
+            expect(globalThis.fetch).toHaveBeenCalledWith('/api/favorites/order', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: ['/c.jpg', '/a.jpg', '/b.jpg'] }),
+            });
+        });
+
+        test('shows toast and reloads on server error', async () => {
+            globalThis.fetch.mockResolvedValueOnce({ ok: false, status: 500 });
+            const loadSpy = vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
+            await Favorites._saveOrder(['/a.jpg']);
+            expect(Gallery.showToast).toHaveBeenCalledWith('Failed to save favorites order');
+            expect(loadSpy).toHaveBeenCalled();
+        });
+
+        test('shows toast and reloads on network error', async () => {
+            globalThis.fetch.mockRejectedValueOnce(new Error('offline'));
+            const loadSpy = vi.spyOn(Favorites, 'loadFavorites').mockResolvedValue();
+            await Favorites._saveOrder(['/a.jpg']);
+            expect(Gallery.showToast).toHaveBeenCalledWith('Failed to save favorites order');
+            expect(loadSpy).toHaveBeenCalled();
+        });
+    });
+
+    describe('_setupDragOnItem() and pointer-drag behavior', () => {
+        let el;
+
+        function makeEl() {
+            el = document.createElement('div');
+            el.className = 'gallery-item';
+            el.dataset.path = '/a.jpg';
+            el.dataset.type = 'image';
+            el.setPointerCapture = vi.fn();
+            el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 80, height: 80 });
+            Favorites.elements.gallery.appendChild(el);
+        }
+
+        // Call _onPointerDown directly with a synthetic event object so we do
+        // not need the pointerdown listener attached by _setupDragOnItem.
+        function callPointerDown(overrides = {}) {
+            Favorites._onPointerDown({
+                pointerType: 'touch',
+                pointerId: 1,
+                clientX: 50,
+                clientY: 50,
+                currentTarget: el,
+                ...overrides,
+            });
+        }
+
+        function dispatchMove(clientX, clientY = 50) {
+            const e = new Event('pointermove');
+            Object.assign(e, { clientX, clientY });
+            el.dispatchEvent(e);
+        }
+
+        function dispatchUp() {
+            el.dispatchEvent(new Event('pointerup'));
+        }
+
+        beforeEach(() => {
+            makeEl();
+            vi.useFakeTimers();
+        });
+        afterEach(() => vi.useRealTimers());
+
+        test('_setupDragOnItem sets touch-action:none on the element at creation time', () => {
+            // touch-action must be set before any gesture so the browser
+            // honour it at pointerdown time (browsers snapshot touch-action
+            // when the gesture begins, not when it is changed dynamically).
+            expect(el.style.touchAction).toBe(''); // not yet configured
+            Favorites._setupDragOnItem(el);
+            expect(el.style.touchAction).toBe('none');
+        });
+
+        test('_onPointerDown does not modify touch-action on the element', () => {
+            // Simulate what _setupDragOnItem does at element-creation time.
+            el.style.touchAction = 'none';
+            callPointerDown();
+            expect(el.style.touchAction).toBe('none'); // unchanged during press
+            dispatchUp();
+            expect(el.style.touchAction).toBe('none'); // unchanged after release
+        });
+
+        test('enters scroll mode and does not start drag when movement exceeds 8px before timer', () => {
+            const startDragSpy = vi
+                .spyOn(Favorites, '_startPointerDrag')
+                .mockImplementation(() => {});
+            callPointerDown({ clientX: 50 });
+            dispatchMove(70); // 20px — beyond threshold
+            vi.advanceTimersByTime(350);
+            expect(startDragSpy).not.toHaveBeenCalled();
+        });
+
+        test('manual scroll adjusts strip.scrollLeft in scroll mode', () => {
+            const strip = Favorites.elements.gallery;
+            strip.scrollLeft = 100;
+            callPointerDown({ clientX: 50 });
+            dispatchMove(40); // move 10px left → scrollLeft increases by 10
+            expect(strip.scrollLeft).toBe(110);
+            dispatchUp();
+        });
+
+        test('starts drag after 300ms when movement stays within 8px threshold', () => {
+            const startDragSpy = vi
+                .spyOn(Favorites, '_startPointerDrag')
+                .mockImplementation(() => {});
+            callPointerDown();
+            dispatchMove(53); // 3px — within threshold
+            vi.advanceTimersByTime(350);
+            expect(startDragSpy).toHaveBeenCalledWith(el, 1, 50, 50);
+        });
+
+        test('does not start drag for mouse pointerdown', () => {
+            const startDragSpy = vi
+                .spyOn(Favorites, '_startPointerDrag')
+                .mockImplementation(() => {});
+            callPointerDown({ pointerType: 'mouse' });
+            vi.advanceTimersByTime(350);
+            expect(startDragSpy).not.toHaveBeenCalled();
+            expect(el.style.touchAction).toBe(''); // mouse path never touches touch-action
+        });
+    });
 });

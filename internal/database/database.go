@@ -559,7 +559,8 @@ func (d *Database) initialize(ctx context.Context) error {
 		path TEXT NOT NULL UNIQUE,
 		name TEXT NOT NULL,
 		type TEXT NOT NULL,
-		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		position INTEGER NOT NULL DEFAULT 0
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_favorites_path ON favorites(path);
@@ -691,7 +692,48 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		logging.Info("Migration complete: setup_complete column added and initialized")
 	}
 
-	return err
+	var positionExists bool
+	err = d.writer.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('favorites')
+		WHERE name='position'
+	`).Scan(&positionExists)
+	if err != nil {
+		return fmt.Errorf("failed to check for position column in favorites: %w", err)
+	}
+
+	if !positionExists {
+		logging.Info("Migrating database: adding position column to favorites table")
+
+		done := d.observeQuery("migrate_add_favorites_position")
+		_, err = d.writer.ExecContext(ctx, `
+			ALTER TABLE favorites ADD COLUMN position INTEGER NOT NULL DEFAULT 0
+		`)
+		done(err)
+		if err != nil {
+			return fmt.Errorf("failed to add position column to favorites: %w", err)
+		}
+
+		// Preserve the current display order: newest favorite (highest created_at)
+		// maps to position 0 so the strip appearance is unchanged after migration.
+		done = d.observeQuery("migrate_init_favorites_position")
+		_, err = d.writer.ExecContext(ctx, `
+			WITH ranked AS (
+				SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) - 1 AS pos
+				FROM favorites
+			)
+			UPDATE favorites
+			SET position = (SELECT pos FROM ranked WHERE ranked.id = favorites.id)
+		`)
+		done(err)
+		if err != nil {
+			return fmt.Errorf("failed to initialize favorites position values: %w", err)
+		}
+
+		logging.Info("Migration complete: position column added to favorites table")
+	}
+
+	return nil
 }
 
 // passiveCheckpoint runs a PASSIVE WAL checkpoint: it copies as many WAL

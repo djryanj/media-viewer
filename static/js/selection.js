@@ -185,6 +185,7 @@ const ItemSelection = {
             (e) => {
                 const galleryItem = e.target.closest('.gallery-item');
                 if (!galleryItem) return;
+                if (galleryItem.closest('#favorites-gallery')) return;
 
                 if (
                     e.target.closest('.selection-checkbox') ||
@@ -260,6 +261,7 @@ const ItemSelection = {
 
             const galleryItem = e.target.closest('.gallery-item');
             if (!galleryItem) return;
+            if (galleryItem.closest('#favorites-gallery')) return;
 
             if (
                 e.target.closest('.selection-checkbox') ||
@@ -326,7 +328,11 @@ const ItemSelection = {
                 const element = document.elementFromPoint(touch.clientX, touch.clientY);
                 const galleryItem = element?.closest('.gallery-item');
 
-                if (galleryItem && galleryItem !== this.lastTouchedElement) {
+                if (
+                    galleryItem &&
+                    !galleryItem.closest('#favorites-gallery') &&
+                    galleryItem !== this.lastTouchedElement
+                ) {
                     this.lastTouchedElement = galleryItem;
 
                     if (this.dragStartElement) {
@@ -372,7 +378,11 @@ const ItemSelection = {
             const element = document.elementFromPoint(e.clientX, e.clientY);
             const galleryItem = element?.closest('.gallery-item');
 
-            if (galleryItem && galleryItem !== this.lastTouchedElement) {
+            if (
+                galleryItem &&
+                !galleryItem.closest('#favorites-gallery') &&
+                galleryItem !== this.lastTouchedElement
+            ) {
                 this.lastTouchedElement = galleryItem;
 
                 if (this.dragStartElement) {

@@ -703,3 +703,143 @@ func TestRemoveFavoriteErrorHandlingMock(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
 	}
 }
+
+// =============================================================================
+// ReorderFavorites Mock & Tests
+// =============================================================================
+
+type mockReorderDB struct {
+	*mockFavoritesDB
+	reorderFavoritesErr error
+	reorderCalls        [][]string
+}
+
+func newMockReorderDB() *mockReorderDB {
+	return &mockReorderDB{mockFavoritesDB: newMockFavoritesDB()}
+}
+
+func (m *mockReorderDB) ReorderFavorites(_ context.Context, paths []string) error {
+	m.reorderCalls = append(m.reorderCalls, paths)
+	return m.reorderFavoritesErr
+}
+
+func mockReorderFavoritesHandler(db *mockReorderDB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req ReorderFavoritesRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		if len(req.Paths) == 0 {
+			http.Error(w, "Paths array is required", http.StatusBadRequest)
+			return
+		}
+		if err := db.ReorderFavorites(r.Context(), req.Paths); err != nil {
+			http.Error(w, "Failed to reorder favorites", http.StatusInternalServerError)
+			return
+		}
+		writeJSONStatus(w, "ok")
+	}
+}
+
+func TestReorderFavoritesValidRequestMock(t *testing.T) {
+	t.Parallel()
+
+	db := newMockReorderDB()
+	h := mockReorderFavoritesHandler(db)
+
+	body, _ := json.Marshal(ReorderFavoritesRequest{
+		Paths: []string{"photos/c.jpg", "photos/a.jpg", "photos/b.jpg"},
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+	if len(db.reorderCalls) != 1 {
+		t.Fatalf("Expected 1 ReorderFavorites call, got %d", len(db.reorderCalls))
+	}
+	if db.reorderCalls[0][0] != "photos/c.jpg" {
+		t.Errorf("Expected first path to be photos/c.jpg, got %s", db.reorderCalls[0][0])
+	}
+}
+
+func TestReorderFavoritesEmptyPathsMock(t *testing.T) {
+	t.Parallel()
+
+	db := newMockReorderDB()
+	h := mockReorderFavoritesHandler(db)
+
+	body, _ := json.Marshal(ReorderFavoritesRequest{Paths: []string{}})
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+	if len(db.reorderCalls) != 0 {
+		t.Errorf("Expected 0 DB calls for empty paths, got %d", len(db.reorderCalls))
+	}
+}
+
+func TestReorderFavoritesInvalidJSONMock(t *testing.T) {
+	t.Parallel()
+
+	db := newMockReorderDB()
+	h := mockReorderFavoritesHandler(db)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestReorderFavoritesDBErrorMock(t *testing.T) {
+	t.Parallel()
+
+	db := newMockReorderDB()
+	db.reorderFavoritesErr = context.DeadlineExceeded
+	h := mockReorderFavoritesHandler(db)
+
+	body, _ := json.Marshal(ReorderFavoritesRequest{Paths: []string{"a.jpg", "b.jpg"}})
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+func TestReorderFavoritesNilPathsFieldMock(t *testing.T) {
+	t.Parallel()
+
+	db := newMockReorderDB()
+	h := mockReorderFavoritesHandler(db)
+
+	// JSON body with no paths field (omitted → nil slice, len 0)
+	body := []byte(`{}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d for nil paths, got %d", http.StatusBadRequest, w.Code)
+	}
+}
