@@ -861,3 +861,128 @@ func TestFavoritesWithUnicodePathsIntegration(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// ReorderFavorites Integration Tests
+// =============================================================================
+
+func TestReorderFavoritesIntegrationHandler(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupFavoritesIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Insert media files so GetFavorites' INNER JOIN resolves.
+	paths := []string{"photos/a.jpg", "photos/b.jpg", "photos/c.jpg"}
+	for _, p := range paths {
+		addTestFile(t, h.db, p, filepath.Base(p), database.FileTypeImage)
+		if err := h.db.AddFavorite(ctx, p, filepath.Base(p), database.FileTypeImage); err != nil {
+			t.Fatalf("AddFavorite %s: %v", p, err)
+		}
+	}
+
+	// Reorder to c, a, b via the handler.
+	newOrder := []string{"photos/c.jpg", "photos/a.jpg", "photos/b.jpg"}
+	body, _ := json.Marshal(map[string]interface{}{"paths": newOrder})
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.ReorderFavorites(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("ReorderFavorites: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET /api/favorites and verify order.
+	getReq := httptest.NewRequest(http.MethodGet, "/api/favorites", http.NoBody)
+	getW := httptest.NewRecorder()
+	h.GetFavorites(getW, getReq)
+
+	var favorites []database.MediaFile
+	if err := json.NewDecoder(getW.Body).Decode(&favorites); err != nil {
+		t.Fatalf("decode GetFavorites: %v", err)
+	}
+	if len(favorites) != 3 {
+		t.Fatalf("expected 3 favorites, got %d", len(favorites))
+	}
+	for i, want := range newOrder {
+		if favorites[i].Path != want {
+			t.Errorf("favorites[%d].Path = %q, want %q", i, favorites[i].Path, want)
+		}
+	}
+}
+
+func TestReorderFavoritesEmptyBodyIntegrationHandler(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupFavoritesIntegrationTest(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]interface{}{"paths": []string{}})
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.ReorderFavorites(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty paths, got %d", w.Code)
+	}
+}
+
+func TestReorderFavoritesNewItemsAppendedAfterIntegrationHandler(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupFavoritesIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add three favorites; they arrive at positions 0, 1, 2.
+	paths := []string{"p/a.jpg", "p/b.jpg", "p/c.jpg"}
+	for _, p := range paths {
+		addTestFile(t, h.db, p, filepath.Base(p), database.FileTypeImage)
+		if err := h.db.AddFavorite(ctx, p, filepath.Base(p), database.FileTypeImage); err != nil {
+			t.Fatalf("AddFavorite %s: %v", p, err)
+		}
+	}
+
+	// Reorder to b, c, a.
+	reordered := []string{"p/b.jpg", "p/c.jpg", "p/a.jpg"}
+	body, _ := json.Marshal(map[string]interface{}{"paths": reordered})
+	req := httptest.NewRequest(http.MethodPut, "/api/favorites/order", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ReorderFavorites(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// Add a fourth favorite; it must appear at the end (highest existing position + 1).
+	addTestFile(t, h.db, "p/d.jpg", "d.jpg", database.FileTypeImage)
+	if err := h.db.AddFavorite(ctx, "p/d.jpg", "d.jpg", database.FileTypeImage); err != nil {
+		t.Fatalf("AddFavorite d.jpg: %v", err)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/favorites", http.NoBody)
+	getW := httptest.NewRecorder()
+	h.GetFavorites(getW, getReq)
+
+	var favorites []database.MediaFile
+	if err := json.NewDecoder(getW.Body).Decode(&favorites); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(favorites) != 4 {
+		t.Fatalf("expected 4 favorites, got %d", len(favorites))
+	}
+	// The new item must be last.
+	if favorites[3].Path != "p/d.jpg" {
+		t.Errorf("expected p/d.jpg last, got %s", favorites[3].Path)
+	}
+}

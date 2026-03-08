@@ -1156,6 +1156,38 @@ select:focus {
     left: 0.25rem;
 }
 
+/* ── Drag-and-drop reordering ──────────────────────────────────────────────── */
+
+.favorites-gallery .gallery-item[draggable='true'] {
+    cursor: grab;
+}
+
+.favorites-gallery .gallery-item.fav-dragging {
+    opacity: 30%;
+    cursor: grabbing;
+}
+
+/* Vertical drop-target indicator: a coloured bar on the left or right edge. */
+.favorites-gallery .gallery-item.fav-drop-before {
+    box-shadow: -3px 0 0 0 var(--accent);
+}
+
+.favorites-gallery .gallery-item.fav-drop-after {
+    box-shadow: 3px 0 0 0 var(--accent);
+}
+
+/* Floating ghost clone during pointer/touch drag. */
+.fav-drag-ghost {
+    position: fixed;
+    border-radius: var(--radius);
+    opacity: 85%;
+    pointer-events: none;
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+    transform: scale(1.08);
+    transition: none;
+}
+
 @media (width >= 600px) {
     .favorites-inner {
         padding: 0.75rem 1rem;

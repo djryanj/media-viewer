@@ -16,8 +16,8 @@ func (d *Database) AddFavorite(ctx context.Context, path, name string, fileType 
 	defer cancel()
 
 	query := `
-		INSERT INTO favorites (path, name, type, created_at)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO favorites (path, name, type, created_at, position)
+		VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM favorites))
 		ON CONFLICT(path) DO NOTHING
 	`
 
@@ -75,7 +75,7 @@ func (d *Database) getFavorites(ctx context.Context) ([]MediaFile, error) {
 			FROM files
 			GROUP BY parent_path
 		) fc ON f.path = fc.parent_path AND f.type = 'folder'
-		ORDER BY fav.created_at DESC
+		ORDER BY fav.position ASC
 	`
 
 	rows, err := d.reader.QueryContext(ctx, query)
@@ -133,4 +133,42 @@ func (d *Database) GetFavoriteCount(ctx context.Context) int {
 		return 0
 	}
 	return count
+}
+
+// ReorderFavorites updates the display position of each favorite according to
+// the caller-supplied slice order: index 0 becomes position 0, index 1 becomes
+// position 1, and so on. The update runs inside a single transaction so the
+// strip is never partially reordered. Any path not present in the slice retains
+// its current position (it will sort after the reordered items).
+func (d *Database) ReorderFavorites(ctx context.Context, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+
+	done := d.observeQuery("reorder_favorites")
+
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	tx, err := d.writer.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return fmt.Errorf("failed to begin reorder transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	for i, path := range paths {
+		if _, err = tx.ExecContext(ctx, "UPDATE favorites SET position = ? WHERE path = ?", i, path); err != nil {
+			done(err)
+			return fmt.Errorf("failed to update position for %s: %w", path, err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		done(err)
+		return fmt.Errorf("failed to commit reorder: %w", err)
+	}
+
+	done(nil)
+	return nil
 }

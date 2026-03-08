@@ -344,6 +344,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/favorites", h.RemoveFavorite).Methods("DELETE")
 	api.HandleFunc("/favorites/bulk", h.BulkAddFavorites).Methods("POST")
 	api.HandleFunc("/favorites/bulk", h.BulkRemoveFavorites).Methods("DELETE")
+	api.HandleFunc("/favorites/order", h.ReorderFavorites).Methods("PUT")
 
 	// Tags
 	api.HandleFunc("/tags", h.GetAllTags).Methods("GET")
