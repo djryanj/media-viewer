@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.15.7] - Unreleased
 
+
+### Changed
+
+- chore(deps): update module github.com/golangci/golangci-lint to v2.11.2 ([#446](https://github.com/djryanj/media-viewer/pull/446))
 ### Added
 
 - feat(backend): Three new Prometheus metrics added to distinguish NFS/storage latency from CPU/goroutine scheduling pressure during directory walks. `media_viewer_indexer_dir_stat_duration_seconds` (histogram) times each `d.Info()` call — a high P99 indicates slow NFS GETATTR round-trips. `media_viewer_indexer_job_queue_wait_seconds` (histogram) times how long each walk job waits in the worker channel before being picked up — a high P99 with a low stat P99 points to CPU or goroutine scheduling starvation rather than storage slowness. `media_viewer_indexer_walk_phase_duration_seconds` (gauge) records the total walk phase duration from the last index run, excluding the database insert phase; comparing it against `media_viewer_indexer_last_run_duration_seconds` isolates whether slow runs are caused by the walk or the DB writes. All three are visualised in a new "NFS & Walk Diagnostics" row in the Grafana dashboard. [#441](https://github.com/djryanj/media-viewer/issues/441)
