@@ -530,7 +530,7 @@ jobs:
 
             - name: Generate SBOM
               id: sbom
-              uses: anchore/sbom-action@17ae1740179002c89186b61233e0f892c3118b11 # v0
+              uses: anchore/sbom-action@57aae528053a48a3f6235f2d9461b05fbcb7366d # v0
               with:
                   image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.digest }}
                   format: spdx-json
@@ -559,7 +559,7 @@ jobs:
 
             - name: Generate SBOM
               id: sbom
-              uses: anchore/sbom-action@17ae1740179002c89186b61233e0f892c3118b11 # v0
+              uses: anchore/sbom-action@57aae528053a48a3f6235f2d9461b05fbcb7366d # v0
               with:
                   image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.docker-nvidia.outputs.digest }}
                   format: spdx-json
