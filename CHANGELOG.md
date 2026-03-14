@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update module github.com/golangci/golangci-lint to v2.11.2 ([#446](https://github.com/djryanj/media-viewer/pull/446))
 - chore(deps): update github actions ([#445](https://github.com/djryanj/media-viewer/pull/445))
 - chore(deps): update all non-major dependencies ([#444](https://github.com/djryanj/media-viewer/pull/444))
 

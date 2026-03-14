@@ -104,7 +104,7 @@ echo -e "${GREEN}[SUCCESS] Go dependencies installed${NC}"
 echo -e "${BLUE}[INFO] Installing additional Go tools...${NC}"
 go install github.com/air-verse/air@latest
 go install github.com/swaggo/swag/cmd/swag@latest
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.2
 echo -e "${GREEN}[SUCCESS] Go tools installed${NC}"
 
 # Create sample-media directory if it doesn't exist
