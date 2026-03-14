@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump anchore/sbom-action from 0.23.0 to 0.23.1 ([#448](https://github.com/djryanj/media-viewer/pull/448))
 - chore(deps): update github actions (major) ([#447](https://github.com/djryanj/media-viewer/pull/447))
 - chore(deps): update module github.com/golangci/golangci-lint to v2.11.2 ([#446](https://github.com/djryanj/media-viewer/pull/446))
 - chore(deps): update github actions ([#445](https://github.com/djryanj/media-viewer/pull/445))
