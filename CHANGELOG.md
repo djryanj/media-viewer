@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- fix(deps): update go modules ([#456](https://github.com/djryanj/media-viewer/pull/456))
 - build(deps): bump docker/setup-buildx-action from 3.12.0 to 4.0.0 ([#450](https://github.com/djryanj/media-viewer/pull/450))
 - build(deps): bump renovatebot/github-action from 46.1.3 to 46.1.4 ([#449](https://github.com/djryanj/media-viewer/pull/449))
 - build(deps): bump anchore/sbom-action from 0.23.0 to 0.23.1 ([#448](https://github.com/djryanj/media-viewer/pull/448))
