@@ -3918,3 +3918,130 @@ func TestPathForFS_LiteralPercentAsterisk(t *testing.T) {
 			"  got:               %q", muxDecoded, expected, result)
 	}
 }
+
+// TestListFilesETagChangesOnTypeChangeIntegration verifies that the ListFiles
+// ETag is invalidated when a file's DB type changes (e.g. image→video from
+// content sniffing) even though the on-disk modification time is unchanged.
+func TestListFilesETagChangesOnTypeChangeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	// Add a file initially classified as image (no mod-time change will occur).
+	addTestMediaFile(t, h, "RDT_gif.jpg", database.FileTypeImage, "GIF89a\x00\x00")
+
+	req1 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.ListFiles(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 on first request, got %d", w1.Code)
+	}
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag on first request")
+	}
+
+	// Simulate the indexer reclassifying the file to video (content sniff) without
+	// changing the on-disk file (mod time stays the same).
+	ctx := context.Background()
+	batch, err := h.db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin batch: %v", err)
+	}
+	_, dbErr := batch.Tx().ExecContext(ctx,
+		"UPDATE files SET type = ? WHERE path = ?",
+		string(database.FileTypeVideo), "RDT_gif.jpg")
+	if endErr := h.db.EndBatch(batch, dbErr); endErr != nil {
+		t.Fatalf("failed to update type: %v", endErr)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.ListFiles(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 on second request, got %d", w2.Code)
+	}
+	etag2 := w2.Header().Get("ETag")
+	if etag2 == "" {
+		t.Fatal("expected ETag on second request")
+	}
+
+	if etag1 == etag2 {
+		t.Errorf("ETag did not change after type reclassification (image→video): both are %s", etag1)
+	}
+
+	// A conditional request with the old ETag must not return 304.
+	req3 := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req3.Header.Set("If-None-Match", etag1)
+	w3 := httptest.NewRecorder()
+	h.ListFiles(w3, req3)
+
+	if w3.Code == http.StatusNotModified {
+		t.Error("stale ETag from before type change incorrectly returned 304 Not Modified")
+	}
+}
+
+// TestGetMediaFilesETagChangesOnTypeChangeIntegration verifies the same
+// ETag invalidation behavior for GetMediaFiles.
+func TestGetMediaFilesETagChangesOnTypeChangeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	addTestMediaFile(t, h, "RDT_gif.jpg", database.FileTypeImage, "GIF89a\x00\x00")
+
+	req1 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
+	w1 := httptest.NewRecorder()
+	h.GetMediaFiles(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 on first request, got %d", w1.Code)
+	}
+	etag1 := w1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("expected ETag on first request")
+	}
+
+	ctx := context.Background()
+	batch, err := h.db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin batch: %v", err)
+	}
+	_, dbErr := batch.Tx().ExecContext(ctx,
+		"UPDATE files SET type = ? WHERE path = ?",
+		string(database.FileTypeVideo), "RDT_gif.jpg")
+	if endErr := h.db.EndBatch(batch, dbErr); endErr != nil {
+		t.Fatalf("failed to update type: %v", endErr)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
+	w2 := httptest.NewRecorder()
+	h.GetMediaFiles(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 on second request, got %d", w2.Code)
+	}
+	etag2 := w2.Header().Get("ETag")
+	if etag2 == "" {
+		t.Fatal("expected ETag on second request")
+	}
+
+	if etag1 == etag2 {
+		t.Errorf("ETag did not change after type reclassification (image→video): both are %s", etag1)
+	}
+
+	req3 := httptest.NewRequest(http.MethodGet, "/api/media", http.NoBody)
+	req3.Header.Set("If-None-Match", etag1)
+	w3 := httptest.NewRecorder()
+	h.GetMediaFiles(w3, req3)
+
+	if w3.Code == http.StatusNotModified {
+		t.Error("stale ETag from before type change incorrectly returned 304 Not Modified")
+	}
+}

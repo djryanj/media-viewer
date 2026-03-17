@@ -147,14 +147,14 @@ func TestAddCPUEncoderArgs(t *testing.T) {
 			targetWidth:  0,
 			needsScaling: false,
 			wantEncoder:  "libx264",
-			wantScale:    "scale=1920:1080",
+			wantScale:    "scale=1920:1080,format=yuv420p",
 		},
 		{
 			name:         "With scaling",
 			targetWidth:  1280,
 			needsScaling: true,
 			wantEncoder:  "libx264",
-			wantScale:    "scale=1280:-2",
+			wantScale:    "scale=1280:-2,format=yuv420p",
 		},
 	}
 
