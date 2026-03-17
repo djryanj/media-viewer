@@ -147,19 +147,21 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Include tag state in ETag so tag changes invalidate the cache.
-	// Build a lightweight tag fingerprint from the items in this page.
-	var tagFingerprint strings.Builder
+	// Include type and tag state in ETag so any type or tag change invalidates the cache.
+	// Type must be included so that content-sniff reclassifications (e.g. image→video)
+	// are reflected immediately without requiring the file's on-disk mod time to change.
+	var contentFingerprint strings.Builder
 	for i := range listing.Items {
+		contentFingerprint.WriteString(string(listing.Items[i].Type) + ";")
 		if len(listing.Items[i].Tags) > 0 {
-			tagFingerprint.WriteString(listing.Items[i].Path + ":" + strings.Join(listing.Items[i].Tags, ",") + ";")
+			contentFingerprint.WriteString(listing.Items[i].Path + ":" + strings.Join(listing.Items[i].Tags, ",") + ";")
 		}
 	}
 
 	etagData := fmt.Sprintf("%s_%s_%s_%s_%d_%d_%d_%d_%d_%s",
 		opts.Path, opts.SortField, opts.SortOrder, opts.FilterType,
 		opts.Page, opts.PageSize, listing.TotalItems, len(listing.Items), lastModTime,
-		tagFingerprint.String())
+		contentFingerprint.String())
 	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
 	// Set cache headers
 	// Use "private" since response may include user-specific data
@@ -250,16 +252,17 @@ func (h *Handlers) GetMediaFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var tagFingerprint strings.Builder
+	var contentFingerprint strings.Builder
 	for i := range items {
+		contentFingerprint.WriteString(string(items[i].Type) + ";")
 		if len(items[i].Tags) > 0 {
-			tagFingerprint.WriteString(items[i].Path + ":" + strings.Join(items[i].Tags, ",") + ";")
+			contentFingerprint.WriteString(items[i].Path + ":" + strings.Join(items[i].Tags, ",") + ";")
 		}
 	}
 
 	etagData := fmt.Sprintf("%s_%s_%s_%d_%d_%d_%d_%d_%s",
 		parentPath, sortField, sortOrder, offset, limit, total, len(items), lastModTime,
-		tagFingerprint.String())
+		contentFingerprint.String())
 	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 used for cache key generation, not security
 	// Set cache headers
 	// Use "private" since response includes user-specific data (favorites)

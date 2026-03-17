@@ -100,8 +100,9 @@ func (h *Handlers) GetHLSPlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 	session.Touch()
 
-	// Wait for at least 1 segment so the player can begin immediately.
-	if err := session.WaitForPlaylist(ctx, 1, 30*time.Second); err != nil {
+	// Wait for at least 2 segments so the player starts with a buffer and does
+	// not stall while the encoder catches up to real-time playback speed.
+	if err := session.WaitForPlaylist(ctx, 2, 30*time.Second); err != nil {
 		logging.Error("GetHLSPlaylist: session %s not ready: %v", sessionID, err)
 		http.Error(w, "Playlist not ready", http.StatusServiceUnavailable)
 		return
