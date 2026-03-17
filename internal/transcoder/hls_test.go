@@ -562,3 +562,52 @@ func TestBuildHLSFFmpegArgs_SpecialCharacterFilenames(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildHLSFFmpegArgs_SegmentDuration verifies that the HLS muxer arguments
+// use the correct 2-second segment duration, and that -force_key_frames uses
+// the same interval so every segment is independently decodable.
+func TestBuildHLSFFmpegArgs_SegmentDuration(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	sessionDir := filepath.Join(tmpDir, "hls_session")
+	if err := os.MkdirAll(sessionDir, 0o750); err != nil {
+		t.Fatalf("create session dir: %v", err)
+	}
+	srcPath := filepath.Join(tmpDir, "video.mkv")
+	if err := os.WriteFile(srcPath, []byte("data"), 0o644); err != nil {
+		t.Fatalf("create src: %v", err)
+	}
+
+	trans := New(tmpDir, "", true, "none")
+	info := &VideoInfo{Codec: "hevc", Width: 1920, Height: 1080}
+
+	args, err := trans.buildHLSFFmpegArgs(srcPath, sessionDir, 0, info, true, false)
+	if err != nil {
+		t.Fatalf("buildHLSFFmpegArgs: %v", err)
+	}
+
+	const wantDuration = "2"
+
+	// -hls_time must equal the segment duration constant.
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-hls_time" {
+			if args[i+1] != wantDuration {
+				t.Errorf("-hls_time = %q, want %q", args[i+1], wantDuration)
+			}
+			break
+		}
+	}
+
+	// -force_key_frames must reference the same duration so segment boundaries
+	// align with keyframes.
+	wantKeyframes := fmt.Sprintf("expr:gte(t,n_forced*%s)", wantDuration)
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-force_key_frames" {
+			if args[i+1] != wantKeyframes {
+				t.Errorf("-force_key_frames = %q, want %q", args[i+1], wantKeyframes)
+			}
+			break
+		}
+	}
+}

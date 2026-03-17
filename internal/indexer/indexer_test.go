@@ -1062,6 +1062,35 @@ func TestCreateMediaFile(t *testing.T) {
 			},
 			expectFile: false,
 		},
+		{
+			// A GIF file saved with a .jpg extension (common on Reddit/Twitter apps).
+			// The indexer should content-sniff the GIF89a magic bytes and override
+			// the extension-derived image type to video so it goes through the
+			// transcoder pipeline.
+			name: "GIF bytes in .jpg file",
+			setupFile: func() (string, os.FileInfo) {
+				path := filepath.Join(tempDir, "RDT_sniff_test.jpg")
+				os.WriteFile(path, append([]byte("GIF89a"), make([]byte, 10)...), 0o644)
+				info, _ := os.Stat(path)
+				relPath, _ := filepath.Rel(tempDir, path)
+				return relPath, info
+			},
+			expectFile: true,
+			expectType: database.FileTypeVideo,
+		},
+		{
+			// A real .gif file — should also be promoted to video by the sniff.
+			name: "GIF file with .gif extension",
+			setupFile: func() (string, os.FileInfo) {
+				path := filepath.Join(tempDir, "anim.gif")
+				os.WriteFile(path, append([]byte("GIF87a"), make([]byte, 10)...), 0o644)
+				info, _ := os.Stat(path)
+				relPath, _ := filepath.Rel(tempDir, path)
+				return relPath, info
+			},
+			expectFile: true,
+			expectType: database.FileTypeVideo,
+		},
 	}
 
 	for _, tt := range tests {

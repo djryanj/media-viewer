@@ -235,7 +235,7 @@ func (d *Database) ValidateSession(ctx context.Context, token string) (*User, er
 	}
 
 	if time.Now().Unix() > expiresAt {
-		//nolint:contextcheck
+		//nolint:contextcheck,gosec // G118: intentionally outlives request to clean up expired session
 		go func() {
 			bgCtx, bgCancel := context.WithTimeout(context.Background(), defaultTimeout)
 			defer bgCancel()

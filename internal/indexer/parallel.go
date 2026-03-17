@@ -312,6 +312,19 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 		return fileResult{}
 	}
 
+	mimeType := mediatypes.GetMimeType(ext)
+
+	// Content-sniff image files to catch misnamed media (e.g. an animated GIF
+	// saved with a .jpg extension).  Mirrors the same logic in createMediaFile.
+	if fileType == mediatypes.FileTypeImage {
+		if sniffedType, sniffedMime, ok := mediatypes.SniffFileType(filepath.Join(pw.mediaDir, job.relPath)); ok {
+			logging.Debug("parallel processFile: content sniff overrides type for %s: %s → %s",
+				job.relPath, fileType, sniffedType)
+			fileType = sniffedType
+			mimeType = sniffedMime
+		}
+	}
+
 	hashStart := time.Now()
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", job.relPath, job.info.Size(), job.info.ModTime().Unix())))) //nolint:gosec // MD5 used for cache key generation, not security
 	metrics.FileHashComputeDuration.Observe(time.Since(hashStart).Seconds())
@@ -323,7 +336,7 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 			Type:       fileType,
 			Size:       job.info.Size(),
 			ModTime:    job.info.ModTime(),
-			MimeType:   mediatypes.GetMimeType(ext),
+			MimeType:   mimeType,
 			FileHash:   hash,
 		},
 		isDir: false,

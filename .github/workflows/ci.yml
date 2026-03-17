@@ -31,7 +31,7 @@ jobs:
                   fetch-depth: 0
 
             - name: Check for changes
-              uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+              uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
               id: filter
               with:
                   filters: |
@@ -163,7 +163,7 @@ jobs:
             - name: Run golangci-lint
               uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
               with:
-                  version: v2.11.2
+                  version: v2.11.3
                   args: --config=.golangci.yml --timeout=5m
 
     lint-frontend:
@@ -443,7 +443,7 @@ jobs:
               run: npm ci
 
             - name: Download backend binary
-              uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: media-viewer-binary
                   path: .

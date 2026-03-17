@@ -48,6 +48,10 @@ func setupHLSIntegrationTest(t *testing.T) (h *Handlers, mediaDir, cacheDir stri
 
 	idx := indexer.New(db, mediaDir, 0)
 	trans := transcoder.New(cacheDir, "", true /* enabled */, "none")
+	t.Cleanup(func() {
+		trans.Cleanup()
+		_ = os.RemoveAll(filepath.Join(cacheDir, "hls"))
+	})
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 	cfg := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
 
@@ -87,7 +91,8 @@ if [ -n "$PLAYLIST" ]; then
     SEGDIR=$(dirname "$PLAYLIST")
     mkdir -p "$SEGDIR"
     printf 'FAKE TS DATA\n' > "${SEGDIR}/seg0.ts"
-    printf '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000000,\nseg0.ts\n#EXT-X-ENDLIST\n' > "$PLAYLIST"
+    printf 'FAKE TS DATA\n' > "${SEGDIR}/seg1.ts"
+    printf '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.000000,\nseg0.ts\n#EXTINF:2.000000,\nseg1.ts\n#EXT-X-ENDLIST\n' > "$PLAYLIST"
 fi
 `
 	p := filepath.Join(binDir, "ffmpeg")
