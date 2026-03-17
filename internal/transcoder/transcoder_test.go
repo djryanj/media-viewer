@@ -581,7 +581,7 @@ func TestBuildFFmpegArgs_Reencode(t *testing.T) {
 	}
 }
 
-// TestBuildFFmpegArgs_WithScale tests ffmpeg args include scale filter
+// TestBuildFFmpegArgs_WithScale tests ffmpeg args include scale filter with yuv420p
 func TestBuildFFmpegArgs_WithScale(t *testing.T) {
 	trans := New("/tmp/cache", "", true, "none")
 
@@ -593,17 +593,17 @@ func TestBuildFFmpegArgs_WithScale(t *testing.T) {
 
 	args := trans.buildFFmpegArgs("/test/input.mp4", "/test/output.mp4", 1280, info, false)
 
-	// Should contain scale filter
+	// Should contain scale filter with yuv420p to ensure browser-compatible H.264 profile
 	found := false
 	for i := 0; i < len(args)-1; i++ {
-		if args[i] == "-vf" && args[i+1] == "scale=1280:-2" {
+		if args[i] == "-vf" && args[i+1] == "scale=1280:-2,format=yuv420p" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Error("Expected -vf scale=1280:-2 in args when targetWidth specified")
+		t.Errorf("Expected -vf scale=1280:-2,format=yuv420p in args when targetWidth specified; got: %v", args)
 	}
 }
 
@@ -624,6 +624,73 @@ func TestBuildFFmpegArgs_NoScaleWhenLarger(t *testing.T) {
 		if args[i] == "-vf" {
 			t.Error("Did not expect -vf flag when targetWidth is 0")
 		}
+	}
+}
+
+// TestCPUEncoderArgsContainYUV420P verifies that the CPU re-encode path always
+// includes format=yuv420p in the -vf filter chain.  Without this, palette-based
+// inputs (e.g. GIF files with pal8 pixel format) cause libx264 to choose
+// H.264 High 4:4:4 Predictive profile (avc1.f4xxxx), which browsers do not
+// support in MSE/HLS playback.
+func TestCPUEncoderArgsContainYUV420P(t *testing.T) {
+	t.Parallel()
+
+	trans := New("/tmp/cache", "", true, "none")
+
+	findVFArg := func(args []string) string {
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == "-vf" {
+				return args[i+1]
+			}
+		}
+		return ""
+	}
+
+	tests := []struct {
+		name        string
+		info        *VideoInfo
+		targetWidth int
+		needsRe     bool
+		wantVF      string
+	}{
+		{
+			name:        "reencode no scale — exact dimensions with yuv420p",
+			info:        &VideoInfo{Codec: "gif", Width: 460, Height: 682},
+			targetWidth: 0,
+			needsRe:     true,
+			wantVF:      "scale=460:682,format=yuv420p",
+		},
+		{
+			name:        "reencode with scale — scaled width with yuv420p",
+			info:        &VideoInfo{Codec: "gif", Width: 460, Height: 682},
+			targetWidth: 360,
+			needsRe:     true,
+			wantVF:      "scale=360:-2,format=yuv420p",
+		},
+		{
+			name:        "reencode hevc no scale — yuv420p present",
+			info:        &VideoInfo{Codec: "hevc", Width: 1920, Height: 1080},
+			targetWidth: 0,
+			needsRe:     true,
+			wantVF:      "scale=1920:1080,format=yuv420p",
+		},
+		{
+			name:        "scale-down h264 — yuv420p present",
+			info:        &VideoInfo{Codec: "h264", Width: 1920, Height: 1080},
+			targetWidth: 1280,
+			needsRe:     false, // triggers needsScaling path
+			wantVF:      "scale=1280:-2,format=yuv420p",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := trans.buildFFmpegArgs("/test/input.gif", "/test/output.mp4", tt.targetWidth, tt.info, tt.needsRe)
+			gotVF := findVFArg(args)
+			if gotVF != tt.wantVF {
+				t.Errorf("-vf value = %q, want %q (full args: %v)", gotVF, tt.wantVF, args)
+			}
+		})
 	}
 }
 

@@ -268,7 +268,7 @@ func (t *Transcoder) GetOrStartTranscode(_ context.Context, filePath string, tar
 	needsScaling := targetWidth > 0 && targetWidth < info.Width
 	needsReencode := !compatibleCodecs[info.Codec] || needsScaling
 
-	//nolint:contextcheck // Intentionally using background context so transcoding continues if request is canceled
+	//nolint:contextcheck,gosec // G118: intentionally using background context so transcoding continues if request is canceled
 	go func() {
 		defer cacheLock.Unlock()
 
@@ -338,7 +338,7 @@ func (t *Transcoder) GetOrStartTranscodeAndWait(ctx context.Context, filePath st
 		needsScaling := targetWidth > 0 && targetWidth < info.Width
 		needsReencode := !compatibleCodecs[info.Codec] || needsScaling
 
-		//nolint:contextcheck // Intentionally using background context so transcoding continues if request is canceled
+		//nolint:contextcheck,gosec // G118: intentionally using background context so transcoding continues if request is canceled
 		go func() {
 			defer cacheLock.Unlock()
 
@@ -1881,7 +1881,7 @@ func (t *Transcoder) addGPUEncoderArgs(args []string, targetWidth int, info *Vid
 		if t.gpuAccel == GPUAccelVAAPI {
 			filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=-2", targetWidth))
 		} else {
-			filters = append(filters, fmt.Sprintf("scale=%d:-2", targetWidth))
+			filters = append(filters, fmt.Sprintf("scale=%d:-2,format=yuv420p", targetWidth))
 		}
 	} else {
 		// Force exact dimensions for odd dimension handling
@@ -1889,7 +1889,7 @@ func (t *Transcoder) addGPUEncoderArgs(args []string, targetWidth int, info *Vid
 		if t.gpuAccel == GPUAccelVAAPI {
 			filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=%d", info.Width, info.Height))
 		} else {
-			filters = append(filters, fmt.Sprintf("scale=%d:%d", info.Width, info.Height))
+			filters = append(filters, fmt.Sprintf("scale=%d:%d,format=yuv420p", info.Width, info.Height))
 		}
 	}
 
@@ -1925,16 +1925,19 @@ func (t *Transcoder) addCPUEncoderArgs(args []string, targetWidth int, info *Vid
 	args = append(args, "-c:v", "libx264", "-preset", "fast", "-crf", "23")
 
 	// Tier 2: Always add scale filter when re-encoding to ensure output dimensions
-	// match the (possibly adjusted) dimensions from GetVideoInfo
+	// match the (possibly adjusted) dimensions from GetVideoInfo.
+	// format=yuv420p is mandatory: without it, palette-based inputs (e.g. GIF with
+	// pal8 pixel format) cause libx264 to select H.264 High 4:4:4 Predictive profile
+	// (avc1.f4xxxx), which Firefox and most browsers do not support.
 	if needsScaling {
 		// Scale to requested width, maintaining aspect ratio with even height
 		logging.Debug("Adding scale filter: %dx-2", targetWidth)
-		args = append(args, "-vf", fmt.Sprintf("scale=%d:-2", targetWidth))
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:-2,format=yuv420p", targetWidth))
 	} else {
 		// No size reduction, but force exact dimensions to handle odd dimensions
 		// This ensures output matches Tier 1 adjusted dimensions (always even)
 		logging.Debug("Adding scale filter for exact dimensions: %dx%d", info.Width, info.Height)
-		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", info.Width, info.Height))
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d,format=yuv420p", info.Width, info.Height))
 	}
 
 	return args
