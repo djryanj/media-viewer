@@ -73,7 +73,7 @@ jobs:
             - name: Run golangci-lint
               uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
               with:
-                  version: v2.11.2
+                  version: v2.11.3
                   args: --config=.golangci.yml --timeout=5m
 
     lint-frontend:
@@ -281,7 +281,7 @@ jobs:
               run: npm ci
 
             - name: Download backend binary
-              uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: media-viewer-binary
                   path: .
@@ -583,13 +583,13 @@ jobs:
                   fetch-depth: 0
 
             - name: Download SBOM artifact
-              uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: sbom
                   path: ./artifacts
 
             - name: Download NVIDIA SBOM artifact
-              uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: sbom-nvidia
                   path: ./artifacts
@@ -603,7 +603,7 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Create Release
-              uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
+              uses: softprops/action-gh-release@b25b93d384199fc0fc8c2e126b2d937a0cbeb2ae # v2
               with:
                   body: |
                       ${{ steps.changelog.outputs.changelog }}
