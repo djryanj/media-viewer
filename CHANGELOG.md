@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update module github.com/golangci/golangci-lint to v2.11.3 ([#455](https://github.com/djryanj/media-viewer/pull/455))
 - chore(deps): update github actions ([#454](https://github.com/djryanj/media-viewer/pull/454))
 - chore(deps): update dorny/paths-filter action to v4 ([#458](https://github.com/djryanj/media-viewer/pull/458))
 - build(deps): bump docker/setup-buildx-action from 3.12.0 to 4.0.0 ([#450](https://github.com/djryanj/media-viewer/pull/450))
