@@ -18,7 +18,13 @@ import (
 
 // HLS tuning constants.
 const (
-	hlsSegmentDuration     = 6 // target segment length in seconds
+	// hlsSegmentDuration controls the target MPEG-TS segment length in seconds.
+	// Shorter segments mean ffmpeg flushes to disk more frequently, so the player
+	// advances through the segment boundary before the next one is ready far less
+	// often.  2 s is a common low-latency HLS value; it pairs with the
+	// 2-segment minimum in GetHLSPlaylist to give the player a 4 s initial buffer.
+	hlsSegmentDuration = 2 // target segment length in seconds
+
 	hlsSegmentWaitTimeout  = 60 * time.Second
 	hlsPlaylistWaitTimeout = 30 * time.Second
 	hlsSegmentPollInterval = 200 * time.Millisecond

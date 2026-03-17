@@ -139,6 +139,7 @@ linters:
                   - errcheck
                   - goconst
                   - gosec
+                  - noctx
                   - unparam
 
             - path: generated
@@ -219,6 +220,10 @@ linters:
               linters:
                   - revive
               text: 'avoid package names that conflict'
+
+        paths:
+            # apparently node can use go code now (e.g., the flatted package), so we need to exclude node_modules to avoid a huge number of irrelevant linting errors
+            - static/node_modules
 
 issues:
     max-issues-per-linter: 50

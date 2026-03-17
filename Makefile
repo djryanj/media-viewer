@@ -1,6 +1,10 @@
 # =============================================================================
 # Media Viewer — Makefile
 # =============================================================================
+# Use bash with pipefail so that pipelines like `go test ... | tee test.log`
+# fail with the exit status of go test, not tee.
+SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
 
 VERSION ?= dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -485,28 +489,26 @@ pr-check:
 	@echo ""
 	@# ── Backend checks ──
 	@if [ -n "$(_HAS_GO_CHANGES)" ]; then \
-		set -e; \
 		echo "Step 1: Running Go linter (will auto-fix some lint issues)..."; \
-		$(MAKE) lint-fix; \
+		$(MAKE) lint-fix || exit 1; \
 		echo ""; \
 		echo "Step 2: Running Go tests..."; \
-		$(MAKE) test; \
+		$(MAKE) test || exit 1; \
 		echo ""; \
 		echo "Step 3: Running race detector..."; \
-		$(MAKE) test-race; \
+		$(MAKE) test-race || exit 1; \
 		echo ""; \
 	fi
 	@# ── Frontend checks ──
 	@if [ -n "$(_HAS_FRONTEND_CHANGES)" ]; then \
-		set -e; \
 		echo "Step 4: Running frontend checks..."; \
-		$(MAKE) frontend-check; \
+		$(MAKE) frontend-check || exit 1; \
 		echo ""; \
 		echo "Step 5: Running frontend unit tests..."; \
-		$(MAKE) frontend-test-unit; \
+		$(MAKE) frontend-test-unit || exit 1; \
 		echo ""; \
 		echo "Step 6: Running frontend integration tests (ephemeral server)..."; \
-		$(MAKE) frontend-test-integration-auto; \
+		$(MAKE) frontend-test-integration-auto || exit 1; \
 		echo ""; \
 	fi
 	@if [ -z "$(_HAS_GO_CHANGES)" ] && [ -z "$(_HAS_FRONTEND_CHANGES)" ]; then \

@@ -791,6 +791,22 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 		return database.MediaFile{}, false
 	}
 
+	mimeType := mediatypes.GetMimeType(ext)
+
+	// Content-sniff image files to catch misnamed media (e.g. an animated GIF
+	// saved with a .jpg extension).  Only image files
+	// are probed; videos and playlists are already unambiguously identified by
+	// their extensions.  A failed sniff (I/O error or unrecognized content)
+	// silently keeps the extension-derived type.
+	if fileType == mediatypes.FileTypeImage {
+		if sniffedType, sniffedMime, ok := mediatypes.SniffFileType(filepath.Join(idx.mediaDir, relPath)); ok {
+			logging.Debug("createMediaFile: content sniff overrides type for %s: %s → %s",
+				relPath, fileType, sniffedType)
+			fileType = sniffedType
+			mimeType = sniffedMime
+		}
+	}
+
 	hashStart := time.Now()
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s%d%d", relPath, info.Size(), info.ModTime().Unix()))))
 	metrics.FileHashComputeDuration.Observe(time.Since(hashStart).Seconds())
@@ -801,7 +817,7 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 		Type:       fileType,
 		Size:       info.Size(),
 		ModTime:    info.ModTime(),
-		MimeType:   mediatypes.GetMimeType(ext),
+		MimeType:   mimeType,
 		FileHash:   hash,
 	}, true
 }
