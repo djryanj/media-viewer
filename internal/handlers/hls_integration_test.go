@@ -48,6 +48,10 @@ func setupHLSIntegrationTest(t *testing.T) (h *Handlers, mediaDir, cacheDir stri
 
 	idx := indexer.New(db, mediaDir, 0)
 	trans := transcoder.New(cacheDir, "", true /* enabled */, "none")
+	t.Cleanup(func() {
+		trans.Cleanup()
+		_ = os.RemoveAll(filepath.Join(cacheDir, "hls"))
+	})
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 	cfg := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
 
