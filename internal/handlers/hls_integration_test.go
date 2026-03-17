@@ -87,7 +87,8 @@ if [ -n "$PLAYLIST" ]; then
     SEGDIR=$(dirname "$PLAYLIST")
     mkdir -p "$SEGDIR"
     printf 'FAKE TS DATA\n' > "${SEGDIR}/seg0.ts"
-    printf '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000000,\nseg0.ts\n#EXT-X-ENDLIST\n' > "$PLAYLIST"
+    printf 'FAKE TS DATA\n' > "${SEGDIR}/seg1.ts"
+    printf '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.000000,\nseg0.ts\n#EXTINF:2.000000,\nseg1.ts\n#EXT-X-ENDLIST\n' > "$PLAYLIST"
 fi
 `
 	p := filepath.Join(binDir, "ffmpeg")
