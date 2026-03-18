@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump softprops/action-gh-release from 2.5.2 to 2.6.1 ([#463](https://github.com/djryanj/media-viewer/pull/463))
 - chore(deps): update all non-major dependencies ([#457](https://github.com/djryanj/media-viewer/pull/457))
 - fix(deps): update go modules ([#456](https://github.com/djryanj/media-viewer/pull/456))
 - chore(deps): update module github.com/golangci/golangci-lint to v2.11.3 ([#455](https://github.com/djryanj/media-viewer/pull/455))
