@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump golang.org/x/image from 0.37.0 to 0.38.0 ([#468](https://github.com/djryanj/media-viewer/pull/468))
 - chore(deps): update all non-major dependencies ([#457](https://github.com/djryanj/media-viewer/pull/457))
 - fix(deps): update go modules ([#456](https://github.com/djryanj/media-viewer/pull/456))
 - chore(deps): update module github.com/golangci/golangci-lint to v2.11.3 ([#455](https://github.com/djryanj/media-viewer/pull/455))
