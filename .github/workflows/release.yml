@@ -27,7 +27,7 @@ jobs:
 
             - name: Check if sample media cache exists
               id: cache-check
-              uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
+              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -43,7 +43,7 @@ jobs:
 
             - name: Save sample media cache
               if: steps.cache-check.outputs.cache-hit != 'true'
-              uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
+              uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -73,7 +73,7 @@ jobs:
             - name: Run golangci-lint
               uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
               with:
-                  version: v2.11.3
+                  version: v2.11.4
                   args: --config=.golangci.yml --timeout=5m
 
     lint-frontend:
@@ -290,7 +290,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
+              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -603,7 +603,7 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Create Release
-              uses: softprops/action-gh-release@b25b93d384199fc0fc8c2e126b2d937a0cbeb2ae # v2
+              uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
               with:
                   body: |
                       ${{ steps.changelog.outputs.changelog }}
