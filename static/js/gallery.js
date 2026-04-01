@@ -85,7 +85,7 @@ const Gallery = {
                     <p>This folder is empty</p>
                 </div>
             `;
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [gallery] });
             return;
         }
 
@@ -129,6 +129,12 @@ const Gallery = {
 
         const thumbArea = this.createThumbArea(item);
         div.appendChild(thumbArea);
+
+        // Apply collection indicator if the Collections module knows this item belongs
+        // to one or more collections (populated after the membership batch returns).
+        if (typeof Collections !== 'undefined' && Collections.isInCollection(item.path)) {
+            Collections.applyIndicatorToElement(div, true);
+        }
 
         this.attachTapHandler(thumbArea, item);
 

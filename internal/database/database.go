@@ -610,6 +610,28 @@ func (d *Database) initialize(ctx context.Context) error {
 		key TEXT PRIMARY KEY,
 		value TEXT
 	);
+
+	CREATE TABLE IF NOT EXISTS collections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		cover_path TEXT,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_collections_name ON collections(name COLLATE NOCASE);
+
+	CREATE TABLE IF NOT EXISTS collection_items (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		collection_id INTEGER NOT NULL,
+		file_path TEXT NOT NULL,
+		position INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		UNIQUE(collection_id, file_path)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_collection_items_collection ON collection_items(collection_id, position);
+	CREATE INDEX IF NOT EXISTS idx_collection_items_file ON collection_items(file_path);
 	`
 
 	_, err := d.writer.ExecContext(ctx, schema)

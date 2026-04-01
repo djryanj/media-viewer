@@ -1682,4 +1682,146 @@ describe('InfiniteScroll Module', () => {
             expect(geo).toEqual({ cols: 3, gap: 2, itemSize: 120, rowHeight: 122 });
         });
     });
+
+    // -------------------------------------------------------------------------
+    // reorderForCollection()
+    // -------------------------------------------------------------------------
+    describe('reorderForCollection()', () => {
+        /** Build a minimal item and ensure it exists in _galleryItemsByPath */
+        function mkLoaded(path) {
+            const item = { path, name: path.split('/').pop(), type: 'image', tags: [] };
+            const el = document.createElement('div');
+            el.className = 'gallery-item';
+            el.dataset.path = path;
+            InfiniteScroll._galleryItemsByPath.set(path, el);
+            return item;
+        }
+
+        beforeEach(() => {
+            // Provide a real gallery element so renderItems can run
+            InfiniteScroll.elements = {
+                ...InfiniteScroll.elements,
+                gallery: document.getElementById('gallery'),
+                skeletonContainer: {
+                    innerHTML: '',
+                    classList: { remove: vi.fn(), add: vi.fn() },
+                },
+                loadMoreBtn: { classList: { remove: vi.fn(), add: vi.fn() } },
+                statsInfo: null,
+            };
+            InfiniteScroll._galleryItemsByPath = new Map();
+        });
+
+        test('does nothing when passed empty array', () => {
+            const a = mkLoaded('a.jpg');
+            InfiniteScroll.state.loadedItems = [a];
+
+            InfiniteScroll.reorderForCollection([]);
+
+            expect(InfiniteScroll.state.loadedItems).toEqual([a]);
+        });
+
+        test('does nothing when passed null', () => {
+            const a = mkLoaded('a.jpg');
+            InfiniteScroll.state.loadedItems = [a];
+
+            InfiniteScroll.reorderForCollection(null);
+
+            expect(InfiniteScroll.state.loadedItems).toEqual([a]);
+        });
+
+        test('reorders collection items at their natural insertion point', () => {
+            const pre = mkLoaded('pre.jpg');
+            const colB = mkLoaded('col-b.jpg');
+            const colA = mkLoaded('col-a.jpg');
+            const post = mkLoaded('post.jpg');
+            InfiniteScroll.state.loadedItems = [pre, colB, colA, post];
+
+            // Collection defines order: colA first, colB second
+            InfiniteScroll.reorderForCollection([colA, colB]);
+
+            expect(InfiniteScroll.state.loadedItems.map((i) => i.path)).toEqual([
+                'pre.jpg',
+                'col-a.jpg',
+                'col-b.jpg',
+                'post.jpg',
+            ]);
+        });
+
+        test('preserves non-collection items (folders, other files)', () => {
+            const folder = mkLoaded('folder');
+            const colA = mkLoaded('col-a.jpg');
+            const other = mkLoaded('other.jpg');
+            InfiniteScroll.state.loadedItems = [folder, colA, other];
+
+            InfiniteScroll.reorderForCollection([colA]);
+
+            expect(InfiniteScroll.state.loadedItems.map((i) => i.path)).toEqual([
+                'folder',
+                'col-a.jpg',
+                'other.jpg',
+            ]);
+        });
+
+        test('only inserts collection items that are already in _galleryItemsByPath', () => {
+            const colA = mkLoaded('col-a.jpg');
+            // col-b is in the collection definition but NOT in the loaded/rendered set
+            const colB = { path: 'col-b.jpg', name: 'col-b.jpg', type: 'image', tags: [] };
+            InfiniteScroll.state.loadedItems = [colA];
+
+            InfiniteScroll.reorderForCollection([colA, colB]);
+
+            // col-b should not appear since it wasn't in _galleryItemsByPath
+            expect(InfiniteScroll.state.loadedItems.map((i) => i.path)).toEqual(['col-a.jpg']);
+        });
+
+        test('does not set _isCollectionView (infinite scroll continues)', () => {
+            const a = mkLoaded('a.jpg');
+            InfiniteScroll.state.loadedItems = [a];
+            InfiniteScroll._isCollectionView = false;
+
+            InfiniteScroll.reorderForCollection([a]);
+
+            expect(InfiniteScroll._isCollectionView).toBe(false);
+        });
+
+        test('preserves hasMore and totalItems', () => {
+            const a = mkLoaded('a.jpg');
+            InfiniteScroll.state.loadedItems = [a];
+            InfiniteScroll.state.hasMore = true;
+            InfiniteScroll.state.totalItems = 100;
+
+            InfiniteScroll.reorderForCollection([a]);
+
+            expect(InfiniteScroll.state.hasMore).toBe(true);
+            expect(InfiniteScroll.state.totalItems).toBe(100);
+        });
+
+        test('calls renderItems with the reordered list', () => {
+            const renderSpy = vi.spyOn(InfiniteScroll, 'renderItems');
+            const colB = mkLoaded('col-b.jpg');
+            const colA = mkLoaded('col-a.jpg');
+            InfiniteScroll.state.loadedItems = [colB, colA];
+
+            InfiniteScroll.reorderForCollection([colA, colB]);
+
+            expect(renderSpy).toHaveBeenCalledOnce();
+            const [items, append] = renderSpy.mock.calls[0];
+            expect(append).toBe(false);
+            expect(items.map((i) => i.path)).toEqual(['col-a.jpg', 'col-b.jpg']);
+        });
+
+        test('handles the case where no loaded items are in the collection', () => {
+            const a = mkLoaded('a.jpg');
+            const b = mkLoaded('b.jpg');
+            InfiniteScroll.state.loadedItems = [a, b];
+            // Collection item not in loaded set
+            const colC = { path: 'col-c.jpg', name: 'col-c.jpg', type: 'image', tags: [] };
+
+            InfiniteScroll.reorderForCollection([colC]);
+
+            // Nothing changes — insertion point is end, col-c not in _galleryItemsByPath
+            expect(InfiniteScroll.state.loadedItems.map((i) => i.path)).toEqual(['a.jpg', 'b.jpg']);
+        });
+    });
 });

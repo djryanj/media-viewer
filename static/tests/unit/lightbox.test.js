@@ -2677,4 +2677,166 @@ describe('Lightbox Module', () => {
             expect(() => Lightbox.updateTagButton(file)).not.toThrow();
         });
     });
+
+    // =========================================
+    // Collection context (switchToCollection / openWithItems / close)
+    // =========================================
+
+    describe('Collection context', () => {
+        beforeEach(() => {
+            Lightbox._switchedCollectionId = null;
+            Lightbox._switchedCollectionName = null;
+            Lightbox._switchedCollectionItems = null;
+            Lightbox.useAppMedia = true;
+        });
+
+        describe('openWithItems()', () => {
+            test('clears _switchedCollectionId', () => {
+                Lightbox._switchedCollectionId = 99;
+                vi.spyOn(Lightbox, 'show').mockImplementation(() => {});
+
+                Lightbox.openWithItems([{ path: 'a.jpg', type: 'image', tags: [] }], 0);
+
+                expect(Lightbox._switchedCollectionId).toBeNull();
+            });
+
+            test('clears _switchedCollectionName', () => {
+                Lightbox._switchedCollectionName = 'My Col';
+                vi.spyOn(Lightbox, 'show').mockImplementation(() => {});
+
+                Lightbox.openWithItems([{ path: 'a.jpg', type: 'image', tags: [] }], 0);
+
+                expect(Lightbox._switchedCollectionName).toBeNull();
+            });
+
+            test('clears _switchedCollectionItems', () => {
+                Lightbox._switchedCollectionItems = [{ path: 'old.jpg' }];
+                vi.spyOn(Lightbox, 'show').mockImplementation(() => {});
+
+                Lightbox.openWithItems([{ path: 'a.jpg', type: 'image', tags: [] }], 0);
+
+                expect(Lightbox._switchedCollectionItems).toBeNull();
+            });
+
+            test('sets useAppMedia to false', () => {
+                vi.spyOn(Lightbox, 'show').mockImplementation(() => {});
+
+                Lightbox.openWithItems([{ path: 'a.jpg', type: 'image', tags: [] }], 0);
+
+                expect(Lightbox.useAppMedia).toBe(false);
+            });
+
+            test('sets items and currentIndex', () => {
+                vi.spyOn(Lightbox, 'show').mockImplementation(() => {});
+                const items = [{ path: 'a.jpg', type: 'image', tags: [] }];
+
+                Lightbox.openWithItems(items, 0);
+
+                expect(Lightbox.items).toBe(items);
+                expect(Lightbox.currentIndex).toBe(0);
+            });
+        });
+
+        describe('close() with active collection context', () => {
+            let rafSpy;
+
+            beforeEach(() => {
+                rafSpy = vi.fn((cb) => {
+                    cb();
+                    return 0;
+                });
+                vi.stubGlobal('requestAnimationFrame', rafSpy);
+
+                // Ensure lightbox element is visible so close() can hide it
+                Lightbox.elements.lightbox.classList.remove('hidden');
+
+                // Stub out side-effectful close helpers
+                vi.spyOn(Lightbox, 'abortCurrentLoad').mockImplementation(() => {});
+                vi.spyOn(Lightbox, 'clearPreloadCache').mockImplementation(() => {});
+                vi.spyOn(Lightbox, 'stopAnimationLoopDetection').mockImplementation(() => {});
+                vi.spyOn(Lightbox, 'releaseWakeLock').mockImplementation(() => {});
+                vi.spyOn(Lightbox, 'resetZoom').mockImplementation(() => {});
+            });
+
+            afterEach(() => {
+                vi.unstubAllGlobals();
+            });
+
+            test('calls Collections.mergeCollectionIntoLibrary when context is set', () => {
+                const colItems = [
+                    { path: 'col-a.jpg', type: 'image', tags: [] },
+                    { path: 'col-b.jpg', type: 'image', tags: [] },
+                ];
+                globalThis.Collections = {
+                    mergeCollectionIntoLibrary: vi.fn(),
+                    _currentCollectionId: null,
+                };
+                Lightbox._switchedCollectionId = 5;
+                Lightbox._switchedCollectionName = 'Vacation';
+                Lightbox._switchedCollectionItems = colItems;
+
+                Lightbox.close();
+
+                expect(Collections.mergeCollectionIntoLibrary).toHaveBeenCalledOnce();
+                expect(Collections.mergeCollectionIntoLibrary).toHaveBeenCalledWith(
+                    5,
+                    'Vacation',
+                    colItems
+                );
+            });
+
+            test('does not scroll to gallery item when collection context is set', () => {
+                const colItems = [{ path: 'col-a.jpg', type: 'image', tags: [] }];
+                globalThis.Collections = { mergeCollectionIntoLibrary: vi.fn() };
+                Lightbox._switchedCollectionId = 5;
+                Lightbox._switchedCollectionName = 'Vacation';
+                Lightbox._switchedCollectionItems = colItems;
+                Lightbox.useAppMedia = true; // would normally trigger scroll
+
+                const el = document.createElement('div');
+                el.className = 'gallery-item';
+                el.dataset.path = 'col-a.jpg';
+                const scrollSpy = vi.fn();
+                el.scrollIntoView = scrollSpy;
+                document.body.appendChild(el);
+
+                Lightbox.close();
+
+                expect(scrollSpy).not.toHaveBeenCalled();
+                el.remove();
+            });
+
+            test('falls back to scroll behaviour when no collection context', () => {
+                Lightbox._switchedCollectionId = null;
+                Lightbox.useAppMedia = true;
+                Lightbox.items = [{ path: 'gallery-item.jpg', type: 'image', tags: [] }];
+                Lightbox.currentIndex = 0;
+
+                const el = document.createElement('div');
+                el.className = 'gallery-item';
+                el.dataset.path = 'gallery-item.jpg';
+                const scrollSpy = vi.fn();
+                el.scrollIntoView = scrollSpy;
+                document.body.appendChild(el);
+
+                Lightbox.close();
+
+                expect(scrollSpy).toHaveBeenCalledOnce();
+                el.remove();
+            });
+
+            test('does not throw when mergeCollectionIntoLibrary throws', () => {
+                globalThis.Collections = {
+                    mergeCollectionIntoLibrary: vi.fn(() => {
+                        throw new Error('oops');
+                    }),
+                };
+                Lightbox._switchedCollectionId = 5;
+                Lightbox._switchedCollectionName = 'Test';
+                Lightbox._switchedCollectionItems = [{ path: 'a.jpg', type: 'image', tags: [] }];
+
+                expect(() => Lightbox.close()).not.toThrow();
+            });
+        });
+    });
 });

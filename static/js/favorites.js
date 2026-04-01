@@ -158,7 +158,7 @@ const Favorites = {
         });
 
         // Initialize Lucide icons for the new elements
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [this.elements.gallery] });
 
         this.elements.section.classList.remove('hidden');
         this.updateCounter(favorites.length);

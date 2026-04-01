@@ -12,7 +12,7 @@
  * - Uncached paths: /login.html, /api/auth, /api/logout (always fresh)
  */
 
-const CACHE_NAME = 'media-viewer-v5';
+const CACHE_NAME = 'media-viewer-v12';
 
 // Assets to cache on install (app shell)
 const PRECACHE_ASSETS = [
@@ -31,6 +31,7 @@ const PRECACHE_ASSETS = [
     '/js/history.js',
     '/js/selection.js',
     '/js/infinite-scroll.js',
+    '/js/collections.js',
     '/js/wake-lock.js',
     '/js/pull-to-refresh.js',
     '/manifest.json',

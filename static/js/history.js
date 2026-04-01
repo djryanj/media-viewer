@@ -146,6 +146,16 @@ const HistoryManager = {
                         Search.hideResults();
                     }
                     break;
+                case 'lightbox-drawer':
+                    if (typeof Lightbox !== 'undefined') {
+                        Lightbox.closeTagsDrawer();
+                    }
+                    break;
+                case 'lightbox-collection-drawer':
+                    if (typeof Lightbox !== 'undefined') {
+                        Lightbox.closeCollectionDrawer();
+                    }
+                    break;
             }
 
             this.removeState(currentOverlay);

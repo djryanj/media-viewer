@@ -95,6 +95,10 @@ const ItemSelection = {
                 <i data-lucide="star"></i>
                 <span>Favorite</span>
             </button>
+            <button class="selection-action-btn" id="selection-collection-btn" title="Create collection">
+                <i data-lucide="layers"></i>
+                <span>Collect</span>
+            </button>
             <button class="selection-action-btn selection-select-all-btn" id="selection-all-btn" title="Select all">
                 <i data-lucide="check-square"></i>
                 <span>All</span>
@@ -114,6 +118,7 @@ const ItemSelection = {
             mergeTagsBtn: document.getElementById('selection-merge-tags-btn'),
             tagBtn: document.getElementById('selection-tag-btn'),
             favoriteBtn: document.getElementById('selection-favorite-btn'),
+            collectionBtn: document.getElementById('selection-collection-btn'),
             selectAllBtn: document.getElementById('selection-all-btn'),
             closeBtn: document.querySelector('.selection-close-btn'),
             gallery: document.getElementById('gallery'),
@@ -132,6 +137,11 @@ const ItemSelection = {
         this.elements.mergeTagsBtn.addEventListener('click', () => this.mergeTagsInSelection());
         this.elements.tagBtn.addEventListener('click', () => this.openBulkTagModal());
         this.elements.favoriteBtn.addEventListener('click', () => this.bulkFavorite());
+        if (this.elements.collectionBtn) {
+            this.elements.collectionBtn.addEventListener('click', () =>
+                this.bulkCreateCollection()
+            );
+        }
         this.elements.selectAllBtn.addEventListener('click', () => this.selectAll());
 
         document.addEventListener('keydown', (e) => {
@@ -158,6 +168,9 @@ const ItemSelection = {
             } else if (e.key === 'f' || e.key === 'F') {
                 e.preventDefault();
                 this.bulkFavorite();
+            } else if (e.key === 'c' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                this.bulkCreateCollection();
             }
         });
 
@@ -966,6 +979,9 @@ const ItemSelection = {
 
         this.elements.tagBtn.disabled = count === 0 || !hasTaggableItems;
         this.elements.favoriteBtn.disabled = count === 0;
+        if (this.elements.collectionBtn) {
+            this.elements.collectionBtn.disabled = count === 0 || !hasTaggableItems;
+        }
 
         // Update select all button
         const selectAllBtn = this.elements.selectAllBtn;
@@ -1086,6 +1102,26 @@ const ItemSelection = {
             await this.bulkFavoriteIndividually(itemsToAdd);
         }
 
+        this.exitSelectionModeWithHistory();
+    },
+
+    bulkCreateCollection() {
+        if (this.selectedPaths.size === 0) return;
+
+        const mediaItems = Array.from(this.selectedData.entries())
+            .filter(([, data]) => data.type === 'image' || data.type === 'video')
+            .map(([path, data]) => ({ path, name: data.name, type: data.type }));
+
+        if (mediaItems.length === 0) {
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('Select images or videos to create a collection');
+            }
+            return;
+        }
+
+        if (typeof Collections === 'undefined') return;
+
+        Collections.openAddOrCreateModal(mediaItems);
         this.exitSelectionModeWithHistory();
     },
 

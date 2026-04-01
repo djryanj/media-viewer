@@ -16,6 +16,11 @@ const Collections = {
     /** id → collection object cache */
     _byId: new Map(),
 
+    /** ID of the collection currently displayed in the gallery grid, or null. */
+    _currentCollectionId: null,
+    /** Name of the collection currently displayed in the gallery grid, or null. */
+    _currentCollectionName: null,
+
     /* -----------------------------------------------------------------------
      * Bootstrap
      * --------------------------------------------------------------------- */
@@ -54,7 +59,10 @@ const Collections = {
 
     /**
      * Load collection memberships for a set of file paths (one directory worth).
-     * Applies collection-indicator DOM updates to all matching gallery items.
+     * Applies collection-indicator DOM updates to all matching gallery items,
+     * then auto-merges any collections found into the gallery ordering so that
+     * lightbox navigation always respects collection order without needing an
+     * explicit Browse first.
      */
     async loadMembershipsForPaths(paths) {
         if (!paths || paths.length === 0) {
@@ -77,8 +85,79 @@ const Collections = {
             });
 
             this._applyIndicatorsToGallery();
+
+            // Collect the unique collection IDs present in this directory.
+            const presentColIds = new Set();
+            this._memberships.forEach((ids) => ids.forEach((id) => presentColIds.add(id)));
+
+            if (presentColIds.size > 0) {
+                await this._autoMergeCollections([...presentColIds]);
+            }
         } catch (e) {
             console.debug('Collections: membership load error', e);
+        }
+    },
+
+    /**
+     * Fetch ordered items for each collection in colIds and merge them into
+     * the gallery and MediaApp.state.mediaFiles so that lightbox navigation
+     * respects collection ordering automatically.  Collections are merged in
+     * ascending ID order so that a lower-numbered collection takes precedence
+     * when items overlap.
+     */
+    async _autoMergeCollections(colIds) {
+        // Sort ascending so lower-id collections win on overlap.
+        const sorted = [...colIds].sort((a, b) => a - b);
+        for (const id of sorted) {
+            try {
+                const detail = await this.getCollectionDetail(id);
+                const items = (detail.items || []).map((i) => ({ ...i, tags: i.tags || [] }));
+                if (items.length === 0) continue;
+                const colName =
+                    this.getById(id)?.name || detail.collection?.name || detail.name || '';
+                // mergeCollectionIntoLibrary updates MediaApp.state.mediaFiles and
+                // re-renders the grid without setting _currentCollectionId (so the
+                // breadcrumb doesn't change and the user knows they're still in the
+                // regular library view).
+                this._mergeIntoLibrarySilent(id, colName, items);
+            } catch (e) {
+                console.debug('Collections: auto-merge error for', id, e);
+            }
+        }
+    },
+
+    /**
+     * Like mergeCollectionIntoLibrary but does NOT update the breadcrumb or
+     * set _currentCollectionId/_currentCollectionName, so the gallery header
+     * still looks like a normal directory view.  Used for auto-merge on load.
+     */
+    _mergeIntoLibrarySilent(collectionId, collectionName, collectionItems) {
+        if (!collectionItems || collectionItems.length === 0) return;
+
+        const collectionPaths = new Set(collectionItems.map((i) => i.path));
+
+        function stableGroupedSort(list) {
+            let insertionPoint = list.length;
+            for (let i = 0; i < list.length; i++) {
+                if (collectionPaths.has(list[i].path)) {
+                    insertionPoint = i;
+                    break;
+                }
+            }
+            const out = [];
+            for (let i = 0; i < insertionPoint; i++) out.push(list[i]);
+            for (const item of collectionItems) out.push(item);
+            for (let i = insertionPoint; i < list.length; i++) {
+                if (!collectionPaths.has(list[i].path)) out.push(list[i]);
+            }
+            return out;
+        }
+
+        if (typeof MediaApp !== 'undefined') {
+            MediaApp.state.mediaFiles = stableGroupedSort(MediaApp.state.mediaFiles);
+        }
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.reorderForCollection(collectionItems);
         }
     },
 
@@ -320,7 +399,7 @@ const Collections = {
     },
 
     async getCollectionDetail(id) {
-        const resp = await fetch(`/api/collections/${id}`);
+        const resp = await fetch(`/api/collections/${id}`, { cache: 'no-store' });
         if (!resp.ok) throw new Error('Failed to fetch collection');
         return resp.json();
     },
@@ -395,6 +474,119 @@ const Collections = {
             body: JSON.stringify({ paths }),
         });
         if (!resp.ok) throw new Error('Failed to reorder');
+    },
+
+    /* -----------------------------------------------------------------------
+     * Collection gallery view
+     * Injects ordered collection items directly into the gallery grid and
+     * updates MediaApp.state.mediaFiles so Lightbox navigation stays within
+     * the same ordered set. Exit happens automatically when the user
+     * navigates to a directory (loadDirectory resets InfiniteScroll).
+     * --------------------------------------------------------------------- */
+
+    /**
+     * Display a collection in the main gallery grid in position order.
+     * @param {number} collectionId
+     * @param {string} collectionName
+     * @param {Array}  items - ordered MediaFile objects from getCollectionDetail
+     */
+    openCollectionGalleryView(collectionId, collectionName, items, { skipScroll = false } = {}) {
+        if (!items || items.length === 0) {
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('This collection is empty');
+            }
+            return;
+        }
+
+        this._currentCollectionId = collectionId;
+        this._currentCollectionName = collectionName;
+
+        // Inject into the grid
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.loadFromItems(items);
+        } else {
+            console.warn('[CollectionGallery] InfiniteScroll not available');
+        }
+
+        // Keep MediaApp.state.mediaFiles in sync so Lightbox.open(index) navigates
+        // within the ordered collection, not the directory.
+        if (typeof MediaApp !== 'undefined') {
+            MediaApp.state.mediaFiles = [...items];
+        } else {
+            console.warn('[CollectionGallery] MediaApp not available');
+        }
+
+        // Update breadcrumb to show collection context
+        if (typeof MediaApp !== 'undefined') {
+            MediaApp.renderCollectionBreadcrumb(collectionName);
+        }
+
+        // Apply collection indicators to the freshly-rendered items
+        this._applyIndicatorsToGallery();
+
+        if (!skipScroll) window.scrollTo({ top: 0, behavior: 'instant' });
+    },
+
+    /**
+     * Merge a collection's defined order into the full library view using a
+     * stable grouped sort: collection items stay at the position of the FIRST
+     * collection item in the current list, sorted by their collection-defined
+     * order, so that lightbox navigation respects collection ordering while the
+     * rest of the library remains in its natural sort order.
+     *
+     * - MediaApp.state.mediaFiles is updated (for lightbox navigation).
+     * - InfiniteScroll.reorderForCollection is called for the grid (preserves
+     *   folders and the hasMore/totalItems state so grid continues scrolling).
+     *
+     * @param {number} collectionId
+     * @param {string} collectionName
+     * @param {Array}  collectionItems - ordered MediaFile objects
+     */
+    mergeCollectionIntoLibrary(collectionId, collectionName, collectionItems) {
+        if (!collectionItems || collectionItems.length === 0) return;
+
+        this._currentCollectionId = collectionId;
+        this._currentCollectionName = collectionName;
+
+        const collectionPaths = new Set(collectionItems.map((i) => i.path));
+
+        // Stable grouped sort helper: find where the first collection item lives
+        // in `list`, then re-emit: [items before] + [collection in defined order]
+        // + [remaining non-collection items].
+        function stableGroupedSort(list) {
+            let insertionPoint = list.length;
+            for (let i = 0; i < list.length; i++) {
+                if (collectionPaths.has(list[i].path)) {
+                    insertionPoint = i;
+                    break;
+                }
+            }
+            const out = [];
+            for (let i = 0; i < insertionPoint; i++) out.push(list[i]);
+            for (const item of collectionItems) out.push(item);
+            for (let i = insertionPoint; i < list.length; i++) {
+                if (!collectionPaths.has(list[i].path)) out.push(list[i]);
+            }
+            return out;
+        }
+
+        // Update mediaFiles (media-only list used by Lightbox.open(index)).
+        if (typeof MediaApp !== 'undefined') {
+            MediaApp.state.mediaFiles = stableGroupedSort(MediaApp.state.mediaFiles);
+        }
+
+        // Reorder the gallery grid in-place without resetting hasMore/totalItems,
+        // so folders are preserved and infinite scroll continues normally.
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.reorderForCollection(collectionItems);
+        }
+
+        if (typeof MediaApp !== 'undefined') {
+            MediaApp.renderCollectionBreadcrumb(collectionName);
+        }
+
+        this._applyIndicatorsToGallery();
+        // Do not scroll — the lightbox may have been covering the page.
     },
 
     /* -----------------------------------------------------------------------
@@ -510,18 +702,10 @@ const Collections = {
                             ...i,
                             tags: i.tags || [],
                         }));
-                        if (items.length === 0) {
-                            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                                Gallery.showToast('This collection is empty');
-                            }
-                            return;
-                        }
                         await this.loadMembershipsForPaths(items.map((i) => i.path));
-                        if (typeof Lightbox !== 'undefined') {
-                            Lightbox.openWithItems(items, 0);
-                            Lightbox.openCollectionDrawer();
-                        }
-                    } catch {
+                        this.openCollectionGalleryView(col.id, col.name, items);
+                    } catch (err) {
+                        console.error('[Browse] error:', err);
                         if (typeof Gallery !== 'undefined' && Gallery.showToast) {
                             Gallery.showToast('Failed to load collection');
                         }

@@ -460,18 +460,19 @@ func (d *Database) GetBatchCollectionMemberships(ctx context.Context, paths []st
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	placeholders := strings.Repeat("?,", len(paths))
-	placeholders = placeholders[:len(placeholders)-1]
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(paths)), ",")
 
 	args := make([]interface{}, len(paths))
 	for i, p := range paths {
 		args[i] = p
 	}
 
-	rows, err := d.reader.QueryContext(ctx,
-		"SELECT file_path, collection_id FROM collection_items WHERE file_path IN ("+placeholders+") ORDER BY file_path, position",
-		args...,
+	query := fmt.Sprintf( //nolint:gosec // placeholders contains only '?' markers, not user input
+		"SELECT file_path, collection_id FROM collection_items WHERE file_path IN (%s) ORDER BY file_path, position",
+		placeholders,
 	)
+
+	rows, err := d.reader.QueryContext(ctx, query, args...)
 	done(err)
 	if err != nil {
 		return nil, err

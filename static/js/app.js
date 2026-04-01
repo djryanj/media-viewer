@@ -314,6 +314,14 @@ const MediaApp = {
                     console.error('Tags init error:', e);
                 }
             }
+
+            if (typeof Collections !== 'undefined') {
+                try {
+                    Collections.init();
+                } catch (e) {
+                    console.error('Collections init error:', e);
+                }
+            }
         } catch (error) {
             console.error('Auth check failed:', error);
 
@@ -351,6 +359,19 @@ const MediaApp = {
     },
 
     async loadDirectory(path = '', pushState = true) {
+        // Clear collection gallery view state when navigating to a directory.
+        // InfiniteScroll._isCollectionView is cleared by resetState() inside
+        // startForDirectory; we only need to clear the Collections-level flag.
+        if (typeof Collections !== 'undefined' && Collections._currentCollectionId !== null) {
+            Collections._currentCollectionId = null;
+            Collections._currentCollectionName = null;
+        }
+        if (typeof Lightbox !== 'undefined' && Lightbox._switchedCollectionId !== null) {
+            Lightbox._switchedCollectionId = null;
+            Lightbox._switchedCollectionName = null;
+            Lightbox._switchedCollectionItems = null;
+        }
+
         if (typeof InfiniteScroll !== 'undefined' && this.state.currentPath !== path) {
             InfiniteScroll.saveToCache(this.state.currentPath);
         }
@@ -432,6 +453,11 @@ const MediaApp = {
             }
 
             Favorites.updateFromListing(this.state.listing);
+
+            if (typeof Collections !== 'undefined') {
+                const mediaPaths = (this.state.mediaFiles || []).map((f) => f.path);
+                Collections.loadMembershipsForPaths(mediaPaths);
+            }
         } catch (error) {
             if (error.name === 'AbortError') {
                 console.error('Directory loading timeout - server not responding');
@@ -630,6 +656,48 @@ const MediaApp = {
                 breadcrumb.appendChild(separator);
             }
         });
+    },
+
+    /**
+     * Render the breadcrumb for collection gallery view.
+     * Reproduces the current directory's crumbs (all clickable) then appends
+     * a non-clickable collection item at the end.
+     * @param {string} collectionName
+     */
+    renderCollectionBreadcrumb(collectionName) {
+        const breadcrumb = this.elements.breadcrumb;
+        breadcrumb.innerHTML = '';
+
+        // Re-render the current directory crumbs as clickable links so the
+        // user can navigate back to any ancestor.
+        if (this.state.listing && this.state.listing.breadcrumb) {
+            this.state.listing.breadcrumb.forEach((part) => {
+                const item = document.createElement('span');
+                item.className = 'breadcrumb-item';
+                item.textContent = part.name;
+                item.dataset.path = part.path;
+                item.addEventListener('click', () => {
+                    this.state.currentPage = 1;
+                    this.navigateTo(part.path);
+                });
+                breadcrumb.appendChild(item);
+
+                const sep = document.createElement('span');
+                sep.className = 'breadcrumb-separator';
+                sep.textContent = '›';
+                breadcrumb.appendChild(sep);
+            });
+        }
+
+        // Collection item — current, non-clickable
+        const colItem = document.createElement('span');
+        colItem.className = 'breadcrumb-item current breadcrumb-collection';
+        const icon = document.createElement('i');
+        icon.dataset.lucide = 'layers';
+        colItem.appendChild(icon);
+        colItem.appendChild(document.createTextNode('\u00a0' + collectionName));
+        breadcrumb.appendChild(colItem);
+        lucide.createIcons({ nodes: [colItem] });
     },
 
     renderPagination() {
