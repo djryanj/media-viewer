@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - build(deps): bump actions/setup-go from 6.3.0 to 6.4.0 ([#474](https://github.com/djryanj/media-viewer/pull/474))
+- chore(deps): update module github.com/golangci/golangci-lint to v2.11.4 ([#465](https://github.com/djryanj/media-viewer/pull/465))
+- chore(deps): update github actions ([#471](https://github.com/djryanj/media-viewer/pull/471))
+- chore(deps): update all non-major dependencies ([#467](https://github.com/djryanj/media-viewer/pull/467))
+- build(deps): bump github.com/mattn/go-sqlite3 from 1.14.34 to 1.14.37 ([#461](https://github.com/djryanj/media-viewer/pull/461))
 - fix(deps): update go modules ([#473](https://github.com/djryanj/media-viewer/pull/473))
 - build(deps): bump golang.org/x/image from 0.37.0 to 0.38.0 ([#468](https://github.com/djryanj/media-viewer/pull/468))
 - chore(deps): update github actions ([#464](https://github.com/djryanj/media-viewer/pull/464))
