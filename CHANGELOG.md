@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update module github.com/golangci/golangci-lint to v2.11.4 ([#465](https://github.com/djryanj/media-viewer/pull/465))
 - chore(deps): update github actions ([#471](https://github.com/djryanj/media-viewer/pull/471))
 - chore(deps): update all non-major dependencies ([#467](https://github.com/djryanj/media-viewer/pull/467))
 - build(deps): bump github.com/mattn/go-sqlite3 from 1.14.34 to 1.14.37 ([#461](https://github.com/djryanj/media-viewer/pull/461))
