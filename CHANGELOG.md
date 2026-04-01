@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump renovatebot/github-action from 46.1.5 to 46.1.7 ([#476](https://github.com/djryanj/media-viewer/pull/476))
 - fix(deps): update go modules ([#473](https://github.com/djryanj/media-viewer/pull/473))
 - build(deps): bump golang.org/x/image from 0.37.0 to 0.38.0 ([#468](https://github.com/djryanj/media-viewer/pull/468))
 - chore(deps): update github actions ([#464](https://github.com/djryanj/media-viewer/pull/464))
