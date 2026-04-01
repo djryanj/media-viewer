@@ -65,7 +65,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -86,7 +86,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
               with:
-                  node-version: '24.14.0'
+                  node-version: '24.14.1'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
@@ -124,7 +124,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -150,7 +150,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
               with:
-                  node-version: '24.14.0'
+                  node-version: '24.14.1'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
@@ -188,7 +188,7 @@ jobs:
                   sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Go
-              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -219,7 +219,7 @@ jobs:
                   sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Go
-              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -241,7 +241,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -272,7 +272,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
               with:
-                  node-version: '24.14.0'
+                  node-version: '24.14.1'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
@@ -596,7 +596,7 @@ jobs:
 
             - name: Generate changelog
               id: changelog
-              uses: mikepenz/release-changelog-builder-action@a34a8009a9588bb86b02a873cf592440e96a5da8 # v6
+              uses: mikepenz/release-changelog-builder-action@2cb9befdbc05f65b8354cc9873cd506509bd0782 # v6
               with:
                   configuration: .github/changelog-config.json
               env:
