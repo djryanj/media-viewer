@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump renovatebot/github-action from 46.1.5 to 46.1.7 ([#476](https://github.com/djryanj/media-viewer/pull/476))
 - chore(deps): update node.js to v24.14.1 ([#472](https://github.com/djryanj/media-viewer/pull/472))
 - build(deps): bump actions/setup-go from 6.3.0 to 6.4.0 ([#474](https://github.com/djryanj/media-viewer/pull/474))
 - chore(deps): update module github.com/golangci/golangci-lint to v2.11.4 ([#465](https://github.com/djryanj/media-viewer/pull/465))
