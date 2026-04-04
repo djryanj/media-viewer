@@ -99,6 +99,10 @@ const ItemSelection = {
                 <i data-lucide="layers"></i>
                 <span>Collect</span>
             </button>
+            <button class="selection-action-btn selection-action-danger" id="selection-remove-collection-btn" title="Remove from current collection" style="display: none;">
+                <i data-lucide="x"></i>
+                <span>Remove</span>
+            </button>
             <button class="selection-action-btn selection-select-all-btn" id="selection-all-btn" title="Select all">
                 <i data-lucide="check-square"></i>
                 <span>All</span>
@@ -119,6 +123,7 @@ const ItemSelection = {
             tagBtn: document.getElementById('selection-tag-btn'),
             favoriteBtn: document.getElementById('selection-favorite-btn'),
             collectionBtn: document.getElementById('selection-collection-btn'),
+            removeCollectionBtn: document.getElementById('selection-remove-collection-btn'),
             selectAllBtn: document.getElementById('selection-all-btn'),
             closeBtn: document.querySelector('.selection-close-btn'),
             gallery: document.getElementById('gallery'),
@@ -140,6 +145,11 @@ const ItemSelection = {
         if (this.elements.collectionBtn) {
             this.elements.collectionBtn.addEventListener('click', () =>
                 this.bulkCreateCollection()
+            );
+        }
+        if (this.elements.removeCollectionBtn) {
+            this.elements.removeCollectionBtn.addEventListener('click', () =>
+                this.bulkRemoveFromCurrentCollection()
             );
         }
         this.elements.selectAllBtn.addEventListener('click', () => this.selectAll());
@@ -201,6 +211,7 @@ const ItemSelection = {
                 if (galleryItem.closest('#favorites-gallery')) return;
 
                 if (
+                    e.target.closest('.collection-reorder-handle') ||
                     e.target.closest('.selection-checkbox') ||
                     e.target.closest('.download-button') ||
                     e.target.closest('.gallery-item-select')
@@ -277,6 +288,7 @@ const ItemSelection = {
             if (galleryItem.closest('#favorites-gallery')) return;
 
             if (
+                e.target.closest('.collection-reorder-handle') ||
                 e.target.closest('.selection-checkbox') ||
                 e.target.closest('.download-button') ||
                 e.target.closest('.gallery-item-select')
@@ -979,8 +991,47 @@ const ItemSelection = {
 
         this.elements.tagBtn.disabled = count === 0 || !hasTaggableItems;
         this.elements.favoriteBtn.disabled = count === 0;
+        const currentCollectionContext = this.getCurrentCollectionSelectionContext();
+
         if (this.elements.collectionBtn) {
             this.elements.collectionBtn.disabled = count === 0 || !hasTaggableItems;
+
+            const collectionLabel = this.elements.collectionBtn.querySelector('span');
+            let collectionButtonText = 'Collect';
+            let collectionButtonTitle = 'Add selected items to a collection';
+
+            if (hasTaggableItems && currentCollectionContext?.overlapCount > 0) {
+                const { overlapCount, name } = currentCollectionContext;
+                collectionButtonText = 'Collections';
+                collectionButtonTitle =
+                    overlapCount === count
+                        ? `Manage selected items in "${name}"`
+                        : `Manage ${overlapCount} selected item${overlapCount !== 1 ? 's' : ''} in "${name}"`;
+            }
+
+            this.elements.collectionBtn.title = collectionButtonTitle;
+            if (collectionLabel) {
+                collectionLabel.textContent = collectionButtonText;
+            }
+        }
+
+        if (this.elements.removeCollectionBtn) {
+            const canRemove =
+                !!currentCollectionContext && currentCollectionContext.overlapCount > 0;
+            let removeCollectionTitle = 'Remove from current collection';
+
+            if (canRemove) {
+                const { overlapCount, totalCount, name } = currentCollectionContext;
+                if (overlapCount === totalCount) {
+                    removeCollectionTitle = `Remove selected items from "${name}"`;
+                } else {
+                    removeCollectionTitle = `Remove ${overlapCount} selected item${overlapCount !== 1 ? 's' : ''} from "${name}"`;
+                }
+            }
+
+            this.elements.removeCollectionBtn.style.display = canRemove ? '' : 'none';
+            this.elements.removeCollectionBtn.disabled = !canRemove;
+            this.elements.removeCollectionBtn.title = removeCollectionTitle;
         }
 
         // Update select all button
@@ -1061,6 +1112,51 @@ const ItemSelection = {
         Tags.openBulkModal(paths, names);
     },
 
+    getSelectedMediaItems() {
+        return Array.from(this.selectedData.entries())
+            .filter(([, data]) => data.type === 'image' || data.type === 'video')
+            .map(([path, data]) => ({ path, name: data.name, type: data.type }));
+    },
+
+    getCurrentCollectionSelectionContext() {
+        if (
+            typeof Collections === 'undefined' ||
+            Collections._currentCollectionId === null ||
+            typeof Collections.getMemberships !== 'function'
+        ) {
+            return null;
+        }
+
+        const mediaItems = this.getSelectedMediaItems();
+        if (mediaItems.length === 0) return null;
+
+        const currentCollectionId = Collections._currentCollectionId;
+        const currentCollectionName =
+            Collections.getById?.(currentCollectionId)?.name ||
+            Collections._currentCollectionName ||
+            'current collection';
+        const overlappingItems = [];
+        const nonOverlappingItems = [];
+
+        mediaItems.forEach((item) => {
+            if (Collections.getMemberships(item.path).includes(currentCollectionId)) {
+                overlappingItems.push(item);
+            } else {
+                nonOverlappingItems.push(item);
+            }
+        });
+
+        return {
+            id: currentCollectionId,
+            name: currentCollectionName,
+            overlappingItems,
+            nonOverlappingItems,
+            overlapCount: overlappingItems.length,
+            nonOverlapCount: nonOverlappingItems.length,
+            totalCount: mediaItems.length,
+        };
+    },
+
     async bulkFavorite() {
         if (this.selectedPaths.size === 0) return;
 
@@ -1105,12 +1201,35 @@ const ItemSelection = {
         this.exitSelectionModeWithHistory();
     },
 
+    async bulkRemoveFromCurrentCollection() {
+        const context = this.getCurrentCollectionSelectionContext();
+        if (!context || context.overlapCount === 0) return;
+
+        try {
+            await Collections.removeItemsFromCollection(
+                context.id,
+                context.overlappingItems.map((item) => item.path)
+            );
+
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast(
+                    `Removed ${context.overlapCount} item${context.overlapCount !== 1 ? 's' : ''} from "${context.name}"`
+                );
+            }
+
+            this.exitSelectionModeWithHistory();
+        } catch (error) {
+            console.error('Error removing items from current collection:', error);
+            if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                Gallery.showToast('Failed to remove from current collection');
+            }
+        }
+    },
+
     bulkCreateCollection() {
         if (this.selectedPaths.size === 0) return;
 
-        const mediaItems = Array.from(this.selectedData.entries())
-            .filter(([, data]) => data.type === 'image' || data.type === 'video')
-            .map(([path, data]) => ({ path, name: data.name, type: data.type }));
+        const mediaItems = this.getSelectedMediaItems();
 
         if (mediaItems.length === 0) {
             if (typeof Gallery !== 'undefined' && Gallery.showToast) {
@@ -1122,7 +1241,6 @@ const ItemSelection = {
         if (typeof Collections === 'undefined') return;
 
         Collections.openAddOrCreateModal(mediaItems);
-        this.exitSelectionModeWithHistory();
     },
 
     async bulkFavoriteIndividually(items) {

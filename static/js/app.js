@@ -363,6 +363,9 @@ const MediaApp = {
         // InfiniteScroll._isCollectionView is cleared by resetState() inside
         // startForDirectory; we only need to clear the Collections-level flag.
         if (typeof Collections !== 'undefined' && Collections._currentCollectionId !== null) {
+            if (Collections._resetInlineCollectionReorder) {
+                Collections._resetInlineCollectionReorder();
+            }
             Collections._currentCollectionId = null;
             Collections._currentCollectionName = null;
         }
@@ -628,7 +631,12 @@ const MediaApp = {
 
     renderBreadcrumb() {
         const breadcrumb = this.elements.breadcrumb;
+        if (!breadcrumb) return;
         breadcrumb.innerHTML = '';
+
+        const trail = document.createElement('div');
+        trail.className = 'breadcrumb-trail';
+        breadcrumb.appendChild(trail);
 
         const parts = this.state.listing.breadcrumb;
 
@@ -647,13 +655,13 @@ const MediaApp = {
                 });
             }
 
-            breadcrumb.appendChild(item);
+            trail.appendChild(item);
 
             if (!isLast) {
                 const separator = document.createElement('span');
                 separator.className = 'breadcrumb-separator';
                 separator.textContent = '›';
-                breadcrumb.appendChild(separator);
+                trail.appendChild(separator);
             }
         });
     },
@@ -663,10 +671,16 @@ const MediaApp = {
      * Reproduces the current directory's crumbs (all clickable) then appends
      * a non-clickable collection item at the end.
      * @param {string} collectionName
+     * @param {{collectionId?: number|null, itemCount?: number|null}} options
      */
-    renderCollectionBreadcrumb(collectionName) {
+    renderCollectionBreadcrumb(collectionName, { collectionId = null, itemCount = null } = {}) {
         const breadcrumb = this.elements.breadcrumb;
+        if (!breadcrumb) return;
         breadcrumb.innerHTML = '';
+
+        const trail = document.createElement('div');
+        trail.className = 'breadcrumb-trail';
+        breadcrumb.appendChild(trail);
 
         // Re-render the current directory crumbs as clickable links so the
         // user can navigate back to any ancestor.
@@ -680,12 +694,12 @@ const MediaApp = {
                     this.state.currentPage = 1;
                     this.navigateTo(part.path);
                 });
-                breadcrumb.appendChild(item);
+                trail.appendChild(item);
 
                 const sep = document.createElement('span');
                 sep.className = 'breadcrumb-separator';
                 sep.textContent = '›';
-                breadcrumb.appendChild(sep);
+                trail.appendChild(sep);
             });
         }
 
@@ -695,8 +709,141 @@ const MediaApp = {
         const icon = document.createElement('i');
         icon.dataset.lucide = 'layers';
         colItem.appendChild(icon);
-        colItem.appendChild(document.createTextNode('\u00a0' + collectionName));
-        breadcrumb.appendChild(colItem);
+        const name = document.createElement('span');
+        name.textContent = collectionName;
+        colItem.appendChild(name);
+        trail.appendChild(colItem);
+
+        if (collectionId !== null) {
+            const inlineOrderState =
+                typeof Collections !== 'undefined' && Collections.getInlineCollectionOrderState
+                    ? Collections.getInlineCollectionOrderState()
+                    : { active: false, dirty: false, saving: false };
+            const contextBar = document.createElement('div');
+            contextBar.className = 'collection-context-bar';
+
+            const summary = document.createElement('div');
+            summary.className = 'collection-context-summary';
+            const label = document.createElement('span');
+            label.className = 'collection-context-label';
+            label.textContent = itemCount === 0 ? 'Empty collection' : 'Browsing collection';
+            const title = document.createElement('span');
+            title.className = 'collection-context-name';
+            title.textContent = collectionName;
+            const count = document.createElement('span');
+            count.className = 'collection-context-count';
+            count.textContent = Number.isFinite(itemCount)
+                ? `${itemCount} item${itemCount !== 1 ? 's' : ''}`
+                : 'Collection view';
+            summary.append(label, title, count);
+
+            const actions = document.createElement('div');
+            actions.className = 'collection-context-actions';
+            actions.innerHTML = inlineOrderState.active
+                ? `
+                    <button type="button" class="btn btn-secondary collection-context-manage-btn">
+                        <i data-lucide="layers-3"></i>
+                        Manage
+                    </button>
+                    <button type="button" class="btn btn-primary collection-context-save-btn" ${
+                        !inlineOrderState.dirty || inlineOrderState.saving ? 'disabled' : ''
+                    }>
+                        <i data-lucide="check"></i>
+                        ${inlineOrderState.saving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button type="button" class="btn btn-secondary collection-context-cancel-btn" ${
+                        !inlineOrderState.dirty || inlineOrderState.saving ? 'disabled' : ''
+                    }>
+                        <i data-lucide="rotate-ccw"></i>
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-secondary collection-context-exit-btn">
+                        <i data-lucide="corner-up-left"></i>
+                        Exit
+                    </button>
+                `
+                : `
+                    <button type="button" class="btn btn-secondary collection-context-manage-btn">
+                        <i data-lucide="layers-3"></i>
+                        Manage
+                    </button>
+                    <button type="button" class="btn btn-secondary collection-context-order-btn">
+                        <i data-lucide="arrow-up-down"></i>
+                        Order
+                    </button>
+                    <button type="button" class="btn btn-secondary collection-context-exit-btn">
+                        <i data-lucide="corner-up-left"></i>
+                        Exit
+                    </button>
+                `;
+
+            contextBar.appendChild(summary);
+            contextBar.appendChild(actions);
+            breadcrumb.appendChild(contextBar);
+
+            const orderButton = contextBar.querySelector('.collection-context-order-btn');
+            if (itemCount === 0 && orderButton) {
+                orderButton.disabled = true;
+                orderButton.title = 'Nothing to reorder yet';
+            }
+
+            contextBar
+                .querySelector('.collection-context-manage-btn')
+                .addEventListener('click', () => {
+                    if (typeof Collections !== 'undefined' && Collections.openCollectionManager) {
+                        Collections.openCollectionManager(collectionId);
+                    }
+                });
+
+            contextBar
+                .querySelector('.collection-context-save-btn')
+                ?.addEventListener('click', async () => {
+                    if (
+                        typeof Collections !== 'undefined' &&
+                        Collections.saveInlineCollectionReorder
+                    ) {
+                        await Collections.saveInlineCollectionReorder();
+                    }
+                });
+
+            contextBar
+                .querySelector('.collection-context-cancel-btn')
+                ?.addEventListener('click', () => {
+                    if (
+                        typeof Collections !== 'undefined' &&
+                        Collections.cancelInlineCollectionReorder
+                    ) {
+                        Collections.cancelInlineCollectionReorder();
+                    }
+                });
+
+            contextBar
+                .querySelector('.collection-context-order-btn')
+                ?.addEventListener('click', async () => {
+                    if (itemCount === 0) return;
+                    if (
+                        typeof Collections !== 'undefined' &&
+                        Collections.openCollectionOrderEditor
+                    ) {
+                        await Collections.openCollectionOrderEditor(collectionId);
+                    }
+                });
+
+            contextBar
+                .querySelector('.collection-context-exit-btn')
+                .addEventListener('click', () => {
+                    if (
+                        typeof Collections !== 'undefined' &&
+                        Collections.exitCollectionGalleryView
+                    ) {
+                        Collections.exitCollectionGalleryView({ pushState: false });
+                    }
+                });
+
+            lucide.createIcons({ nodes: [colItem, contextBar] });
+            return;
+        }
+
         lucide.createIcons({ nodes: [colItem] });
     },
 
@@ -730,6 +877,13 @@ const MediaApp = {
 
     navigateTo(path) {
         if (path === this.state.currentPath) {
+            if (
+                typeof Collections !== 'undefined' &&
+                typeof Collections.exitCollectionGalleryView === 'function' &&
+                Collections._currentCollectionId !== null
+            ) {
+                Collections.exitCollectionGalleryView({ pushState: false });
+            }
             return;
         }
         this.state.currentPage = 1;

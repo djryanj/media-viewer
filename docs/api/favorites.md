@@ -6,7 +6,7 @@ Endpoints for managing favorite items.
 
 Get all favorited items.
 
-```
+```http
 GET /api/favorites
 ```
 
@@ -15,16 +15,17 @@ GET /api/favorites
 ```json
 [
     {
+        "id": 5,
         "path": "photos/vacation/beach.jpg",
         "name": "beach.jpg",
         "type": "image",
-        "addedAt": "2024-07-15T10:30:00Z"
+        "parentPath": "photos/vacation",
+        "createdAt": "2026-04-03T18:25:19Z"
     },
     {
         "path": "videos/highlights",
         "name": "highlights",
-        "type": "folder",
-        "addedAt": "2024-07-14T08:00:00Z"
+        "type": "folder"
     }
 ]
 ```
@@ -33,7 +34,7 @@ GET /api/favorites
 
 Add an item to favorites.
 
-```
+```http
 POST /api/favorites
 ```
 
@@ -49,20 +50,9 @@ POST /api/favorites
 
 ### Response
 
-**Success (200):**
-
 ```json
 {
-    "success": true
-}
-```
-
-**Already Exists (200):**
-
-```json
-{
-    "success": true,
-    "message": "Already a favorite"
+    "status": "ok"
 }
 ```
 
@@ -70,7 +60,7 @@ POST /api/favorites
 
 Remove an item from favorites.
 
-```
+```http
 DELETE /api/favorites
 ```
 
@@ -84,11 +74,9 @@ DELETE /api/favorites
 
 ### Response
 
-**Success (200):**
-
 ```json
 {
-    "success": true
+    "status": "ok"
 }
 ```
 
@@ -96,7 +84,7 @@ DELETE /api/favorites
 
 Add multiple items to favorites at once.
 
-```
+```http
 POST /api/favorites/bulk
 ```
 
@@ -124,6 +112,71 @@ POST /api/favorites/bulk
 ```json
 {
     "success": 2,
-    "failed": 0
+    "failed": 0,
+    "errors": []
 }
 ```
+
+### Notes
+
+- Up to 100 items are processed per request.
+- Empty paths are ignored.
+- Error lists are truncated to avoid oversized responses.
+
+## Bulk Remove Favorites
+
+Remove multiple favorites at once.
+
+```http
+DELETE /api/favorites/bulk
+```
+
+### Request
+
+```json
+{
+    "paths": [
+        "photos/vacation/beach.jpg",
+        "photos/vacation/sunset.jpg"
+    ]
+}
+```
+
+### Response
+
+```json
+{
+    "success": 2,
+    "failed": 0,
+    "errors": []
+}
+```
+
+## Reorder Favorites
+
+Replace the display order of the favorites strip.
+
+```http
+PUT /api/favorites/order
+```
+
+### Request
+
+```json
+{
+    "paths": [
+        "photos/vacation/sunset.jpg",
+        "photos/vacation/beach.jpg"
+    ]
+}
+```
+
+### Response
+
+```json
+{
+    "status": "ok"
+}
+```
+
+For exact request and response schemas, see the [OpenAPI specification](openapi.md).

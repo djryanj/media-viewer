@@ -36,6 +36,15 @@ const HistoryManager = {
             return;
         }
 
+        if (
+            typeof Collections !== 'undefined' &&
+            typeof Collections.exitCollectionGalleryView === 'function' &&
+            Collections._currentCollectionId !== null
+        ) {
+            Collections.exitCollectionGalleryView({ pushState: false });
+            return;
+        }
+
         if (typeof MediaApp !== 'undefined' && MediaApp.state.currentPath) {
             const parentPath = this.getParentPath(MediaApp.state.currentPath);
             MediaApp.navigateTo(parentPath);
@@ -126,6 +135,21 @@ const HistoryManager = {
                         TagClipboard.closePasteModalDirect();
                     }
                     break;
+                case 'collections-panel':
+                    if (typeof Collections !== 'undefined') {
+                        Collections.closeCollectionsPanel();
+                    }
+                    break;
+                case 'collection-create-modal':
+                    if (typeof Collections !== 'undefined') {
+                        Collections.closeCreateModal();
+                    }
+                    break;
+                case 'collection-add-modal':
+                    if (typeof Collections !== 'undefined') {
+                        Collections.closeAddOrCreateModal();
+                    }
+                    break;
                 case 'lightbox':
                     if (typeof Lightbox !== 'undefined') {
                         Lightbox.handleBackButton();
@@ -179,6 +203,15 @@ const HistoryManager = {
         }
         if (!document.getElementById('paste-tags-modal')?.classList.contains('hidden')) {
             TagClipboard.closePasteModalDirect();
+        }
+        if (!document.getElementById('collections-panel')?.classList.contains('hidden')) {
+            Collections.closeCollectionsPanel();
+        }
+        if (!document.getElementById('collection-create-modal')?.classList.contains('hidden')) {
+            Collections.closeCreateModal();
+        }
+        if (!document.getElementById('collection-add-modal')?.classList.contains('hidden')) {
+            Collections.closeAddOrCreateModal();
         }
         if (!document.getElementById('lightbox')?.classList.contains('hidden')) {
             Lightbox.close();

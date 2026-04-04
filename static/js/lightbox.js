@@ -52,6 +52,8 @@ const Lightbox = {
     // Tags drawer state
     tagsDrawerOpen: false,
     collectionDrawerOpen: false,
+    _expandedCollectionDrawerId: null,
+    _reorderDragState: null,
     drawerTouchStartY: 0,
     drawerIsDragging: false,
     allTagSuggestions: [], // Cached tag list for autocomplete
@@ -2613,6 +2615,7 @@ const Lightbox = {
                 <button class="drawer-close collection-drawer-close" title="Close"><i data-lucide="x"></i></button>
             </div>
             <div class="drawer-body collection-membership-view">
+                <div class="collection-drawer-section-title">Current collections</div>
                 <div class="collection-drawer-list"></div>
                 <div class="collection-drawer-empty hidden">
                     <span class="drawer-empty-text">Not in any collection</span>
@@ -2622,18 +2625,23 @@ const Lightbox = {
                 </div>
             </div>
             <div class="drawer-footer collection-membership-footer">
-                <div class="collection-drawer-add-row">
-                    <select class="collection-drawer-picker">
-                        <option value="">Add to collection\u2026</option>
-                    </select>
-                    <button class="btn btn-primary collection-drawer-add-btn" disabled>
-                        <i data-lucide="plus"></i>
+                <div class="collection-drawer-section-title">Recent collections</div>
+                <div class="collection-drawer-add-card">
+                    <div class="collection-add-existing-list collection-drawer-suggestions"></div>
+                    <div class="collection-add-existing-empty collection-drawer-suggestions-empty hidden">
+                        No other compatible collections yet.
+                    </div>
+                    <div class="collection-drawer-footer-actions">
+                        <button class="btn btn-secondary collection-drawer-open-modal-btn">
+                            <i data-lucide="search"></i>
+                            All Collections
+                        </button>
+                    </div>
+                    <button class="btn btn-secondary collection-drawer-new-btn">
+                        <i data-lucide="plus-circle"></i>
+                        New Collection
                     </button>
                 </div>
-                <button class="btn btn-secondary collection-drawer-new-btn">
-                    <i data-lucide="plus-circle"></i>
-                    New Collection
-                </button>
             </div>
             <div class="drawer-body collection-reorder-view hidden">
                 <div class="collection-reorder-list"></div>
@@ -2656,8 +2664,15 @@ const Lightbox = {
         this.elements.collectionDrawerLoading = drawer.querySelector('.collection-drawer-loading');
         this.elements.collectionDrawerClose = drawer.querySelector('.collection-drawer-close');
         this.elements.collectionDrawerTitle = drawer.querySelector('.collection-drawer-title');
-        this.elements.collectionDrawerPicker = drawer.querySelector('.collection-drawer-picker');
-        this.elements.collectionDrawerAddBtn = drawer.querySelector('.collection-drawer-add-btn');
+        this.elements.collectionDrawerSuggestions = drawer.querySelector(
+            '.collection-drawer-suggestions'
+        );
+        this.elements.collectionDrawerSuggestionsEmpty = drawer.querySelector(
+            '.collection-drawer-suggestions-empty'
+        );
+        this.elements.collectionDrawerOpenModalBtn = drawer.querySelector(
+            '.collection-drawer-open-modal-btn'
+        );
         this.elements.collectionDrawerNewBtn = drawer.querySelector('.collection-drawer-new-btn');
         this.elements.collectionMembershipView = drawer.querySelector(
             '.collection-membership-view'
@@ -2686,30 +2701,14 @@ const Lightbox = {
             this.closeCollectionDrawerWithHistory();
         });
 
-        this.elements.collectionDrawerPicker.addEventListener('change', (e) => {
-            this.elements.collectionDrawerAddBtn.disabled = !e.target.value;
-        });
-
-        this.elements.collectionDrawerAddBtn.addEventListener('click', async (e) => {
+        this.elements.collectionDrawerOpenModalBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const id = parseInt(this.elements.collectionDrawerPicker.value, 10);
-            if (!id) return;
             const file = this.items[this.currentIndex];
-            if (!file) return;
-            try {
-                await Collections.addItemsToCollection(id, [file.path]);
-                await this.renderCollectionDrawer(file);
-                this.updateCollectionButton(file);
-                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                    const col = Collections.getById(id);
-                    Gallery.showToast(`Added to "${col ? col.name : 'collection'}"`);
-                }
-            } catch (err) {
-                console.error('Failed to add to collection:', err);
-                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
-                    Gallery.showToast('Failed to add to collection');
-                }
+            if (!file || file.type === 'folder') return;
+            if (typeof Collections !== 'undefined' && Collections.openAddOrCreateModal) {
+                Collections.openAddOrCreateModal([file]);
             }
+            this.closeCollectionDrawerWithHistory();
         });
 
         this.elements.collectionDrawerNewBtn.addEventListener('click', (e) => {
@@ -2788,6 +2787,7 @@ const Lightbox = {
     closeCollectionDrawer() {
         if (!this.collectionDrawerOpen) return;
         this.collectionDrawerOpen = false;
+        this._expandedCollectionDrawerId = null;
 
         // If reorder mode was active, reset it silently without saving
         if (this._reorderCollectionId) {
@@ -2857,6 +2857,9 @@ const Lightbox = {
             }
 
             const memberIds = Collections.getMemberships(file.path);
+            if (!memberIds.includes(this._expandedCollectionDrawerId)) {
+                this._expandedCollectionDrawerId = null;
+            }
             loadingEl.classList.add('hidden');
 
             if (memberIds.length === 0) {
@@ -2866,17 +2869,32 @@ const Lightbox = {
                 for (const colId of memberIds) {
                     const col = Collections.getById(colId);
                     if (!col) continue;
+                    const isExpanded = this._expandedCollectionDrawerId === colId;
                     const row = document.createElement('div');
                     row.className = 'collection-drawer-item';
                     row.innerHTML = `
-                        <div class="collection-drawer-item-info">
-                            <span class="collection-drawer-item-name">${this.escapeHtml(col.name)}</span>
-                            <span class="collection-drawer-item-count">${col.itemCount} item${col.itemCount !== 1 ? 's' : ''}</span>
+                        <div class="collection-drawer-item-head">
+                            <button type="button" class="collection-drawer-item-main" aria-label="Open ${this.escapeHtml(col.name)} collection">
+                                <div class="collection-drawer-item-info">
+                                    <span class="collection-drawer-item-name">${this.escapeHtml(col.name)}</span>
+                                    <span class="collection-drawer-item-count">${col.itemCount} item${col.itemCount !== 1 ? 's' : ''}</span>
+                                </div>
+                                <span class="collection-drawer-item-open" aria-hidden="true">
+                                    <span class="collection-drawer-item-open-label">Browse</span>
+                                    <i data-lucide="chevron-right"></i>
+                                </span>
+                            </button>
+                            <button class="btn btn-secondary collection-drawer-more-btn" type="button" aria-label="More actions for ${this.escapeHtml(col.name)}" aria-expanded="${
+                                isExpanded ? 'true' : 'false'
+                            }">
+                                <span class="collection-drawer-more-label">More</span>
+                                <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" aria-hidden="true"></i>
+                            </button>
                         </div>
-                        <div class="collection-drawer-item-actions">
-                            <button class="btn btn-secondary collection-drawer-browse-btn" data-id="${colId}" title="Browse collection">
-                                <i data-lucide="play"></i>
-                                Browse
+                        <div class="collection-drawer-item-actions ${isExpanded ? '' : 'hidden'}">
+                            <button class="btn btn-secondary collection-drawer-manage-btn" data-id="${colId}" title="Manage collection">
+                                <i data-lucide="layers-3"></i>
+                                Manage
                             </button>
                             <button class="btn btn-secondary collection-drawer-reorder-btn" data-id="${colId}" title="Edit order">
                                 <i data-lucide="arrow-up-down"></i>
@@ -2889,10 +2907,24 @@ const Lightbox = {
                         </div>
                     `;
 
-                    const browseBtn = row.querySelector('.collection-drawer-browse-btn');
+                    const browseBtn = row.querySelector('.collection-drawer-item-main');
                     browseBtn.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         await this.switchToCollection(colId, file.path);
+                    });
+
+                    const moreBtn = row.querySelector('.collection-drawer-more-btn');
+                    moreBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        this._expandedCollectionDrawerId = isExpanded ? null : colId;
+                        await this.renderCollectionDrawer(file);
+                    });
+
+                    const manageBtn = row.querySelector('.collection-drawer-manage-btn');
+                    manageBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.closeCollectionDrawer();
+                        Collections.openCollectionManager(colId);
                     });
 
                     const reorderBtn = row.querySelector('.collection-drawer-reorder-btn');
@@ -2923,18 +2955,56 @@ const Lightbox = {
                 lucide.createIcons();
             }
 
-            // Populate "add to" picker with collections this item is NOT in
-            const picker = this.elements.collectionDrawerPicker;
-            picker.innerHTML = '<option value="">Add to collection\u2026</option>';
-            (Collections._all || []).forEach((col) => {
-                if (!memberIds.includes(col.id)) {
-                    const opt = document.createElement('option');
-                    opt.value = col.id;
-                    opt.textContent = col.name;
-                    picker.appendChild(opt);
-                }
-            });
-            this.elements.collectionDrawerAddBtn.disabled = true;
+            const suggestions = this.elements.collectionDrawerSuggestions;
+            const suggestionsEmpty = this.elements.collectionDrawerSuggestionsEmpty;
+            const suggestedCollections = Collections.getSuggestedCollections
+                ? Collections.getSuggestedCollections({
+                      items: [file],
+                      excludeIds: memberIds,
+                      limit: 5,
+                  })
+                : [];
+
+            suggestions.innerHTML = '';
+
+            if (suggestedCollections.length === 0) {
+                suggestionsEmpty.classList.remove('hidden');
+            } else {
+                suggestionsEmpty.classList.add('hidden');
+                suggestedCollections.forEach((col) => {
+                    const row = document.createElement('div');
+                    row.className = 'collection-add-existing-row';
+                    row.innerHTML = `
+                        <div class="collection-add-existing-info">
+                            <span class="collection-add-existing-name">${this.escapeHtml(col.name)}</span>
+                            <span class="collection-add-existing-count">${col.itemCount} item${col.itemCount !== 1 ? 's' : ''}</span>
+                        </div>
+                        <button class="btn btn-secondary collection-add-existing-btn">Add</button>
+                    `;
+
+                    row.querySelector('.collection-add-existing-btn').addEventListener(
+                        'click',
+                        async (e) => {
+                            e.stopPropagation();
+                            try {
+                                await Collections.addItemsToCollection(col.id, [file.path]);
+                                await this.renderCollectionDrawer(file);
+                                this.updateCollectionButton(file);
+                                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                                    Gallery.showToast(`Added to "${col.name}"`);
+                                }
+                            } catch (err) {
+                                console.error('Failed to add to collection:', err);
+                                if (typeof Gallery !== 'undefined' && Gallery.showToast) {
+                                    Gallery.showToast('Failed to add to collection');
+                                }
+                            }
+                        }
+                    );
+
+                    suggestions.appendChild(row);
+                });
+            }
         } catch (e) {
             console.debug('Collection drawer: render error', e);
             loadingEl.classList.add('hidden');
@@ -2992,48 +3062,18 @@ const Lightbox = {
             const row = document.createElement('div');
             row.className = 'reorder-item' + (isCurrent ? ' reorder-item-current' : '');
             row.dataset.idx = idx;
+            row.dataset.path = path;
             const thumbUrl = `/api/thumbnails/${path.split('/').map(encodeURIComponent).join('/')}`;
             row.innerHTML = `
-                <div class="reorder-item-arrows">
-                    <button class="reorder-move-up btn btn-secondary" title="Move up" ${idx === 0 ? 'disabled' : ''}>
-                        <i data-lucide="chevron-up"></i>
-                    </button>
-                    <button class="reorder-move-down btn btn-secondary" title="Move down" ${idx === paths.length - 1 ? 'disabled' : ''}>
-                        <i data-lucide="chevron-down"></i>
-                    </button>
-                </div>
+                <span class="reorder-drag-handle" aria-hidden="true">
+                    <i data-lucide="grip-vertical"></i>
+                </span>
                 <img class="reorder-item-thumb" src="${thumbUrl}" alt="${this.escapeAttr(names[path] || path)}" />
                 <span class="reorder-item-name" title="${this.escapeAttr(path)}">${this.escapeHtml(names[path] || path)}</span>
                 ${isCurrent ? '<span class="reorder-current-badge">current</span>' : ''}
             `;
 
-            row.querySelector('.reorder-move-up').addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (idx === 0) return;
-                [this._reorderPaths[idx - 1], this._reorderPaths[idx]] = [
-                    this._reorderPaths[idx],
-                    this._reorderPaths[idx - 1],
-                ];
-                this._renderReorderList(this._reorderCurrentFilePath);
-                const movedRow = this.elements.collectionReorderList.querySelector(
-                    `.reorder-item[data-idx="${idx - 1}"]`
-                );
-                movedRow?.scrollIntoView({ block: 'nearest' });
-            });
-
-            row.querySelector('.reorder-move-down').addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (idx === paths.length - 1) return;
-                [this._reorderPaths[idx], this._reorderPaths[idx + 1]] = [
-                    this._reorderPaths[idx + 1],
-                    this._reorderPaths[idx],
-                ];
-                this._renderReorderList(this._reorderCurrentFilePath);
-                const movedRow = this.elements.collectionReorderList.querySelector(
-                    `.reorder-item[data-idx="${idx + 1}"]`
-                );
-                movedRow?.scrollIntoView({ block: 'nearest' });
-            });
+            this._setupReorderDragOnItem(row);
 
             const img = row.querySelector('.reorder-item-thumb');
             if (img)
@@ -3051,12 +3091,236 @@ const Lightbox = {
         lucide.createIcons();
     },
 
+    _setupReorderDragOnItem(element) {
+        element.setAttribute('draggable', 'true');
+        element.style.touchAction = 'none';
+        element.addEventListener('dragstart', (e) => this._onReorderDragStart(e));
+        element.addEventListener('dragover', (e) => this._onReorderDragOver(e));
+        element.addEventListener('drop', (e) => this._onReorderDrop(e));
+        element.addEventListener('dragend', () => this._onReorderDragEnd());
+        element.addEventListener('pointerdown', (e) => this._onReorderPointerDown(e));
+    },
+
+    _onReorderDragStart(e) {
+        this._reorderDragState = { path: e.currentTarget.dataset.path };
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', e.currentTarget.dataset.path);
+        }
+        e.currentTarget.classList.add('reorder-dragging');
+    },
+
+    _onReorderDragOver(e) {
+        e.preventDefault();
+        if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = 'move';
+        }
+        this._updateReorderDropIndicator(e.currentTarget, e.clientY);
+    },
+
+    _onReorderDrop(e) {
+        e.preventDefault();
+        const draggedPath = this._reorderDragState?.path;
+        if (!draggedPath) return;
+        this._applyDraggedReorder(draggedPath, e.currentTarget, e.clientY);
+    },
+
+    _onReorderDragEnd() {
+        this.elements.collectionReorderList
+            ?.querySelectorAll('.reorder-dragging')
+            .forEach((el) => el.classList.remove('reorder-dragging'));
+        this._clearReorderDropIndicators();
+        this._reorderDragState = null;
+    },
+
+    _onReorderPointerDown(e) {
+        if (e.pointerType === 'mouse') return;
+        const el = e.currentTarget;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const pointerId = e.pointerId;
+        const list = this.elements.collectionReorderList;
+        let prevY = startY;
+        let scrollMode = false;
+
+        const ac = new AbortController();
+        const { signal } = ac;
+
+        const cleanup = () => {
+            clearTimeout(timer);
+            ac.abort();
+        };
+
+        const onMove = (me) => {
+            const totalDist = Math.hypot(me.clientX - startX, me.clientY - startY);
+            if (!scrollMode && totalDist > 8) {
+                scrollMode = true;
+                clearTimeout(timer);
+            }
+            if (scrollMode && list) {
+                list.scrollTop -= me.clientY - prevY;
+            }
+            prevY = me.clientY;
+        };
+
+        el.addEventListener('pointermove', onMove, { signal });
+        el.addEventListener('pointerup', cleanup, { signal });
+        el.addEventListener('pointercancel', cleanup, { signal });
+
+        const timer = setTimeout(() => {
+            if (scrollMode) return;
+            ac.abort();
+            this._startReorderPointerDrag(el, pointerId, startX, startY);
+        }, 300);
+    },
+
+    _startReorderPointerDrag(el, pointerId, startX, startY) {
+        this._reorderDragState = { path: el.dataset.path, el };
+        el.setAttribute('draggable', 'false');
+
+        try {
+            el.setPointerCapture(pointerId);
+        } catch {
+            // Ignore lack of pointer capture support.
+        }
+
+        el.classList.add('reorder-dragging');
+
+        const rect = el.getBoundingClientRect();
+        const ghost = el.cloneNode(true);
+        ghost.className = 'reorder-drag-ghost';
+        ghost.style.cssText = `width:${rect.width}px;height:${rect.height}px;left:${rect.left}px;top:${rect.top}px`;
+        document.body.appendChild(ghost);
+        Object.assign(this._reorderDragState, {
+            ghost,
+            offsetX: startX - rect.left,
+            offsetY: startY - rect.top,
+        });
+
+        const onMove = (evt) => this._onReorderPointerMove(evt);
+        const onUp = (evt) => {
+            el.removeEventListener('pointermove', onMove);
+            el.setAttribute('draggable', 'true');
+            this._onReorderPointerUp(evt);
+        };
+
+        el.addEventListener('pointermove', onMove);
+        el.addEventListener('pointerup', onUp, { once: true });
+        el.addEventListener('pointercancel', onUp, { once: true });
+    },
+
+    _reorderItemAtY(clientY) {
+        const items = this.elements.collectionReorderList?.querySelectorAll(
+            '.reorder-item[data-path]'
+        );
+        if (!items || items.length === 0) return null;
+
+        const rows = Array.from(items);
+        const firstRect = rows[0].getBoundingClientRect();
+        if (clientY <= firstRect.top) {
+            return rows[0];
+        }
+
+        const lastRect = rows[rows.length - 1].getBoundingClientRect();
+        if (clientY >= lastRect.bottom) {
+            return rows[rows.length - 1];
+        }
+
+        return (
+            rows.find((el) => {
+                const rect = el.getBoundingClientRect();
+                return clientY >= rect.top && clientY <= rect.bottom;
+            }) || null
+        );
+    },
+
+    _onReorderPointerMove(e) {
+        const state = this._reorderDragState;
+        if (!state?.ghost) return;
+
+        state.ghost.style.left = e.clientX - state.offsetX + 'px';
+        state.ghost.style.top = e.clientY - state.offsetY + 'px';
+
+        const target = this._reorderItemAtY(e.clientY);
+        if (target && target !== state.el) {
+            this._updateReorderDropIndicator(target, e.clientY);
+        } else {
+            this._clearReorderDropIndicators();
+        }
+
+        e.preventDefault();
+    },
+
+    _onReorderPointerUp(e) {
+        const state = this._reorderDragState;
+        this._reorderDragState = null;
+        if (!state) return;
+
+        state.ghost?.remove();
+        state.el?.classList.remove('reorder-dragging');
+        this._clearReorderDropIndicators();
+
+        const target = this._reorderItemAtY(e.clientY);
+        if (target && target !== state.el) {
+            this._applyDraggedReorder(state.path, target, e.clientY);
+        }
+    },
+
+    _updateReorderDropIndicator(targetEl, clientY) {
+        this._clearReorderDropIndicators();
+        const rect = targetEl.getBoundingClientRect();
+        targetEl.classList.add(
+            clientY < rect.top + rect.height / 2 ? 'reorder-drop-before' : 'reorder-drop-after'
+        );
+    },
+
+    _clearReorderDropIndicators() {
+        this.elements.collectionReorderList
+            ?.querySelectorAll('.reorder-drop-before, .reorder-drop-after')
+            .forEach((el) => el.classList.remove('reorder-drop-before', 'reorder-drop-after'));
+    },
+
+    _moveReorderPath(draggedPath, targetPath, insertBefore) {
+        const currentPaths = Array.isArray(this._reorderPaths) ? [...this._reorderPaths] : [];
+        const dragIdx = currentPaths.indexOf(draggedPath);
+        const targetIdx = currentPaths.indexOf(targetPath);
+
+        if (dragIdx === -1 || targetIdx === -1 || draggedPath === targetPath) {
+            return false;
+        }
+
+        const newPaths = [...currentPaths];
+        newPaths.splice(dragIdx, 1);
+        const adjustedTarget = newPaths.indexOf(targetPath);
+        newPaths.splice(adjustedTarget + (insertBefore ? 0 : 1), 0, draggedPath);
+        this._reorderPaths = newPaths;
+        this._renderReorderList(this._reorderCurrentFilePath);
+        return true;
+    },
+
+    _applyDraggedReorder(draggedPath, targetEl, clientY) {
+        const targetPath = targetEl?.dataset?.path;
+        if (!targetPath) return false;
+        const rect = targetEl.getBoundingClientRect();
+        const insertBefore = clientY < rect.top + rect.height / 2;
+        const moved = this._moveReorderPath(draggedPath, targetPath, insertBefore);
+        if (moved) {
+            const movedRow = this.elements.collectionReorderList?.querySelector(
+                `.reorder-item[data-path="${CSS.escape(draggedPath)}"]`
+            );
+            movedRow?.scrollIntoView({ block: 'nearest' });
+        }
+        return moved;
+    },
+
     _closeReorderPanel() {
         this._reorderCollectionId = null;
         this._reorderCurrentFilePath = null;
         this._reorderPaths = null;
         this._reorderNames = null;
         this._reorderItems = null;
+        this._reorderDragState?.ghost?.remove();
+        this._reorderDragState = null;
 
         // Restore title
         this.elements.collectionDrawerTitle.innerHTML = '<i data-lucide="layers"></i> Collections';

@@ -6,7 +6,7 @@ Endpoints for managing tags on media files.
 
 Get all tags in the library with usage counts.
 
-```
+```http
 GET /api/tags
 ```
 
@@ -15,12 +15,17 @@ GET /api/tags
 ```json
 [
     {
+        "id": 1,
         "name": "vacation",
-        "itemCount": 42
+        "color": "#3b82f6",
+        "itemCount": 42,
+        "createdAt": "2026-04-03T18:25:19Z"
     },
     {
+        "id": 2,
         "name": "family",
-        "itemCount": 128
+        "itemCount": 128,
+        "createdAt": "2026-04-03T18:25:19Z"
     }
 ]
 ```
@@ -29,7 +34,7 @@ GET /api/tags
 
 Get tags assigned to a specific file.
 
-```
+```http
 GET /api/tags/file?path={filePath}
 ```
 
@@ -49,7 +54,7 @@ GET /api/tags/file?path={filePath}
 
 Add a tag to a single file.
 
-```
+```http
 POST /api/tags/file
 ```
 
@@ -64,11 +69,9 @@ POST /api/tags/file
 
 ### Response
 
-**Success (200):**
-
 ```json
 {
-    "success": true
+    "status": "ok"
 }
 ```
 
@@ -76,7 +79,7 @@ POST /api/tags/file
 
 Remove a tag from a single file.
 
-```
+```http
 DELETE /api/tags/file
 ```
 
@@ -91,11 +94,62 @@ DELETE /api/tags/file
 
 ### Response
 
-**Success (200):**
+```json
+{
+    "status": "ok"
+}
+```
+
+## Replace All Tags for a File
+
+Replace the full tag set for a file.
+
+```http
+PUT /api/tags/file
+```
+
+### Request
 
 ```json
 {
-    "success": true
+    "path": "photos/vacation/beach.jpg",
+    "tags": ["vacation", "beach", "sunset"]
+}
+```
+
+### Response
+
+```json
+{
+    "status": "ok"
+}
+```
+
+## Batch File Tag Lookup
+
+Get tags for multiple files in one request.
+
+```http
+POST /api/tags/query
+```
+
+### Request
+
+```json
+{
+    "paths": [
+        "photos/vacation/beach.jpg",
+        "photos/vacation/sunset.jpg"
+    ]
+}
+```
+
+### Response
+
+```json
+{
+    "photos/vacation/beach.jpg": ["vacation", "beach"],
+    "photos/vacation/sunset.jpg": ["vacation", "sunset"]
 }
 ```
 
@@ -103,7 +157,7 @@ DELETE /api/tags/file
 
 Add a tag to multiple files at once.
 
-```
+```http
 POST /api/tags/bulk
 ```
 
@@ -120,12 +174,15 @@ POST /api/tags/bulk
 }
 ```
 
+You can also send a `tags` array to apply multiple tags in one request.
+
 ### Response
 
 ```json
 {
     "success": 3,
-    "failed": 0
+    "failed": 0,
+    "errors": []
 }
 ```
 
@@ -133,7 +190,7 @@ POST /api/tags/bulk
 
 Remove a tag from multiple files at once.
 
-```
+```http
 DELETE /api/tags/bulk
 ```
 
@@ -146,12 +203,15 @@ DELETE /api/tags/bulk
 }
 ```
 
+Like bulk add, this endpoint also accepts a `tags` array.
+
 ### Response
 
 ```json
 {
     "success": 2,
-    "failed": 0
+    "failed": 0,
+    "errors": []
 }
 ```
 
@@ -161,7 +221,7 @@ DELETE /api/tags/bulk
 
 Get all tags with usage statistics.
 
-```
+```http
 GET /api/tags/stats
 ```
 
@@ -193,7 +253,7 @@ Tags are sorted by count (descending), then name (alphabetically).
 
 Get all tags that have no file associations.
 
-```
+```http
 GET /api/tags/unused
 ```
 
@@ -207,7 +267,7 @@ GET /api/tags/unused
 
 Rename a tag and update all file associations.
 
-```
+```http
 PUT /api/tags/{tag}
 ```
 
@@ -229,10 +289,7 @@ PUT /api/tags/{tag}
 
 ```json
 {
-    "status": "ok",
-    "affectedFiles": 42,
-    "oldName": "vacaton",
-    "newName": "vacation"
+    "status": "ok"
 }
 ```
 
@@ -246,7 +303,7 @@ PUT /api/tags/{tag}
 
 Delete a tag from all file associations.
 
-```
+```http
 DELETE /api/tags/{tag}
 ```
 
@@ -260,10 +317,32 @@ DELETE /api/tags/{tag}
 
 ```json
 {
-    "status": "ok",
-    "affectedFiles": 42,
-    "tagName": "vacation"
+    "status": "ok"
 }
 ```
 
-The tag and all its file associations are removed in a single transaction.
+## Get Files for a Tag
+
+Return media files associated with a tag.
+
+```http
+GET /api/tags/{tag}
+```
+
+### Response
+
+```json
+{
+    "files": [
+        {
+            "id": 101,
+            "name": "beach.jpg",
+            "path": "photos/vacation/beach.jpg",
+            "parentPath": "photos/vacation",
+            "type": "image"
+        }
+    ]
+}
+```
+
+For exact schemas and limit details, see the [OpenAPI specification](openapi.md).

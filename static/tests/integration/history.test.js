@@ -6,6 +6,7 @@ describe('HistoryManager Integration', () => {
     let mockItemSelection;
     let mockTags;
     let mockTagClipboard;
+    let mockCollections;
     let mockLightbox;
     let mockPlaylist;
     let mockSearch;
@@ -50,6 +51,16 @@ describe('HistoryManager Integration', () => {
             closePasteModalDirect: vi.fn(),
         };
         globalThis.TagClipboard = mockTagClipboard;
+
+        // Mock Collections
+        mockCollections = {
+            _currentCollectionId: null,
+            closeCollectionsPanel: vi.fn(),
+            closeCreateModal: vi.fn(),
+            closeAddOrCreateModal: vi.fn(),
+            exitCollectionGalleryView: vi.fn(),
+        };
+        globalThis.Collections = mockCollections;
 
         // Mock Lightbox
         mockLightbox = {
@@ -106,6 +117,7 @@ describe('HistoryManager Integration', () => {
         delete globalThis.ItemSelection;
         delete globalThis.Tags;
         delete globalThis.TagClipboard;
+        delete globalThis.Collections;
         delete globalThis.Lightbox;
         delete globalThis.Playlist;
         delete globalThis.Player;
@@ -368,6 +380,36 @@ describe('HistoryManager Integration', () => {
             expect(HistoryManager.hasState('paste-tags-modal')).toBe(false);
         });
 
+        it('should close collections panel on popstate', () => {
+            HistoryManager.pushState('collections-panel');
+
+            const event = new PopStateEvent('popstate', { state: null });
+            window.dispatchEvent(event);
+
+            expect(mockCollections.closeCollectionsPanel).toHaveBeenCalled();
+            expect(HistoryManager.hasState('collections-panel')).toBe(false);
+        });
+
+        it('should close collection create modal on popstate', () => {
+            HistoryManager.pushState('collection-create-modal');
+
+            const event = new PopStateEvent('popstate', { state: null });
+            window.dispatchEvent(event);
+
+            expect(mockCollections.closeCreateModal).toHaveBeenCalled();
+            expect(HistoryManager.hasState('collection-create-modal')).toBe(false);
+        });
+
+        it('should close collection add modal on popstate', () => {
+            HistoryManager.pushState('collection-add-modal');
+
+            const event = new PopStateEvent('popstate', { state: null });
+            window.dispatchEvent(event);
+
+            expect(mockCollections.closeAddOrCreateModal).toHaveBeenCalled();
+            expect(HistoryManager.hasState('collection-add-modal')).toBe(false);
+        });
+
         it('should close lightbox on popstate', () => {
             HistoryManager.pushState('lightbox');
 
@@ -507,6 +549,9 @@ describe('HistoryManager Integration', () => {
 
             createHiddenElement('tag-modal');
             createHiddenElement('paste-tags-modal');
+            createHiddenElement('collections-panel');
+            createHiddenElement('collection-create-modal');
+            createHiddenElement('collection-add-modal');
             createHiddenElement('lightbox');
             createHiddenElement('player-modal');
             createHiddenElement('search-results');
@@ -515,6 +560,9 @@ describe('HistoryManager Integration', () => {
         afterEach(() => {
             document.getElementById('tag-modal')?.remove();
             document.getElementById('paste-tags-modal')?.remove();
+            document.getElementById('collections-panel')?.remove();
+            document.getElementById('collection-create-modal')?.remove();
+            document.getElementById('collection-add-modal')?.remove();
             document.getElementById('lightbox')?.remove();
             document.getElementById('player-modal')?.remove();
             document.getElementById('search-results')?.remove();
@@ -542,6 +590,30 @@ describe('HistoryManager Integration', () => {
             HistoryManager.closeAll();
 
             expect(mockTagClipboard.closePasteModalDirect).toHaveBeenCalled();
+        });
+
+        it('should close visible collections panel', () => {
+            document.getElementById('collections-panel').classList.remove('hidden');
+
+            HistoryManager.closeAll();
+
+            expect(mockCollections.closeCollectionsPanel).toHaveBeenCalled();
+        });
+
+        it('should close visible collection create modal', () => {
+            document.getElementById('collection-create-modal').classList.remove('hidden');
+
+            HistoryManager.closeAll();
+
+            expect(mockCollections.closeCreateModal).toHaveBeenCalled();
+        });
+
+        it('should close visible collection add modal', () => {
+            document.getElementById('collection-add-modal').classList.remove('hidden');
+
+            HistoryManager.closeAll();
+
+            expect(mockCollections.closeAddOrCreateModal).toHaveBeenCalled();
         });
 
         it('should close visible lightbox', () => {
@@ -583,6 +655,9 @@ describe('HistoryManager Integration', () => {
 
             expect(mockTags.closeModal).not.toHaveBeenCalled();
             expect(mockTagClipboard.closePasteModalDirect).not.toHaveBeenCalled();
+            expect(mockCollections.closeCollectionsPanel).not.toHaveBeenCalled();
+            expect(mockCollections.closeCreateModal).not.toHaveBeenCalled();
+            expect(mockCollections.closeAddOrCreateModal).not.toHaveBeenCalled();
             expect(mockLightbox.close).not.toHaveBeenCalled();
             expect(mockSearch.hideResults).not.toHaveBeenCalled();
         });
@@ -603,6 +678,18 @@ describe('HistoryManager Integration', () => {
             HistoryManager.handleBackAction();
 
             expect(mockMediaApp.navigateTo).toHaveBeenCalledWith('/folder');
+        });
+
+        it('should exit collection view before navigating to parent', () => {
+            mockMediaApp.state.currentPath = '/folder/subfolder';
+            mockCollections._currentCollectionId = 9;
+
+            HistoryManager.handleBackAction();
+
+            expect(mockCollections.exitCollectionGalleryView).toHaveBeenCalledWith({
+                pushState: false,
+            });
+            expect(mockMediaApp.navigateTo).not.toHaveBeenCalled();
         });
 
         it('should close app at root with no overlay', () => {

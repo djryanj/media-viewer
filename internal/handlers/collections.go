@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 
@@ -12,9 +14,10 @@ import (
 
 // CollectionRequest is used for creating or renaming a collection.
 type CollectionRequest struct {
-	Name      string   `json:"name"`
-	Paths     []string `json:"paths"`
-	CoverPath string   `json:"coverPath"`
+	Name       string   `json:"name"`
+	Paths      []string `json:"paths"`
+	CoverPath  string   `json:"coverPath"`
+	FolderPath *string  `json:"folderPath,omitempty"`
 }
 
 // CollectionItemsRequest carries a set of file paths for add/remove operations.
@@ -36,6 +39,11 @@ type CollectionMembershipsRequest struct {
 type CollectionDetailResponse struct {
 	*database.Collection
 	Items []database.MediaFile `json:"items"`
+}
+
+func normalizeRequiredCollectionName(name string) (string, bool) {
+	trimmed := strings.TrimSpace(name)
+	return trimmed, trimmed != ""
 }
 
 // GetCollections returns all collections.
@@ -64,19 +72,28 @@ func (h *Handlers) CreateCollection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.Name == "" {
+	name, ok := normalizeRequiredCollectionName(req.Name)
+	if !ok {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
 	}
+	req.Name = name
 
 	const maxItems = 500
 	if len(req.Paths) > maxItems {
 		req.Paths = req.Paths[:maxItems]
 	}
 
-	collection, err := h.db.CreateCollection(ctx, req.Name, req.Paths)
+	collection, err := h.db.CreateCollection(ctx, req.Name, req.Paths, req.FolderPath)
 	if err != nil {
-		http.Error(w, "Failed to create collection", http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, database.ErrCollectionNameInUse):
+			writeJSONError(w, "Collection name is already in use. Choose a different name.", http.StatusConflict)
+		case errors.Is(err, database.ErrCollectionFolderConflict):
+			writeJSONError(w, "Collections can't span multiple folders.", http.StatusConflict)
+		default:
+			http.Error(w, "Failed to create collection", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -131,12 +148,18 @@ func (h *Handlers) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.Name == "" {
+	name, ok := normalizeRequiredCollectionName(req.Name)
+	if !ok {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
 	}
+	req.Name = name
 
 	if err := h.db.UpdateCollection(ctx, id, req.Name, req.CoverPath); err != nil {
+		if errors.Is(err, database.ErrCollectionNameInUse) {
+			writeJSONError(w, "Collection name is already in use. Choose a different name.", http.StatusConflict)
+			return
+		}
 		http.Error(w, "Failed to update collection", http.StatusInternalServerError)
 		return
 	}
@@ -190,6 +213,10 @@ func (h *Handlers) AddCollectionItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.AddItemsToCollection(ctx, id, req.Paths); err != nil {
+		if errors.Is(err, database.ErrCollectionFolderConflict) {
+			writeJSONError(w, "Collections can't span multiple folders.", http.StatusConflict)
+			return
+		}
 		http.Error(w, "Failed to add items to collection", http.StatusInternalServerError)
 		return
 	}
@@ -218,14 +245,9 @@ func (h *Handlers) RemoveCollectionItems(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	for _, p := range req.Paths {
-		if p == "" {
-			continue
-		}
-		if err := h.db.RemoveItemFromCollection(ctx, id, p); err != nil {
-			http.Error(w, "Failed to remove item from collection", http.StatusInternalServerError)
-			return
-		}
+	if err := h.db.RemoveItemsFromCollection(ctx, id, req.Paths); err != nil {
+		http.Error(w, "Failed to remove item from collection", http.StatusInternalServerError)
+		return
 	}
 
 	writeJSONStatus(w, "ok")

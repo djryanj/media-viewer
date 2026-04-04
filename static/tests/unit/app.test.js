@@ -7,6 +7,7 @@ describe('MediaApp Module', () => {
     let mockFavorites;
     let mockInfiniteScroll;
     let mockHistoryManager;
+    let mockCollections;
 
     beforeEach(async () => {
         // Reset all modules to ensure fresh imports
@@ -91,6 +92,23 @@ describe('MediaApp Module', () => {
             getCurrentStateType: vi.fn(() => null),
         };
         window.HistoryManager = mockHistoryManager;
+
+        mockCollections = {
+            _currentCollectionId: null,
+            exitCollectionGalleryView: vi.fn(),
+            getInlineCollectionOrderState: vi.fn(() => ({
+                active: false,
+                dirty: false,
+                saving: false,
+                itemCount: 0,
+            })),
+            openCollectionManager: vi.fn(),
+            openCollectionsPanel: vi.fn(),
+            saveInlineCollectionReorder: vi.fn().mockResolvedValue(true),
+            cancelInlineCollectionReorder: vi.fn(),
+            openCollectionOrderEditor: vi.fn().mockResolvedValue(undefined),
+        };
+        window.Collections = mockCollections;
 
         // Mock lucide
         window.lucide = {
@@ -369,6 +387,79 @@ describe('MediaApp Module', () => {
 
             expect(MediaApp.navigateTo).toHaveBeenCalledWith('');
         });
+
+        it('should render collection context bar with count and quick actions', () => {
+            MediaApp.state.listing = {
+                breadcrumb: [{ name: 'Home', path: '' }],
+            };
+            mockCollections.getInlineCollectionOrderState.mockReturnValue({
+                active: true,
+                dirty: false,
+                saving: false,
+                itemCount: 12,
+            });
+
+            MediaApp.renderCollectionBreadcrumb('Trip', { collectionId: 7, itemCount: 12 });
+
+            const contextBar = document.querySelector('.collection-context-bar');
+            expect(contextBar).not.toBeNull();
+            expect(contextBar.textContent).toContain('Browsing collection');
+            expect(contextBar.textContent).toContain('Trip');
+            expect(contextBar.textContent).toContain('12 items');
+            expect(contextBar.textContent).toContain('Manage');
+            expect(contextBar.textContent).toContain('Save');
+            expect(contextBar.textContent).toContain('Cancel');
+            expect(contextBar.textContent).toContain('Exit');
+        });
+
+        it('should wire collection context actions to collections helpers', async () => {
+            MediaApp.state.listing = {
+                breadcrumb: [{ name: 'Home', path: '' }],
+            };
+            mockCollections.getInlineCollectionOrderState.mockReturnValue({
+                active: true,
+                dirty: true,
+                saving: false,
+                itemCount: 2,
+            });
+
+            MediaApp.renderCollectionBreadcrumb('Trip', { collectionId: 7, itemCount: 2 });
+
+            document.querySelector('.collection-context-manage-btn').click();
+            document.querySelector('.collection-context-save-btn').click();
+            document.querySelector('.collection-context-cancel-btn').click();
+            document.querySelector('.collection-context-exit-btn').click();
+
+            expect(mockCollections.openCollectionManager).toHaveBeenCalledWith(7);
+            expect(mockCollections.saveInlineCollectionReorder).toHaveBeenCalled();
+            expect(mockCollections.cancelInlineCollectionReorder).toHaveBeenCalled();
+            expect(mockCollections.exitCollectionGalleryView).toHaveBeenCalledWith({
+                pushState: false,
+            });
+        });
+
+        it('should mark empty collections clearly and disable reorder action', () => {
+            MediaApp.state.listing = {
+                breadcrumb: [{ name: 'Home', path: '' }],
+            };
+            mockCollections.getInlineCollectionOrderState.mockReturnValue({
+                active: true,
+                dirty: false,
+                saving: false,
+                itemCount: 0,
+            });
+
+            MediaApp.renderCollectionBreadcrumb('Trip', { collectionId: 7, itemCount: 0 });
+
+            expect(document.querySelector('.collection-context-bar').textContent).toContain(
+                'Empty collection'
+            );
+            expect(document.querySelector('.collection-context-bar').textContent).toContain(
+                '0 items'
+            );
+            expect(document.querySelector('.collection-context-save-btn').disabled).toBe(true);
+            expect(document.querySelector('.collection-context-cancel-btn').disabled).toBe(true);
+        });
     });
 
     describe('renderPagination()', () => {
@@ -519,6 +610,17 @@ describe('MediaApp Module', () => {
             MediaApp.navigateTo('/photos');
 
             expect(MediaApp.loadDirectory).not.toHaveBeenCalled();
+        });
+
+        it('should exit collection view when navigating to the current path', () => {
+            MediaApp.state.currentPath = '/photos';
+            mockCollections._currentCollectionId = 12;
+
+            MediaApp.navigateTo('/photos');
+
+            expect(mockCollections.exitCollectionGalleryView).toHaveBeenCalledWith({
+                pushState: false,
+            });
         });
     });
 

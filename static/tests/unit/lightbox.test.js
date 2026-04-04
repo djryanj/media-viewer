@@ -58,6 +58,10 @@ describe('Lightbox Module', () => {
             createIcons: vi.fn(),
         };
 
+        globalThis.CSS = {
+            escape: vi.fn((value) => value),
+        };
+
         globalThis.MediaApp = {
             state: {
                 mediaFiles: [],
@@ -113,6 +117,21 @@ describe('Lightbox Module', () => {
         globalThis.Favorites = {
             isPinned: vi.fn(() => false),
             toggleFavorite: vi.fn(() => Promise.resolve(false)),
+        };
+
+        globalThis.Collections = {
+            _all: [],
+            getMemberships: vi.fn(() => []),
+            getById: vi.fn(() => null),
+            getSuggestedCollections: vi.fn(() => []),
+            getCollectionDetail: vi.fn(() => Promise.resolve({ items: [] })),
+            openCollectionManager: vi.fn(),
+            openAddOrCreateModal: vi.fn(),
+            openCreateModal: vi.fn(),
+            addItemsToCollection: vi.fn(() => Promise.resolve()),
+            reorderCollectionItems: vi.fn(() => Promise.resolve()),
+            mergeCollectionIntoLibrary: vi.fn(),
+            removeItemFromCollection: vi.fn(() => Promise.resolve()),
         };
 
         Lightbox = await loadModuleForTesting('lightbox', 'Lightbox');
@@ -1178,6 +1197,209 @@ describe('Lightbox Module', () => {
                 Lightbox.closeTagsDrawer();
                 expect(Lightbox.elements.lightbox.style.height).toBe('');
             });
+        });
+    });
+
+    // =========================================
+    // Collection drawer management
+    // =========================================
+
+    describe('Collection drawer management', () => {
+        function ensureCollectionDrawerElements() {
+            Lightbox.cacheElements();
+
+            if (!Lightbox.elements.collectionDrawer) {
+                Lightbox.createCollectionDrawer();
+            }
+        }
+
+        beforeEach(() => {
+            ensureCollectionDrawerElements();
+        });
+
+        test('createCollectionDrawer groups current and add flows into titled sections', () => {
+            const sectionTitles = Array.from(
+                Lightbox.elements.collectionDrawer.querySelectorAll(
+                    '.collection-drawer-section-title'
+                )
+            ).map((node) => node.textContent.trim());
+
+            expect(sectionTitles).toEqual(['Current collections', 'Recent collections']);
+            expect(
+                Lightbox.elements.collectionMembershipFooter.querySelector(
+                    '.collection-drawer-add-card'
+                )
+            ).not.toBeNull();
+            expect(
+                Lightbox.elements.collectionMembershipView.querySelector('.collection-drawer-list')
+            ).toBe(Lightbox.elements.collectionDrawerList);
+            expect(Lightbox.elements.collectionDrawerOpenModalBtn.textContent).toContain(
+                'All Collections'
+            );
+        });
+
+        test('renderCollectionDrawer uses Browse as the primary row and hides secondary actions behind More', async () => {
+            const switchSpy = vi
+                .spyOn(Lightbox, 'switchToCollection')
+                .mockResolvedValue(undefined);
+            const reorderSpy = vi
+                .spyOn(Lightbox, 'openReorderPanel')
+                .mockResolvedValue(undefined);
+            const manageSpy = vi.spyOn(Collections, 'openCollectionManager');
+
+            Collections._all = [{ id: 1, name: 'Trip', itemCount: 3 }];
+            Collections.getMemberships.mockReturnValue([1]);
+            Collections.getById.mockReturnValue({ id: 1, name: 'Trip', itemCount: 3 });
+
+            await Lightbox.renderCollectionDrawer({
+                path: '/photo.jpg',
+                name: 'photo.jpg',
+                type: 'image',
+            });
+
+            const row = Lightbox.elements.collectionDrawerList.querySelector(
+                '.collection-drawer-item'
+            );
+            const mainButton = row.querySelector('.collection-drawer-item-main');
+            const moreButton = row.querySelector('.collection-drawer-more-btn');
+            const actions = row.querySelector('.collection-drawer-item-actions');
+
+            expect(row.textContent).toContain('Trip');
+            expect(row.textContent).toContain('Browse');
+            expect(moreButton.getAttribute('aria-expanded')).toBe('false');
+            expect(actions.classList.contains('hidden')).toBe(true);
+
+            await mainButton.dispatchEvent(
+                new MouseEvent('click', { bubbles: true, cancelable: true })
+            );
+
+            expect(switchSpy).toHaveBeenCalledWith(1, '/photo.jpg');
+
+            await moreButton.dispatchEvent(
+                new MouseEvent('click', { bubbles: true, cancelable: true })
+            );
+
+            const rerenderedRow = Lightbox.elements.collectionDrawerList.querySelector(
+                '.collection-drawer-item'
+            );
+            expect(
+                rerenderedRow
+                    .querySelector('.collection-drawer-more-btn')
+                    .getAttribute('aria-expanded')
+            ).toBe('true');
+            expect(
+                rerenderedRow
+                    .querySelector('.collection-drawer-item-actions')
+                    .classList.contains('hidden')
+            ).toBe(false);
+            expect(rerenderedRow.textContent).toContain('Manage');
+            expect(rerenderedRow.textContent).toContain('Order');
+            expect(rerenderedRow.textContent).toContain('Remove');
+
+            await rerenderedRow
+                .querySelector('.collection-drawer-manage-btn')
+                .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(manageSpy).toHaveBeenCalledWith(1);
+
+            await rerenderedRow
+                .querySelector('.collection-drawer-reorder-btn')
+                .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(reorderSpy).toHaveBeenCalledWith(1, 'Trip', '/photo.jpg');
+        });
+
+        test('renderCollectionDrawer shows recent compatible collections and can hand off to the full modal', async () => {
+            const closeSpy = vi.spyOn(Lightbox, 'closeCollectionDrawerWithHistory');
+            const file = {
+                path: '/photo.jpg',
+                name: 'photo.jpg',
+                type: 'image',
+                parentPath: '/photos',
+            };
+
+            Lightbox.items = [file];
+            Lightbox.currentIndex = 0;
+            Collections._all = [
+                { id: 1, name: 'Trip', itemCount: 3 },
+                { id: 2, name: 'Archive', itemCount: 4 },
+            ];
+            Collections.getMemberships.mockReturnValue([1]);
+            Collections.getById.mockReturnValue({ id: 1, name: 'Trip', itemCount: 3 });
+            Collections.getSuggestedCollections.mockReturnValue([
+                { id: 2, name: 'Archive', itemCount: 4 },
+            ]);
+
+            await Lightbox.renderCollectionDrawer(file);
+
+            expect(Collections.getSuggestedCollections).toHaveBeenCalledWith({
+                items: [file],
+                excludeIds: [1],
+                limit: 5,
+            });
+
+            const suggestionRow = Lightbox.elements.collectionDrawerSuggestions.querySelector(
+                '.collection-add-existing-row'
+            );
+            expect(suggestionRow.textContent).toContain('Archive');
+
+            await suggestionRow
+                .querySelector('.collection-add-existing-btn')
+                .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(Collections.addItemsToCollection).toHaveBeenCalledWith(2, ['/photo.jpg']);
+
+            Lightbox.elements.collectionDrawerOpenModalBtn.dispatchEvent(
+                new MouseEvent('click', { bubbles: true, cancelable: true })
+            );
+
+            expect(Collections.openAddOrCreateModal).toHaveBeenCalledWith([file]);
+            expect(closeSpy).toHaveBeenCalled();
+        });
+
+        test('openReorderPanel renders draggable reorder rows with drag handles', async () => {
+            Collections.getCollectionDetail.mockResolvedValue({
+                items: [
+                    { path: '/a.jpg', name: 'a.jpg', type: 'image' },
+                    { path: '/b.jpg', name: 'b.jpg', type: 'image' },
+                ],
+            });
+
+            await Lightbox.openReorderPanel(1, 'Trip', '/b.jpg');
+
+            const rows = Array.from(
+                Lightbox.elements.collectionReorderList.querySelectorAll('.reorder-item')
+            );
+
+            expect(Lightbox.elements.collectionReorderView.classList.contains('hidden')).toBe(
+                false
+            );
+            expect(rows).toHaveLength(2);
+            expect(rows[0].getAttribute('draggable')).toBe('true');
+            expect(rows[0].querySelector('.reorder-drag-handle')).not.toBeNull();
+            expect(rows[0].querySelector('.reorder-move-up')).toBeNull();
+            expect(rows[1].textContent).toContain('current');
+        });
+
+        test('_moveReorderPath updates local order and rerenders the reorder list', () => {
+            Lightbox._reorderPaths = ['/a.jpg', '/b.jpg', '/c.jpg'];
+            Lightbox._reorderNames = {
+                '/a.jpg': 'a.jpg',
+                '/b.jpg': 'b.jpg',
+                '/c.jpg': 'c.jpg',
+            };
+            Lightbox._reorderCurrentFilePath = '/b.jpg';
+
+            Lightbox._renderReorderList('/b.jpg');
+
+            const moved = Lightbox._moveReorderPath('/c.jpg', '/a.jpg', true);
+            const rowPaths = Array.from(
+                Lightbox.elements.collectionReorderList.querySelectorAll('.reorder-item')
+            ).map((row) => row.dataset.path);
+
+            expect(moved).toBe(true);
+            expect(Lightbox._reorderPaths).toEqual(['/c.jpg', '/a.jpg', '/b.jpg']);
+            expect(rowPaths).toEqual(['/c.jpg', '/a.jpg', '/b.jpg']);
         });
     });
 

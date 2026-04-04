@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,10 +11,117 @@ import (
 	"media-viewer/internal/logging"
 )
 
+var (
+	// ErrCollectionNameInUse indicates that a collection already exists with the requested name.
+	ErrCollectionNameInUse = errors.New("collection name already in use")
+	// ErrCollectionFolderConflict indicates that the requested items do not belong to a single folder scope.
+	ErrCollectionFolderConflict = errors.New("collection folder conflict")
+)
+
+func normalizeCollectionName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func stringPtr(value string) *string {
+	v := value
+	return &v
+}
+
+func normalizeCollectionPaths(paths []string) []string {
+	cleaned := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		cleaned = append(cleaned, path)
+	}
+	return cleaned
+}
+
+func (d *Database) ensureCollectionNameAvailableTx(ctx context.Context, tx *sql.Tx, name string, excludeID int64) error {
+	query := `SELECT id FROM collections WHERE name = ? COLLATE NOCASE`
+	args := []interface{}{name}
+	if excludeID > 0 {
+		query += ` AND id != ?`
+		args = append(args, excludeID)
+	}
+	query += ` LIMIT 1`
+
+	var existingID int64
+	err := tx.QueryRowContext(ctx, query, args...).Scan(&existingID)
+	if err == nil {
+		return ErrCollectionNameInUse
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	return fmt.Errorf("check collection name uniqueness: %w", err)
+}
+
+func (d *Database) resolveCollectionFolderPathTx(ctx context.Context, tx *sql.Tx, paths []string) (folderPath string, hasFolderPath bool, err error) {
+	cleaned := normalizeCollectionPaths(paths)
+
+	if len(cleaned) == 0 {
+		return "", false, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cleaned)), ",")
+	args := make([]interface{}, len(cleaned))
+	for i, path := range cleaned {
+		args[i] = path
+	}
+
+	rows, err := tx.QueryContext(ctx,
+		fmt.Sprintf(`SELECT path, COALESCE(parent_path, '') FROM files WHERE path IN (%s)`, placeholders),
+		args...,
+	)
+	if err != nil {
+		return "", false, fmt.Errorf("query collection folder paths: %w", err)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			logging.Error("error closing rows in resolveCollectionFolderPathTx: %v", cerr)
+		}
+	}()
+
+	foundCount := 0
+	for rows.Next() {
+		var path string
+		var parentPath string
+		if err := rows.Scan(&path, &parentPath); err != nil {
+			return "", false, fmt.Errorf("scan collection folder path: %w", err)
+		}
+		foundCount++
+		if !hasFolderPath {
+			folderPath = parentPath
+			hasFolderPath = true
+			continue
+		}
+		if parentPath != folderPath {
+			return "", false, ErrCollectionFolderConflict
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", false, fmt.Errorf("iterate collection folder paths: %w", err)
+	}
+	if foundCount != len(cleaned) {
+		return "", false, fmt.Errorf("resolve collection folder path: missing indexed files")
+	}
+
+	return folderPath, true, nil
+}
+
 // CreateCollection creates a new named collection and optionally seeds it with
 // the given file paths. The first path (if any) is used as the cover image.
-func (d *Database) CreateCollection(ctx context.Context, name string, paths []string) (*Collection, error) {
+func (d *Database) CreateCollection(ctx context.Context, name string, paths []string, folderPath *string) (*Collection, error) {
 	done := d.observeQuery("create_collection")
+	name = normalizeCollectionName(name)
+	normalizedPaths := normalizeCollectionPaths(paths)
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -24,11 +133,34 @@ func (d *Database) CreateCollection(ctx context.Context, name string, paths []st
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	if err := d.ensureCollectionNameAvailableTx(ctx, tx, name, 0); err != nil {
+		done(err)
+		return nil, err
+	}
+
+	resolvedFolderPath, hasFolderScope, err := d.resolveCollectionFolderPathTx(ctx, tx, normalizedPaths)
+	if err != nil {
+		done(err)
+		return nil, err
+	}
+	if folderPath != nil {
+		if hasFolderScope && resolvedFolderPath != *folderPath {
+			done(ErrCollectionFolderConflict)
+			return nil, ErrCollectionFolderConflict
+		}
+		if !hasFolderScope {
+			resolvedFolderPath = *folderPath
+			hasFolderScope = true
+		}
+	}
+
 	now := time.Now().Unix()
-	result, err := tx.ExecContext(ctx,
-		`INSERT INTO collections (name, created_at, updated_at) VALUES (?, ?, ?)`,
-		name, now, now,
-	)
+	insertQuery := `INSERT INTO collections (name, folder_path, created_at, updated_at) VALUES (?, ?, ?, ?)`
+	insertArgs := []interface{}{name, nil, now, now}
+	if hasFolderScope {
+		insertArgs[1] = resolvedFolderPath
+	}
+	result, err := tx.ExecContext(ctx, insertQuery, insertArgs...)
 	if err != nil {
 		done(err)
 		return nil, fmt.Errorf("insert collection: %w", err)
@@ -37,8 +169,8 @@ func (d *Database) CreateCollection(ctx context.Context, name string, paths []st
 	collectionID, _ := result.LastInsertId()
 
 	var coverPath string
-	if len(paths) > 0 {
-		coverPath = paths[0]
+	if len(normalizedPaths) > 0 {
+		coverPath = normalizedPaths[0]
 		if _, err = tx.ExecContext(ctx,
 			`UPDATE collections SET cover_path = ? WHERE id = ?`,
 			coverPath, collectionID,
@@ -47,10 +179,7 @@ func (d *Database) CreateCollection(ctx context.Context, name string, paths []st
 			return nil, fmt.Errorf("set cover path: %w", err)
 		}
 
-		for i, p := range paths {
-			if p == "" {
-				continue
-			}
+		for i, p := range normalizedPaths {
 			if _, err = tx.ExecContext(ctx,
 				`INSERT OR IGNORE INTO collection_items (collection_id, file_path, position) VALUES (?, ?, ?)`,
 				collectionID, p, i,
@@ -68,10 +197,16 @@ func (d *Database) CreateCollection(ctx context.Context, name string, paths []st
 
 	done(nil)
 	return &Collection{
-		ID:        collectionID,
-		Name:      name,
+		ID:   collectionID,
+		Name: name,
+		FolderPath: func() *string {
+			if !hasFolderScope {
+				return nil
+			}
+			return stringPtr(resolvedFolderPath)
+		}(),
 		CoverPath: coverPath,
-		ItemCount: len(paths),
+		ItemCount: len(normalizedPaths),
 		CreatedAt: time.Unix(now, 0),
 		UpdatedAt: time.Unix(now, 0),
 	}, nil
@@ -86,7 +221,7 @@ func (d *Database) GetCollections(ctx context.Context) ([]Collection, error) {
 	defer cancel()
 
 	rows, err := d.reader.QueryContext(ctx, `
-		SELECT c.id, c.name, COALESCE(c.cover_path, ''), c.created_at, c.updated_at,
+		SELECT c.id, c.name, c.folder_path, COALESCE(c.cover_path, ''), c.created_at, c.updated_at,
 		       COUNT(ci.id) AS item_count
 		FROM collections c
 		LEFT JOIN collection_items ci ON ci.collection_id = c.id
@@ -106,9 +241,13 @@ func (d *Database) GetCollections(ctx context.Context) ([]Collection, error) {
 	var collections []Collection
 	for rows.Next() {
 		var c Collection
+		var folderPath sql.NullString
 		var createdAt, updatedAt int64
-		if err := rows.Scan(&c.ID, &c.Name, &c.CoverPath, &createdAt, &updatedAt, &c.ItemCount); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &folderPath, &c.CoverPath, &createdAt, &updatedAt, &c.ItemCount); err != nil {
 			continue
+		}
+		if folderPath.Valid {
+			c.FolderPath = stringPtr(folderPath.String)
 		}
 		c.CreatedAt = time.Unix(createdAt, 0)
 		c.UpdatedAt = time.Unix(updatedAt, 0)
@@ -127,18 +266,22 @@ func (d *Database) GetCollection(ctx context.Context, id int64) (*Collection, er
 	defer cancel()
 
 	var c Collection
+	var folderPath sql.NullString
 	var createdAt, updatedAt int64
 	err := d.reader.QueryRowContext(ctx, `
-		SELECT c.id, c.name, COALESCE(c.cover_path, ''), c.created_at, c.updated_at,
+		SELECT c.id, c.name, c.folder_path, COALESCE(c.cover_path, ''), c.created_at, c.updated_at,
 		       COUNT(ci.id) AS item_count
 		FROM collections c
 		LEFT JOIN collection_items ci ON ci.collection_id = c.id
 		WHERE c.id = ?
 		GROUP BY c.id
-	`, id).Scan(&c.ID, &c.Name, &c.CoverPath, &createdAt, &updatedAt, &c.ItemCount)
+	`, id).Scan(&c.ID, &c.Name, &folderPath, &c.CoverPath, &createdAt, &updatedAt, &c.ItemCount)
 	done(err)
 	if err != nil {
 		return nil, fmt.Errorf("get collection %d: %w", id, err)
+	}
+	if folderPath.Valid {
+		c.FolderPath = stringPtr(folderPath.String)
 	}
 	c.CreatedAt = time.Unix(createdAt, 0)
 	c.UpdatedAt = time.Unix(updatedAt, 0)
@@ -198,24 +341,44 @@ func (d *Database) GetCollectionItems(ctx context.Context, id int64) ([]MediaFil
 // Pass an empty coverPath to leave the cover unchanged.
 func (d *Database) UpdateCollection(ctx context.Context, id int64, name, coverPath string) error {
 	done := d.observeQuery("update_collection")
+	name = normalizeCollectionName(name)
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	var err error
+	tx, err := d.writer.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := d.ensureCollectionNameAvailableTx(ctx, tx, name, id); err != nil {
+		done(err)
+		return err
+	}
+
 	if coverPath == "" {
-		_, err = d.writer.ExecContext(ctx,
+		_, err = tx.ExecContext(ctx,
 			`UPDATE collections SET name = ?, updated_at = ? WHERE id = ?`,
 			name, time.Now().Unix(), id,
 		)
 	} else {
-		_, err = d.writer.ExecContext(ctx,
+		_, err = tx.ExecContext(ctx,
 			`UPDATE collections SET name = ?, cover_path = ?, updated_at = ? WHERE id = ?`,
 			name, coverPath, time.Now().Unix(), id,
 		)
 	}
-	done(err)
-	return err
+	if err != nil {
+		done(err)
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		done(err)
+		return err
+	}
+	done(nil)
+	return nil
 }
 
 // DeleteCollection removes a collection and all its item membership records.
@@ -253,7 +416,8 @@ func (d *Database) DeleteCollection(ctx context.Context, id int64) error {
 // duplicates. The cover image is set to the first path if the collection
 // currently has no cover.
 func (d *Database) AddItemsToCollection(ctx context.Context, id int64, paths []string) error {
-	if len(paths) == 0 {
+	normalizedPaths := normalizeCollectionPaths(paths)
+	if len(normalizedPaths) == 0 {
 		return nil
 	}
 
@@ -269,16 +433,41 @@ func (d *Database) AddItemsToCollection(ctx context.Context, id int64, paths []s
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	requestedFolderPath, hasRequestedFolderPath, err := d.resolveCollectionFolderPathTx(ctx, tx, normalizedPaths)
+	if err != nil {
+		done(err)
+		return err
+	}
+
+	var collectionFolderPath sql.NullString
+	if err = tx.QueryRowContext(ctx, `SELECT folder_path FROM collections WHERE id = ?`, id).Scan(&collectionFolderPath); err != nil {
+		done(err)
+		return err
+	}
+	if hasRequestedFolderPath {
+		if collectionFolderPath.Valid {
+			if collectionFolderPath.String != requestedFolderPath {
+				done(ErrCollectionFolderConflict)
+				return ErrCollectionFolderConflict
+			}
+		} else {
+			if _, err = tx.ExecContext(ctx,
+				`UPDATE collections SET folder_path = ? WHERE id = ?`,
+				requestedFolderPath, id,
+			); err != nil {
+				done(err)
+				return err
+			}
+		}
+	}
+
 	var maxPos int
 	_ = tx.QueryRowContext(ctx,
 		"SELECT COALESCE(MAX(position), -1) FROM collection_items WHERE collection_id = ?",
 		id,
 	).Scan(&maxPos)
 
-	for i, p := range paths {
-		if p == "" {
-			continue
-		}
+	for i, p := range normalizedPaths {
 		if _, err = tx.ExecContext(ctx,
 			`INSERT OR IGNORE INTO collection_items (collection_id, file_path, position) VALUES (?, ?, ?)`,
 			id, p, maxPos+1+i,
@@ -293,7 +482,7 @@ func (d *Database) AddItemsToCollection(ctx context.Context, id int64, paths []s
 		UPDATE collections
 		SET cover_path = ?, updated_at = ?
 		WHERE id = ? AND (cover_path IS NULL OR cover_path = '')
-	`, paths[0], time.Now().Unix(), id); err != nil {
+	`, normalizedPaths[0], time.Now().Unix(), id); err != nil {
 		done(err)
 		return err
 	}
@@ -314,11 +503,16 @@ func (d *Database) AddItemsToCollection(ctx context.Context, id int64, paths []s
 	return nil
 }
 
-// RemoveItemFromCollection removes a single file from a collection and
-// advances the cover image to the new first item when the removed file
-// was the cover.
-func (d *Database) RemoveItemFromCollection(ctx context.Context, collectionID int64, filePath string) error {
-	done := d.observeQuery("remove_item_from_collection")
+// RemoveItemsFromCollection removes one or more files from a collection in a
+// single transaction and advances the cover image to the new first item when
+// the current cover is removed.
+func (d *Database) RemoveItemsFromCollection(ctx context.Context, collectionID int64, paths []string) error {
+	normalizedPaths := normalizeCollectionPaths(paths)
+	if len(normalizedPaths) == 0 {
+		return nil
+	}
+
+	done := d.observeQuery("remove_items_from_collection")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -330,36 +524,67 @@ func (d *Database) RemoveItemFromCollection(ctx context.Context, collectionID in
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	if _, err = tx.ExecContext(ctx,
-		"DELETE FROM collection_items WHERE collection_id = ? AND file_path = ?",
-		collectionID, filePath,
-	); err != nil {
+	var currentCoverPath sql.NullString
+	if err = tx.QueryRowContext(ctx, `SELECT cover_path FROM collections WHERE id = ?`, collectionID).Scan(&currentCoverPath); err != nil {
 		done(err)
 		return err
 	}
 
-	// Advance cover to the new first item if we just deleted the cover.
-	if _, err = tx.ExecContext(ctx, `
-		UPDATE collections SET
-			cover_path = (
-				SELECT file_path FROM collection_items
-				WHERE collection_id = ?
-				ORDER BY position ASC, id ASC
-				LIMIT 1
-			),
-			updated_at = ?
-		WHERE id = ? AND cover_path = ?
-	`, collectionID, time.Now().Unix(), collectionID, filePath); err != nil {
+	removedSet := make(map[string]struct{}, len(normalizedPaths))
+	for _, path := range normalizedPaths {
+		removedSet[path] = struct{}{}
+	}
+
+	deleteStmt, err := tx.PrepareContext(ctx,
+		`DELETE FROM collection_items WHERE collection_id = ? AND file_path = ?`,
+	)
+	if err != nil {
 		done(err)
 		return err
 	}
+	defer deleteStmt.Close() //nolint:errcheck
 
-	if _, err = tx.ExecContext(ctx,
-		`UPDATE collections SET updated_at = ? WHERE id = ?`,
-		time.Now().Unix(), collectionID,
-	); err != nil {
-		done(err)
-		return err
+	for _, path := range normalizedPaths {
+		if _, err = deleteStmt.ExecContext(ctx, collectionID, path); err != nil {
+			done(err)
+			return err
+		}
+	}
+
+	updatedAt := time.Now().Unix()
+	_, coverRemoved := removedSet[currentCoverPath.String]
+	if currentCoverPath.Valid && coverRemoved {
+		var nextCoverPath sql.NullString
+		err = tx.QueryRowContext(ctx, `
+			SELECT file_path
+			FROM collection_items
+			WHERE collection_id = ?
+			ORDER BY position ASC, id ASC
+			LIMIT 1
+		`, collectionID).Scan(&nextCoverPath)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			done(err)
+			return err
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			nextCoverPath = sql.NullString{}
+		}
+
+		if _, err = tx.ExecContext(ctx,
+			`UPDATE collections SET cover_path = ?, updated_at = ? WHERE id = ?`,
+			nextCoverPath, updatedAt, collectionID,
+		); err != nil {
+			done(err)
+			return err
+		}
+	} else {
+		if _, err = tx.ExecContext(ctx,
+			`UPDATE collections SET updated_at = ? WHERE id = ?`,
+			updatedAt, collectionID,
+		); err != nil {
+			done(err)
+			return err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -368,6 +593,13 @@ func (d *Database) RemoveItemFromCollection(ctx context.Context, collectionID in
 	}
 	done(nil)
 	return nil
+}
+
+// RemoveItemFromCollection removes a single file from a collection and
+// advances the cover image to the new first item when the removed file
+// was the cover.
+func (d *Database) RemoveItemFromCollection(ctx context.Context, collectionID int64, filePath string) error {
+	return d.RemoveItemsFromCollection(ctx, collectionID, []string{filePath})
 }
 
 // ReorderCollectionItems reassigns position values for a collection so that

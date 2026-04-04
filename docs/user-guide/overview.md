@@ -1,6 +1,6 @@
 # User Guide Overview
 
-This guide provides comprehensive documentation for all Media Viewer features. Whether you're browsing your collection, organizing with tags, or managing playlists, you'll find detailed instructions here.
+This guide provides comprehensive documentation for all Media Viewer features. Whether you're browsing your collection, organizing with tags, curating collections, or managing playlists, you'll find detailed instructions here.
 
 ## Core Concepts
 
@@ -19,6 +19,10 @@ Tags are labels you assign to media items for organization. An item can have mul
 ### Favorites
 
 Favorites are bookmarked items that appear in a quick-access strip at the top of the gallery. Use favorites for items you access frequently.
+
+### Collections
+
+Collections are user-created, ordered groups of images and videos. Use them when you want to build a shortlist, album, or review set that you can browse and manage as its own sequence.
 
 ### Playlists
 
@@ -55,6 +59,7 @@ The bottom bar displays library statistics including total images, videos, folde
 ## Guide Sections
 
 - [Browsing Media](browsing.md) - Navigate and view your library
+- [Collections](collections.md) - Create, browse, and manage ordered media sets
 - [Tagging](tagging.md) - Organize with tags
 - [Favorites](favorites.md) - Bookmark items for quick access
 - [Playlists](playlists.md) - Play Windows Media Player (.wpl) playlist files

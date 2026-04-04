@@ -1,45 +1,34 @@
 # Files & Media API
 
-Endpoints for browsing, retrieving, and streaming media files.
+Endpoints for browsing, retrieving, streaming, and thumbnailing media.
 
-## API Reference
+## Directory Listing
 
-See the [OpenAPI Specification](openapi.md) for interactive documentation of all file-related endpoints:
+Browse a directory with pagination and filtering.
 
-- `GET /api/files` - List files and folders
-- `GET /api/file/{path}` - Get a file
-- `GET /api/thumbnail/{path}` - Get thumbnail
-- `GET /api/stream/{path}` - Stream video
-- `GET /api/stream-info/{path}` - Get stream info
-- `GET /api/playlists` - List playlists
-- `GET /api/playlist/{name}` - Get playlist contents
-
-Refer to the OpenAPI documentation for detailed request/response schemas and examples.
-
-## List Directory
-
-Get contents of a directory with pagination and filtering.
-
-```
+```http
 GET /api/files
 ```
 
-### Parameters
+### Query Parameters
 
-| Parameter | Type   | Default | Description                            |
-| --------- | ------ | ------- | -------------------------------------- |
-| path      | string | ""      | Directory path (empty for root)        |
-| sort      | string | "name"  | Sort field: name, date, size, type     |
-| order     | string | "asc"   | Sort order: asc, desc                  |
-| type      | string | ""      | Filter by type: image, video, playlist |
-| page      | number | 1       | Page number                            |
-| pageSize  | number | 100     | Items per page                         |
+| Parameter  | Type    | Default | Description |
+| ---------- | ------- | ------- | ----------- |
+| `path`     | string  | `""`    | Directory path to browse. Empty string means the library root. |
+| `sort`     | string  | `name`  | One of `name`, `date`, `size`, `type`. |
+| `order`    | string  | `asc`   | `asc` or `desc`. |
+| `type`     | string  | `all`   | One of `all`, `images`, `videos`, `playlists`. |
+| `page`     | integer | `1`     | Page number. |
+| `pageSize` | integer | `100`   | Number of items per page. |
+| `offset`   | integer | `0`     | Optional offset for clients that want explicit offset control. |
 
 ### Response
 
 ```json
 {
     "path": "photos/vacation",
+    "name": "vacation",
+    "parent": "photos",
     "breadcrumb": [
         { "name": "Home", "path": "" },
         { "name": "photos", "path": "photos" },
@@ -47,117 +36,126 @@ GET /api/files
     ],
     "items": [
         {
+            "id": 101,
             "name": "beach.jpg",
             "path": "photos/vacation/beach.jpg",
+            "parentPath": "photos/vacation",
             "type": "image",
             "size": 2458624,
-            "modified": "2024-07-15T10:30:00Z",
-            "tags": ["beach", "sunset"],
-            "isFavorite": true
+            "modTime": "2026-04-03T18:25:19Z",
+            "mimeType": "image/jpeg",
+            "thumbnailUrl": "/api/thumbnails/photos/vacation/beach.jpg",
+            "isFavorite": true,
+            "tags": ["beach", "sunset"]
         }
     ],
+    "favorites": [],
+    "totalItems": 42,
     "page": 1,
     "pageSize": 100,
-    "totalItems": 42,
     "totalPages": 1
 }
 ```
 
-## List Media Files
+## Lightweight Path Listing
 
-Get all media files in a directory for lightbox navigation.
+Return directory entries without the full metadata payload.
 
+```http
+GET /api/files/paths
 ```
+
+This endpoint accepts `path`, `sort`, `order`, and `type` query parameters with the same meanings as `GET /api/files`.
+
+## Fetch a File
+
+Retrieve the original file bytes.
+
+```http
+GET /api/files/{path}
+```
+
+### Notes
+
+- `path` is a URL-encoded path parameter.
+- The server returns the underlying file content type.
+- Video responses support range requests for seeking.
+
+## List Media for Lightbox Navigation
+
+Return only image and video entries from a directory.
+
+```http
 GET /api/media
 ```
 
-### Parameters
+### Query Parameters
 
-| Parameter | Type   | Default | Description    |
-| --------- | ------ | ------- | -------------- |
-| path      | string | ""      | Directory path |
-| sort      | string | "name"  | Sort field     |
-| order     | string | "asc"   | Sort order     |
+| Parameter | Type    | Default | Description |
+| --------- | ------- | ------- | ----------- |
+| `path`    | string  | `""`    | Directory path. |
+| `sort`    | string  | `name`  | One of `name`, `date`, `size`, `type`. |
+| `order`   | string  | `asc`   | `asc` or `desc`. |
+| `offset`  | integer | `0`     | Zero-based media offset. |
+| `limit`   | integer | `500`   | Maximum items to return. |
 
 ### Response
 
 ```json
-[
-    {
-        "name": "beach.jpg",
-        "path": "photos/vacation/beach.jpg",
-        "type": "image",
-        "tags": ["beach", "sunset"]
-    },
-    {
-        "name": "video.mp4",
-        "path": "photos/vacation/video.mp4",
-        "type": "video",
-        "tags": []
-    }
-]
+{
+    "items": [
+        {
+            "id": 101,
+            "name": "beach.jpg",
+            "path": "photos/vacation/beach.jpg",
+            "parentPath": "photos/vacation",
+            "type": "image"
+        }
+    ],
+    "total": 120,
+    "offset": 0,
+    "limit": 500
+}
 ```
 
-## Get Thumbnail
+## Playlists
 
-Get a thumbnail image for a file.
-
-```
-GET /api/thumbnail/{path}
-```
-
-### Parameters
-
-| Parameter | Type   | Description           |
-| --------- | ------ | --------------------- |
-| path      | string | URL-encoded file path |
-
-### Response
-
-Returns the thumbnail image with appropriate content type.
-
-**Not Found (404):** If the file doesn't exist or thumbnail generation fails.
-
-## Get Original File
-
-Get the original file for viewing.
-
-```
-GET /api/file/{path}
+```http
+GET /api/playlists
+GET /api/playlists/{name}
 ```
 
-### Parameters
+- `GET /api/playlists` lists detected playlists.
+- `GET /api/playlists/{name}` returns the ordered media items for a playlist.
 
-| Parameter | Type   | Description           |
-| --------- | ------ | --------------------- |
-| path      | string | URL-encoded file path |
+## Streaming
 
-### Response
-
-Returns the file with appropriate content type and support for range requests (video seeking).
-
-## Search
-
-Search for files by name or tag.
-
-```
-GET /api/search
+```http
+GET /api/stream/{path}
+GET /api/stream-info/{path}
+POST /api/hls/session
+GET /api/hls/{sessionId}/playlist.m3u8
+GET /api/hls/{sessionId}/seg{index}.ts
 ```
 
-### Parameters
+- `/api/stream/{path}` serves direct video streaming and supports `GET` and `HEAD`.
+- `/api/stream-info/{path}` returns stream metadata, including whether transcoding is needed.
+- The HLS endpoints create and serve segmented playback sessions.
 
-| Parameter | Type   | Description               |
-| --------- | ------ | ------------------------- |
-| q         | string | Search query              |
-| type      | string | Filter by type (optional) |
-| page      | number | Page number               |
-| pageSize  | number | Items per page            |
+## Thumbnails
 
-### Query Syntax
+```http
+GET /api/thumbnails/{path}
+DELETE /api/thumbnails/{path}
+POST /api/thumbnails/invalidate
+POST /api/thumbnails/rebuild
+GET /api/thumbnails/status
+```
 
-- `sunset` - Search filenames containing "sunset"
-- `tag:vacation` - Search for files with "vacation" tag
+- `GET /api/thumbnails/{path}` returns a generated or cached thumbnail.
+- `DELETE /api/thumbnails/{path}` invalidates a single cached thumbnail.
+- `POST /api/thumbnails/invalidate` clears the full thumbnail cache.
+- `POST /api/thumbnails/rebuild` starts a background rebuild.
+- `GET /api/thumbnails/status` reports rebuild progress.
 
-### Response
-
-Same format as List Directory response.
+For exact schemas and media-specific edge cases, see the [OpenAPI specification](openapi.md).

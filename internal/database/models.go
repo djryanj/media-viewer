@@ -91,12 +91,13 @@ type MediaFilesPage struct {
 
 // Collection represents a user-defined ordered collection of media files.
 type Collection struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	CoverPath string    `json:"coverPath,omitempty"`
-	ItemCount int       `json:"itemCount"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID         int64     `json:"id"`
+	Name       string    `json:"name"`
+	FolderPath *string   `json:"folderPath,omitempty"`
+	CoverPath  string    `json:"coverPath,omitempty"`
+	ItemCount  int       `json:"itemCount"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 // SearchResult represents the results of a search query.

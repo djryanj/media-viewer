@@ -614,6 +614,7 @@ func (d *Database) initialize(ctx context.Context) error {
 	CREATE TABLE IF NOT EXISTS collections (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
+		folder_path TEXT,
 		cover_path TEXT,
 		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
 		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
@@ -753,6 +754,72 @@ func (d *Database) runMigrations(ctx context.Context) error {
 		}
 
 		logging.Info("Migration complete: position column added to favorites table")
+	}
+
+	var collectionFolderPathExists bool
+	err = d.writer.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('collections')
+		WHERE name='folder_path'
+	`).Scan(&collectionFolderPathExists)
+	if err != nil {
+		return fmt.Errorf("failed to check for folder_path column in collections: %w", err)
+	}
+
+	if !collectionFolderPathExists {
+		logging.Info("Migrating database: adding folder_path column to collections table")
+
+		done := d.observeQuery("migrate_add_collections_folder_path")
+		_, err = d.writer.ExecContext(ctx, `
+			ALTER TABLE collections ADD COLUMN folder_path TEXT
+		`)
+		done(err)
+		if err != nil {
+			return fmt.Errorf("failed to add folder_path column to collections: %w", err)
+		}
+
+		done = d.observeQuery("migrate_init_collections_folder_path")
+		_, err = d.writer.ExecContext(ctx, `
+			UPDATE collections
+			SET folder_path = (
+				SELECT COALESCE(f.parent_path, '')
+				FROM collection_items ci
+				INNER JOIN files f ON f.path = ci.file_path
+				WHERE ci.collection_id = collections.id
+				ORDER BY ci.position ASC, ci.id ASC
+				LIMIT 1
+			)
+			WHERE EXISTS (
+				SELECT 1
+				FROM collection_items ci
+				INNER JOIN files f ON f.path = ci.file_path
+				WHERE ci.collection_id = collections.id
+			)
+		`)
+		done(err)
+		if err != nil {
+			return fmt.Errorf("failed to initialize folder_path from collection items: %w", err)
+		}
+
+		done = d.observeQuery("migrate_init_collections_folder_path_from_cover")
+		_, err = d.writer.ExecContext(ctx, `
+			UPDATE collections
+			SET folder_path = (
+				SELECT COALESCE(f.parent_path, '')
+				FROM files f
+				WHERE f.path = collections.cover_path
+				LIMIT 1
+			)
+			WHERE folder_path IS NULL
+			  AND cover_path IS NOT NULL
+			  AND cover_path != ''
+		`)
+		done(err)
+		if err != nil {
+			return fmt.Errorf("failed to initialize folder_path from cover path: %w", err)
+		}
+
+		logging.Info("Migration complete: folder_path column added to collections table")
 	}
 
 	return nil

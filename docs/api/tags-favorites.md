@@ -1,31 +1,42 @@
 # Tags & Favorites API
 
-Endpoints for managing tags and favorite files.
+Cross-reference page for the tag and favorites endpoints used by the gallery and selection workflows.
 
-## API Reference
+## Tags
 
-See the [OpenAPI Specification](openapi.md) for interactive documentation:
+Primary tags endpoints:
 
-**Tags:**
+- `GET /api/tags`
+- `GET /api/tags/stats`
+- `GET /api/tags/unused`
+- `GET /api/tags/file`
+- `POST /api/tags/file`
+- `DELETE /api/tags/file`
+- `PUT /api/tags/file`
+- `POST /api/tags/query`
+- `POST /api/tags/bulk`
+- `DELETE /api/tags/bulk`
+- `GET /api/tags/{tag}`
+- `DELETE /api/tags/{tag}`
+- `PUT /api/tags/{tag}`
 
-- `GET /api/tags` - List all tags
-- `GET /api/tags/file` - Get file tags
-- `POST /api/tags/file` - Add tag to file
-- `DELETE /api/tags/file` - Remove tag from file
-- `PUT /api/tags/file` - Set all tags for file
-- `POST /api/tags/query` - Get tags for multiple files
-- `POST /api/tags/bulk` - Add tag to multiple files
-- `DELETE /api/tags/bulk` - Remove tag from multiple files
-- `GET /api/tags/{tag}` - Get files with tag
-- `DELETE /api/tags/{tag}` - Delete tag globally
-- `PUT /api/tags/{tag}` - Rename tag globally
+See [tags.md](tags.md) for request bodies and examples.
 
-**Favorites:**
+## Favorites
 
-- `GET /api/favorites` - List favorites
-- `POST /api/favorites` - Add favorite
-- `DELETE /api/favorites` - Remove favorite
-- `POST /api/favorites/bulk` - Add multiple favorites
-- `DELETE /api/favorites/bulk` - Remove multiple favorites
+- `GET /api/favorites`
+- `POST /api/favorites`
+- `DELETE /api/favorites`
+- `POST /api/favorites/bulk`
+- `DELETE /api/favorites/bulk`
+- `PUT /api/favorites/order`
 
-Refer to the OpenAPI documentation for detailed request/response schemas and examples.
+See [favorites.md](favorites.md) for request bodies and examples.
+
+## How They Fit Together
+
+- Tags are reusable labels that can span the whole library.
+- Favorites are a quick-access ordered strip for frequently revisited items.
+- Both surfaces are used by the frontend selection and gallery tools and expose JSON APIs intended for direct client use.
+
+For exact schemas, see the [OpenAPI specification](openapi.md).
