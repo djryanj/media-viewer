@@ -51,9 +51,26 @@ describe('Gallery Module', () => {
             toggleFavorite: vi.fn(() => Promise.resolve(true)),
         };
 
+        globalThis.Collections = {
+            isInCollection: vi.fn(() => false),
+            applyIndicatorToElement: vi.fn((el, inCollection) => {
+                el.classList.toggle('in-collection', !!inCollection);
+                const thumb = el.querySelector('.gallery-item-thumb');
+                const button = thumb?.querySelector('.collection-button');
+                if (!button) return;
+
+                const label = inCollection ? 'Manage collections' : 'Add to collection';
+                button.classList.toggle('has-collections', !!inCollection);
+                button.title = label;
+                button.setAttribute('aria-label', label);
+            }),
+            shouldShowInlineReorderHandle: vi.fn(() => false),
+            attachInlineReorderHandle: vi.fn(),
+            openAddOrCreateModal: vi.fn(),
+        };
+
         globalThis.ItemSelection = {
             isActive: false,
-            selectedItems: new Map(),
             selectedData: new Map(),
             selectedPaths: new Set(),
             applySelectionStateToVisibleItems: vi.fn(),
@@ -65,6 +82,16 @@ describe('Gallery Module', () => {
             wasLongPressTriggered: vi.fn(() => false),
             resetLongPressTriggered: vi.fn(),
         };
+
+        Object.defineProperty(globalThis.ItemSelection, 'selectedItems', {
+            get() {
+                const map = new Map();
+                this.selectedData.forEach((data, path) => {
+                    map.set(path, { ...data, element: null });
+                });
+                return map;
+            },
+        });
 
         globalThis.Lightbox = {
             imageFailures: {
@@ -1056,6 +1083,41 @@ describe('Gallery Module', () => {
             expect(tagButton).toBeNull();
         });
 
+        test('creates collection button for images', () => {
+            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
+
+            const thumbArea = Gallery.createThumbArea(item);
+
+            const collectionButton = thumbArea.querySelector('.collection-button');
+            expect(collectionButton).toBeTruthy();
+            expect(collectionButton.title).toBe('Add to collection');
+        });
+
+        test('creates inline reorder handle when collection reordering is active', () => {
+            Collections.shouldShowInlineReorderHandle.mockReturnValue(true);
+            const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
+
+            const galleryItem = Gallery.createGalleryItem(item);
+
+            const reorderHandle = galleryItem.querySelector('.collection-reorder-handle');
+            expect(reorderHandle).toBeTruthy();
+            expect(reorderHandle.title).toBe('Drag to reorder');
+            expect(Collections.attachInlineReorderHandle).toHaveBeenCalledWith(
+                reorderHandle,
+                galleryItem,
+                'test.jpg'
+            );
+        });
+
+        test('does not create collection button for folders', () => {
+            const item = { name: 'folder', path: 'folder', type: 'folder' };
+
+            const thumbArea = Gallery.createThumbArea(item);
+
+            const collectionButton = thumbArea.querySelector('.collection-button');
+            expect(collectionButton).toBeNull();
+        });
+
         // Mobile info section was removed from createThumbArea
         test('does not create mobile info section (removed from layout)', () => {
             const item = { name: 'test.jpg', path: 'test.jpg', type: 'image' };
@@ -1648,6 +1710,103 @@ describe('Gallery Module', () => {
             thumbArea.dispatchEvent(clickEvent);
 
             expect(Lightbox.open).not.toHaveBeenCalled();
+        });
+
+        test('ignores click on collection reorder handle', () => {
+            Collections.shouldShowInlineReorderHandle.mockReturnValue(true);
+            const reorderItem = {
+                path: '/reorder.jpg',
+                name: 'reorder.jpg',
+                type: 'image',
+                size: 1024,
+            };
+            globalThis.MediaApp.currentMedia = [reorderItem];
+
+            const galleryItem = Gallery.createGalleryItem(reorderItem);
+            document.getElementById('gallery').appendChild(galleryItem);
+            const reorderHandle = galleryItem.querySelector('.collection-reorder-handle');
+            const reorderThumbArea = galleryItem.querySelector('.gallery-item-thumb');
+
+            const clickEvent = new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(clickEvent, 'target', {
+                value: reorderHandle,
+                enumerable: true,
+            });
+            reorderThumbArea.dispatchEvent(clickEvent);
+
+            expect(Lightbox.open).not.toHaveBeenCalled();
+        });
+
+        test('opens collections modal from collection button', () => {
+            const collectionButton = thumbArea.querySelector('.collection-button');
+
+            collectionButton.dispatchEvent(
+                new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                })
+            );
+
+            expect(Collections.openAddOrCreateModal).toHaveBeenCalledWith([item]);
+            expect(Lightbox.open).not.toHaveBeenCalled();
+        });
+
+        test('opens add-to-collection modal for all selected items from collection button', () => {
+            ItemSelection.isActive = true;
+            ItemSelection.selectedData.set('/test.jpg', {
+                name: 'test.jpg',
+                type: 'image',
+            });
+            ItemSelection.selectedData.set('/other.jpg', {
+                name: 'other.jpg',
+                type: 'image',
+            });
+
+            const collectionButton = thumbArea.querySelector('.collection-button');
+
+            collectionButton.dispatchEvent(
+                new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                })
+            );
+
+            expect(Collections.openAddOrCreateModal).toHaveBeenCalledWith([
+                {
+                    path: '/test.jpg',
+                    name: 'test.jpg',
+                    type: 'image',
+                },
+                {
+                    path: '/other.jpg',
+                    name: 'other.jpg',
+                    type: 'image',
+                },
+            ]);
+            expect(ItemSelection.toggleItem).not.toHaveBeenCalled();
+            expect(Lightbox.open).not.toHaveBeenCalled();
+        });
+
+        test('applies collection state to the gallery button when item is collected', () => {
+            Collections.isInCollection.mockReturnValue(true);
+
+            const collectedItem = {
+                path: '/collected.jpg',
+                name: 'collected.jpg',
+                type: 'image',
+            };
+
+            const galleryItem = Gallery.createGalleryItem(collectedItem);
+            const collectionButton = galleryItem.querySelector('.collection-button');
+
+            expect(Collections.applyIndicatorToElement).toHaveBeenCalledWith(galleryItem, true);
+            expect(collectionButton.classList.contains('has-collections')).toBe(true);
+            expect(collectionButton.title).toBe('Manage collections');
+            expect(galleryItem.classList.contains('in-collection')).toBe(true);
+            expect(galleryItem.querySelector('.collection-indicator')).toBeNull();
         });
 
         test('handles click with selection mode active', () => {

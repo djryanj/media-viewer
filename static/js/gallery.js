@@ -85,7 +85,7 @@ const Gallery = {
                     <p>This folder is empty</p>
                 </div>
             `;
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [gallery] });
             return;
         }
 
@@ -130,14 +130,78 @@ const Gallery = {
         const thumbArea = this.createThumbArea(item);
         div.appendChild(thumbArea);
 
+        const reorderHandle = thumbArea.querySelector('.collection-reorder-handle');
+        if (
+            reorderHandle &&
+            typeof Collections !== 'undefined' &&
+            Collections.attachInlineReorderHandle
+        ) {
+            Collections.attachInlineReorderHandle(reorderHandle, div, item.path);
+        }
+
+        // Apply collection indicator if the Collections module knows this item belongs
+        // to one or more collections (populated after the membership batch returns).
+        if (typeof Collections !== 'undefined' && Collections.isInCollection(item.path)) {
+            Collections.applyIndicatorToElement(div, true);
+        }
+
         this.attachTapHandler(thumbArea, item);
 
         return div;
     },
 
+    createCollectionButton(item) {
+        const button = document.createElement('button');
+        button.className = 'collection-button';
+        button.title = 'Add to collection';
+        button.setAttribute('aria-label', 'Add to collection');
+        button.appendChild(this.createIcon('layers'));
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+
+            if (typeof Collections === 'undefined' || !Collections.openAddOrCreateModal) return;
+
+            if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+                const selectedItems = Array.from(
+                    ItemSelection.selectedItems || [],
+                    ([path, data]) => ({
+                        path,
+                        name: data.name,
+                        type: data.type,
+                    })
+                );
+
+                Collections.openAddOrCreateModal(selectedItems.length > 0 ? selectedItems : [item]);
+                return;
+            }
+
+            Collections.openAddOrCreateModal([item]);
+        });
+
+        return button;
+    },
+
     createThumbArea(item) {
         const thumbArea = document.createElement('div');
         thumbArea.className = 'gallery-item-thumb';
+
+        if (
+            typeof Collections !== 'undefined' &&
+            Collections.shouldShowInlineReorderHandle?.(item)
+        ) {
+            const reorderHandle = document.createElement('button');
+            reorderHandle.className = 'collection-reorder-handle';
+            reorderHandle.type = 'button';
+            reorderHandle.title = 'Drag to reorder';
+            reorderHandle.setAttribute('aria-label', 'Drag to reorder');
+            reorderHandle.appendChild(this.createIcon('grip-vertical'));
+            thumbArea.appendChild(reorderHandle);
+        }
+
+        if (item.type !== 'folder' && item.type !== 'playlist') {
+            thumbArea.appendChild(this.createCollectionButton(item));
+        }
 
         // Download button (images and videos only)
         if (item.type !== 'folder' && item.type !== 'playlist') {
@@ -264,6 +328,11 @@ const Gallery = {
 
     attachTapHandler(thumbArea, item) {
         const galleryItem = () => thumbArea.closest('.gallery-item');
+        const isControlTarget = (target) =>
+            target.closest('.collection-reorder-handle') ||
+            target.closest('.selection-checkbox') ||
+            target.closest('.download-button') ||
+            target.closest('.collection-button');
 
         let touchStartX = 0;
         let touchStartY = 0;
@@ -276,10 +345,7 @@ const Gallery = {
         thumbArea.addEventListener(
             'touchstart',
             (e) => {
-                if (
-                    e.target.closest('.selection-checkbox') ||
-                    e.target.closest('.download-button')
-                ) {
+                if (isControlTarget(e.target)) {
                     return;
                 }
 
@@ -315,10 +381,7 @@ const Gallery = {
         thumbArea.addEventListener(
             'touchend',
             (e) => {
-                if (
-                    e.target.closest('.selection-checkbox') ||
-                    e.target.closest('.download-button')
-                ) {
+                if (isControlTarget(e.target)) {
                     return;
                 }
 
@@ -391,7 +454,7 @@ const Gallery = {
                 return;
             }
 
-            if (e.target.closest('.selection-checkbox') || e.target.closest('.download-button')) {
+            if (isControlTarget(e.target)) {
                 return;
             }
 

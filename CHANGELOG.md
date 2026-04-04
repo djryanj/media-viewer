@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.16.0] - Unreleased
+
+### Added
+
+- feat(frontend): added a full Collections workflow for saving custom groups of images and videos. You can now create collections from the gallery, manage them from collected items, browse them in their own ordered view, reorder items more directly, and work with the same collections from the lightbox. Recent collections are surfaced first to make repeat organizing faster, and collections stay tied to a single folder so they remain predictable.
+
 ## [0.15.7] - 04-01-2026
 
 ### Changed

@@ -72,6 +72,9 @@ global.loadModuleForTesting = async function (moduleName, globalName = null, opt
         // Static import mapping - required for Vite/Vitest to track coverage
         // Dynamic imports with variables don't work with code splitting
         switch (moduleName) {
+            case 'collections':
+                await import('@/collections.js');
+                break;
             case 'app':
                 await import('@/app.js');
                 break;

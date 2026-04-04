@@ -54,6 +54,9 @@ const InfiniteScroll = {
     _restorePopoverTimer: null, // auto-dismiss timer for restore popover
     _restorePopoverHideTimer: null, // 250 ms fade-out delay timer (tracked so it can be cancelled)
     _saveScrollTimer: null, // debounce timer for persistent position save
+    // Set to true while the gallery is showing a static collection view.
+    // Prevents saveToCache() from persisting collection items as directory cache.
+    _isCollectionView: false,
 
     // Cached grid geometry — invalidated on resize and renderItems so we
     // don't force synchronous layout on every updateVirtualSpacer call.
@@ -314,6 +317,7 @@ const InfiniteScroll = {
         this._galleryItemsByPath.clear();
         clearTimeout(this._catchUpTimer);
         clearTimeout(this._saveScrollTimer);
+        this._isCollectionView = false;
         document.documentElement.classList.remove('catchup-active', 'custom-scrubber-active');
         if (this.elements.virtualSpacer) {
             this.elements.virtualSpacer.style.height = '0px';
@@ -324,6 +328,70 @@ const InfiniteScroll = {
         this.stopObserving();
         this.hideSkeletons();
         this.hideLoadMoreButton();
+    },
+
+    /**
+     * Load a pre-fetched, fully-ordered static dataset into the gallery grid.
+     * Used by Collections to display a collection in position order without
+     * any further network fetches (hasMore=false suppresses the observer and
+     * sequential loading machinery entirely).
+     *
+     * The caller is responsible for updating MediaApp.state.mediaFiles so that
+     * Lightbox.open(index) navigates within the same ordered item set.
+     *
+     * @param {Array} items - MediaFile objects in display order.
+     */
+    loadFromItems(items) {
+        this.resetState();
+        this._isCollectionView = true;
+        this.state.totalItems = items.length;
+        this.state.hasMore = false;
+        this.state.loadedItems = [...items];
+        this.renderItems(items, false);
+        this.updateStats();
+        this.updateVirtualSpacer();
+        this.updateScrollScrubber();
+    },
+
+    /**
+     * Reorder the currently-loaded gallery items so that collection items
+     * appear in their collection-defined order at their natural position
+     * (where the first collection item already sits in directory order).
+     *
+     * Unlike loadFromItems(), this preserves hasMore / totalItems / currentPage
+     * so infinite scroll continues appending directory items normally.
+     * Folders and non-collection items are not removed from the grid.
+     *
+     * @param {Array} collectionItems - ordered collection MediaFile objects
+     */
+    reorderForCollection(collectionItems) {
+        if (!collectionItems || collectionItems.length === 0) return;
+        const collectionPaths = new Set(collectionItems.map((i) => i.path));
+        const loaded = this.state.loadedItems;
+
+        // Find the position of the first collection item in the loaded list.
+        let insertionPoint = loaded.length;
+        for (let i = 0; i < loaded.length; i++) {
+            if (collectionPaths.has(loaded[i].path)) {
+                insertionPoint = i;
+                break;
+            }
+        }
+
+        // Stable grouped sort: [items before] + [collection items in order,
+        // but only those already loaded] + [remaining non-collection items].
+        const reordered = [];
+        for (let i = 0; i < insertionPoint; i++) reordered.push(loaded[i]);
+        for (const item of collectionItems) {
+            if (this._galleryItemsByPath.has(item.path)) reordered.push(item);
+        }
+        for (let i = insertionPoint; i < loaded.length; i++) {
+            if (!collectionPaths.has(loaded[i].path)) reordered.push(loaded[i]);
+        }
+
+        this.state.loadedItems = reordered;
+        // _isCollectionView stays false so directory-based infinite scroll continues.
+        this.renderItems(reordered, false);
     },
 
     startObserving() {
@@ -911,6 +979,9 @@ const InfiniteScroll = {
     // ─────────────────────────────────────────────────────────────────────────
     saveToCache(path) {
         if (this.state.loadedItems.length === 0) return;
+        // Never cache collection items as directory items — they have a different
+        // source and order that has nothing to do with the directory listing.
+        if (this._isCollectionView) return;
         if (this.cache.size >= this.maxCacheSize) {
             const firstKey = this.cache.keys().next().value;
             this.cache.delete(firstKey);

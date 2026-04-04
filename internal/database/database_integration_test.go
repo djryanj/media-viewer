@@ -1866,6 +1866,163 @@ func TestSetupCompleteMigrationIntegration(t *testing.T) {
 	}
 }
 
+func TestCollectionsFolderPathMigrationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "collections_migration.db")
+
+	rawDB, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open pre-migration database: %v", err)
+	}
+
+	preMigrationSchema := `
+	CREATE TABLE files (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		path TEXT NOT NULL UNIQUE,
+		parent_path TEXT NOT NULL,
+		type TEXT NOT NULL,
+		size INTEGER NOT NULL DEFAULT 0,
+		mod_time INTEGER NOT NULL,
+		mime_type TEXT,
+		file_hash TEXT,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		content_updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
+
+	CREATE TABLE collections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		cover_path TEXT,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
+
+	CREATE INDEX idx_collections_name ON collections(name COLLATE NOCASE);
+
+	CREATE TABLE collection_items (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		collection_id INTEGER NOT NULL,
+		file_path TEXT NOT NULL,
+		position INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		UNIQUE(collection_id, file_path)
+	);
+
+	CREATE INDEX idx_collection_items_collection ON collection_items(collection_id, position);
+	CREATE INDEX idx_collection_items_file ON collection_items(file_path);
+	`
+
+	if _, err := rawDB.Exec(preMigrationSchema); err != nil {
+		rawDB.Close()
+		t.Fatalf("Failed to create pre-migration schema: %v", err)
+	}
+
+	now := time.Now().Unix()
+	fileRows := []struct {
+		name       string
+		path       string
+		parentPath string
+		fileType   string
+	}{
+		{name: "a1.jpg", path: "folder-a/a1.jpg", parentPath: "folder-a", fileType: string(FileTypeImage)},
+		{name: "a2.jpg", path: "folder-a/a2.jpg", parentPath: "folder-a", fileType: string(FileTypeImage)},
+		{name: "b1.jpg", path: "folder-b/b1.jpg", parentPath: "folder-b", fileType: string(FileTypeImage)},
+	}
+	for _, fileRow := range fileRows {
+		if _, err := rawDB.Exec(
+			`INSERT INTO files (name, path, parent_path, type, size, mod_time, mime_type, created_at, updated_at, content_updated_at)
+			 VALUES (?, ?, ?, ?, 0, ?, 'image/jpeg', ?, ?, ?)`,
+			fileRow.name, fileRow.path, fileRow.parentPath, fileRow.fileType, now, now, now, now,
+		); err != nil {
+			rawDB.Close()
+			t.Fatalf("Failed to seed file %s: %v", fileRow.path, err)
+		}
+	}
+
+	collectionInserts := []struct {
+		id        int
+		name      string
+		coverPath any
+	}{
+		{id: 1, name: "Trip", coverPath: nil},
+		{id: 2, name: "Cover Only", coverPath: "folder-b/b1.jpg"},
+		{id: 3, name: "Empty", coverPath: nil},
+	}
+	for _, collection := range collectionInserts {
+		if _, err := rawDB.Exec(
+			`INSERT INTO collections (id, name, cover_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			collection.id, collection.name, collection.coverPath, now, now,
+		); err != nil {
+			rawDB.Close()
+			t.Fatalf("Failed to seed collection %q: %v", collection.name, err)
+		}
+	}
+
+	if _, err := rawDB.Exec(
+		`INSERT INTO collection_items (collection_id, file_path, position, created_at) VALUES
+		 (1, 'folder-a/a2.jpg', 0, ?),
+		 (1, 'folder-a/a1.jpg', 1, ?)`,
+		now, now,
+	); err != nil {
+		rawDB.Close()
+		t.Fatalf("Failed to seed collection items: %v", err)
+	}
+
+	if err := rawDB.Close(); err != nil {
+		t.Fatalf("Failed to close pre-migration database: %v", err)
+	}
+
+	db, _, err := New(context.Background(), dbPath, nil)
+	if err != nil {
+		t.Fatalf("Failed to reopen database and run migrations: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	trip, err := db.GetCollection(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetCollection(1) failed: %v", err)
+	}
+	if trip.FolderPath == nil || *trip.FolderPath != "folder-a" {
+		t.Fatalf("expected migrated folder_path folder-a for Trip, got %#v", trip.FolderPath)
+	}
+
+	coverOnly, err := db.GetCollection(ctx, 2)
+	if err != nil {
+		t.Fatalf("GetCollection(2) failed: %v", err)
+	}
+	if coverOnly.FolderPath == nil || *coverOnly.FolderPath != "folder-b" {
+		t.Fatalf("expected migrated folder_path folder-b for Cover Only, got %#v", coverOnly.FolderPath)
+	}
+
+	emptyCollection, err := db.GetCollection(ctx, 3)
+	if err != nil {
+		t.Fatalf("GetCollection(3) failed: %v", err)
+	}
+	if emptyCollection.FolderPath != nil {
+		t.Fatalf("expected empty collection folder_path to remain nil, got %#v", emptyCollection.FolderPath)
+	}
+
+	var columnExists bool
+	if err := db.reader.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('collections')
+		WHERE name='folder_path'
+	`).Scan(&columnExists); err != nil {
+		t.Fatalf("Failed to verify folder_path column: %v", err)
+	}
+	if !columnExists {
+		t.Fatal("expected folder_path column to exist after migration")
+	}
+}
+
 func TestDatabaseConnectionPoolConcurrency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

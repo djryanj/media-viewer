@@ -54,6 +54,15 @@ describe('ItemSelection Module', () => {
             hasState: vi.fn(() => false),
         };
 
+        globalThis.Collections = {
+            openAddOrCreateModal: vi.fn(),
+            removeItemsFromCollection: vi.fn().mockResolvedValue(undefined),
+            _currentCollectionId: null,
+            _currentCollectionName: null,
+            getMemberships: vi.fn(() => []),
+            getById: vi.fn(() => null),
+        };
+
         // Mock TagClipboard (referenced by selection.js)
         globalThis.TagClipboard = {
             sourcePath: null,
@@ -77,6 +86,8 @@ describe('ItemSelection Module', () => {
             <button id="selection-merge-tags-btn"></button>
             <button id="selection-tag-btn"></button>
             <button id="selection-favorite-btn"></button>
+            <button id="selection-collection-btn"><span>Collect</span></button>
+            <button id="selection-remove-collection-btn" style="display: none;"><span>Remove</span></button>
             <button id="selection-all-btn"></button>
             <button class="selection-close-btn"></button>
         `;
@@ -255,6 +266,109 @@ describe('ItemSelection Module', () => {
 
             expect(ItemSelection.selectedPaths.has(path)).toBe(false);
             expect(ItemSelection.selectedData.has(path)).toBe(false);
+        });
+    });
+
+    describe('bulkCreateCollection()', () => {
+        test('opens collections modal without exiting selection mode', () => {
+            ItemSelection.selectedPaths.add('/path/image1.jpg');
+            ItemSelection.selectedData.set('/path/image1.jpg', {
+                name: 'image1.jpg',
+                type: 'image',
+            });
+
+            const exitSpy = vi.spyOn(ItemSelection, 'exitSelectionModeWithHistory');
+
+            ItemSelection.bulkCreateCollection();
+
+            expect(Collections.openAddOrCreateModal).toHaveBeenCalledWith([
+                {
+                    path: '/path/image1.jpg',
+                    name: 'image1.jpg',
+                    type: 'image',
+                },
+            ]);
+            expect(exitSpy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('updateToolbar()', () => {
+        test('updates the collection action copy for the active collection context', () => {
+            Collections._currentCollectionId = 7;
+            Collections._currentCollectionName = 'Trip';
+            Collections.getMemberships.mockImplementation((path) =>
+                path === '/path/image1.jpg' ? [7] : []
+            );
+            Collections.getById.mockReturnValue({ id: 7, name: 'Trip' });
+
+            ItemSelection.selectedPaths.add('/path/image1.jpg');
+            ItemSelection.selectedData.set('/path/image1.jpg', {
+                name: 'image1.jpg',
+                type: 'image',
+            });
+            ItemSelection._taggableCount = 1;
+
+            ItemSelection.updateToolbar();
+
+            expect(ItemSelection.elements.collectionBtn.title).toBe(
+                'Manage selected items in "Trip"'
+            );
+            expect(ItemSelection.elements.collectionBtn.querySelector('span').textContent).toBe(
+                'Collections'
+            );
+            expect(ItemSelection.elements.removeCollectionBtn.style.display).toBe('');
+            expect(ItemSelection.elements.removeCollectionBtn.title).toBe(
+                'Remove selected items from "Trip"'
+            );
+        });
+
+        test('hides direct remove action when selection is outside current collection', () => {
+            Collections._currentCollectionId = 7;
+            Collections._currentCollectionName = 'Trip';
+            Collections.getMemberships.mockReturnValue([]);
+
+            ItemSelection.selectedPaths.add('/path/image1.jpg');
+            ItemSelection.selectedData.set('/path/image1.jpg', {
+                name: 'image1.jpg',
+                type: 'image',
+            });
+            ItemSelection._taggableCount = 1;
+
+            ItemSelection.updateToolbar();
+
+            expect(ItemSelection.elements.removeCollectionBtn.style.display).toBe('none');
+        });
+    });
+
+    describe('bulkRemoveFromCurrentCollection()', () => {
+        test('removes overlapping selected items from the active collection', async () => {
+            Collections._currentCollectionId = 7;
+            Collections._currentCollectionName = 'Trip';
+            Collections.getMemberships.mockImplementation((path) =>
+                path === '/path/image1.jpg' ? [7] : []
+            );
+            Collections.getById.mockReturnValue({ id: 7, name: 'Trip' });
+
+            ItemSelection.isActive = true;
+            ItemSelection.selectedPaths.add('/path/image1.jpg');
+            ItemSelection.selectedPaths.add('/path/image2.jpg');
+            ItemSelection.selectedData.set('/path/image1.jpg', {
+                name: 'image1.jpg',
+                type: 'image',
+            });
+            ItemSelection.selectedData.set('/path/image2.jpg', {
+                name: 'image2.jpg',
+                type: 'image',
+            });
+
+            const exitSpy = vi.spyOn(ItemSelection, 'exitSelectionModeWithHistory');
+
+            await ItemSelection.bulkRemoveFromCurrentCollection();
+
+            expect(Collections.removeItemsFromCollection).toHaveBeenCalledWith(7, [
+                '/path/image1.jpg',
+            ]);
+            expect(exitSpy).toHaveBeenCalled();
         });
     });
 

@@ -33,6 +33,7 @@ export default [
                 ItemSelection: 'writable',
                 SessionManager: 'writable',
                 InfiniteScroll: 'writable',
+                Collections: 'writable',
                 Playlist: 'writable',
                 VideoPlayer: 'writable',
                 WakeLock: 'writable',

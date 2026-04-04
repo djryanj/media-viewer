@@ -346,6 +346,17 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/favorites/bulk", h.BulkRemoveFavorites).Methods("DELETE")
 	api.HandleFunc("/favorites/order", h.ReorderFavorites).Methods("PUT")
 
+	// Collections
+	api.HandleFunc("/collections", h.GetCollections).Methods("GET")
+	api.HandleFunc("/collections", h.CreateCollection).Methods("POST")
+	api.HandleFunc("/collections/memberships", h.GetCollectionMemberships).Methods("POST")
+	api.HandleFunc("/collections/{id:[0-9]+}", h.GetCollection).Methods("GET")
+	api.HandleFunc("/collections/{id:[0-9]+}", h.UpdateCollection).Methods("PUT")
+	api.HandleFunc("/collections/{id:[0-9]+}", h.DeleteCollection).Methods("DELETE")
+	api.HandleFunc("/collections/{id:[0-9]+}/items", h.AddCollectionItems).Methods("POST")
+	api.HandleFunc("/collections/{id:[0-9]+}/items", h.RemoveCollectionItems).Methods("DELETE")
+	api.HandleFunc("/collections/{id:[0-9]+}/order", h.ReorderCollectionItems).Methods("PUT")
+
 	// Tags
 	api.HandleFunc("/tags", h.GetAllTags).Methods("GET")
 	api.HandleFunc("/tags/stats", h.GetAllTagsWithCounts).Methods("GET")

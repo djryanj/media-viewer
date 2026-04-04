@@ -1,34 +1,60 @@
 # Authentication API
 
-Password-based authentication endpoints for session management.
+Password-based authentication endpoints for initial setup and session management.
 
 ## Overview
 
-Media Viewer uses session-based authentication with HTTP-only cookies. After successful login, the server sets a session cookie that must be included in subsequent requests.
+Media Viewer uses session-based authentication with an HTTP-only cookie. After a successful login, the server sets a cookie that must be included in later requests.
 
 ## Session Cookie
 
-- **Name**: `session`
-- **HttpOnly**: `true` (not accessible via JavaScript)
-- **SameSite**: `Strict`
-- **Duration**: Configurable via `SESSION_DURATION` (default: 24h)
-- **Type**: Sliding expiration (extends on activity)
+- Name: `media_viewer_session`
+- `HttpOnly`: `true`
+- `SameSite`: `Strict`
+- Expiration: configurable server-side session duration
+- Behavior: sliding expiration for authenticated API activity
 
-## Endpoints
+## Initial Setup
 
-### Check Authentication Status
+Create the first password when the instance has no users yet.
 
-Check if the user is authenticated and whether initial setup is required. This single endpoint provides both authentication state and setup requirements.
-
+```http
+POST /api/auth/setup
 ```
+
+### Request
+
+```json
+{
+    "password": "your-password"
+}
+```
+
+### Notes
+
+- Only available before initial setup is complete.
+- Passwords must be between 6 and 72 characters.
+
+### Response
+
+```json
+{
+    "success": true,
+    "message": "Password configured successfully"
+}
+```
+
+## Check Authentication State
+
+Return both session state and setup state.
+
+```http
 GET /api/auth/check
 ```
 
 ### Response
 
-**Success (200):**
-
-When authenticated:
+Authenticated:
 
 ```json
 {
@@ -38,7 +64,7 @@ When authenticated:
 }
 ```
 
-When not authenticated (no setup required):
+Not authenticated:
 
 ```json
 {
@@ -47,7 +73,7 @@ When not authenticated (no setup required):
 }
 ```
 
-When not authenticated (setup required):
+Setup required:
 
 ```json
 {
@@ -56,15 +82,11 @@ When not authenticated (setup required):
 }
 ```
 
-- `authenticated`: `true` if the user has a valid session
-- `setupRequired`: `true` if initial password setup is needed, `false` otherwise
-- `expiresIn`: Seconds until session expires (only present when authenticated)
+## Login
 
-### Login
+Authenticate with the configured password and receive a session cookie.
 
-Authenticate and create a session.
-
-```
+```http
 POST /api/auth/login
 ```
 
@@ -78,76 +100,37 @@ POST /api/auth/login
 
 ### Response
 
-**Success (200):**
-
 ```json
 {
-    "success": true
+    "success": true,
+    "expiresIn": 86400
 }
 ```
 
-A session cookie is set in the response headers.
+The response also sets a `Set-Cookie` header for `media_viewer_session`.
 
-**Failure (401):**
+## Logout
 
-```json
-{
-    "success": false,
-    "error": "Invalid password"
-}
-```
+Destroy the current session and clear the cookie.
 
-### Logout
-
-End the current session.
-
-```
+```http
 POST /api/auth/logout
 ```
 
 ### Response
 
-**Success (200):**
-
 ```json
 {
-    "success": true
+    "success": true,
+    "message": "Logged out successfully"
 }
 ```
 
-The session cookie is cleared.
+## Change Password
 
-### Check Session
+Update the password for the instance.
 
-Verify if the current session is valid.
-
-```
-GET /api/auth/check
-```
-
-### Response
-
-**Authenticated (200):**
-
-```json
-{
-    "success": true
-}
-```
-
-**Not Authenticated (401):**
-
-```json
-{
-    "success": false
-}
-```
-
-### Change Password
-
-Update the application password.
-
-```
+```http
 PUT /api/auth/password
 ```
 
@@ -160,34 +143,39 @@ PUT /api/auth/password
 }
 ```
 
+### Notes
+
+- `newPassword` must be between 6 and 72 characters.
+- Invalid current password returns `401 Unauthorized`.
+
 ### Response
 
-**Success (200):**
-
 ```json
 {
-    "success": true
+    "success": true,
+    "message": "Password updated successfully"
 }
 ```
 
-**Invalid Current Password (401):**
+## Keep Session Alive
+
+Refresh the current session explicitly.
+
+```http
+PUT /api/auth/keepalive
+```
+
+### Response
 
 ```json
 {
-    "success": false,
-    "error": "Current password is incorrect"
+    "success": true,
+    "expiresIn": 86400
 }
 ```
 
-**Validation Error (400):**
+## Error Behavior
 
-```json
-{
-    "success": false,
-    "error": "New password must be at least 6 characters"
-}
-```
+Authentication endpoints commonly return plain-text `400` and `401` responses for invalid request bodies, short passwords, missing sessions, or invalid credentials.
 
-## Session Keepalive
-
-The application automatically sends keepalive requests to maintain active sessions. This is handled internally and does not require manual API calls.
+For WebAuthn-specific endpoints, see [webauthn.md](webauthn.md).
