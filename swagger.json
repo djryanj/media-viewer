@@ -3,7 +3,7 @@
     "info": {
         "title": "Media Viewer API",
         "description": "REST API for Media Viewer - A self-hosted media library browser with WebAuthn/Passkey authentication support",
-        "version": "1.0.0",
+        "version": "0.16.0",
         "contact": {
             "name": "Media Viewer",
             "url": "https://github.com/djryanj/media-viewer"
@@ -41,6 +41,10 @@
             "description": "Favorite files management"
         },
         {
+            "name": "Collections",
+            "description": "Ordered media collections and membership management"
+        },
+        {
             "name": "Tags",
             "description": "File tagging system"
         },
@@ -66,33 +70,6 @@
         }
     ],
     "paths": {
-        "/api/auth/setup-required": {
-            "get": {
-                "tags": [
-                    "Authentication"
-                ],
-                "summary": "Check if initial setup is required",
-                "description": "Returns whether the application needs initial password setup (no users exist)",
-                "responses": {
-                    "200": {
-                        "description": "Setup status",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "needsSetup": {
-                                            "type": "boolean",
-                                            "description": "True if no users exist and setup is required"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/api/auth/setup": {
             "post": {
                 "tags": [
@@ -170,7 +147,7 @@
                             "Set-Cookie": {
                                 "schema": {
                                     "type": "string",
-                                    "example": "session=abc123; Path=/; HttpOnly; SameSite=Strict"
+                                    "example": "media_viewer_session=abc123; Path=/; HttpOnly; SameSite=Strict"
                                 }
                             }
                         },
@@ -224,16 +201,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "success": {
-                                            "type": "boolean"
-                                        },
-                                        "username": {
-                                            "type": "string",
-                                            "description": "Empty string for single-user app"
-                                        }
-                                    }
+                                    "$ref": "#/components/schemas/AuthCheckResponse"
                                 }
                             }
                         }
@@ -300,7 +268,14 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Session refreshed"
+                        "description": "Session refreshed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthResponse"
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "description": "Invalid or expired session"
@@ -686,7 +661,7 @@
                         }
                     },
                     {
-                        "name": "filter",
+                        "name": "type",
                         "in": "query",
                         "schema": {
                             "type": "string",
@@ -708,11 +683,19 @@
                         }
                     },
                     {
-                        "name": "limit",
+                        "name": "pageSize",
                         "in": "query",
                         "schema": {
                             "type": "integer",
-                            "default": 50
+                            "default": 100
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 0
                         }
                     }
                 ],
@@ -722,7 +705,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/FileList"
+                                    "$ref": "#/components/schemas/DirectoryListing"
                                 }
                             }
                         }
@@ -730,7 +713,83 @@
                 }
             }
         },
-        "/api/file/{path}": {
+        "/api/files/paths": {
+            "get": {
+                "tags": [
+                    "Files"
+                ],
+                "summary": "List lightweight file paths",
+                "description": "Returns path, name, and type for directory entries without full metadata.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "default": ""
+                        }
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "name",
+                                "date",
+                                "size",
+                                "type"
+                            ],
+                            "default": "name"
+                        }
+                    },
+                    {
+                        "name": "order",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ],
+                            "default": "asc"
+                        }
+                    },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "all",
+                                "images",
+                                "videos",
+                                "playlists"
+                            ],
+                            "default": "all"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Lightweight directory contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FilePathList"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/files/{path}": {
             "get": {
                 "tags": [
                     "Files"
@@ -768,7 +827,85 @@
                 }
             }
         },
-        "/api/thumbnail/{path}": {
+        "/api/media": {
+            "get": {
+                "tags": [
+                    "Files"
+                ],
+                "summary": "List media files for lightbox navigation",
+                "description": "Returns only image and video entries from a directory with offset-based pagination.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "default": ""
+                        }
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "name",
+                                "date",
+                                "size",
+                                "type"
+                            ],
+                            "default": "name"
+                        }
+                    },
+                    {
+                        "name": "order",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ],
+                            "default": "asc"
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 0
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 500
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated media files",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MediaFilesPage"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/thumbnails/{path}": {
             "get": {
                 "tags": [
                     "Thumbnails"
@@ -935,11 +1072,25 @@
                         }
                     },
                     {
-                        "name": "limit",
+                        "name": "pageSize",
                         "in": "query",
                         "schema": {
                             "type": "integer",
-                            "default": 50
+                            "default": 100
+                        }
+                    },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "",
+                                "image",
+                                "video",
+                                "folder",
+                                "playlist"
+                            ]
                         }
                     }
                 ],
@@ -949,7 +1100,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/FileList"
+                                    "$ref": "#/components/schemas/SearchResult"
                                 }
                             }
                         }
@@ -993,14 +1144,9 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "suggestions": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/components/schemas/SearchSuggestion"
-                                            }
-                                        }
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/SearchSuggestion"
                                     }
                                 }
                             }
@@ -1026,14 +1172,9 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "favorites": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/components/schemas/MediaFile"
-                                            }
-                                        }
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/MediaFile"
                                     }
                                 }
                             }
@@ -1056,22 +1197,21 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "path"
-                                ],
-                                "properties": {
-                                    "path": {
-                                        "type": "string"
-                                    }
-                                }
+                                "$ref": "#/components/schemas/FavoriteRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Added to favorites"
+                        "description": "Added to favorites",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -1090,22 +1230,21 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "path"
-                                ],
-                                "properties": {
-                                    "path": {
-                                        "type": "string"
-                                    }
-                                }
+                                "$ref": "#/components/schemas/FavoriteRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Removed from favorites"
+                        "description": "Removed from favorites",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1126,25 +1265,21 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "paths"
-                                ],
-                                "properties": {
-                                    "paths": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/BulkAddFavoritesRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Favorites added"
+                        "description": "Favorites added",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkFavoriteResponse"
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -1163,25 +1298,481 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "paths"
-                                ],
-                                "properties": {
-                                    "paths": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/BulkRemoveFavoritesRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Favorites removed"
+                        "description": "Favorites removed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkFavoriteResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/favorites/order": {
+            "put": {
+                "tags": [
+                    "Favorites"
+                ],
+                "summary": "Reorder favorites",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReorderFavoritesRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Favorite order updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/collections": {
+            "get": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "List all collections",
+                "description": "Returns all collections with item counts and folder scope metadata.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of collections",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Collection"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Create a collection",
+                "description": "Creates a new collection and can optionally seed it with media items. Collections are folder-scoped and names must be unique.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollectionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Collection created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Collection"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or missing collection name"
+                    },
+                    "409": {
+                        "description": "Collection name conflict or cross-folder conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/collections/memberships": {
+            "post": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Get collection memberships for multiple files",
+                "description": "Returns a map of file paths to the collection IDs that currently contain each file.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollectionMembershipsRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Membership map keyed by file path",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer",
+                                            "format": "int64"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body"
+                    }
+                }
+            }
+        },
+        "/api/collections/{id}": {
+            "get": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Get a collection with its items",
+                "description": "Returns collection metadata together with the collection's ordered media items.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "description": "Collection ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Collection detail",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollectionDetail"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid collection ID"
+                    },
+                    "404": {
+                        "description": "Collection not found"
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Update a collection",
+                "description": "Renames a collection and can update its cover image.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "description": "Collection ID"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollectionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Collection updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid collection ID or request body"
+                    },
+                    "409": {
+                        "description": "Collection name conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Delete a collection",
+                "description": "Deletes a collection and its membership records, without deleting the underlying media files.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "description": "Collection ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Collection deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid collection ID"
+                    }
+                }
+            }
+        },
+        "/api/collections/{id}/items": {
+            "post": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Add items to a collection",
+                "description": "Adds one or more media paths to an existing collection. Collections cannot span folders.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "description": "Collection ID"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollectionItemsRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Items added to collection",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid collection ID or empty paths array"
+                    },
+                    "409": {
+                        "description": "Cross-folder collection conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Remove items from a collection",
+                "description": "Removes one or more media paths from an existing collection.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "description": "Collection ID"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollectionItemsRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Items removed from collection",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid collection ID or empty paths array"
+                    }
+                }
+            }
+        },
+        "/api/collections/{id}/order": {
+            "put": {
+                "tags": [
+                    "Collections"
+                ],
+                "summary": "Reorder collection items",
+                "description": "Replaces the stored item order for an existing collection.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "description": "Collection ID"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollectionReorderRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Collection order updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid collection ID or empty paths array"
                     }
                 }
             }
@@ -1203,14 +1794,65 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "tags": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "string"
-                                            }
-                                        }
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Tag"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tags/stats": {
+            "get": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "List tags with usage counts",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tags with counts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/TagWithCount"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tags/unused": {
+            "get": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "List unused tag names",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Unused tag names",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
                                     }
                                 }
                             }
@@ -1246,14 +1888,9 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "tags": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "string"
-                                            }
-                                        }
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
                                     }
                                 }
                             }
@@ -1276,26 +1913,21 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "path",
-                                    "tag"
-                                ],
-                                "properties": {
-                                    "path": {
-                                        "type": "string"
-                                    },
-                                    "tag": {
-                                        "type": "string"
-                                    }
-                                }
+                                "$ref": "#/components/schemas/TagRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Tag added"
+                        "description": "Tag added",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -1314,26 +1946,21 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "path",
-                                    "tag"
-                                ],
-                                "properties": {
-                                    "path": {
-                                        "type": "string"
-                                    },
-                                    "tag": {
-                                        "type": "string"
-                                    }
-                                }
+                                "$ref": "#/components/schemas/TagRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Tag removed"
+                        "description": "Tag removed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -1396,18 +2023,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "paths"
-                                ],
-                                "properties": {
-                                    "paths": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/BatchTagsRequest"
                             }
                         }
                     }
@@ -1448,29 +2064,21 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "required": [
-                                    "paths",
-                                    "tag"
-                                ],
-                                "properties": {
-                                    "paths": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "tag": {
-                                        "type": "string"
-                                    }
-                                }
+                                "$ref": "#/components/schemas/BulkTagRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Tag added to files"
+                        "description": "Tag added to files",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkTagResponse"
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -1489,20 +2097,52 @@
                     "content": {
                         "application/json": {
                             "schema": {
+                                "$ref": "#/components/schemas/BulkTagRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tag removed from files",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkTagResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/hls/session": {
+            "post": {
+                "tags": [
+                    "Streaming"
+                ],
+                "summary": "Create or reuse an HLS session",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
                                 "type": "object",
                                 "required": [
-                                    "paths",
-                                    "tag"
+                                    "path"
                                 ],
                                 "properties": {
-                                    "paths": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "tag": {
+                                    "path": {
                                         "type": "string"
+                                    },
+                                    "width": {
+                                        "type": "integer",
+                                        "description": "Target stream width; 0 keeps source width"
                                     }
                                 }
                             }
@@ -1511,7 +2151,92 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Tag removed from files"
+                        "description": "HLS session details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "sessionId": {
+                                            "type": "string"
+                                        },
+                                        "playlistUrl": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/hls/{sessionId}/playlist.m3u8": {
+            "get": {
+                "tags": [
+                    "Streaming"
+                ],
+                "summary": "Get HLS playlist",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "HLS playlist",
+                        "content": {
+                            "application/vnd.apple.mpegurl": {}
+                        }
+                    }
+                }
+            }
+        },
+        "/api/hls/{sessionId}/seg{index}.ts": {
+            "get": {
+                "tags": [
+                    "Streaming"
+                ],
+                "summary": "Get HLS segment",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "index",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "MPEG-TS video segment",
+                        "content": {
+                            "video/mp2t": {}
+                        }
                     }
                 }
             }
@@ -1671,7 +2396,7 @@
                 }
             }
         },
-        "/api/playlist/{name}": {
+        "/api/playlists/{name}": {
             "get": {
                 "tags": [
                     "Playlists"
@@ -1877,7 +2602,84 @@
                 "summary": "Health check",
                 "responses": {
                     "200": {
-                        "description": "Service is healthy"
+                        "description": "Service health",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HealthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/healthz": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Health check alias",
+                "responses": {
+                    "200": {
+                        "description": "Service health",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HealthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/livez": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "Server process is alive",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/readyz": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "Service is ready",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service is not ready",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1939,7 +2741,7 @@
             "cookieAuth": {
                 "type": "apiKey",
                 "in": "cookie",
-                "name": "session"
+                "name": "media_viewer_session"
             }
         },
         "schemas": {
@@ -1949,9 +2751,47 @@
                     "success": {
                         "type": "boolean"
                     },
+                    "message": {
+                        "type": "string"
+                    },
+                    "username": {
+                        "type": "string"
+                    },
                     "expiresIn": {
                         "type": "integer",
                         "description": "Session duration in seconds"
+                    }
+                }
+            },
+            "AuthCheckResponse": {
+                "type": "object",
+                "properties": {
+                    "authenticated": {
+                        "type": "boolean"
+                    },
+                    "setupRequired": {
+                        "type": "boolean"
+                    },
+                    "expiresIn": {
+                        "type": "integer",
+                        "description": "Session duration in seconds"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                }
+            },
+            "StatusResponse": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "example": "ok"
                     }
                 }
             },
@@ -1983,10 +2823,17 @@
             "MediaFile": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
                     "name": {
                         "type": "string"
                     },
                     "path": {
+                        "type": "string"
+                    },
+                    "parentPath": {
                         "type": "string"
                     },
                     "type": {
@@ -1995,19 +2842,26 @@
                             "image",
                             "video",
                             "folder",
-                            "playlist"
+                            "playlist",
+                            "other"
                         ]
                     },
                     "size": {
                         "type": "integer",
                         "format": "int64"
                     },
-                    "modifiedAt": {
+                    "modTime": {
                         "type": "string",
                         "format": "date-time"
                     },
-                    "thumbnailPath": {
+                    "mimeType": {
                         "type": "string"
+                    },
+                    "thumbnailUrl": {
+                        "type": "string"
+                    },
+                    "itemCount": {
+                        "type": "integer"
                     },
                     "tags": {
                         "type": "array",
@@ -2020,10 +2874,409 @@
                     }
                 }
             },
-            "FileList": {
+            "Tag": {
                 "type": "object",
                 "properties": {
-                    "files": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "color": {
+                        "type": "string"
+                    },
+                    "itemCount": {
+                        "type": "integer"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "TagWithCount": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "color": {
+                        "type": "string"
+                    },
+                    "count": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "Collection": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "folderPath": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Folder scope for the collection"
+                    },
+                    "coverPath": {
+                        "type": "string"
+                    },
+                    "itemCount": {
+                        "type": "integer"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "CollectionDetail": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/Collection"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/MediaFile"
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "CollectionRequest": {
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Optional initial media paths to add to the collection"
+                    },
+                    "coverPath": {
+                        "type": "string",
+                        "description": "Optional explicit cover image path when updating a collection"
+                    },
+                    "folderPath": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional folder scope for empty or newly created collections"
+                    }
+                }
+            },
+            "CollectionItemsRequest": {
+                "type": "object",
+                "required": [
+                    "paths"
+                ],
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "CollectionReorderRequest": {
+                "type": "object",
+                "required": [
+                    "paths"
+                ],
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Full collection item order, from first to last"
+                    }
+                }
+            },
+            "CollectionMembershipsRequest": {
+                "type": "object",
+                "required": [
+                    "paths"
+                ],
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Media file paths to check for collection membership"
+                    }
+                }
+            },
+            "FavoriteRequest": {
+                "type": "object",
+                "required": [
+                    "path"
+                ],
+                "properties": {
+                    "path": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "folder",
+                            "playlist",
+                            "other"
+                        ]
+                    }
+                }
+            },
+            "BulkAddFavoritesRequest": {
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FavoriteRequest"
+                        }
+                    }
+                }
+            },
+            "BulkRemoveFavoritesRequest": {
+                "type": "object",
+                "required": [
+                    "paths"
+                ],
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "BulkFavoriteResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "integer"
+                    },
+                    "failed": {
+                        "type": "integer"
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "ReorderFavoritesRequest": {
+                "type": "object",
+                "required": [
+                    "paths"
+                ],
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "TagRequest": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string"
+                    },
+                    "tag": {
+                        "type": "string"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "newName": {
+                        "type": "string"
+                    },
+                    "color": {
+                        "type": "string"
+                    }
+                }
+            },
+            "BatchTagsRequest": {
+                "type": "object",
+                "required": [
+                    "paths"
+                ],
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "BulkTagRequest": {
+                "type": "object",
+                "required": [
+                    "paths"
+                ],
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "tag": {
+                        "type": "string"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "BulkTagResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "integer"
+                    },
+                    "failed": {
+                        "type": "integer"
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "PathPart": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "string"
+                    }
+                }
+            },
+            "DirectoryListing": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "parent": {
+                        "type": "string"
+                    },
+                    "breadcrumb": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PathPart"
+                        }
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MediaFile"
+                        }
+                    },
+                    "favorites": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MediaFile"
+                        }
+                    },
+                    "totalItems": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "pageSize": {
+                        "type": "integer"
+                    },
+                    "totalPages": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "FilePathItem": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    }
+                }
+            },
+            "FilePathList": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FilePathItem"
+                        }
+                    },
+                    "totalItems": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "MediaFilesPage": {
+                "type": "object",
+                "properties": {
+                    "items": {
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/MediaFile"
@@ -2032,36 +3285,104 @@
                     "total": {
                         "type": "integer"
                     },
+                    "offset": {
+                        "type": "integer"
+                    },
+                    "limit": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "SearchResult": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MediaFile"
+                        }
+                    },
+                    "query": {
+                        "type": "string"
+                    },
+                    "totalItems": {
+                        "type": "integer"
+                    },
                     "page": {
+                        "type": "integer"
+                    },
+                    "pageSize": {
                         "type": "integer"
                     },
                     "totalPages": {
                         "type": "integer"
-                    },
-                    "hasMore": {
-                        "type": "boolean"
                     }
                 }
             },
             "SearchSuggestion": {
                 "type": "object",
                 "properties": {
-                    "text": {
-                        "type": "string"
-                    },
-                    "type": {
-                        "type": "string",
-                        "enum": [
-                            "file",
-                            "tag",
-                            "folder"
-                        ]
-                    },
                     "path": {
                         "type": "string"
                     },
-                    "thumbnailPath": {
+                    "name": {
                         "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "highlight": {
+                        "type": "string"
+                    },
+                    "itemCount": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "HealthResponse": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string"
+                    },
+                    "ready": {
+                        "type": "boolean"
+                    },
+                    "version": {
+                        "type": "string"
+                    },
+                    "uptime": {
+                        "type": "string"
+                    },
+                    "indexing": {
+                        "type": "boolean"
+                    },
+                    "lastIndexed": {
+                        "type": "string"
+                    },
+                    "initialIndexError": {
+                        "type": "string"
+                    },
+                    "filesIndexed": {
+                        "type": "integer"
+                    },
+                    "foldersIndexed": {
+                        "type": "integer"
+                    },
+                    "goVersion": {
+                        "type": "string"
+                    },
+                    "numCpu": {
+                        "type": "integer"
+                    },
+                    "numGoroutine": {
+                        "type": "integer"
+                    },
+                    "totalFiles": {
+                        "type": "integer"
+                    },
+                    "totalFolders": {
+                        "type": "integer"
                     }
                 }
             },
