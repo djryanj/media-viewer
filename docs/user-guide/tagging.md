@@ -31,9 +31,33 @@ Tags are labels you assign to media items for organization and quick retrieval. 
 2. Click the tag icon in the top-left area
 3. Add tags using the same process as above
 
+<div align="center">
+  <img src="../images/tagging-lightbox-drawer.png" alt="Lightbox tag drawer showing existing tags and quick actions" width="700">
+  <p><em>The lightbox drawer keeps tagging close to full-screen review, including copy and paste actions.</em></p>
+</div>
+
 ### Tag Suggestions
 
 As you type, existing tags that match your input appear as suggestions. Click a suggestion to add that tag, or continue typing to create a new tag.
+
+The tag modal also ranks suggestions to speed up repeat tagging:
+
+- **Recent tags** are remembered in the current browser and shown near the top when they are relevant
+- **Suggested tags** highlight tags that are commonly used with the tags already on the current item
+- An empty input can still show useful suggestions instead of waiting for you to type
+- When you do type, likely follow-up tags stay ahead of generic matches
+
+Depending on context, suggestions may be grouped as **Suggested Next**, **Recent Tags**, **Suggested Together**, **Recent Matches**, or **Other Matches**.
+
+<div align="center">
+  <img src="../images/tagging-suggestions-empty.png" alt="Tag modal showing Suggested Next and Recent Tags sections" width="700">
+  <p><em>Empty-input suggestions can highlight likely next tags and recently used tags before you start typing.</em></p>
+</div>
+
+<div align="center">
+  <img src="../images/tagging-suggestions-typed.png" alt="Tag modal showing filtered suggested and recent tag matches while typing" width="700">
+  <p><em>Typing narrows the list while keeping related tags ahead of general matches.</em></p>
+</div>
 
 ## Removing Tags
 
@@ -72,6 +96,13 @@ Selection mode allows you to tag multiple items at once.
 3. Add tags in the bulk tag modal
 4. Tags are applied to all selected items
 
+Bulk tagging uses the combined tag set from the current selection to generate follow-up suggestions. Tags already present on the selected items are excluded automatically.
+
+<div align="center">
+  <img src="../images/tagging-bulk-modal.png" alt="Bulk tag modal showing shared and partial tags across a selection" width="700">
+  <p><em>The bulk tag modal shows shared tags, partial tags, and the combined context used for suggestions.</em></p>
+</div>
+
 ### Tag Indicators in Bulk Mode
 
 When tagging multiple items, the modal shows:
@@ -96,6 +127,11 @@ Media Viewer supports copying tags from one item and pasting them to others.
 3. In the confirmation modal, select which tags to paste
 4. Click **Paste Tags** to apply
 
+<div align="center">
+  <img src="../images/tagging-paste-modal.png" alt="Paste tags modal showing copied tags ready to apply" width="700">
+  <p><em>Paste previews the copied tag set before it is applied to the current selection.</em></p>
+</div>
+
 ### Merging Tags
 
 When multiple items are selected, you can merge all their tags:
@@ -107,6 +143,11 @@ When multiple items are selected, you can merge all their tags:
 5. Select tags to apply and click **Merge Tags**
 
 All selected tags are applied to all selected items.
+
+<div align="center">
+  <img src="../images/tagging-merge-modal.png" alt="Merge tags modal showing the combined tag set from multiple selected items" width="700">
+  <p><em>Merge collects the full tag set across selected items so you can normalize related media in one step.</em></p>
+</div>
 
 ## Searching by Tag
 

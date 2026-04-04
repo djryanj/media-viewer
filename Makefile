@@ -55,6 +55,7 @@ FORCE ?= 0
         frontend-test frontend-test-unit frontend-test-integration \
         frontend-test-integration-auto frontend-test-e2e-auto \
         frontend-test-e2e \
+		frontend-test-e2e-docs-screenshots frontend-test-e2e-docs-screenshots-auto \
         frontend-test-coverage frontend-test-unit-coverage \
         frontend-test-unit-watch frontend-test-unit-ui \
         frontend-test-file \
@@ -622,6 +623,17 @@ frontend-test-e2e:
 frontend-test-e2e-auto:
 	@echo "Running frontend E2E tests with ephemeral test server..."
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e
+
+# Generate documentation screenshots from a dedicated Playwright workflow.
+frontend-test-e2e-docs-screenshots:
+	@echo "Generating documentation screenshots from Playwright..."
+	@echo "Note: Requires backend running (use 'make frontend-test-e2e-docs-screenshots-auto' for automatic server)"
+	cd $(STATIC_DIR) && npm run test:e2e:docs-screenshots
+
+# Generate documentation screenshots with an ephemeral test server.
+frontend-test-e2e-docs-screenshots-auto:
+	@echo "Generating documentation screenshots with an ephemeral test server..."
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-docs-screenshots
 
 # Run frontend tests with coverage.
 # Examples:

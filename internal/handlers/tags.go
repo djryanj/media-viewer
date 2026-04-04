@@ -25,6 +25,13 @@ type BatchTagsRequest struct {
 	Paths []string `json:"paths"`
 }
 
+// RelatedTagSuggestionsRequest represents a request for co-occurring tags.
+type RelatedTagSuggestionsRequest struct {
+	Tags    []string `json:"tags"`
+	Exclude []string `json:"exclude,omitempty"`
+	Limit   int      `json:"limit,omitempty"`
+}
+
 // BulkTagRequest represents a request to add/remove tags from multiple files.
 // Supports both single-tag (Tag) and multi-tag (Tags) for backward compatibility.
 type BulkTagRequest struct {
@@ -112,6 +119,35 @@ func (h *Handlers) GetBatchFileTags(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, result)
+}
+
+// GetRelatedTagSuggestions returns tags that frequently co-occur with the provided tags.
+func (h *Handlers) GetRelatedTagSuggestions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req RelatedTagSuggestionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Limit < 0 {
+		http.Error(w, "Limit must be positive", http.StatusBadRequest)
+		return
+	}
+
+	suggestions, err := h.db.GetRelatedTagSuggestions(ctx, req.Tags, req.Exclude, req.Limit)
+	if err != nil {
+		http.Error(w, "Failed to get related tag suggestions", http.StatusInternalServerError)
+		return
+	}
+
+	if suggestions == nil {
+		suggestions = []database.RelatedTagSuggestion{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, suggestions)
 }
 
 // AddTagToFile adds a tag to a file

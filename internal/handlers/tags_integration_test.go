@@ -292,6 +292,135 @@ func TestGetFileTagsNoTagsIntegration(t *testing.T) {
 	}
 }
 
+func TestGetRelatedTagSuggestionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	h, mediaDir, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	addTagTestFile(t, h.db, mediaDir, "photo1.jpg", database.FileTypeImage)
+	addTagTestFile(t, h.db, mediaDir, "photo2.jpg", database.FileTypeImage)
+	addTagTestFile(t, h.db, mediaDir, "photo3.jpg", database.FileTypeImage)
+
+	ctx := context.Background()
+	fixtures := map[string][]string{
+		"photo1.jpg": {"vacation", "beach", "summer"},
+		"photo2.jpg": {"vacation", "beach"},
+		"photo3.jpg": {"vacation", "family"},
+	}
+
+	for path, tags := range fixtures {
+		for _, tagName := range tags {
+			if err := h.db.AddTagToFile(ctx, path, tagName); err != nil {
+				t.Fatalf("failed to add tag %q to %s: %v", tagName, path, err)
+			}
+		}
+	}
+
+	body, err := json.Marshal(RelatedTagSuggestionsRequest{
+		Tags:    []string{"vacation"},
+		Exclude: []string{"family"},
+		Limit:   2,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/suggestions", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	h.GetRelatedTagSuggestions(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var suggestions []database.RelatedTagSuggestion
+	if err := json.NewDecoder(w.Body).Decode(&suggestions); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(suggestions) != 2 {
+		t.Fatalf("expected 2 suggestions, got %d", len(suggestions))
+	}
+	if suggestions[0].Name != "beach" {
+		t.Fatalf("expected beach first, got %q", suggestions[0].Name)
+	}
+	if suggestions[0].RelatedCount != 2 {
+		t.Fatalf("expected beach related count 2, got %d", suggestions[0].RelatedCount)
+	}
+	if suggestions[1].Name != "summer" {
+		t.Fatalf("expected summer second, got %q", suggestions[1].Name)
+	}
+}
+
+func TestGetRelatedTagSuggestionsRejectsNegativeLimitIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	h, _, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	body := strings.NewReader(`{"tags":["vacation"],"limit":-1}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/suggestions", body)
+	w := httptest.NewRecorder()
+
+	h.GetRelatedTagSuggestions(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestGetRelatedTagSuggestionsEmptyTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	h, _, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	body := strings.NewReader(`{"tags":[],"exclude":["unused"],"limit":5}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/suggestions", body)
+	w := httptest.NewRecorder()
+
+	h.GetRelatedTagSuggestions(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var suggestions []database.RelatedTagSuggestion
+	if err := json.NewDecoder(w.Body).Decode(&suggestions); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(suggestions) != 0 {
+		t.Fatalf("expected empty suggestions, got %d", len(suggestions))
+	}
+}
+
+func TestGetRelatedTagSuggestionsRejectsInvalidJSONIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	h, _, cleanup := setupTagsIntegrationTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tags/suggestions", strings.NewReader(`{"tags":`))
+	w := httptest.NewRecorder()
+
+	h.GetRelatedTagSuggestions(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
 // TestGetBatchFileTagsIntegration tests getting tags for multiple files
 func TestGetBatchFileTagsIntegration(t *testing.T) {
 	if testing.Short() {

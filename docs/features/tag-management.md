@@ -59,6 +59,11 @@ The Tag Manager in Settings provides centralized management for your entire tag 
 2. Navigate to the **Tags** tab
 3. The Tag Manager shows all tags with statistics
 
+<div align="center">
+    <img src="../images/tagging-manager-settings.png" alt="Settings tag manager showing tag search and usage counts" width="700">
+    <p><em>The centralized Tag Manager gives you one place to search, audit, rename, and delete tags across the library.</em></p>
+</div>
+
 ### Features
 
 #### View All Tags
@@ -213,9 +218,37 @@ Combine tags from multiple items:
 When adding tags, the system suggests existing tags:
 
 - Suggestions appear as you type
+- Empty inputs can still show ranked suggestions for quick repeat actions
 - Shows tag name and item count
 - Click to add the suggested tag
 - Helps maintain consistent tag naming
+
+### Recent Tags
+
+The tag modal remembers tags you applied recently in the current browser.
+
+- Recent tags appear near the top when they are relevant
+- They are grouped separately from other matches when space allows
+- This behavior is browser-local and does not require any server-side profile state
+
+### Related Tag Suggestions
+
+When the current item or selection already has tags, the modal can suggest tags that frequently appear alongside them.
+
+- Related suggestions are calculated from tag co-occurrence in your library
+- Tags already present on the current item or selection are excluded automatically
+- Related suggestions rank above recent and generic matches so likely next actions appear first
+- Group labels change with context, for example **Suggested Next** for an empty input and **Suggested Together** while filtering
+
+<div align="center">
+    <img src="../images/tagging-suggestions-empty.png" alt="Tag suggestion groups for an empty input" width="680">
+    <p><em>Suggested tags and recent tags are shown as separate groups when the modal opens.</em></p>
+</div>
+
+<div align="center">
+    <img src="../images/tagging-suggestions-typed.png" alt="Filtered tag suggestion groups while typing" width="680">
+    <p><em>While filtering, related suggestions continue to outrank recent and generic matches.</em></p>
+</div>
 
 ## Best Practices
 

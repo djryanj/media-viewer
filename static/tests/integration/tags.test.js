@@ -666,9 +666,30 @@ describe('Tags Integration Tests', () => {
             Tags.isBulkMode = true;
             Tags.bulkPaths = ['/path1.jpg', '/path2.jpg'];
             Tags.bulkNames = ['file1', 'file2'];
-            mockFetch.mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve({ success: 2 }),
+            Tags.allTags = [
+                { name: 'tag1', itemCount: 2 },
+                { name: 'newtag', itemCount: 1 },
+                { name: 'oldtag', itemCount: 1 },
+            ];
+            mockFetch.mockImplementation((url) => {
+                if (url === '/api/tags/bulk') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({ success: 2 }),
+                    });
+                }
+
+                if (url === '/api/tags') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve(Tags.allTags),
+                    });
+                }
+
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([]),
+                });
             });
             // Mock fetchWithTimeout for loadBulkTags calls
             globalThis.fetchWithTimeout.mockResolvedValue({
@@ -727,6 +748,63 @@ describe('Tags Integration Tests', () => {
             );
         });
 
+        it('should handle bulk remove error', async () => {
+            mockFetch.mockRejectedValueOnce(new Error('API error'));
+
+            await Tags.removeBulkTag('oldtag');
+
+            expect(globalThis.Gallery.showToast).toHaveBeenCalledWith(
+                'Failed to remove tag',
+                'error'
+            );
+        });
+
+        it('should merge a partial tag to all items', async () => {
+            const loadSpy = vi.spyOn(Tags, 'loadBulkTags').mockResolvedValue({
+                '/path1.jpg': ['tag1', 'partial'],
+                '/path2.jpg': ['tag1', 'partial'],
+            });
+            const loadAllSpy = vi.spyOn(Tags, 'loadAllTags').mockResolvedValue();
+            const refreshSpy = vi.spyOn(Tags, 'batchRefreshGalleryItemTags').mockResolvedValue();
+            const recentSpy = vi.spyOn(Tags, 'markTagRecent').mockImplementation(() => {});
+            const showSpy = vi.spyOn(Tags, 'showSuggestions').mockImplementation(() => {});
+
+            await Tags.mergeTagToAll('partial');
+
+            expect(mockFetch).toHaveBeenCalledWith(
+                '/api/tags/bulk',
+                expect.objectContaining({
+                    method: 'POST',
+                    body: JSON.stringify({
+                        paths: ['/path1.jpg', '/path2.jpg'],
+                        tag: 'partial',
+                    }),
+                })
+            );
+            expect(loadSpy).toHaveBeenCalledWith(['/path1.jpg', '/path2.jpg']);
+            expect(loadAllSpy).toHaveBeenCalled();
+            expect(recentSpy).toHaveBeenCalledWith('partial');
+            expect(refreshSpy).toHaveBeenCalledWith(['/path1.jpg', '/path2.jpg'], {
+                '/path1.jpg': ['tag1', 'partial'],
+                '/path2.jpg': ['tag1', 'partial'],
+            });
+            expect(showSpy).toHaveBeenCalled();
+            expect(globalThis.Gallery.showToast).toHaveBeenCalledWith(
+                expect.stringContaining('Applied "partial" to all 2 items')
+            );
+        });
+
+        it('should handle merge-to-all error', async () => {
+            mockFetch.mockRejectedValueOnce(new Error('API error'));
+
+            await Tags.mergeTagToAll('partial');
+
+            expect(globalThis.Gallery.showToast).toHaveBeenCalledWith(
+                'Failed to apply tag to all items',
+                'error'
+            );
+        });
+
         it('should handle bulk add error', async () => {
             mockFetch.mockRejectedValueOnce(new Error('API error'));
 
@@ -744,6 +822,8 @@ describe('Tags Integration Tests', () => {
                 { name: 'family', itemCount: 5 },
                 { name: 'work', itemCount: 3 },
             ];
+            Tags._recentTagNames = [];
+            Tags.relatedTagSuggestions = [];
         });
 
         it('should show matching suggestions', () => {
@@ -752,10 +832,11 @@ describe('Tags Integration Tests', () => {
             expect(mockElements['tag-suggestions'].innerHTML).toContain('vacation');
         });
 
-        it('should hide suggestions when query is empty', () => {
+        it('should show ranked suggestions when query is empty', () => {
             Tags.showSuggestions('');
 
-            expect(mockElements['tag-suggestions'].classList.add).toHaveBeenCalledWith('hidden');
+            expect(mockElements['tag-suggestions'].classList.remove).toHaveBeenCalledWith('hidden');
+            expect(mockElements['tag-suggestions'].innerHTML).toContain('vacation');
         });
 
         it('should limit suggestions to 5', () => {
@@ -768,7 +849,7 @@ describe('Tags Integration Tests', () => {
 
             // Should only create 5 suggestions
             const html = mockElements['tag-suggestions'].innerHTML;
-            const matches = (html.match(/tag-suggestion/g) || []).length;
+            const matches = (html.match(/<div class="tag-suggestion"\s+data-tag=/g) || []).length;
             expect(matches).toBeLessThanOrEqual(5);
         });
 
@@ -776,6 +857,100 @@ describe('Tags Integration Tests', () => {
             Tags.showSuggestions('zzz');
 
             expect(mockElements['tag-suggestions'].classList.add).toHaveBeenCalledWith('hidden');
+        });
+
+        it('should prefer recent tags for empty query', () => {
+            Tags._recentTagNames = ['work'];
+
+            Tags.showSuggestions('');
+
+            expect(mockElements['tag-suggestions'].innerHTML.indexOf('work')).toBeLessThan(
+                mockElements['tag-suggestions'].innerHTML.indexOf('vacation')
+            );
+        });
+
+        it('should render grouped related suggestions when available', () => {
+            Tags.relatedTagSuggestions = [{ name: 'family', itemCount: 5, relatedCount: 2 }];
+
+            Tags.showSuggestions('fam');
+
+            expect(mockElements['tag-suggestions'].innerHTML).toContain('Suggested Together');
+            expect(mockElements['tag-suggestions'].innerHTML).toContain('Seen together on 2 items');
+            expect(mockElements['tag-suggestions'].innerHTML).toContain('Suggested');
+        });
+
+        it('should prioritize related suggestions above recent ones', () => {
+            Tags._recentTagNames = ['work'];
+            Tags.relatedTagSuggestions = [{ name: 'family', itemCount: 5, relatedCount: 2 }];
+
+            Tags.showSuggestions('');
+
+            expect(mockElements['tag-suggestions'].innerHTML.indexOf('family')).toBeLessThan(
+                mockElements['tag-suggestions'].innerHTML.indexOf('work')
+            );
+        });
+
+        it('should skip related suggestion fetch when there are no source tags', async () => {
+            Tags.currentTagsList = [];
+            Tags.relatedTagSuggestions = [{ name: 'stale', itemCount: 1, relatedCount: 1 }];
+            mockFetch.mockClear();
+
+            const result = await Tags.refreshRelatedTagSuggestions();
+
+            expect(result).toEqual([]);
+            expect(Tags.relatedTagSuggestions).toEqual([]);
+            expect(mockFetch).not.toHaveBeenCalledWith('/api/tags/suggestions', expect.anything());
+        });
+
+        it('should clear related suggestions when the fetch fails', async () => {
+            Tags.currentTagsList = ['vacation'];
+            Tags.relatedTagSuggestions = [{ name: 'stale', itemCount: 1, relatedCount: 1 }];
+            mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+            const result = await Tags.refreshRelatedTagSuggestions();
+
+            expect(result).toEqual([]);
+            expect(Tags.relatedTagSuggestions).toEqual([]);
+            expect(globalThis.console.error).toHaveBeenCalled();
+        });
+
+        it('should ignore stale related suggestion responses', async () => {
+            Tags.currentTagsList = ['vacation'];
+
+            let resolveFirst;
+            let resolveSecond;
+            mockFetch
+                .mockImplementationOnce(
+                    () =>
+                        new Promise((resolve) => {
+                            resolveFirst = resolve;
+                        })
+                )
+                .mockImplementationOnce(
+                    () =>
+                        new Promise((resolve) => {
+                            resolveSecond = resolve;
+                        })
+                );
+
+            const firstRequest = Tags.refreshRelatedTagSuggestions();
+            const secondRequest = Tags.refreshRelatedTagSuggestions();
+
+            resolveSecond({
+                ok: true,
+                json: () => Promise.resolve([{ name: 'fresh', itemCount: 5, relatedCount: 3 }]),
+            });
+            await secondRequest;
+
+            resolveFirst({
+                ok: true,
+                json: () => Promise.resolve([{ name: 'stale', itemCount: 2, relatedCount: 1 }]),
+            });
+            await firstRequest;
+
+            expect(Tags.relatedTagSuggestions).toEqual([
+                { name: 'fresh', itemCount: 5, relatedCount: 3 },
+            ]);
         });
     });
 

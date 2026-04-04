@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -897,6 +898,102 @@ func (d *Database) GetBatchFileTags(ctx context.Context, filePaths []string) (ma
 	return result, nil
 }
 
+// GetRelatedTagSuggestions returns tags that frequently co-occur with the provided tags.
+func (d *Database) GetRelatedTagSuggestions(ctx context.Context, sourceTags, excludeTags []string, limit int) ([]RelatedTagSuggestion, error) {
+	done := d.observeQuery("get_related_tag_suggestions")
+
+	normalizedSourceTags := normalizeTagNames(sourceTags)
+	if len(normalizedSourceTags) == 0 {
+		done(nil)
+		return []RelatedTagSuggestion{}, nil
+	}
+
+	if limit <= 0 {
+		limit = 8
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	excludedNames := normalizeTagNames(append(append([]string{}, sourceTags...), excludeTags...))
+	sourceTagsJSON, err := json.Marshal(normalizedSourceTags)
+	if err != nil {
+		done(err)
+		return nil, fmt.Errorf("failed to encode source tags: %w", err)
+	}
+
+	excludedNamesJSON, err := json.Marshal(excludedNames)
+	if err != nil {
+		done(err)
+		return nil, fmt.Errorf("failed to encode excluded tags: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `
+		WITH source_names(name) AS (
+			SELECT value
+			FROM json_each(?)
+		),
+		ignored_names(name) AS (
+			SELECT value
+			FROM json_each(?)
+		),
+		source_files AS (
+			SELECT DISTINCT ft.file_path
+			FROM file_tags ft
+			INNER JOIN tags source_tag ON source_tag.id = ft.tag_id
+			INNER JOIN source_names ON lower(source_tag.name) = source_names.name
+		)
+		SELECT
+			candidate.name,
+			COUNT(DISTINCT ft.file_path) AS related_count,
+			(
+				SELECT COUNT(*)
+				FROM file_tags total_ft
+				WHERE total_ft.tag_id = candidate.id
+			) AS item_count
+		FROM source_files sf
+		INNER JOIN file_tags ft ON ft.file_path = sf.file_path
+		INNER JOIN tags candidate ON candidate.id = ft.tag_id
+		LEFT JOIN ignored_names ON lower(candidate.name) = ignored_names.name
+		WHERE ignored_names.name IS NULL
+		GROUP BY candidate.id, candidate.name
+		ORDER BY related_count DESC, item_count DESC, candidate.name COLLATE NOCASE
+		LIMIT ?
+	`
+
+	rows, err := d.reader.QueryContext(ctx, query, string(sourceTagsJSON), string(excludedNamesJSON), limit)
+	if err != nil {
+		done(err)
+		return nil, fmt.Errorf("related tag suggestions query failed: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logging.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	suggestions := make([]RelatedTagSuggestion, 0, limit)
+	for rows.Next() {
+		var suggestion RelatedTagSuggestion
+		if err := rows.Scan(&suggestion.Name, &suggestion.RelatedCount, &suggestion.ItemCount); err != nil {
+			done(err)
+			return nil, fmt.Errorf("failed to scan related tag suggestion: %w", err)
+		}
+		suggestions = append(suggestions, suggestion)
+	}
+
+	if err := rows.Err(); err != nil {
+		done(err)
+		return nil, fmt.Errorf("related tag suggestions iteration failed: %w", err)
+	}
+
+	done(nil)
+	return suggestions, nil
+}
+
 func resolveTagIDs(ctx context.Context, tx *sql.Tx, tagNames []string, createMissing bool) ([]int64, error) {
 	selectStmt, err := tx.PrepareContext(ctx,
 		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
@@ -943,6 +1040,28 @@ func resolveTagIDs(ctx context.Context, tx *sql.Tx, tagNames []string, createMis
 	}
 
 	return tagIDs, nil
+}
+
+func normalizeTagNames(tagNames []string) []string {
+	seen := make(map[string]struct{}, len(tagNames))
+	normalized := make([]string, 0, len(tagNames))
+
+	for _, tagName := range tagNames {
+		trimmed := strings.TrimSpace(tagName)
+		if trimmed == "" {
+			continue
+		}
+
+		lower := strings.ToLower(trimmed)
+		if _, exists := seen[lower]; exists {
+			continue
+		}
+
+		seen[lower] = struct{}{}
+		normalized = append(normalized, lower)
+	}
+
+	return normalized
 }
 
 func buildPlaceholders(values []string) (clause string, args []interface{}) {

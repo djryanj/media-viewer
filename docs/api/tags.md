@@ -137,10 +137,7 @@ POST /api/tags/query
 
 ```json
 {
-    "paths": [
-        "photos/vacation/beach.jpg",
-        "photos/vacation/sunset.jpg"
-    ]
+    "paths": ["photos/vacation/beach.jpg", "photos/vacation/sunset.jpg"]
 }
 ```
 
@@ -152,6 +149,53 @@ POST /api/tags/query
     "photos/vacation/sunset.jpg": ["vacation", "sunset"]
 }
 ```
+
+## Related Tag Suggestions
+
+Return tags that frequently co-occur with the provided tags. The tagging UI uses this endpoint for related suggestions such as **Suggested Next** and **Suggested Together**.
+
+```http
+POST /api/tags/suggestions
+```
+
+### Request
+
+```json
+{
+    "tags": ["vacation"],
+    "exclude": ["summer"],
+    "limit": 5
+}
+```
+
+### Request Fields
+
+| Field     | Type             | Required | Description                                        |
+| --------- | ---------------- | -------- | -------------------------------------------------- |
+| `tags`    | array of strings | Yes      | Tags already selected or already applied           |
+| `exclude` | array of strings | No       | Additional tag names to suppress from the response |
+| `limit`   | integer          | No       | Maximum number of suggestions to return            |
+
+### Response
+
+```json
+[
+    {
+        "name": "beach",
+        "itemCount": 42,
+        "relatedCount": 12
+    },
+    {
+        "name": "summer",
+        "itemCount": 30,
+        "relatedCount": 7
+    }
+]
+```
+
+`relatedCount` is the number of items where the suggested tag appears alongside the requested tags. `itemCount` is the total number of items using that tag anywhere in the library.
+
+Recent tags shown in the UI are tracked client-side and are not returned by this endpoint.
 
 ## Bulk Add Tag
 

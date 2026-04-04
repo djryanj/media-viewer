@@ -11,6 +11,9 @@ npx playwright install
 # Run all E2E tests
 npm run test:e2e
 
+# Generate documentation screenshots for tagging suggestions
+npm run test:e2e:docs-screenshots
+
 # Run with visible browser
 npm run test:e2e:headed
 
@@ -42,7 +45,8 @@ e2e/
 │   ├── ui/                         # UI component tests
 │   │   ├── gallery.spec.js        # Gallery navigation (@gallery @ui @navigation)
 │   │   └── lightbox-video.spec.js # Media viewing (@lightbox @video @ui @player)
-│   └── workflows/                  # Full user journey tests (coming soon)
+│   └── workflows/                  # Full user journey and docs-capture tests
+│       └── tagging-docs-screenshots.spec.js # Writes screenshots to docs/images/
 ├── fixtures/                       # Custom test fixtures and helpers
 │   └── index.js                   # Shared fixtures (loginHelpers, galleryHelpers, etc.)
 ├── playwright-report/              # HTML test reports (generated)
@@ -83,6 +87,36 @@ Tests are organized with tags for easy filtering:
 - `@keyboard` - Keyboard interactions
 - `@touch` - Touch gestures
 - `@accessibility` - Accessibility features
+
+## Documentation Screenshots
+
+The repository includes a dedicated Playwright workflow for generating polished documentation screenshots for the main tagging user flows.
+
+```bash
+npm run test:e2e:docs-screenshots
+```
+
+This workflow:
+
+- Runs in `chromium` only
+- Seeds deterministic tag data through the API
+- Uses stable selection-toolbar interactions instead of brittle context-menu paths
+- Writes screenshots directly into `../docs/images/`
+
+Current outputs:
+
+- `docs/images/tagging-bulk-modal.png`
+- `docs/images/tagging-paste-modal.png`
+- `docs/images/tagging-merge-modal.png`
+- `docs/images/tagging-lightbox-drawer.png`
+- `docs/images/tagging-search-filter-modal.png`
+- `docs/images/tagging-manager-settings.png`
+- `docs/images/tagging-suggestions-empty.png`
+- `docs/images/tagging-suggestions-typed.png`
+
+Covered flows include single-item tagging suggestions, bulk tagging, paste and merge flows, the lightbox tag drawer, search-result tag filtering, and the settings tag manager.
+
+Treat this spec as a reusable pattern for future documentation capture work.
 
 ## Writing Tests
 
