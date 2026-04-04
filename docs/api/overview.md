@@ -59,39 +59,40 @@ For exact request and response schemas, use the [OpenAPI specification](openapi.
 
 ### Files
 
-| Method | Endpoint                  | Description                            |
-| ------ | ------------------------- | -------------------------------------- |
-| GET    | `/api/files`              | List directory contents                |
-| GET    | `/api/files/paths`        | List lightweight path entries          |
-| GET    | `/api/files/{path}`       | Get original file                      |
-| GET    | `/api/media`              | List media files for lightbox          |
-| GET    | `/api/playlists`          | List playlists                         |
-| GET    | `/api/playlists/{name}`   | Get playlist contents                  |
-| GET    | `/api/stream/{path}`      | Stream video                           |
-| GET    | `/api/stream-info/{path}` | Get stream metadata                    |
-| POST   | `/api/hls/session`        | Create or reuse an HLS session         |
-| GET    | `/api/thumbnails/{path}`  | Get thumbnail                          |
-| DELETE | `/api/thumbnails/{path}`  | Invalidate a single cached thumbnail   |
-| POST   | `/api/thumbnails/rebuild` | Trigger thumbnail rebuild              |
-| GET    | `/api/thumbnails/status`  | Get thumbnail generation status        |
+| Method | Endpoint                  | Description                          |
+| ------ | ------------------------- | ------------------------------------ |
+| GET    | `/api/files`              | List directory contents              |
+| GET    | `/api/files/paths`        | List lightweight path entries        |
+| GET    | `/api/files/{path}`       | Get original file                    |
+| GET    | `/api/media`              | List media files for lightbox        |
+| GET    | `/api/playlists`          | List playlists                       |
+| GET    | `/api/playlists/{name}`   | Get playlist contents                |
+| GET    | `/api/stream/{path}`      | Stream video                         |
+| GET    | `/api/stream-info/{path}` | Get stream metadata                  |
+| POST   | `/api/hls/session`        | Create or reuse an HLS session       |
+| GET    | `/api/thumbnails/{path}`  | Get thumbnail                        |
+| DELETE | `/api/thumbnails/{path}`  | Invalidate a single cached thumbnail |
+| POST   | `/api/thumbnails/rebuild` | Trigger thumbnail rebuild            |
+| GET    | `/api/thumbnails/status`  | Get thumbnail generation status      |
 
 ### Tags
 
-| Method | Endpoint           | Description                          |
-| ------ | ------------------ | ------------------------------------ |
-| GET    | `/api/tags`        | List all tags                        |
-| GET    | `/api/tags/stats`  | List tags with usage counts          |
-| GET    | `/api/tags/unused` | List unused tag names                |
-| GET    | `/api/tags/file`   | Get tags for a file                  |
-| POST   | `/api/tags/file`   | Add tag to file                      |
-| DELETE | `/api/tags/file`   | Remove tag from file                 |
-| PUT    | `/api/tags/file`   | Replace all tags for a file          |
-| POST   | `/api/tags/query`  | Get tags for multiple files          |
-| POST   | `/api/tags/bulk`   | Add one or more tags to many files   |
-| DELETE | `/api/tags/bulk`   | Remove one or more tags from files   |
-| GET    | `/api/tags/{tag}`  | Get files with a tag                 |
-| PUT    | `/api/tags/{tag}`  | Rename a tag globally                |
-| DELETE | `/api/tags/{tag}`  | Delete a tag globally                |
+| Method | Endpoint                | Description                        |
+| ------ | ----------------------- | ---------------------------------- |
+| GET    | `/api/tags`             | List all tags                      |
+| GET    | `/api/tags/stats`       | List tags with usage counts        |
+| GET    | `/api/tags/unused`      | List unused tag names              |
+| GET    | `/api/tags/file`        | Get tags for a file                |
+| POST   | `/api/tags/file`        | Add tag to file                    |
+| DELETE | `/api/tags/file`        | Remove tag from file               |
+| PUT    | `/api/tags/file`        | Replace all tags for a file        |
+| POST   | `/api/tags/query`       | Get tags for multiple files        |
+| POST   | `/api/tags/suggestions` | Get related tag suggestions        |
+| POST   | `/api/tags/bulk`        | Add one or more tags to many files |
+| DELETE | `/api/tags/bulk`        | Remove one or more tags from files |
+| GET    | `/api/tags/{tag}`       | Get files with a tag               |
+| PUT    | `/api/tags/{tag}`       | Rename a tag globally              |
+| DELETE | `/api/tags/{tag}`       | Delete a tag globally              |
 
 ### Favorites
 
@@ -106,17 +107,17 @@ For exact request and response schemas, use the [OpenAPI specification](openapi.
 
 ### Collections
 
-| Method | Endpoint                        | Description                                 |
-| ------ | ------------------------------- | ------------------------------------------- |
-| GET    | `/api/collections`              | List all collections                        |
-| POST   | `/api/collections`              | Create a collection                         |
-| POST   | `/api/collections/memberships`  | Look up memberships for multiple file paths |
-| GET    | `/api/collections/{id}`         | Get a collection with its ordered items     |
-| PUT    | `/api/collections/{id}`         | Rename a collection or update its cover     |
-| DELETE | `/api/collections/{id}`         | Delete a collection                         |
-| POST   | `/api/collections/{id}/items`   | Add items to a collection                   |
-| DELETE | `/api/collections/{id}/items`   | Remove items from a collection              |
-| PUT    | `/api/collections/{id}/order`   | Replace collection item order               |
+| Method | Endpoint                       | Description                                 |
+| ------ | ------------------------------ | ------------------------------------------- |
+| GET    | `/api/collections`             | List all collections                        |
+| POST   | `/api/collections`             | Create a collection                         |
+| POST   | `/api/collections/memberships` | Look up memberships for multiple file paths |
+| GET    | `/api/collections/{id}`        | Get a collection with its ordered items     |
+| PUT    | `/api/collections/{id}`        | Rename a collection or update its cover     |
+| DELETE | `/api/collections/{id}`        | Delete a collection                         |
+| POST   | `/api/collections/{id}/items`  | Add items to a collection                   |
+| DELETE | `/api/collections/{id}/items`  | Remove items from a collection              |
+| PUT    | `/api/collections/{id}/order`  | Replace collection item order               |
 
 Collections are folder-scoped and ordered. See the dedicated [Collections API](collections.md) page for request and conflict details.
 

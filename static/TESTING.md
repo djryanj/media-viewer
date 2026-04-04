@@ -120,10 +120,13 @@ static/
 │       └── test-utils.js       # Helper functions
 ├── e2e/                        # E2E tests
 │   ├── specs/                  # Test specifications
-│   │   ├── login.spec.js
-│   │   ├── gallery.spec.js
-│   │   ├── lightbox-video.spec.js
-│   │   ├── tags-favorites.spec.js
+│   │   ├── core/
+│   │   │   └── auth.spec.js
+│   │   ├── features/
+│   │   │   └── tags-favorites.spec.js
+│   │   ├── ui/
+│   │   │   ├── gallery.spec.js
+│   │   │   └── lightbox-video.spec.js
 │   │   └── ...
 │   ├── fixtures/               # Test fixtures and helpers
 │   │   └── index.js

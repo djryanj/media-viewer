@@ -6,6 +6,109 @@
 
 import { test, expect } from '../../fixtures/index.js';
 
+const PROJECT_INDEX_BY_NAME = {
+    chromium: 0,
+    firefox: 1,
+    webkit: 2,
+    'mobile-chrome': 3,
+    'mobile-safari': 4,
+    tablet: 5,
+    'android-firefox': 6,
+};
+
+function buildProjectSuffix(testInfo) {
+    return `${Date.now()}-${testInfo.project.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+}
+
+function getProjectItemStartIndex(projectName, baseOffset, itemsPerProject) {
+    const projectIndex = PROJECT_INDEX_BY_NAME[projectName] ?? 0;
+    return baseOffset + projectIndex * itemsPerProject;
+}
+
+async function getTaggableItems(page, count = 4, startIndex = 0) {
+    const items = page.locator('.gallery-item.image, .gallery-item.video');
+    await expect(items.first()).toBeVisible();
+
+    const total = await items.count();
+    expect(total).toBeGreaterThanOrEqual(startIndex + count);
+
+    const result = [];
+    for (let index = 0; index < count; index++) {
+        const locator = items.nth(startIndex + index);
+        result.push({
+            locator,
+            path: await locator.getAttribute('data-path'),
+            name: (await locator.getAttribute('data-name')) || `item-${startIndex + index + 1}`,
+        });
+    }
+
+    return result;
+}
+
+async function addTagViaApi(page, path, tag) {
+    const response = await page.request.post('/api/tags/file', {
+        data: { path, tag },
+    });
+
+    expect(response.ok()).toBe(true);
+}
+
+async function setTagsViaApi(page, path, tags) {
+    const response = await page.request.put('/api/tags/file', {
+        data: { path, tags },
+    });
+
+    expect(response.ok()).toBe(true);
+}
+
+async function getTagsViaApi(page, path) {
+    const response = await page.request.get(`/api/tags/file?path=${encodeURIComponent(path)}`);
+    expect(response.ok()).toBe(true);
+    return response.json();
+}
+
+async function clearSelection(page) {
+    const selectionToolbar = page.locator('#selection-toolbar');
+    if (await selectionToolbar.isVisible()) {
+        await page.locator('.selection-close-btn').click();
+        await expect(selectionToolbar).toBeHidden();
+    }
+}
+
+async function clearTagClipboard(page) {
+    await page.evaluate(() => {
+        if (typeof TagClipboard !== 'undefined') {
+            TagClipboard.clear();
+        }
+    });
+}
+
+async function selectItems(page, itemLocators) {
+    await clearSelection(page);
+
+    for (const itemLocator of itemLocators) {
+        await itemLocator.locator('.selection-checkbox').click();
+    }
+
+    await expect(page.locator('#selection-toolbar')).toBeVisible();
+}
+
+async function openTagModalForSingleSelection(page, itemLocator) {
+    await selectItems(page, [itemLocator]);
+    await page.locator('#selection-tag-btn').click();
+    await expect(page.locator('#tag-modal')).toBeVisible();
+}
+
+async function closeTagModalAndClearSelection(page) {
+    const tagModal = page.locator('#tag-modal');
+    if (await tagModal.isVisible()) {
+        await page.locator('#tag-modal-close').click();
+        await expect(tagModal).toBeHidden();
+    }
+
+    await clearSelection(page);
+}
+
 test.describe('Tag Management @tags @features', () => {
     test.beforeEach(async ({ page, loginHelpers }) => {
         await loginHelpers.login(page);
@@ -41,43 +144,21 @@ test.describe('Tag Management @tags @features', () => {
         }
     });
 
-    test('should add a tag to an item', async ({ page }) => {
-        const firstItem = page.locator('.gallery-item.image, .gallery-item.video').first();
+    test('should add a tag to an item', async ({ page }, testInfo) => {
+        const startIndex = getProjectItemStartIndex(testInfo.project.name, 28, 1);
+        const [targetItem] = await getTaggableItems(page, 1, startIndex);
+        const newTag = `e2e-add-${buildProjectSuffix(testInfo)}`;
 
-        if ((await firstItem.count()) > 0) {
-            // Open tag dialog
-            const tagButton = firstItem.locator('button[data-tag], .tag-button');
+        await setTagsViaApi(page, targetItem.path, []);
+        await openTagModalForSingleSelection(page, targetItem.locator);
 
-            if ((await tagButton.count()) === 0) {
-                // Try right-click
-                await firstItem.click({ button: 'right' });
-                await page.waitForTimeout(200);
+        await page.locator('#tag-input').fill(newTag);
+        await page.keyboard.press('Enter');
 
-                const tagMenuItem = page.locator(':text("Add Tag"), :text("Tag")').first();
-                if ((await tagMenuItem.count()) > 0) {
-                    await tagMenuItem.click();
-                }
-            } else {
-                await tagButton.click();
-            }
+        await expect(page.locator('#current-tags')).toContainText(newTag);
+        await closeTagModalAndClearSelection(page);
 
-            // Wait for tag input
-            const tagInput = page.locator(
-                'input[type="text"].tag-input, input[placeholder*="tag"], [data-tag-input]'
-            );
-
-            if ((await tagInput.count()) > 0) {
-                await tagInput.fill('test-tag');
-                await page.keyboard.press('Enter');
-
-                // Wait for tag to be added
-                await page.waitForTimeout(500);
-
-                // Tag should appear on item
-                const itemTag = firstItem.locator('.tag:text("test-tag")');
-                await expect(itemTag).toBeVisible({ timeout: 3000 });
-            }
-        }
+        await expect.poll(async () => getTagsViaApi(page, targetItem.path)).toContain(newTag);
     });
 
     test('should suggest existing tags while typing @autocomplete', async ({ page }) => {
@@ -106,6 +187,84 @@ test.describe('Tag Management @tags @features', () => {
                 }
             }
         }
+    });
+
+    test('should follow the recent and co-occurrence suggestion flow @autocomplete', async ({
+        page,
+    }, testInfo) => {
+        const startIndex = getProjectItemStartIndex(testInfo.project.name, 0, 4);
+        const suffix = buildProjectSuffix(testInfo);
+        const themeTag = `e2e-theme-${suffix}`;
+        const relatedPrimaryTag = `e2e-related-primary-${suffix}`;
+        const relatedSecondaryTag = `e2e-related-secondary-${suffix}`;
+        const recentTag = `e2e-recent-${suffix}`;
+
+        const [seedItem, relatedItemA, relatedItemB, recentItem] = await getTaggableItems(
+            page,
+            4,
+            startIndex
+        );
+
+        await test.step('clear tags on isolated test items', async () => {
+            await setTagsViaApi(page, seedItem.path, []);
+            await setTagsViaApi(page, relatedItemA.path, []);
+            await setTagsViaApi(page, relatedItemB.path, []);
+            await setTagsViaApi(page, recentItem.path, []);
+        });
+
+        await test.step('seed co-occurring tags via API', async () => {
+            await addTagViaApi(page, seedItem.path, themeTag);
+            await addTagViaApi(page, relatedItemA.path, themeTag);
+            await addTagViaApi(page, relatedItemA.path, relatedPrimaryTag);
+            await addTagViaApi(page, relatedItemB.path, themeTag);
+            await addTagViaApi(page, relatedItemB.path, relatedPrimaryTag);
+            await addTagViaApi(page, relatedItemB.path, relatedSecondaryTag);
+        });
+
+        await test.step('apply one recent tag through the UI', async () => {
+            await openTagModalForSingleSelection(page, recentItem.locator);
+
+            await page.locator('#tag-input').fill(recentTag);
+            await page.keyboard.press('Enter');
+
+            await expect(page.locator('#current-tags')).toContainText(recentTag);
+            await closeTagModalAndClearSelection(page);
+        });
+
+        await test.step('verify empty-input suggestions separate suggested and recent tags', async () => {
+            await openTagModalForSingleSelection(page, seedItem.locator);
+
+            const suggestions = page.locator('#tag-suggestions');
+            await expect(suggestions).toBeVisible();
+            await expect(suggestions).toContainText('Suggested Next');
+            await expect(suggestions).toContainText('Recent Tags');
+            await expect(suggestions.locator('.tag-suggestion').first()).toHaveAttribute(
+                'data-tag',
+                relatedPrimaryTag
+            );
+            await expect(suggestions).toContainText('Seen together on 2 items');
+            await expect(
+                suggestions.locator(`.tag-suggestion[data-tag="${recentTag}"]`)
+            ).toBeVisible();
+        });
+
+        await test.step('verify typing still prefers co-occurring tags over recent ones', async () => {
+            const tagInput = page.locator('#tag-input');
+            await tagInput.fill('e2e-');
+
+            const suggestions = page.locator('#tag-suggestions');
+            await expect(suggestions).toContainText('Suggested Together');
+            await expect(suggestions).toContainText('Recent Matches');
+            await expect(suggestions.locator('.tag-suggestion').first()).toHaveAttribute(
+                'data-tag',
+                relatedPrimaryTag
+            );
+            await expect(
+                suggestions.locator(`.tag-suggestion[data-tag="${relatedSecondaryTag}"]`)
+            ).toBeVisible();
+        });
+
+        await closeTagModalAndClearSelection(page);
     });
 
     test('should remove a tag from an item', async ({ page }) => {
@@ -183,58 +342,55 @@ test.describe('Tag Management @tags @features', () => {
         }
     });
 
-    test('should copy tags from one item @clipboard', async ({ page }) => {
-        const itemWithTags = page.locator('.gallery-item:has(.tag)').first();
+    test('should copy tags from one item @clipboard', async ({ page }, testInfo) => {
+        const startIndex = getProjectItemStartIndex(testInfo.project.name, 35, 2);
+        const [sourceItem] = await getTaggableItems(page, 1, startIndex);
+        const copiedTag = `e2e-copy-${buildProjectSuffix(testInfo)}`;
 
-        if ((await itemWithTags.count()) > 0) {
-            // Right-click or find copy tags button
-            await itemWithTags.click({ button: 'right' });
-            await page.waitForTimeout(200);
+        await clearTagClipboard(page);
+        await setTagsViaApi(page, sourceItem.path, [copiedTag]);
+        await selectItems(page, [sourceItem.locator]);
 
-            const copyTagsMenuItem = page.locator(':text("Copy Tags"), [data-copy-tags]');
+        await page.locator('#selection-copy-tags-btn').click();
 
-            if ((await copyTagsMenuItem.count()) > 0) {
-                await copyTagsMenuItem.click();
+        await expect(page.locator('#selection-paste-tags-btn')).toBeEnabled();
+        await expect(page.locator('#selection-paste-tags-btn')).toHaveAttribute(
+            'title',
+            /Paste 1 tag/
+        );
 
-                // Should show feedback
-                const feedback = page.locator('.notification, .toast, :text("Copied")');
-
-                if ((await feedback.count()) > 0) {
-                    await expect(feedback).toBeVisible({ timeout: 2000 });
-                }
-            }
-        }
+        await clearSelection(page);
     });
 
-    test('should paste tags to another item @clipboard', async ({ page }) => {
-        const items = page.locator('.gallery-item');
+    test('should paste tags to another item @clipboard', async ({ page }, testInfo) => {
+        const startIndex = getProjectItemStartIndex(testInfo.project.name, 35, 2);
+        const [sourceItem, destinationItem] = await getTaggableItems(page, 2, startIndex);
+        const copiedTag = `e2e-paste-${buildProjectSuffix(testInfo)}`;
 
-        if ((await items.count()) >= 2) {
-            // First, copy tags from first item
-            await items.first().click({ button: 'right' });
-            await page.waitForTimeout(200);
+        await clearTagClipboard(page);
+        await setTagsViaApi(page, sourceItem.path, [copiedTag]);
+        await setTagsViaApi(page, destinationItem.path, []);
 
-            const copyMenuItem = page.locator(':text("Copy Tags")').first();
-            if ((await copyMenuItem.count()) > 0) {
-                await copyMenuItem.click();
-                await page.waitForTimeout(300);
+        await selectItems(page, [sourceItem.locator]);
+        await page.locator('#selection-copy-tags-btn').click();
+        await clearSelection(page);
 
-                // Then paste to second item
-                await items.nth(1).click({ button: 'right' });
-                await page.waitForTimeout(200);
+        await selectItems(page, [destinationItem.locator]);
+        await expect(page.locator('#selection-paste-tags-btn')).toBeEnabled();
+        await page.locator('#selection-paste-tags-btn').click();
 
-                const pasteMenuItem = page.locator(':text("Paste Tags")').first();
-                if ((await pasteMenuItem.count()) > 0) {
-                    await pasteMenuItem.click();
+        const pasteModal = page.locator('#paste-tags-modal');
+        await expect(pasteModal).toBeVisible();
+        await expect(pasteModal.locator(`.paste-tag-chip[data-tag="${copiedTag}"]`)).toHaveClass(
+            /selected/
+        );
 
-                    // Should show feedback
-                    const feedback = page.locator(':text("Pasted"), .notification');
-                    if ((await feedback.count()) > 0) {
-                        await expect(feedback).toBeVisible({ timeout: 2000 });
-                    }
-                }
-            }
-        }
+        await pasteModal.locator('.paste-confirm-btn').click();
+        await expect(pasteModal).toBeHidden();
+
+        await expect
+            .poll(async () => getTagsViaApi(page, destinationItem.path))
+            .toContain(copiedTag);
     });
 });
 

@@ -2048,6 +2048,51 @@
                 }
             }
         },
+        "/api/tags/suggestions": {
+            "post": {
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Get related tag suggestions",
+                "description": "Returns tags that frequently co-occur with the provided tags, excluding tags already selected or explicitly excluded.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RelatedTagSuggestionsRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Related tag suggestions",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/RelatedTagSuggestion"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or limit"
+                    },
+                    "500": {
+                        "description": "Failed to get related tag suggestions"
+                    }
+                }
+            }
+        },
         "/api/tags/bulk": {
             "post": {
                 "tags": [
@@ -3147,6 +3192,48 @@
                         "items": {
                             "type": "string"
                         }
+                    }
+                }
+            },
+            "RelatedTagSuggestionsRequest": {
+                "type": "object",
+                "required": [
+                    "tags"
+                ],
+                "properties": {
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Tags already selected or applied"
+                    },
+                    "exclude": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Additional tag names to suppress from the response"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of suggestions to return"
+                    }
+                }
+            },
+            "RelatedTagSuggestion": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "itemCount": {
+                        "type": "integer",
+                        "description": "Total number of items using this tag"
+                    },
+                    "relatedCount": {
+                        "type": "integer",
+                        "description": "Number of items where this tag appears alongside the requested tags"
                     }
                 }
             },

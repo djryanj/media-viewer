@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.16.1] - Unreleased
+
+### Added
+
+- feat(frontend): tagging workflows now surface browser-local recent tags and related co-occurring tag suggestions near the top of the tag UI, including grouped ranking for empty and typed states in single-item, bulk, and lightbox flows. The release also adds the supporting `POST /api/tags/suggestions` API, updated docs, and expanded automated coverage for tagging screenshots and suggestion behavior. ([#149](https://github.com/djryanj/media-viewer/issues/149))
+
 ## [0.16.0] - 04-04-2026
 
 ### Added
 
-- feat(frontend): added a full Collections workflow for saving custom groups of images and videos. You can now create collections from the gallery, manage them from collected items, browse them in their own ordered view, reorder items more directly, and work with the same collections from the lightbox. Recent collections are surfaced first to make repeat organizing faster, and collections stay tied to a single folder so they remain predictable.
+- feat(frontend): added a full Collections workflow for saving custom groups of images and videos. You can now create collections from the gallery, manage them from collected items, browse them in their own ordered view, reorder items more directly, and work with the same collections from the lightbox. Recent collections are surfaced first to make repeat organizing faster, and collections stay tied to a single folder so they remain predictable. ([#87](https://github.com/djryanj/media-viewer/issues/87))
 
 ## [0.15.7] - 04-01-2026
 

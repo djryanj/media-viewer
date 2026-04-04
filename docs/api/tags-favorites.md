@@ -14,6 +14,7 @@ Primary tags endpoints:
 - `DELETE /api/tags/file`
 - `PUT /api/tags/file`
 - `POST /api/tags/query`
+- `POST /api/tags/suggestions`
 - `POST /api/tags/bulk`
 - `DELETE /api/tags/bulk`
 - `GET /api/tags/{tag}`

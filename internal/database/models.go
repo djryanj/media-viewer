@@ -51,6 +51,13 @@ type Tag struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// RelatedTagSuggestion represents a tag frequently used alongside other tags.
+type RelatedTagSuggestion struct {
+	Name         string `json:"name"`
+	ItemCount    int    `json:"itemCount"`
+	RelatedCount int    `json:"relatedCount"`
+}
+
 // Favorite represents a user's favorite media file or folder.
 type Favorite struct {
 	ID        int64     `json:"id"`

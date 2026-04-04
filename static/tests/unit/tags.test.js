@@ -59,6 +59,7 @@ describe('Tags Module', () => {
         Tags = await loadModuleForTesting('tags', 'Tags');
 
         // Initialize
+        globalThis.localStorage?.clear?.();
         Tags.init();
     });
 
@@ -472,16 +473,19 @@ describe('Tags Module', () => {
                 { name: 'summer', itemCount: 8 },
                 { name: 'winter', itemCount: 3 },
             ];
+            Tags._recentTagNames = [];
+            Tags.relatedTagSuggestions = [];
         });
 
-        test('hides suggestions for empty query', () => {
+        test('shows suggestions for empty query using ranked fallback', () => {
             Tags.showSuggestions('');
-            expect(Tags.elements.tagSuggestions.classList.contains('hidden')).toBe(true);
+            expect(Tags.elements.tagSuggestions.classList.contains('hidden')).toBe(false);
+            expect(Tags.elements.tagSuggestions.innerHTML).toContain('vacation');
         });
 
-        test('hides suggestions for whitespace-only query', () => {
+        test('shows suggestions for whitespace-only query using ranked fallback', () => {
             Tags.showSuggestions('   ');
-            expect(Tags.elements.tagSuggestions.classList.contains('hidden')).toBe(true);
+            expect(Tags.elements.tagSuggestions.classList.contains('hidden')).toBe(false);
         });
 
         test('shows matching suggestions', () => {
@@ -523,7 +527,7 @@ describe('Tags Module', () => {
 
         test('shows item count for each suggestion', () => {
             Tags.showSuggestions('vac');
-            expect(Tags.elements.tagSuggestions.innerHTML).toContain('(10)');
+            expect(Tags.elements.tagSuggestions.innerHTML).toContain('10');
         });
 
         test('highlights matching portion', () => {
@@ -549,6 +553,121 @@ describe('Tags Module', () => {
         test('shows suggestions for single character', () => {
             Tags.showSuggestions('v');
             expect(Tags.elements.tagSuggestions.innerHTML).toContain('vacation');
+        });
+
+        test('prefers recent tags near the top for empty query', () => {
+            Tags._recentTagNames = ['winter'];
+
+            const suggestions = Tags.getRankedSuggestions('');
+
+            expect(suggestions[0].name).toBe('winter');
+        });
+
+        test('prefers related suggestions over recent and other matches', () => {
+            Tags._recentTagNames = ['winter'];
+            Tags.relatedTagSuggestions = [{ name: 'summer', itemCount: 8, relatedCount: 4 }];
+
+            const suggestions = Tags.getRankedSuggestions('');
+
+            expect(suggestions[0].name).toBe('summer');
+            expect(suggestions[0].isRelated).toBe(true);
+            expect(suggestions[1].name).toBe('winter');
+        });
+
+        test('prefers related suggestions over prefix-only matches', () => {
+            Tags.allTags = [
+                { name: 'spring', itemCount: 12 },
+                { name: 'summer', itemCount: 8 },
+                { name: 'sunset', itemCount: 6 },
+            ];
+            Tags.relatedTagSuggestions = [{ name: 'summer', itemCount: 8, relatedCount: 4 }];
+
+            const suggestions = Tags.getRankedSuggestions('s');
+
+            expect(suggestions[0].name).toBe('summer');
+            expect(suggestions[0].isRelated).toBe(true);
+        });
+
+        test('groups suggestions into related recent and all sections', () => {
+            Tags.allTags = [
+                { name: 'summer', itemCount: 8 },
+                { name: 'winter', itemCount: 3 },
+                { name: 'vacation', itemCount: 10 },
+            ];
+            Tags._recentTagNames = ['winter'];
+            Tags.relatedTagSuggestions = [{ name: 'summer', itemCount: 8, relatedCount: 4 }];
+
+            const groups = Tags.getSuggestionGroups('');
+
+            expect(groups.map((group) => group.key)).toEqual(['related', 'recent', 'all']);
+            expect(groups[0].items[0].name).toBe('summer');
+            expect(groups[1].items[0].name).toBe('winter');
+            expect(groups[2].items[0].name).toBe('vacation');
+        });
+
+        test('markTagRecent deduplicates tags case-insensitively', () => {
+            Tags._recentTagNames = ['Vacation'];
+
+            Tags.markTagRecent('vacation');
+
+            expect(Tags._recentTagNames).toEqual(['vacation']);
+        });
+
+        test('excludes current single-item tags from ranked suggestions', () => {
+            Tags.currentTagsList = ['vacation'];
+            Tags.relatedTagSuggestions = [
+                { name: 'vacation', itemCount: 10, relatedCount: 3 },
+                { name: 'summer', itemCount: 8, relatedCount: 2 },
+            ];
+
+            const suggestions = Tags.getRankedSuggestions('');
+
+            expect(suggestions.map((tag) => tag.name)).toContain('summer');
+            expect(suggestions.map((tag) => tag.name)).not.toContain('vacation');
+        });
+
+        test('excludes current bulk tags from ranked suggestions', () => {
+            Tags.isBulkMode = true;
+            Tags.allUniqueTags = ['vacation', 'beach'];
+            Tags.relatedTagSuggestions = [
+                { name: 'beach', itemCount: 5, relatedCount: 2 },
+                { name: 'family', itemCount: 4, relatedCount: 1 },
+            ];
+
+            const suggestions = Tags.getRankedSuggestions('');
+
+            expect(suggestions.map((tag) => tag.name)).toContain('family');
+            expect(suggestions.map((tag) => tag.name)).not.toContain('vacation');
+            expect(suggestions.map((tag) => tag.name)).not.toContain('beach');
+        });
+    });
+
+    describe('recent tag persistence', () => {
+        test('loads stored recent tags with trimming deduplication and cap', () => {
+            const stored = [' Vacation ', 'beach', 'vacation', '', 'summer'];
+            stored.push(...Array.from({ length: 30 }, (_, index) => `tag-${index}`));
+
+            globalThis.localStorage.setItem(Tags._recentTagsStorageKey, JSON.stringify(stored));
+
+            Tags._loadRecentTagNames();
+
+            expect(Tags._recentTagNames[0]).toBe('Vacation');
+            expect(Tags._recentTagNames).toContain('beach');
+            expect(Tags._recentTagNames).not.toContain('vacation');
+            expect(Tags._recentTagNames).not.toContain('');
+            expect(Tags._recentTagNames.length).toBe(24);
+        });
+
+        test('reconciles recent tags to canonical names from all tags', () => {
+            Tags.allTags = [
+                { name: 'Vacation', itemCount: 10 },
+                { name: 'Family', itemCount: 4 },
+            ];
+            Tags._recentTagNames = [' vacation ', 'family'];
+
+            Tags._reconcileRecentTagNames();
+
+            expect(Tags._recentTagNames).toEqual(['Vacation', 'Family']);
         });
     });
 

@@ -34,6 +34,7 @@ const TEST_CONFIG = {
             FILE: '/api/tags/file',
             FILE_SET: '/api/tags/file',
             QUERY: '/api/tags/query',
+            SUGGESTIONS: '/api/tags/suggestions',
             BULK: '/api/tags/bulk',
             BY_TAG: '/api/tags',
             RENAME_EVERYWHERE: (tag) => `/api/tags/${tag}`,

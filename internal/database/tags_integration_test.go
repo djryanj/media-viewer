@@ -546,6 +546,99 @@ func TestGetAllTagsWithCountsIntegration(t *testing.T) {
 	}
 }
 
+func TestGetRelatedTagSuggestionsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	fixtures := map[string][]string{
+		"/test/photo1.jpg": {"vacation", "beach", "summer"},
+		"/test/photo2.jpg": {"vacation", "beach"},
+		"/test/photo3.jpg": {"vacation", "summer", "family"},
+		"/test/photo4.jpg": {"family", "portrait"},
+	}
+
+	for path, tags := range fixtures {
+		for _, tagName := range tags {
+			if err := db.AddTagToFile(ctx, path, tagName); err != nil {
+				t.Fatalf("failed to add tag %q to %s: %v", tagName, path, err)
+			}
+		}
+	}
+
+	suggestions, err := db.GetRelatedTagSuggestions(ctx, []string{"vacation"}, nil, 5)
+	if err != nil {
+		t.Fatalf("GetRelatedTagSuggestions failed: %v", err)
+	}
+
+	if len(suggestions) < 3 {
+		t.Fatalf("expected at least 3 suggestions, got %d", len(suggestions))
+	}
+
+	if suggestions[0].Name != "beach" {
+		t.Fatalf("expected beach to be the top suggestion, got %q", suggestions[0].Name)
+	}
+	if suggestions[0].RelatedCount != 2 {
+		t.Fatalf("expected beach related count 2, got %d", suggestions[0].RelatedCount)
+	}
+
+	if suggestions[1].Name != "summer" {
+		t.Fatalf("expected summer second, got %q", suggestions[1].Name)
+	}
+	if suggestions[1].RelatedCount != 2 {
+		t.Fatalf("expected summer related count 2, got %d", suggestions[1].RelatedCount)
+	}
+
+	if suggestions[2].Name != "family" {
+		t.Fatalf("expected family third, got %q", suggestions[2].Name)
+	}
+	if suggestions[2].RelatedCount != 1 {
+		t.Fatalf("expected family related count 1, got %d", suggestions[2].RelatedCount)
+	}
+}
+
+func TestGetRelatedTagSuggestionsExcludesSourceAndExplicitTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	for _, fixture := range []struct {
+		path string
+		tag  string
+	}{
+		{path: "/test/photo1.jpg", tag: "vacation"},
+		{path: "/test/photo1.jpg", tag: "beach"},
+		{path: "/test/photo2.jpg", tag: "vacation"},
+		{path: "/test/photo2.jpg", tag: "summer"},
+	} {
+		if err := db.AddTagToFile(ctx, fixture.path, fixture.tag); err != nil {
+			t.Fatalf("failed to add tag %q to %s: %v", fixture.tag, fixture.path, err)
+		}
+	}
+
+	suggestions, err := db.GetRelatedTagSuggestions(ctx, []string{"Vacation"}, []string{"summer"}, 10)
+	if err != nil {
+		t.Fatalf("GetRelatedTagSuggestions failed: %v", err)
+	}
+
+	if len(suggestions) != 1 {
+		t.Fatalf("expected 1 suggestion after exclusions, got %d", len(suggestions))
+	}
+	if suggestions[0].Name != "beach" {
+		t.Fatalf("expected beach suggestion, got %q", suggestions[0].Name)
+	}
+}
+
 func TestGetUnusedTagsIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

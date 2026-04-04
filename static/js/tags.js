@@ -2,6 +2,10 @@ const Tags = {
     allTags: [],
     elements: {},
     highlightedSuggestionIndex: -1, // Keyboard-nav index for tag suggestions
+    _recentTagsStorageKey: 'media-viewer.tags.recent',
+    _recentTagNames: [],
+    relatedTagSuggestions: [],
+    _relatedSuggestionRequestId: 0,
 
     // Mobile soft-keyboard viewport handler (see _bindViewportResize)
     _viewportHandler: null,
@@ -16,6 +20,7 @@ const Tags = {
     allUniqueTags: [], // All unique tags across selected items (bulk mode only)
 
     init() {
+        this._loadRecentTagNames();
         this.cacheElements();
         this.bindEvents();
         this.loadAllTags();
@@ -65,6 +70,10 @@ const Tags = {
 
         if (this.elements.tagInput) {
             this.elements.tagInput.addEventListener('input', (e) => {
+                this.showSuggestions(e.target.value);
+            });
+
+            this.elements.tagInput.addEventListener('focus', (e) => {
                 this.showSuggestions(e.target.value);
             });
 
@@ -183,6 +192,101 @@ const Tags = {
         });
     },
 
+    _normalizeTagName(tagName) {
+        return String(tagName || '')
+            .trim()
+            .toLocaleLowerCase();
+    },
+
+    _loadRecentTagNames() {
+        try {
+            const raw = globalThis.localStorage?.getItem(this._recentTagsStorageKey);
+            if (!raw) {
+                this._recentTagNames = [];
+                return;
+            }
+
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                this._recentTagNames = [];
+                return;
+            }
+
+            const seen = new Set();
+            this._recentTagNames = parsed
+                .map((tagName) => String(tagName || '').trim())
+                .filter((tagName) => {
+                    const normalized = this._normalizeTagName(tagName);
+                    if (!normalized || seen.has(normalized)) {
+                        return false;
+                    }
+                    seen.add(normalized);
+                    return true;
+                })
+                .slice(0, 24);
+        } catch {
+            this._recentTagNames = [];
+        }
+    },
+
+    _saveRecentTagNames() {
+        try {
+            globalThis.localStorage?.setItem(
+                this._recentTagsStorageKey,
+                JSON.stringify(this._recentTagNames.slice(0, 24))
+            );
+        } catch {
+            // Ignore storage failures; recents are a UX enhancement.
+        }
+    },
+
+    _getCanonicalTagName(tagName) {
+        const trimmedTagName = String(tagName || '').trim();
+        if (!trimmedTagName) return '';
+
+        const normalized = this._normalizeTagName(trimmedTagName);
+        const existingTag = this.allTags.find(
+            (tag) => this._normalizeTagName(tag.name) === normalized
+        );
+        return existingTag?.name || trimmedTagName;
+    },
+
+    _reconcileRecentTagNames() {
+        const canonicalNames = new Map(
+            this.allTags.map((tag) => [this._normalizeTagName(tag.name), tag.name])
+        );
+        const seen = new Set();
+
+        this._recentTagNames = this._recentTagNames
+            .map((tagName) => canonicalNames.get(this._normalizeTagName(tagName)))
+            .filter((tagName) => {
+                const normalized = this._normalizeTagName(tagName);
+                if (!normalized || seen.has(normalized)) {
+                    return false;
+                }
+                seen.add(normalized);
+                return true;
+            })
+            .slice(0, 24);
+
+        this._saveRecentTagNames();
+    },
+
+    markTagRecent(tagName) {
+        const canonicalName = this._getCanonicalTagName(tagName);
+        const normalized = this._normalizeTagName(canonicalName);
+        if (!normalized) return;
+
+        this._recentTagNames = [
+            canonicalName,
+            ...this._recentTagNames.filter(
+                (existingTagName) => this._normalizeTagName(existingTagName) !== normalized
+            ),
+        ].slice(0, 24);
+
+        this._saveRecentTagNames();
+    },
+
     /**
      * Check if the tag modal is currently open
      */
@@ -285,6 +389,7 @@ const Tags = {
             const response = await fetch('/api/tags');
             if (response.ok) {
                 this.allTags = await response.json();
+                this._reconcileRecentTagNames();
             }
         } catch (error) {
             console.error('Error loading tags:', error);
@@ -299,6 +404,7 @@ const Tags = {
         this.bulkNames = [];
         this.currentTagsList = [];
         this.allUniqueTags = [];
+        this.relatedTagSuggestions = [];
 
         if (!this.elements.tagModal) return;
 
@@ -322,7 +428,10 @@ const Tags = {
         this._bindViewportResize();
         // Defer focus by one frame so the modal is painted before the soft
         // keyboard is triggered — avoids a layout freeze mid-animation on iOS.
-        requestAnimationFrame(() => this.elements.tagInput.focus());
+        requestAnimationFrame(() => {
+            this.elements.tagInput.focus();
+            this.showSuggestions(this.elements.tagInput.value);
+        });
 
         lucide.createIcons();
 
@@ -339,6 +448,7 @@ const Tags = {
         this.currentName = null;
         this.currentTagsList = [];
         this.allUniqueTags = [];
+        this.relatedTagSuggestions = [];
 
         if (!this.elements.tagModal) return;
 
@@ -365,7 +475,10 @@ const Tags = {
         this.elements.tagModal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
         this._bindViewportResize();
-        requestAnimationFrame(() => this.elements.tagInput.focus());
+        requestAnimationFrame(() => {
+            this.elements.tagInput.focus();
+            this.showSuggestions(this.elements.tagInput.value);
+        });
 
         lucide.createIcons();
 
@@ -415,11 +528,13 @@ const Tags = {
             }
 
             this.renderBulkTags(Array.from(commonTags), Array.from(allUniqueTags));
+            await this.refreshRelatedTagSuggestions();
             return tagsByPath;
         } catch (error) {
             console.error('Error loading bulk tags:', error);
             this.currentTagsList = [];
             this.allUniqueTags = [];
+            this.relatedTagSuggestions = [];
             this.tagSources = new Map();
             this.renderBulkTags([], []);
             return null;
@@ -502,7 +617,9 @@ const Tags = {
                 // to avoid a second POST /api/tags/query round-trip.
                 const tagsByPath = await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
+                this.markTagRecent(tagName);
                 await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
+                this.showSuggestions(this.elements.tagInput?.value || '');
 
                 Gallery.showToast(`Applied "${tagName}" to all ${this.bulkPaths.length} items`);
             } else {
@@ -567,6 +684,7 @@ const Tags = {
         this.bulkNames = [];
         this.currentTagsList = [];
         this.allUniqueTags = [];
+        this.relatedTagSuggestions = [];
         this.tagSources = null;
     },
 
@@ -586,11 +704,13 @@ const Tags = {
                 this.currentTagsList = tags || [];
                 this.allUniqueTags = tags || []; // Same as currentTagsList for single item
                 this.renderCurrentTags(tags);
+                await this.refreshRelatedTagSuggestions();
             }
         } catch (error) {
             console.error('Error loading file tags:', error);
             this.currentTagsList = [];
             this.allUniqueTags = [];
+            this.relatedTagSuggestions = [];
         }
     },
 
@@ -632,30 +752,250 @@ const Tags = {
         });
     },
 
+    getSuggestionSourceTags() {
+        return this.isBulkMode ? this.allUniqueTags : this.currentTagsList;
+    },
+
+    getExcludedSuggestionTags() {
+        return this.isBulkMode ? this.allUniqueTags : this.currentTagsList;
+    },
+
+    async refreshRelatedTagSuggestions() {
+        const sourceTags = this.getSuggestionSourceTags();
+        if (!Array.isArray(sourceTags) || sourceTags.length === 0) {
+            this.relatedTagSuggestions = [];
+            return [];
+        }
+
+        const requestId = ++this._relatedSuggestionRequestId;
+
+        try {
+            const response = await fetch('/api/tags/suggestions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tags: sourceTags,
+                    exclude: this.getExcludedSuggestionTags(),
+                    limit: 8,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch related tag suggestions');
+            }
+
+            const suggestions = await response.json();
+            if (requestId === this._relatedSuggestionRequestId) {
+                this.relatedTagSuggestions = Array.isArray(suggestions) ? suggestions : [];
+            }
+        } catch (error) {
+            console.error('Error loading related tag suggestions:', error);
+            if (requestId === this._relatedSuggestionRequestId) {
+                this.relatedTagSuggestions = [];
+            }
+        }
+
+        return this.relatedTagSuggestions;
+    },
+
+    getRankedSuggestions(query = '') {
+        const normalizedQuery = this._normalizeTagName(query);
+        const recentRanks = new Map(
+            this._recentTagNames.map((tagName, index) => [this._normalizeTagName(tagName), index])
+        );
+        const excludedTags = new Set(
+            this.getExcludedSuggestionTags().map((tagName) => this._normalizeTagName(tagName))
+        );
+        const suggestionsByName = new Map();
+
+        this.allTags.forEach((tag) => {
+            const normalizedName = this._normalizeTagName(tag.name);
+            if (!normalizedName || excludedTags.has(normalizedName)) {
+                return;
+            }
+
+            suggestionsByName.set(normalizedName, {
+                name: tag.name,
+                itemCount: Number(tag.itemCount) || 0,
+                relatedCount: 0,
+                isRelated: false,
+                isRecent: recentRanks.has(normalizedName),
+                recentRank: recentRanks.has(normalizedName)
+                    ? recentRanks.get(normalizedName)
+                    : Number.MAX_SAFE_INTEGER,
+            });
+        });
+
+        this.relatedTagSuggestions.forEach((tag) => {
+            const normalizedName = this._normalizeTagName(tag.name);
+            if (!normalizedName || excludedTags.has(normalizedName)) {
+                return;
+            }
+
+            const existing = suggestionsByName.get(normalizedName);
+            const suggestion = {
+                name: tag.name,
+                itemCount: Number(tag.itemCount) || existing?.itemCount || 0,
+                relatedCount: Number(tag.relatedCount) || 0,
+                isRelated: true,
+                isRecent: recentRanks.has(normalizedName),
+                recentRank: recentRanks.has(normalizedName)
+                    ? recentRanks.get(normalizedName)
+                    : (existing?.recentRank ?? Number.MAX_SAFE_INTEGER),
+            };
+
+            if (existing) {
+                suggestion.itemCount = Math.max(existing.itemCount, suggestion.itemCount);
+                suggestion.relatedCount = Math.max(existing.relatedCount, suggestion.relatedCount);
+            }
+
+            suggestionsByName.set(normalizedName, suggestion);
+        });
+
+        const suggestions = Array.from(suggestionsByName.values()).filter((tag) => {
+            if (!normalizedQuery) return true;
+            return this._normalizeTagName(tag.name).includes(normalizedQuery);
+        });
+
+        suggestions.sort((left, right) => {
+            const leftNormalized = this._normalizeTagName(left.name);
+            const rightNormalized = this._normalizeTagName(right.name);
+            const leftPrefix =
+                normalizedQuery && leftNormalized.startsWith(normalizedQuery) ? 0 : 1;
+            const rightPrefix =
+                normalizedQuery && rightNormalized.startsWith(normalizedQuery) ? 0 : 1;
+            const getSuggestionBucket = (tag) => {
+                if (tag.isRelated) return 0;
+                if (tag.isRecent) return 1;
+                return 2;
+            };
+            const leftBucket = getSuggestionBucket(left);
+            const rightBucket = getSuggestionBucket(right);
+
+            if (leftBucket !== rightBucket) {
+                return leftBucket - rightBucket;
+            }
+
+            if (leftBucket === 0) {
+                if (left.relatedCount !== right.relatedCount) {
+                    return right.relatedCount - left.relatedCount;
+                }
+                if (leftPrefix !== rightPrefix) {
+                    return leftPrefix - rightPrefix;
+                }
+                if (left.itemCount !== right.itemCount) {
+                    return right.itemCount - left.itemCount;
+                }
+                return left.name.localeCompare(right.name, undefined, {
+                    sensitivity: 'base',
+                    numeric: true,
+                });
+            }
+
+            if (normalizedQuery && leftPrefix !== rightPrefix) {
+                return leftPrefix - rightPrefix;
+            }
+
+            if (leftBucket === 1 && left.recentRank !== right.recentRank) {
+                return left.recentRank - right.recentRank;
+            }
+
+            if (left.itemCount !== right.itemCount) {
+                return right.itemCount - left.itemCount;
+            }
+
+            return left.name.localeCompare(right.name, undefined, {
+                sensitivity: 'base',
+                numeric: true,
+            });
+        });
+
+        return suggestions.slice(0, 5);
+    },
+
+    getSuggestionGroups(query = '') {
+        const normalizedQuery = this._normalizeTagName(query);
+        const suggestions = this.getRankedSuggestions(query);
+
+        const related = suggestions.filter((tag) => tag.isRelated);
+        const recent = suggestions.filter((tag) => !tag.isRelated && tag.isRecent);
+        const general = suggestions.filter((tag) => !tag.isRelated && !tag.isRecent);
+        const groups = [];
+
+        if (related.length > 0) {
+            groups.push({
+                key: 'related',
+                title: normalizedQuery ? 'Suggested Together' : 'Suggested Next',
+                items: related,
+            });
+        }
+
+        if (recent.length > 0) {
+            groups.push({
+                key: 'recent',
+                title: normalizedQuery ? 'Recent Matches' : 'Recent Tags',
+                items: recent,
+            });
+        }
+
+        if (general.length > 0) {
+            groups.push({
+                key: 'all',
+                title: normalizedQuery ? 'Other Matches' : 'Browse Tags',
+                items: general,
+            });
+        }
+
+        return groups;
+    },
+
+    renderSuggestionRow(tag, normalizedQuery) {
+        let subtitle = '';
+        let badgeLabel = '';
+        let badgeClass = 'tag-suggestion-meta';
+
+        if (tag.isRelated) {
+            subtitle = `Seen together on ${tag.relatedCount} item${tag.relatedCount !== 1 ? 's' : ''}`;
+            badgeLabel = 'Suggested';
+            badgeClass += ' related';
+        } else if (tag.isRecent) {
+            subtitle = 'Recently applied';
+            badgeLabel = 'Recent';
+            badgeClass += ' recent';
+        }
+
+        return `
+            <div class="tag-suggestion" data-tag="${this.escapeAttr(tag.name)}">
+                <div class="tag-suggestion-main">
+                    <span class="tag-suggestion-label">${this.highlightMatch(tag.name, normalizedQuery)}</span>
+                    ${subtitle ? `<span class="tag-suggestion-subtitle">${this.escapeHtml(subtitle)}</span>` : ''}
+                </div>
+                <div class="tag-suggestion-side">
+                    ${badgeLabel ? `<span class="${badgeClass}">${badgeLabel}</span>` : ''}
+                    <span class="tag-count">${tag.itemCount}</span>
+                </div>
+            </div>
+        `;
+    },
+
     showSuggestions(query) {
         this.highlightedSuggestionIndex = -1;
-        query = query.trim().toLowerCase();
+        const normalizedQuery = this._normalizeTagName(query);
+        const groups = this.getSuggestionGroups(query);
 
-        if (query.length === 0) {
+        if (groups.length === 0) {
             this.elements.tagSuggestions.classList.add('hidden');
             return;
         }
 
-        const matches = this.allTags
-            .filter((tag) => tag.name.toLowerCase().includes(query))
-            .slice(0, 5);
-
-        if (matches.length === 0) {
-            this.elements.tagSuggestions.classList.add('hidden');
-            return;
-        }
-
-        this.elements.tagSuggestions.innerHTML = matches
+        this.elements.tagSuggestions.innerHTML = groups
             .map(
-                (tag) => `
-                <div class="tag-suggestion" data-tag="${this.escapeAttr(tag.name)}">
-                    ${this.highlightMatch(tag.name, query)}
-                    <span class="tag-count">(${tag.itemCount})</span>
+                (group) => `
+                <div class="tag-suggestion-group tag-suggestion-group-${group.key}">
+                    <div class="tag-suggestion-group-title">${this.escapeHtml(group.title)}</div>
+                    <div class="tag-suggestion-group-list">
+                        ${group.items.map((tag) => this.renderSuggestionRow(tag, normalizedQuery)).join('')}
+                    </div>
                 </div>
             `
             )
@@ -697,7 +1037,7 @@ const Tags = {
         }
 
         this.elements.tagInput.value = '';
-        this.elements.tagSuggestions.classList.add('hidden');
+        this.showSuggestions('');
     },
 
     async addTag(tagName) {
@@ -716,9 +1056,11 @@ const Tags = {
             if (response.ok) {
                 await this.loadFileTags(this.currentPath);
                 await this.loadAllTags();
+                this.markTagRecent(tagName);
                 // currentTagsList is freshly populated by loadFileTags(); update the
                 // gallery card directly instead of making a second GET /api/tags/file.
                 this.updateGalleryItemTagsDOM(this.currentPath, this.currentTagsList);
+                this.showSuggestions(this.elements.tagInput?.value || '');
             }
         } catch (error) {
             console.error('Error adding tag:', error);
@@ -744,7 +1086,9 @@ const Tags = {
                 // update gallery cards without a second POST /api/tags/query.
                 const tagsByPath = await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
+                this.markTagRecent(tagName);
                 await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
+                this.showSuggestions(this.elements.tagInput?.value || '');
 
                 Gallery.showToast(`Added "${tagName}" to ${result.success} items`);
             } else {
@@ -775,6 +1119,7 @@ const Tags = {
                 // currentTagsList is freshly populated by loadFileTags(); update the
                 // gallery card directly instead of making a second GET /api/tags/file.
                 this.updateGalleryItemTagsDOM(this.currentPath, this.currentTagsList);
+                this.showSuggestions(this.elements.tagInput?.value || '');
             }
         } catch (error) {
             console.error('Error removing tag:', error);
@@ -801,6 +1146,7 @@ const Tags = {
                 const tagsByPath = await this.loadBulkTags(this.bulkPaths);
                 await this.loadAllTags();
                 await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
+                this.showSuggestions(this.elements.tagInput?.value || '');
 
                 Gallery.showToast(`Removed "${tagName}" from ${result.success} items`);
             } else {
