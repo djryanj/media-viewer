@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.1] - 04-04-2026
 
+
+### Changed
+
+- chore(deps): update all non-major dependencies ([#482](https://github.com/djryanj/media-viewer/pull/482))
 ### Added
 
 - feat(frontend): tagging workflows now surface browser-local recent tags and related co-occurring tag suggestions near the top of the tag UI, including grouped ranking for empty and typed states in single-item, bulk, and lightbox flows. The release also adds the supporting `POST /api/tags/suggestions` API, updated docs, and expanded automated coverage for tagging screenshots and suggestion behavior. ([#149](https://github.com/djryanj/media-viewer/issues/149))
