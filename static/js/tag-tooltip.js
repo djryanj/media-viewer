@@ -3,8 +3,14 @@ const TagTooltip = {
     currentTarget: null,
     hoverZone: null,
     isMobile: false,
+    initialized: false,
 
     init() {
+        if (this.initialized) {
+            return;
+        }
+
+        this.initialized = true;
         this.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         this.createTooltip();
         this.bindGlobalEvents();
@@ -282,8 +288,10 @@ const TagTooltip = {
     },
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    TagTooltip.init();
-});
-
 window.TagTooltip = TagTooltip;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => TagTooltip.init());
+} else {
+    TagTooltip.init();
+}

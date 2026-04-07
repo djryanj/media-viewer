@@ -46,7 +46,7 @@ FORCE ?= 0
         test-race test-bench test-bench-package test-bench-performance test-bench-large test-performance \
         test-unit test-integration test-all \
         test-clean \
-        pr-check pr-check-all \
+		pr-check pr-check-fix pr-check-all \
         frontend-install \
         frontend-lint frontend-lint-js frontend-lint-css \
         frontend-lint-fix frontend-lint-css-fix \
@@ -54,12 +54,15 @@ FORCE ?= 0
         frontend-dev \
         frontend-test frontend-test-unit frontend-test-integration \
         frontend-test-integration-auto frontend-test-e2e-auto \
-        frontend-test-e2e \
+			frontend-test-e2e frontend-test-e2e-smoke frontend-test-e2e-smoke-auto \
+			frontend-test-e2e-visual frontend-test-e2e-visual-auto frontend-test-e2e-visual-baselines \
+			frontend-test-e2e-performance frontend-test-e2e-performance-auto \
+			frontend-test-e2e-performance-smoke frontend-test-e2e-performance-smoke-auto frontend-test-e2e-performance-soak \
 		frontend-test-e2e-docs-screenshots frontend-test-e2e-docs-screenshots-auto \
         frontend-test-coverage frontend-test-unit-coverage \
         frontend-test-unit-watch frontend-test-unit-ui \
         frontend-test-file \
-        frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file \
+		frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-file-auto \
         frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug \
         frontend-test-e2e-coverage frontend-test-e2e-report \
         lint lint-fix lint-all lint-fix-all format-all check-all \
@@ -468,8 +471,10 @@ _HAS_GO_CHANGES = $(shell \
 # Frontend changes (matches CI "frontend" filter)
 _HAS_FRONTEND_CHANGES = $(shell \
 	if [ "$(FORCE)" = "1" ]; then echo "1"; \
-	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^static/'; then echo "1"; \
+	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^static/.*\.(js|css|html)$$|^static/package(-lock)?\.json$$'; then echo "1"; \
 	else echo ""; fi)
+
+PR_CHECK_GO_LINT_TARGET ?= lint
 
 # Run PR checks, only for changed areas (use FORCE=1 to run all)
 pr-check:
@@ -490,8 +495,12 @@ pr-check:
 	@echo ""
 	@# ── Backend checks ──
 	@if [ -n "$(_HAS_GO_CHANGES)" ]; then \
-		echo "Step 1: Running Go linter (will auto-fix some lint issues)..."; \
-		$(MAKE) lint-fix || exit 1; \
+		if [ "$(PR_CHECK_GO_LINT_TARGET)" = "lint-fix" ]; then \
+			echo "Step 1: Running Go linter with autofix..."; \
+		else \
+			echo "Step 1: Running Go linter..."; \
+		fi; \
+		$(MAKE) $(PR_CHECK_GO_LINT_TARGET) || exit 1; \
 		echo ""; \
 		echo "Step 2: Running Go tests..."; \
 		$(MAKE) test || exit 1; \
@@ -511,6 +520,9 @@ pr-check:
 		echo "Step 6: Running frontend integration tests (ephemeral server)..."; \
 		$(MAKE) frontend-test-integration-auto || exit 1; \
 		echo ""; \
+		echo "Step 7: Running frontend Playwright smoke suite (ephemeral server)..."; \
+		$(MAKE) frontend-test-e2e-smoke-auto || exit 1; \
+		echo ""; \
 	fi
 	@if [ -z "$(_HAS_GO_CHANGES)" ] && [ -z "$(_HAS_FRONTEND_CHANGES)" ]; then \
 		echo "No relevant changes detected. Nothing to check!"; \
@@ -518,6 +530,10 @@ pr-check:
 	else \
 		echo "All relevant PR checks completed successfully!"; \
 	fi
+
+# Run PR checks with Go lint autofix enabled, only for changed areas (use FORCE=1 to run all)
+pr-check-fix:
+	@$(MAKE) pr-check PR_CHECK_GO_LINT_TARGET=lint-fix FORCE=$(FORCE) PR_BASE=$(PR_BASE)
 
 # Force-run all PR checks regardless of changes
 pr-check-all:
@@ -616,13 +632,83 @@ frontend-test-integration-auto:
 # Run frontend E2E tests (requires backend at TEST_BASE_URL or localhost:8080)
 frontend-test-e2e:
 	@echo "Running frontend E2E tests..."
+	@echo "Note: Performance specs and docs screenshot generation specs are excluded by default"
+	@echo "Note: Use 'make frontend-test-e2e-performance*' for performance lanes and 'make frontend-test-e2e-docs-screenshots' for docs image generation"
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-auto' for automatic server)"
-	cd $(STATIC_DIR) && npm run test:e2e
+	@echo "Logging to ../e2e.log"
+	cd $(STATIC_DIR) && npm run test:e2e 2>&1 | tee ../e2e.log
+
+# Run frontend visual regression E2E tests against committed snapshot baselines.
+frontend-test-e2e-visual:
+	@echo "Running frontend E2E visual regression suite..."
+	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-auto' for automatic server)"
+	@echo "Logging to ../e2e-visual.log"
+	cd $(STATIC_DIR) && npm run test:e2e:visual 2>&1 | tee ../e2e-visual.log
+
+# Run frontend visual regression E2E tests with an ephemeral test server
+frontend-test-e2e-visual-auto:
+	@echo "Running frontend E2E visual regression suite with ephemeral test server..."
+	@echo "Logging to e2e-visual-auto.log"
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-visual 2>&1 | tee e2e-visual-auto.log
+
+# Generate/update visual regression snapshot baselines from the live UI state.
+frontend-test-e2e-visual-baselines:
+	@echo "Generating frontend visual regression snapshot baselines..."
+	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-auto' first if needed)"
+	cd $(STATIC_DIR) && npm run test:e2e:visual:baselines
+
+# Run the stable Chromium Playwright smoke suite (requires backend at TEST_BASE_URL or localhost:8080)
+frontend-test-e2e-smoke:
+	@echo "Running frontend E2E smoke suite..."
+	@echo "Note: Requires backend running (use 'make frontend-test-e2e-smoke-auto' for automatic server)"
+	@echo "Logging to ../e2e-smoke.log"
+	cd $(STATIC_DIR) && npm run test:e2e:smoke 2>&1 | tee ../e2e-smoke.log
+
+# Run the stable Chromium Playwright smoke suite with an ephemeral test server
+frontend-test-e2e-smoke-auto:
+	@echo "Running frontend E2E smoke suite with ephemeral test server..."
+	@echo "Logging to e2e-smoke-auto.log"
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-smoke 2>&1 | tee e2e-smoke-auto.log
 
 # Run frontend E2E tests with an ephemeral test server
 frontend-test-e2e-auto:
 	@echo "Running frontend E2E tests with ephemeral test server..."
-	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e
+	@echo "Logging to e2e-auto.log"
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e 2>&1 | tee e2e-auto.log
+
+# Run non-soak frontend performance E2E tests (requires backend at TEST_BASE_URL or localhost:8080)
+frontend-test-e2e-performance:
+	@echo "Running frontend E2E performance suite..."
+	@echo "Note: Excludes soak tests; use 'make frontend-test-e2e-performance-soak' for the long-run tier"
+	@echo "Note: Requires backend running (use 'make frontend-test-e2e-performance-auto' for automatic server)"
+	@echo "Logging to ../e2e-performance.log"
+	cd $(STATIC_DIR) && npm run test:e2e:performance 2>&1 | tee ../e2e-performance.log
+
+# Run non-soak frontend performance E2E tests with an ephemeral test server
+frontend-test-e2e-performance-auto:
+	@echo "Running frontend E2E performance suite with ephemeral test server..."
+	@echo "Logging to e2e-performance-auto.log"
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-performance 2>&1 | tee e2e-performance-auto.log
+
+# Run the fast baseline performance suite in Chromium
+frontend-test-e2e-performance-smoke:
+	@echo "Running frontend E2E performance smoke suite..."
+	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080 (use 'make frontend-test-e2e-performance-smoke-auto' for automatic server)"
+	@echo "Logging to ../e2e-performance-smoke.log"
+	cd $(STATIC_DIR) && npm run test:e2e:performance:smoke 2>&1 | tee ../e2e-performance-smoke.log
+
+# Run the fast baseline performance suite in Chromium with an ephemeral test server
+frontend-test-e2e-performance-smoke-auto:
+	@echo "Running frontend E2E performance smoke suite with ephemeral test server..."
+	@echo "Logging to e2e-performance-smoke-auto.log"
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-performance-smoke 2>&1 | tee e2e-performance-smoke-auto.log
+
+# Run the long-running soak performance suite in Chromium
+frontend-test-e2e-performance-soak:
+	@echo "Running frontend E2E performance soak suite..."
+	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
+	@echo "Logging to ../e2e-performance-soak.log"
+	cd $(STATIC_DIR) && npm run test:e2e:performance:soak 2>&1 | tee ../e2e-performance-soak.log
 
 # Generate documentation screenshots from a dedicated Playwright workflow.
 frontend-test-e2e-docs-screenshots:
@@ -733,13 +819,14 @@ frontend-test-e2e-module:
 		echo "  UI: @gallery @lightbox @video @navigation"; \
 		echo "  Features: @search @settings @playlist @tags @favorites"; \
 		echo "  Interaction: @keyboard @mobile @touch"; \
+		echo "  Performance: @performance @perf-smoke @soak"; \
 		exit 1; \
 	fi; \
 	cd $(STATIC_DIR) && \
 	for module in $$modules; do \
 		tag=$$(echo "$$module" | sed 's/^@//'); \
 		echo "Running E2E tests for @$$tag... (logging to ../e2e-$$tag.log)"; \
-		npm run test:e2e -- --grep "@$$tag" 2>&1 | tee "../e2e-$$tag.log"; \
+		npx playwright test --reporter=list --grep "@$$tag" 2>&1 | tee "../e2e-$$tag.log"; \
 	done
 
 # Run E2E tests by category (directory).
@@ -786,6 +873,7 @@ frontend-test-e2e-file:
 		echo "  Core: auth"; \
 		echo "  Features: search, settings, playlist, tags-favorites"; \
 		echo "  UI: gallery, lightbox-video"; \
+		echo "  Performance: selection-performance, selection-tagging-performance, selection-e2e-performance, selection-soak"; \
 		exit 1; \
 	fi; \
 	cd $(STATIC_DIR) && \
@@ -806,27 +894,40 @@ frontend-test-e2e-file:
 			fi; \
 		fi; \
 		echo "Running E2E tests for $$file_path... (logging to ../e2e-$$file_name.log)"; \
-		npx playwright test "$$file_path" 2>&1 | tee "../e2e-$$file_name.log"; \
+		PLAYWRIGHT_HTML_OPEN=never npx playwright test "$$file_path" --reporter=list 2>&1 | tee "../e2e-$$file_name.log"; \
 	done
+
+frontend-test-e2e-file-auto:
+	@goals="$(filter-out frontend-test-e2e-file-auto,$(MAKECMDGOALS))"; \
+	if [ -n "$$goals" ]; then \
+		./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-file $$goals 2>&1 | tee e2e-file-auto.log; \
+	elif [ -n "$(FILE)" ]; then \
+		./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-file FILE="$(FILE)" 2>&1 | tee e2e-file-auto.log; \
+	else \
+		./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-file 2>&1 | tee e2e-file-auto.log; \
+	fi
 
 
 # Run E2E tests in headed mode (visible browser)
 frontend-test-e2e-headed:
 	@echo "Running E2E tests in headed mode..."
-	@echo "Note: Requires backend running at http://localhost:8080"
-	cd $(STATIC_DIR) && npm run test:e2e:headed
+	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
+	@echo "Logging to ../e2e-headed.log"
+	cd $(STATIC_DIR) && npm run test:e2e:headed 2>&1 | tee ../e2e-headed.log
 
 # Run E2E tests with interactive Playwright UI
 frontend-test-e2e-ui:
 	@echo "Running E2E tests with interactive UI..."
-	@echo "Note: Requires backend running at http://localhost:8080"
-	cd $(STATIC_DIR) && npm run test:e2e:ui
+	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
+	@echo "Logging to ../e2e-ui.log"
+	cd $(STATIC_DIR) && npm run test:e2e:ui 2>&1 | tee ../e2e-ui.log
 
 # Run E2E tests in debug mode
 frontend-test-e2e-debug:
 	@echo "Running E2E tests in debug mode..."
-	@echo "Note: Requires backend running at http://localhost:8080"
-	cd $(STATIC_DIR) && npm run test:e2e:debug
+	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
+	@echo "Logging to ../e2e-debug.log"
+	cd $(STATIC_DIR) && npm run test:e2e:debug 2>&1 | tee ../e2e-debug.log
 
 # Generate E2E test coverage report
 frontend-test-e2e-coverage:
@@ -1050,6 +1151,13 @@ help:
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo "  frontend-test-e2e           Run all E2E tests (requires backend)"
 	@echo "  frontend-test-e2e-auto      Run E2E tests with ephemeral server"
+	@echo "  frontend-test-e2e-smoke     Run stable Chromium E2E smoke suite"
+	@echo "  frontend-test-e2e-smoke-auto Run smoke suite with ephemeral server"
+	@echo "  frontend-test-e2e-performance Run non-soak Playwright performance suite"
+	@echo "  frontend-test-e2e-performance-auto Run performance suite with ephemeral server"
+	@echo "  frontend-test-e2e-performance-smoke Run the fast baseline performance suite"
+	@echo "  frontend-test-e2e-performance-smoke-auto Run the fast performance smoke suite with ephemeral server"
+	@echo "  frontend-test-e2e-performance-soak Run long-running soak performance tests"
 	@echo "  frontend-test-e2e-headed    Run E2E tests with visible browser"
 	@echo "  frontend-test-e2e-ui        Run E2E tests with interactive Playwright UI"
 	@echo "  frontend-test-e2e-debug     Run E2E tests in debug mode"
@@ -1071,6 +1179,8 @@ help:
 	@echo "  frontend-test-e2e-file      Run specific E2E spec file(s)"
 	@echo "                                make frontend-test-e2e-file auth"
 	@echo "                                make frontend-test-e2e-file gallery search"
+	@echo "  frontend-test-e2e-file-auto Run specific E2E spec file(s) with ephemeral server"
+	@echo "                                make frontend-test-e2e-file-auto settings"
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo " Combined Targets"
@@ -1083,9 +1193,12 @@ help:
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo " PR Checks"
 	@echo "═══════════════════════════════════════════════════════════════════"
-	@echo "  pr-check           Run checks for changed files only (vs $(PR_BASE))"
+	@echo "  pr-check           Run non-mutating checks for changed files only (vs $(PR_BASE))"
 	@echo "                       make pr-check"
 	@echo "                       make pr-check PR_BASE=develop"
+	@echo "  pr-check-fix       Run pr-check, but use Go lint autofix before tests"
+	@echo "                       make pr-check-fix"
+	@echo "                       make pr-check-fix FORCE=1"
 	@echo "  pr-check-all       Run all checks regardless of changes"
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════════════════"

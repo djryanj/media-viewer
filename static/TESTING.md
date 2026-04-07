@@ -77,6 +77,15 @@ npm run test:unit:coverage
 # Run all E2E tests (headless)
 npm run test:e2e
 
+# Include docs screenshot-generation specs in the default E2E selection
+PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1 npm run test:e2e
+
+# Run visual regression checks against committed snapshot baselines
+npm run test:e2e:visual
+
+# Generate or refresh visual snapshot baselines
+npm run test:e2e:visual:baselines
+
 # Run tests with visible browser
 npm run test:e2e:headed
 
@@ -194,6 +203,8 @@ describe('Gallery Integration', () => {
 ### E2E Tests
 
 E2E tests simulate real user interactions in a browser.
+
+The default `npm run test:e2e` selection excludes performance specs and docs screenshot-generation specs. Regenerate docs screenshots only when needed with `npm run test:e2e:docs-screenshots`, or include them in the default selection with `PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1`. Visual regression coverage lives in `e2e/specs/visual`, compares deterministic DOM/style snapshots against committed JSON baselines in `e2e/baselines/tagging`, and runs separately via `npm run test:e2e:visual`. Refresh those baselines with `npm run test:e2e:visual:baselines`.
 
 ```javascript
 import { test, expect } from '../fixtures/index.js';
@@ -445,7 +456,7 @@ npx vitest --watch --grep="should initialize"
 npm run test:e2e:debug
 
 # Run specific test file
-npx playwright test e2e/specs/login.spec.js
+npx playwright test e2e/specs/core/auth.spec.js
 
 # Run with visible browser
 npm run test:e2e:headed

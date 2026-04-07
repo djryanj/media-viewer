@@ -1,319 +1,364 @@
 /**
  * E2E tests for Search functionality
- * Tests search input, suggestions, results, and filtering
+ * Covers keyboard access, tag autocomplete, deterministic results, paginated results, and search tag filters.
  * @tags @search @features @filtering
  */
 
 import { test, expect } from '../../fixtures/index.js';
 
-test.describe('Search - Basic Functionality @search @features', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
+test.describe.configure({ mode: 'serial' });
+
+const SEL = {
+    searchInput: '#search-input',
+    clearButton: '#search-clear',
+    dropdown: '#search-dropdown',
+    results: '#search-results',
+    resultsInput: '#search-results-input',
+    resultsGallery: '#search-results-gallery',
+    resultsCount: '#search-results-count',
+    resultsClose: '#search-results-close',
+    resultsLoadMore: '#search-load-more-btn',
+    searchTagModal: '.search-tag-modal',
+};
+
+const ROOT_MEDIA_SELECTOR = '#gallery .gallery-item.image, #gallery .gallery-item.video';
+
+function buildUniqueTag(testInfo, label) {
+    const projectName = testInfo.project.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    return `search-${label}-${projectName}-${Date.now()}`;
+}
+
+async function getMediaItems(page, count = 1, startIndex = 0) {
+    const items = page.locator(ROOT_MEDIA_SELECTOR);
+    await expect(items.first()).toBeVisible();
+
+    const total = await items.count();
+    expect(total).toBeGreaterThanOrEqual(startIndex + count);
+
+    const media = [];
+    for (let index = 0; index < count; index++) {
+        const locator = items.nth(startIndex + index);
+        media.push({
+            locator,
+            path: await locator.getAttribute('data-path'),
+            name: await locator.getAttribute('data-name'),
+        });
+    }
+
+    return media;
+}
+
+async function addTagViaApi(page, path, tag) {
+    const response = await page.request.post('/api/tags/file', {
+        data: { path, tag },
     });
 
-    test('should have search input visible', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
+    expect(response.ok(), `adding tag "${tag}" to "${path}" should succeed`).toBe(true);
+}
+
+async function ensureSearchFindsPath(page, query, path, expectedCount = 1) {
+    await expect
+        .poll(async () => {
+            const response = await page.request.get(
+                `/api/search?q=${encodeURIComponent(query)}&page=1&pageSize=20`
+            );
+            if (!response.ok()) {
+                return { hasPath: false, totalItems: -1 };
+            }
+
+            const data = await response.json();
+            const items = data.items || [];
+            return {
+                hasPath: items.some((item) => item.path === path),
+                totalItems: data.totalItems,
+            };
+        })
+        .toEqual({ hasPath: true, totalItems: expectedCount });
+}
+
+async function waitForSuggestionResponse(page, query) {
+    return page.waitForResponse((response) => {
+        if (!response.url().includes('/api/search/suggestions?')) {
+            return false;
+        }
+
+        const url = new URL(response.url());
+        return url.searchParams.get('q') === query;
+    });
+}
+
+async function waitForSearchResponse(page, query) {
+    return page.waitForResponse((response) => {
+        if (!response.url().includes('/api/search?')) {
+            return false;
+        }
+
+        const url = new URL(response.url());
+        return url.searchParams.get('q') === query;
+    });
+}
+
+async function performSearch(page, query) {
+    const responsePromise = waitForSearchResponse(page, query);
+
+    await page.locator(SEL.searchInput).fill(query);
+    await page.keyboard.press('Enter');
+    await responsePromise;
+
+    await expect(page.locator(SEL.results)).toBeVisible();
+    await expect(page.locator(SEL.resultsInput)).toHaveValue(query);
+}
+
+function resultItem(page, path) {
+    return page.locator(`${SEL.resultsGallery} .gallery-item[data-path="${path}"]`).first();
+}
+
+async function closeResults(page) {
+    await page.evaluate(() => {
+        document.getElementById('search-results-close')?.click();
+    });
+}
+
+async function openSearchTagModalForResult(page, path) {
+    await page.evaluate((itemPath) => {
+        const item = document.querySelector(
+            `#search-results-gallery .gallery-item[data-path="${CSS.escape(itemPath)}"]`
+        );
+
+        if (!item || typeof globalThis.Search === 'undefined') {
+            throw new Error(`Unable to open search tag modal for ${itemPath}`);
+        }
+
+        globalThis.Search.showSearchTagModal(item);
+    }, path);
+}
+
+async function getSearchSeedItem(page) {
+    const response = await page.request.get('/api/media?path=&sort=name&order=asc');
+    expect(response.ok(), 'loading root media for search fixtures should succeed').toBe(true);
+
+    const payload = await response.json();
+    const items = payload?.items || [];
+    const item = items.find((entry) => entry?.type === 'image' || entry?.type === 'video');
+
+    expect(item, 'expected at least one media item for search fixture data').toBeTruthy();
+    return item;
+}
+
+function buildMockSearchResults(seedItem, totalItems) {
+    return Array.from({ length: totalItems }, (_, index) => ({
+        ...seedItem,
+        name: `${seedItem.name || 'result'}-${index + 1}`,
+    }));
+}
+
+test.describe('Search @search @features', () => {
+    test.beforeEach(async ({ page, loginHelpers }) => {
+        await loginHelpers.login(page);
+        await page.waitForSelector(`${ROOT_MEDIA_SELECTOR}`);
+    });
+
+    test('focuses the search input with the slash shortcut @keyboard', async ({ page }) => {
+        const searchInput = page.locator(SEL.searchInput);
+
         await expect(searchInput).toBeVisible();
+        await page.keyboard.press('/');
+        await expect(searchInput).toBeFocused();
     });
 
-    test('should show clear button when typing', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-        const clearButton = page.locator('#search-clear, .search-clear');
+    test('autocompletes created tag suggestions with keyboard navigation @autocomplete @keyboard', async ({
+        page,
+    }, testInfo) => {
+        const [item] = await getMediaItems(page, 1, 0);
+        const uniqueTag = buildUniqueTag(testInfo, 'suggestion');
+        const suggestionQuery = `tag:${uniqueTag.slice(0, -2)}`;
 
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
+        await addTagViaApi(page, item.path, uniqueTag);
+        await ensureSearchFindsPath(page, `tag:${uniqueTag}`, item.path);
 
-            if ((await clearButton.count()) > 0) {
-                await expect(clearButton).toBeVisible();
+        const suggestionResponse = waitForSuggestionResponse(page, suggestionQuery);
+        await page.locator(SEL.searchInput).fill(suggestionQuery);
+        await suggestionResponse;
+
+        const dropdown = page.locator(SEL.dropdown);
+        const matchingSuggestion = dropdown.locator('.search-dropdown-item').filter({
+            hasText: uniqueTag,
+        });
+
+        await expect(dropdown).toBeVisible();
+        await expect(matchingSuggestion.first()).toBeVisible();
+
+        await page.keyboard.press('ArrowDown');
+        await expect(dropdown.locator('.search-dropdown-item.highlighted').first()).toContainText(
+            uniqueTag
+        );
+
+        await page.keyboard.press('Enter');
+        await expect(page.locator(SEL.searchInput)).toHaveValue(`tag:${uniqueTag}`);
+        await expect(dropdown).toHaveClass(/hidden/);
+    });
+
+    test('shows a deterministic results overlay for a unique tag query @results', async ({
+        page,
+    }, testInfo) => {
+        const [item] = await getMediaItems(page, 1, 1);
+        const uniqueTag = buildUniqueTag(testInfo, 'results');
+        const query = `tag:${uniqueTag}`;
+
+        await addTagViaApi(page, item.path, uniqueTag);
+        await ensureSearchFindsPath(page, query, item.path);
+        await performSearch(page, query);
+
+        await expect(page.locator(`${SEL.resultsGallery} .gallery-item`)).toHaveCount(1);
+        await expect(resultItem(page, item.path)).toBeVisible();
+        await expect(page.locator(SEL.resultsCount)).toHaveText('1 of 1 results');
+    });
+
+    test('loads additional paginated search results through the results scroller @results @infinite-scroll-search', async ({
+        page,
+    }) => {
+        const query = `mock-search-pagination-${Date.now()}`;
+        const seedItem = await getSearchSeedItem(page);
+        const batchSize = await page.evaluate(() => {
+            return globalThis.InfiniteScrollSearch?.config?.batchSize ?? 100;
+        });
+        const totalItems = batchSize + 5;
+        const allItems = buildMockSearchResults(seedItem, totalItems);
+
+        const handler = async (route) => {
+            const url = new URL(route.request().url());
+            if (url.searchParams.get('q') !== query) {
+                await route.continue();
+                return;
             }
-        }
-    });
 
-    test('should clear search when clear button clicked', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-        const clearButton = page.locator('#search-clear, .search-clear');
+            const pageNumber = Number.parseInt(url.searchParams.get('page') || '1', 10);
+            const pageSize = Number.parseInt(
+                url.searchParams.get('pageSize') || `${batchSize}`,
+                10
+            );
+            const startIndex = (pageNumber - 1) * pageSize;
+            const items = allItems.slice(startIndex, startIndex + pageSize);
 
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test query');
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    query,
+                    items,
+                    totalItems,
+                    page: pageNumber,
+                    pageSize,
+                }),
+            });
+        };
 
-            if ((await clearButton.count()) > 0) {
-                await clearButton.click();
+        await page.route('**/api/search?**', handler);
 
-                const value = await searchInput.inputValue();
-                expect(value).toBe('');
-            }
-        }
-    });
+        try {
+            await performSearch(page, query);
 
-    test('should focus search with / keyboard shortcut @keyboard', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
+            await expect(page.locator(`${SEL.resultsGallery} .gallery-item`)).toHaveCount(
+                batchSize
+            );
+            await expect(page.locator(SEL.resultsCount)).toHaveText(
+                `${batchSize} of ${totalItems} results`
+            );
+            await expect(page.locator(SEL.resultsLoadMore)).toBeVisible();
 
-        if ((await searchInput.count()) > 0) {
-            await page.keyboard.press('/');
-            await expect(searchInput).toBeFocused();
-        }
-    });
-});
-
-test.describe('Search - Suggestions @search @features @autocomplete', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
-
-    test('should show suggestions dropdown when typing', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-        const dropdown = page.locator('#search-dropdown, .search-dropdown, .autocomplete');
-
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.waitForTimeout(500); // Debounce delay
-
-            if ((await dropdown.count()) > 0) {
-                const isVisible = await dropdown.isVisible().catch(() => false);
-                // Suggestions might appear or not depending on data
-                expect(typeof isVisible).toBe('boolean');
-            }
-        }
-    });
-
-    test('should hide dropdown when input is empty', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-        const dropdown = page.locator('#search-dropdown, .search-dropdown');
-
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.waitForTimeout(500);
-
-            await searchInput.fill('');
-
-            if ((await dropdown.count()) > 0) {
-                await expect(dropdown).toBeHidden();
-            }
-        }
-    });
-
-    test('should navigate suggestions with arrow keys @keyboard', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-        const dropdown = page.locator('#search-dropdown, .search-dropdown');
-
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.waitForTimeout(500);
-
-            if ((await dropdown.count()) > 0 && (await dropdown.isVisible())) {
-                // Press down arrow
-                await page.keyboard.press('ArrowDown');
-                await page.waitForTimeout(100);
-
-                // Check if suggestion is highlighted
-                const highlighted = dropdown.locator(
-                    '.selected, .highlighted, [aria-selected="true"]'
-                );
-                if ((await highlighted.count()) > 0) {
-                    await expect(highlighted).toBeVisible();
+            const secondPageResponse = page.waitForResponse((response) => {
+                if (!response.url().includes('/api/search?')) {
+                    return false;
                 }
-            }
-        }
-    });
-});
 
-test.describe('Search - Results View @search @features @results', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
+                const url = new URL(response.url());
+                return url.searchParams.get('q') === query && url.searchParams.get('page') === '2';
+            });
 
-    test('should show results view after search', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
+            await page.locator(SEL.resultsLoadMore).click();
+            await secondPageResponse;
 
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(1000);
-
-            // Results view or filtered gallery should appear
-            const resultsView = page.locator('#search-results, .search-results');
-            const galleryItems = page.locator('.gallery-item');
-
-            const hasResults = (await resultsView.count()) > 0 && (await resultsView.isVisible());
-            const hasGallery = (await galleryItems.count()) > 0;
-
-            expect(hasResults || hasGallery).toBe(true);
-        }
-    });
-
-    test('should display result count', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(1000);
-
-            const resultCount = page.locator(
-                '#search-results-count, .results-count, :text("results")'
+            await expect(page.locator(`${SEL.resultsGallery} .gallery-item`)).toHaveCount(
+                totalItems
             );
-
-            if ((await resultCount.count()) > 0) {
-                const text = await resultCount.textContent();
-                expect(text).toMatch(/\d+/); // Should contain a number
-            }
-        }
-    });
-
-    test('should close results view with close button', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(1000);
-
-            const resultsView = page.locator('#search-results, .search-results');
-            const closeButton = page.locator(
-                '#search-results-close, .search-results-close, button:has-text("Close")'
+            await expect(page.locator(SEL.resultsCount)).toHaveText(
+                `${totalItems} of ${totalItems} results`
             );
+            await expect(page.locator(SEL.resultsLoadMore)).toHaveClass(/hidden/);
+        } finally {
+            await page.unroute('**/api/search?**', handler);
+            await closeResults(page).catch(() => {});
+        }
+    });
 
-            if ((await resultsView.isVisible()) && (await closeButton.count()) > 0) {
-                await closeButton.click();
-                await expect(resultsView).toBeHidden();
+    test('closes the results overlay and clears the main search input', async ({
+        page,
+    }, testInfo) => {
+        const [item] = await getMediaItems(page, 1, 2);
+        const uniqueTag = buildUniqueTag(testInfo, 'close');
+        const query = `tag:${uniqueTag}`;
+
+        await addTagViaApi(page, item.path, uniqueTag);
+        await ensureSearchFindsPath(page, query, item.path);
+        await performSearch(page, query);
+
+        await closeResults(page);
+
+        await expect(page.locator(SEL.results)).toHaveClass(/hidden/);
+        await expect(page.locator(SEL.searchInput)).toHaveValue('');
+        await expect(page.locator(SEL.clearButton)).toHaveClass(/hidden/);
+    });
+
+    test('updates the search query through the search tag modal include exclude controls @advanced', async ({
+        page,
+    }, testInfo) => {
+        const [keptItem, excludedItem] = await getMediaItems(page, 2, 3);
+        const groupTag = buildUniqueTag(testInfo, 'group');
+        const excludeTag = buildUniqueTag(testInfo, 'exclude');
+        const query = `tag:${groupTag}`;
+        const filteredQuery = `tag:${groupTag} -tag:${excludeTag}`;
+
+        await addTagViaApi(page, keptItem.path, groupTag);
+        await addTagViaApi(page, excludedItem.path, groupTag);
+        await addTagViaApi(page, excludedItem.path, excludeTag);
+
+        await ensureSearchFindsPath(page, query, keptItem.path, 2);
+        await performSearch(page, query);
+
+        await expect(page.locator(`${SEL.resultsGallery} .gallery-item`)).toHaveCount(2);
+        await expect(resultItem(page, keptItem.path)).toBeVisible();
+        await expect(resultItem(page, excludedItem.path)).toBeVisible();
+
+        await openSearchTagModalForResult(page, excludedItem.path);
+
+        const modal = page.locator(SEL.searchTagModal);
+        const excludedTagRow = modal.locator(`.search-tag-modal-tag[data-tag="${excludeTag}"]`);
+
+        await expect(modal).toHaveClass(/visible/);
+        await expect(excludedTagRow).toHaveCount(1);
+
+        const filteredResponse = waitForSearchResponse(page, filteredQuery);
+        await page.evaluate((tagName) => {
+            if (typeof globalThis.Search === 'undefined') {
+                throw new Error('Search is not available');
             }
-        }
-    });
 
-    test('should close results view with Escape key @keyboard', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
+            globalThis.Search.toggleTagInSearch(tagName, 'exclude');
+            globalThis.Search.refreshSearchTagModal();
+        }, excludeTag);
+        await filteredResponse;
 
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(1000);
-
-            const resultsView = page.locator('#search-results, .search-results');
-
-            if (await resultsView.isVisible()) {
-                await page.keyboard.press('Escape');
-                await expect(resultsView).toBeHidden({ timeout: 2000 });
-            }
-        }
-    });
-});
-
-test.describe('Search - Filtering @search @features @filtering', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
-
-    test('should filter gallery items by filename', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-        const galleryItems = page.locator('.gallery-item');
-
-        if ((await searchInput.count()) > 0) {
-            const initialCount = await galleryItems.count();
-
-            // Search for something specific
-            await searchInput.fill('sample');
-            await page.waitForTimeout(500);
-
-            // Count should change (unless all items match)
-            const newCount = await galleryItems.count();
-            expect(typeof newCount).toBe('number');
-            expect(newCount).toBeLessThanOrEqual(initialCount);
-        }
-    });
-
-    test('should show empty state when no results found', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-
-        if ((await searchInput.count()) > 0) {
-            // Search for something that definitely doesn't exist
-            await searchInput.fill('xyzabc123nonexistent');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(1000);
-
-            const emptyState = page.locator(
-                '.empty-state, .no-results, :text("No results"), :text("Nothing found")'
-            );
-            const galleryItems = page.locator('.gallery-item');
-
-            const hasItems = (await galleryItems.count()) > 0;
-            const hasEmptyState = (await emptyState.count()) > 0;
-
-            // Either no items or empty state shown
-            if (!hasItems) {
-                expect(hasEmptyState).toBe(true);
-            }
-        }
-    });
-});
-
-test.describe('Search - Advanced Features @search @features @advanced', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
-
-    test('should support search by tag', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-
-        if ((await searchInput.count()) > 0) {
-            // Look for a tag to search for
-            const firstTag = page.locator('.tag').first();
-
-            if ((await firstTag.count()) > 0) {
-                const tagText = await firstTag.textContent();
-
-                await searchInput.fill(tagText);
-                await page.waitForTimeout(500);
-
-                // Should filter by tag
-                const galleryItems = page.locator('.gallery-item');
-                expect(await galleryItems.count()).toBeGreaterThan(0);
-            }
-        }
-    });
-
-    test('should maintain search state in URL', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test query');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(1000);
-
-            const url = page.url();
-            // URL might contain search query or filter parameter
-            const hasSearchParam =
-                url.includes('search=') || url.includes('q=') || url.includes('query=');
-
-            // Either in URL or maintained in state
-            expect(typeof hasSearchParam).toBe('boolean');
-        }
-    });
-
-    test('should support pagination for large result sets', async ({ page }) => {
-        const searchInput = page.locator('#search-input, input[type="search"]');
-
-        if ((await searchInput.count()) > 0) {
-            await searchInput.fill('test');
-            await page.keyboard.press('Enter');
-            await page.waitForTimeout(1000);
-
-            const pagination = page.locator('#search-pagination, .pagination');
-
-            if ((await pagination.count()) > 0 && (await pagination.isVisible())) {
-                // Has pagination controls
-                const nextButton = page.locator(
-                    '#search-page-next, .page-next, button:has-text("Next")'
-                );
-
-                if ((await nextButton.count()) > 0) {
-                    await expect(nextButton).toBeVisible();
-                }
-            }
-        }
+        await expect(page.locator(SEL.resultsInput)).toHaveValue(filteredQuery);
+        await expect
+            .poll(async () => {
+                return page.evaluate((tagName) => {
+                    return globalThis.Search?.getTagSearchStatus?.(tagName) || null;
+                }, excludeTag);
+            })
+            .toBe('excluded');
+        await expect(page.locator(`${SEL.resultsGallery} .gallery-item`)).toHaveCount(1);
+        await expect(resultItem(page, keptItem.path)).toBeVisible();
+        await expect(resultItem(page, excludedItem.path)).toHaveCount(0);
+        await expect(page.locator(SEL.resultsCount)).toHaveText('1 of 1 results');
     });
 });

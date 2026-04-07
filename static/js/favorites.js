@@ -130,6 +130,9 @@ const Favorites = {
 
     renderFavorites(favorites) {
         if (!favorites || favorites.length === 0) {
+            this._favorites = [];
+            this.elements.gallery.innerHTML = '';
+            this.updateCounter(0);
             this.elements.section.classList.add('hidden');
             return;
         }

@@ -1,4 +1,4 @@
-// e2e/specs/selection-performance.spec.js
+// e2e/specs/performance/selection-performance.spec.js
 /**
  * Performance tests for gallery item selection.
  *
@@ -13,7 +13,7 @@
  * Minimum gallery size: 250 items (matches the smallest test dataset).
  */
 
-import { test, expect } from '../fixtures/index.js';
+import { test, expect } from '../../fixtures/index.js';
 
 // ---------------------------------------------------------------------------
 // Thresholds
@@ -31,6 +31,12 @@ const BATCH_THRESHOLD_MS = 100;
  * slower than the first — anything higher indicates O(n²) degradation.
  */
 const DEGRADATION_FACTOR = 3;
+
+/** Below this total duration, rely on absolute slack instead of ratios. */
+const TIMING_NOISE_WINDOW_MS = 0.5;
+
+/** Minimum denominator for meaningful relative comparisons. */
+const TIMING_RATIO_FLOOR_MS = 0.1;
 
 /** Minimum number of gallery items required to run these tests. */
 const MIN_ITEMS = 250;
@@ -118,6 +124,23 @@ async function enterSelectionMode(page) {
         }
         ItemSelection.enterSelectionMode(first);
     });
+
+    await expect
+        .poll(async () => {
+            return page.evaluate(() => {
+                const selection = window.ItemSelection;
+
+                return selection?.isActive === true && selection.selectedPaths?.size === 1;
+            });
+        })
+        .toBe(true);
+
+    await page.evaluate(() => {
+        const selection = window.ItemSelection;
+        selection?.updateToolbar?.();
+        selection?.elements?.toolbar?.classList.remove('hidden');
+    });
+
     await expect(page.locator('#selection-toolbar')).toBeVisible({ timeout: 3000 });
 }
 
@@ -221,7 +244,7 @@ async function benchmarkUpdateToolbar(page, iterations = 20) {
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe('Selection Performance', () => {
+test.describe('Selection Performance @selection @performance @perf-smoke', () => {
     // Run serially — each test manipulates shared selection state
     test.describe.configure({ mode: 'serial' });
 
@@ -465,7 +488,23 @@ test.describe('Selection Performance', () => {
                 `Scattered (${scatteredIndices.length} items): ${scatteredTotal.toFixed(2)}ms total`
         );
 
-        const ratio = scatteredTotal / Math.max(adjacentTotal, 0.01);
+        const maxObservedTotal = Math.max(adjacentTotal, scatteredTotal);
+        const absoluteDelta = scatteredTotal - adjacentTotal;
+
+        // performance.now() in headless Chromium is quantized at these tiny
+        // durations, so relative ratios are meaningless until totals rise
+        // above the timer noise floor.
+        if (maxObservedTotal <= TIMING_NOISE_WINDOW_MS) {
+            expect(
+                absoluteDelta,
+                `Scattered (${scatteredTotal.toFixed(1)}ms) exceeded adjacent ` +
+                    `(${adjacentTotal.toFixed(1)}ms) by ${absoluteDelta.toFixed(1)}ms ` +
+                    `within the ${TIMING_NOISE_WINDOW_MS.toFixed(1)}ms timer noise window`
+            ).toBeLessThanOrEqual(TIMING_NOISE_WINDOW_MS);
+            return;
+        }
+
+        const ratio = scatteredTotal / Math.max(adjacentTotal, TIMING_RATIO_FLOOR_MS);
         expect(
             ratio,
             `Scattered (${scatteredTotal.toFixed(1)}ms) is ${ratio.toFixed(1)}× ` +

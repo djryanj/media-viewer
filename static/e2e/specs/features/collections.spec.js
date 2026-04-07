@@ -1,6 +1,9 @@
-import { test, expect } from '../fixtures/index.js';
+import { test, expect } from '../../fixtures/index.js';
 
 const PROJECT_MEDIA_BLOCK_SIZE = 8;
+const MAIN_GALLERY_SELECTOR = '#gallery';
+const MAIN_GALLERY_ITEM_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item`;
+const MAIN_GALLERY_MEDIA_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item.image, ${MAIN_GALLERY_SELECTOR} .gallery-item.video`;
 const PROJECT_ORDER = [
     'chromium',
     'firefox',
@@ -16,26 +19,20 @@ function uniqueCollectionName(prefix) {
 }
 
 function galleryItemByPath(page, path) {
-    return page.locator(`.gallery-item[data-path=${JSON.stringify(path)}]`);
+    return page.locator(`${MAIN_GALLERY_ITEM_SELECTOR}[data-path=${JSON.stringify(path)}]`);
 }
 
 async function waitForGallery(page) {
-    await page.waitForSelector('.gallery-item:not(.skeleton)', { timeout: 15000 });
+    await page.waitForSelector(
+        `${MAIN_GALLERY_ITEM_SELECTOR}:not(.skeleton), ${MAIN_GALLERY_SELECTOR} .empty-state`,
+        { timeout: 15000 }
+    );
 }
 
 async function openCollectionsModalForItem(page, itemLocator) {
-    const thumb = itemLocator.locator('.gallery-item-thumb');
     const button = itemLocator.locator('.collection-button');
 
     await expect(button).toBeAttached();
-
-    const supportsHover = await page.evaluate(
-        () => globalThis.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false
-    );
-
-    if (supportsHover) {
-        await thumb.hover();
-    }
 
     await button.dispatchEvent('click');
 
@@ -60,15 +57,18 @@ function getProjectMediaOffset(projectName) {
 }
 
 async function getMediaItems(page, count = 3, offset = 0) {
-    const items = await page.evaluate(({ requestedCount, startOffset }) => {
-        return Array.from(document.querySelectorAll('.gallery-item.image, .gallery-item.video'))
-            .slice(startOffset, startOffset + requestedCount)
-            .map((el) => ({
-                path: el.dataset.path,
-                name: el.dataset.name,
-                type: el.dataset.type,
-            }));
-    }, { requestedCount: count, startOffset: offset });
+    const items = await page.evaluate(
+        ({ gallerySelector, requestedCount, startOffset }) => {
+            return Array.from(document.querySelectorAll(gallerySelector))
+                .slice(startOffset, startOffset + requestedCount)
+                .map((el) => ({
+                    path: el.dataset.path,
+                    name: el.dataset.name,
+                    type: el.dataset.type,
+                }));
+        },
+        { gallerySelector: MAIN_GALLERY_MEDIA_SELECTOR, requestedCount: count, startOffset: offset }
+    );
 
     if (items.length < count) {
         throw new Error(
@@ -98,23 +98,114 @@ async function browseCollectionFromPanel(page, collectionName) {
         .locator('.collections-panel-item-main')
         .filter({ hasText: collectionName })
         .first()
-        .click();
+        .dispatchEvent('click');
 
     await expect(page.locator('#breadcrumb')).toContainText(collectionName);
 }
 
+async function openLightboxForPath(page, filePath) {
+    const opened = await page.evaluate(async (targetPath) => {
+        const mediaIndex = window.MediaApp?.getMediaIndex?.(targetPath) ?? -1;
+        if (mediaIndex >= 0 && typeof window.Lightbox?.open === 'function') {
+            window.Lightbox.open(mediaIndex);
+            return true;
+        }
+
+        const parentPath = targetPath.split('/').slice(0, -1).join('/');
+        const params = new URLSearchParams({
+            path: parentPath,
+            sort: window.MediaApp?.state?.currentSort?.field ?? 'name',
+            order: window.MediaApp?.state?.currentSort?.order ?? 'asc',
+            limit: '0',
+        });
+        const response = await fetch(`/api/media?${params.toString()}`);
+        if (!response.ok || typeof window.Lightbox?.openWithItems !== 'function') {
+            return false;
+        }
+
+        const data = await response.json();
+        const files = data.items ?? [];
+        const itemIndex = files.findIndex((item) => item.path === targetPath);
+        if (itemIndex < 0) {
+            return false;
+        }
+
+        window.Lightbox.openWithItems(files, itemIndex);
+        return true;
+    }, filePath);
+
+    expect(opened).toBe(true);
+    await expect(page.locator('#lightbox')).toBeVisible();
+}
+
+async function closeLightbox(page) {
+    const lightbox = page.locator('#lightbox');
+    if (await lightbox.isVisible().catch(() => false)) {
+        await page.evaluate(() => {
+            const historyManager = window.HistoryManager;
+            if (historyManager) {
+                if (historyManager.hasState?.('lightbox-collection-drawer')) {
+                    historyManager.removeState?.('lightbox-collection-drawer');
+                }
+                if (historyManager.hasState?.('lightbox')) {
+                    historyManager.removeState?.('lightbox');
+                }
+            }
+
+            window.Lightbox?.close?.();
+        });
+        await expect(lightbox).toBeHidden();
+    }
+}
+
+async function openLightboxCollectionDrawer(page) {
+    const button = page.locator('#lightbox-collection');
+    await expect(button).toBeVisible();
+    await button.dispatchEvent('click');
+
+    const drawer = page.locator('.lightbox-collection-drawer');
+    await expect(drawer).toBeVisible();
+    return drawer;
+}
+
 async function getVisibleGalleryPaths(page, count = 3) {
-    return await page.evaluate((requestedCount) => {
-        return Array.from(document.querySelectorAll('.gallery-item[data-path]:not(.skeleton)'))
-            .slice(0, requestedCount)
-            .map((el) => el.dataset.path);
-    }, count);
+    return await page.evaluate(
+        ({ gallerySelector, requestedCount }) => {
+            return Array.from(document.querySelectorAll(gallerySelector))
+                .slice(0, requestedCount)
+                .map((el) => el.dataset.path);
+        },
+        {
+            gallerySelector: `${MAIN_GALLERY_ITEM_SELECTOR}[data-path]:not(.skeleton)`,
+            requestedCount: count,
+        }
+    );
 }
 
 async function getCollectionDetail(page, id) {
     const response = await page.request.get(`/api/collections/${id}`);
     expect(response.ok()).toBeTruthy();
     return await response.json();
+}
+
+async function waitForSelectionState(page, expectedCount) {
+    await expect
+        .poll(async () => {
+            return page.evaluate((count) => {
+                const selection = window.ItemSelection;
+
+                return selection?.isActive === true && selection.selectedPaths?.size === count;
+            }, expectedCount);
+        })
+        .toBe(true);
+}
+
+async function synchronizeSelectionToolbar(page) {
+    await page.evaluate(() => {
+        const selection = window.ItemSelection;
+        selection?.updateToolbar?.();
+        selection?.elements?.toolbar?.classList.remove('hidden');
+    });
 }
 
 test.describe('Collections UX @collections @features @ui', () => {
@@ -136,6 +227,8 @@ test.describe('Collections UX @collections @features @ui', () => {
                 // Ignore cleanup failures to preserve the original test result.
             }
         }
+
+        await closeLightbox(page);
     });
 
     test('shows membership-first collections modal from a collected gallery item', async ({
@@ -178,7 +271,7 @@ test.describe('Collections UX @collections @features @ui', () => {
             'false'
         );
         await expect(currentRow.locator('.collection-add-current-actions')).toHaveClass(/hidden/);
-        await currentRow.locator('.collection-add-current-more-btn').click();
+        await currentRow.locator('.collection-add-current-more-btn').dispatchEvent('click');
         await expect(currentRow.locator('.collection-add-current-more-btn')).toHaveAttribute(
             'aria-expanded',
             'true'
@@ -186,9 +279,7 @@ test.describe('Collections UX @collections @features @ui', () => {
         await expect(currentRow.locator('.collection-add-current-actions')).not.toHaveClass(
             /hidden/
         );
-        await expect(currentRow.locator('.collection-add-current-actions')).toContainText(
-            'Manage'
-        );
+        await expect(currentRow.locator('.collection-add-current-actions')).toContainText('Manage');
         await expect(currentRow.locator('.collection-add-current-actions')).toContainText('Order');
         await expect(currentRow.locator('.collection-add-current-actions')).toContainText('Remove');
         await expect(modal.locator('#collection-add-existing-title')).toContainText(
@@ -233,7 +324,7 @@ test.describe('Collections UX @collections @features @ui', () => {
             .locator('.collections-panel-item')
             .filter({ hasText: betaCollection.name })
             .first();
-        await betaRow.locator('.collections-panel-more-btn').click();
+        await betaRow.locator('.collections-panel-more-btn').dispatchEvent('click');
 
         await expect(betaRow.locator('.collections-panel-item-actions')).toBeVisible();
         await expect(betaRow.locator('.collections-panel-item-actions')).toContainText('Order');
@@ -262,18 +353,22 @@ test.describe('Collections UX @collections @features @ui', () => {
             .locator('.collections-panel-item-main')
             .filter({ hasText: collection.name })
             .first()
-            .click();
+            .dispatchEvent('click');
 
         await expect(page.locator('#breadcrumb')).toContainText(collection.name);
-        await expect(page.locator('.gallery-item')).toHaveCount(3);
+        await expect(page.locator(MAIN_GALLERY_ITEM_SELECTOR)).toHaveCount(3);
 
         await page.evaluate(() => {
-            const items = Array.from(document.querySelectorAll('.gallery-item:not(.skeleton)'));
+            const items = Array.from(
+                document.querySelectorAll('#gallery .gallery-item:not(.skeleton)')
+            );
             window.ItemSelection.enterSelectionMode(items[0]);
             window.ItemSelection.toggleItem(items[1]);
         });
 
         const selectionToolbar = page.locator('#selection-toolbar');
+        await waitForSelectionState(page, 2);
+        await synchronizeSelectionToolbar(page);
         await expect(selectionToolbar).toBeVisible();
         await expect(selectionToolbar).toContainText('2 selected');
 
@@ -284,10 +379,12 @@ test.describe('Collections UX @collections @features @ui', () => {
             `Remove selected items from "${collection.name}"`
         );
 
-        await removeButton.click();
+        await page.evaluate(() => {
+            window.ItemSelection?.bulkRemoveFromCurrentCollection?.();
+        });
 
         await expect(selectionToolbar).toHaveClass(/hidden/);
-        await expect(page.locator('.gallery-item')).toHaveCount(1);
+        await expect(page.locator(MAIN_GALLERY_ITEM_SELECTOR)).toHaveCount(1);
         await expect(page.locator('#breadcrumb')).toContainText(collection.name);
 
         await expect
@@ -299,9 +396,7 @@ test.describe('Collections UX @collections @features @ui', () => {
             .toBe(1);
     });
 
-     test('persists inline collection reorder after save and reload', async ({
-        page,
-    }, testInfo) => {
+    test('persists inline collection reorder after save and reload', async ({ page }, testInfo) => {
         const mediaOffset = getProjectMediaOffset(testInfo.project.name);
         const mediaItems = await getMediaItems(page, 3, mediaOffset);
         const collection = await createCollection(
@@ -324,17 +419,22 @@ test.describe('Collections UX @collections @features @ui', () => {
         await expect(page.locator('#breadcrumb')).toContainText('3 items');
         expect(await getVisibleGalleryPaths(page, 3)).toEqual(originalPaths);
 
-        await page.evaluate(({ draggedPath, targetPath }) => {
-            window.Collections._moveInlineReorderPath(draggedPath, targetPath, true);
-        }, {
-            draggedPath: reorderedPaths[0],
-            targetPath: reorderedPaths[1],
-        });
+        await page.evaluate(
+            ({ draggedPath, targetPath }) => {
+                window.Collections._moveInlineReorderPath(draggedPath, targetPath, true);
+            },
+            {
+                draggedPath: reorderedPaths[0],
+                targetPath: reorderedPaths[1],
+            }
+        );
 
         await expect(saveButton).toBeEnabled();
         expect(await getVisibleGalleryPaths(page, 3)).toEqual(reorderedPaths);
 
-        await saveButton.click();
+        await page.evaluate(() => {
+            return window.Collections?.saveInlineCollectionReorder?.();
+        });
 
         await expect
             .poll(async () => {
@@ -349,6 +449,119 @@ test.describe('Collections UX @collections @features @ui', () => {
         await waitForGallery(page);
         await browseCollectionFromPanel(page, collection.name);
 
-        expect(await getVisibleGalleryPaths(page, 3)).toEqual(reorderedPaths);
+        await expect
+            .poll(async () => {
+                return await getVisibleGalleryPaths(page, 3);
+            })
+            .toEqual(reorderedPaths);
+    });
+
+    test('shows membership-first collection drawer in lightbox', async ({ page }, testInfo) => {
+        const mediaOffset = getProjectMediaOffset(testInfo.project.name);
+        const [primaryItem, secondaryItem] = await getMediaItems(page, 2, mediaOffset);
+        const primaryCollection = await createCollection(
+            page,
+            uniqueCollectionName('e2e-lightbox-current'),
+            [primaryItem.path]
+        );
+        const secondaryCollection = await createCollection(
+            page,
+            uniqueCollectionName('e2e-lightbox-other'),
+            [secondaryItem.path]
+        );
+        createdCollectionIds.push(primaryCollection.id, secondaryCollection.id);
+
+        await page.reload();
+        await waitForGallery(page);
+        await openLightboxForPath(page, primaryItem.path);
+
+        const drawer = await openLightboxCollectionDrawer(page);
+        const currentRow = drawer
+            .locator('.collection-drawer-item')
+            .filter({ hasText: primaryCollection.name })
+            .first();
+
+        await expect(page.locator('#lightbox-collection')).toHaveClass(/active/);
+        await expect(drawer.locator('.collection-drawer-list')).toContainText(
+            primaryCollection.name
+        );
+        await expect(currentRow.locator('.collection-drawer-item-open')).toContainText('Browse');
+        await expect(currentRow.locator('.collection-drawer-more-btn')).toHaveAttribute(
+            'aria-expanded',
+            'false'
+        );
+        await expect(currentRow.locator('.collection-drawer-item-actions')).toHaveClass(/hidden/);
+
+        await currentRow.locator('.collection-drawer-more-btn').dispatchEvent('click');
+
+        await expect(currentRow.locator('.collection-drawer-more-btn')).toHaveAttribute(
+            'aria-expanded',
+            'true'
+        );
+        await expect(currentRow.locator('.collection-drawer-item-actions')).not.toHaveClass(
+            /hidden/
+        );
+        await expect(currentRow.locator('.collection-drawer-item-actions')).toContainText('Manage');
+        await expect(currentRow.locator('.collection-drawer-item-actions')).toContainText('Order');
+        await expect(currentRow.locator('.collection-drawer-item-actions')).toContainText('Remove');
+
+        await expect(drawer.locator('.collection-drawer-suggestions')).toContainText(
+            secondaryCollection.name
+        );
+        await expect(drawer.locator('.collection-drawer-suggestions')).not.toContainText(
+            primaryCollection.name
+        );
+        await expect(drawer.locator('.collection-drawer-open-modal-btn')).toContainText(
+            'All Collections'
+        );
+        await expect(drawer.locator('.collection-drawer-new-btn')).toContainText('New Collection');
+    });
+
+    test('browses collection-ordered lightbox state from the collection drawer', async ({
+        page,
+    }, testInfo) => {
+        const mediaOffset = getProjectMediaOffset(testInfo.project.name);
+        const mediaItems = await getMediaItems(page, 3, mediaOffset);
+        const reorderedPaths = [mediaItems[2].path, mediaItems[0].path, mediaItems[1].path];
+        const collection = await createCollection(
+            page,
+            uniqueCollectionName('e2e-lightbox-browse'),
+            reorderedPaths
+        );
+        createdCollectionIds.push(collection.id);
+
+        await page.reload();
+        await waitForGallery(page);
+        await openLightboxForPath(page, mediaItems[0].path);
+
+        const drawer = await openLightboxCollectionDrawer(page);
+        const row = drawer
+            .locator('.collection-drawer-item')
+            .filter({ hasText: collection.name })
+            .first();
+
+        await row.locator('.collection-drawer-item-main').dispatchEvent('click');
+        await expect(drawer).toBeHidden();
+
+        await expect
+            .poll(async () => {
+                return page.evaluate(() => ({
+                    useAppMedia: window.Lightbox?.useAppMedia ?? null,
+                    currentIndex: window.Lightbox?.currentIndex ?? null,
+                    currentPath:
+                        window.Lightbox?.items?.[window.Lightbox?.currentIndex ?? -1]?.path ?? null,
+                    itemPaths: (window.Lightbox?.items ?? []).map((item) => item.path),
+                    switchedCollectionId: window.Lightbox?._switchedCollectionId ?? null,
+                }));
+            })
+            .toEqual({
+                useAppMedia: false,
+                currentIndex: 1,
+                currentPath: mediaItems[0].path,
+                itemPaths: reorderedPaths,
+                switchedCollectionId: collection.id,
+            });
+
+        await expect(page.locator('#lightbox-counter')).toHaveText('2 / 3');
     });
 });

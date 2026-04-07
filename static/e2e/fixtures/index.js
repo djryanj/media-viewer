@@ -31,8 +31,39 @@ const loginHelpers = {
             throw new Error(`Login API failed: ${response.status()} ${await response.text()}`);
         }
 
+        const authDeadline = Date.now() + 5000;
+        let authenticated = false;
+
+        while (Date.now() < authDeadline) {
+            try {
+                const authCheck = await page.request.get('/api/auth/check');
+                if (authCheck.ok()) {
+                    const authState = await authCheck.json();
+                    if (authState.authenticated === true) {
+                        authenticated = true;
+                        break;
+                    }
+                }
+            } catch {
+                // Retry until the session is visible to the backend.
+            }
+
+            await page.waitForTimeout(100);
+        }
+
+        if (!authenticated) {
+            throw new Error(
+                'Login API succeeded, but the authenticated session was not established'
+            );
+        }
+
         // Now navigate to the app — the session cookie is already set
         await page.goto('/');
+
+        if (page.url().includes('/login.html')) {
+            await page.waitForTimeout(250);
+            await page.goto('/');
+        }
     },
 
     /**

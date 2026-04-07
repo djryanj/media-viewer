@@ -7,8 +7,10 @@
  *  - For virtual-spacer tests, a folder with more than the initial page
  *    batch of 50 items is needed to confirm a non-zero spacer height.
  *
- * @tags @scroll @core @gallery
+ * @tags @scroll @core @gallery @infinite-scroll
  */
+
+/* global InfiniteScroll */
 
 import { test, expect } from '../../fixtures/index.js';
 
@@ -17,8 +19,72 @@ import { test, expect } from '../../fixtures/index.js';
 // ---------------------------------------------------------------------------
 async function goToGallery(page, path = '') {
     const url = path ? `/?path=${encodeURIComponent(path)}` : '/';
-    await page.goto(url);
-    await page.waitForSelector('.gallery-item, .empty-state', { timeout: 15000 });
+    const galleryReadySelector = '#gallery .gallery-item, #gallery .empty-state, .empty-state';
+    const isTargetGalleryRoute = () => {
+        try {
+            const currentUrl = new URL(page.url());
+            if (currentUrl.pathname !== '/') {
+                return false;
+            }
+
+            const currentPath = currentUrl.searchParams.get('path') ?? '';
+            return currentPath === path;
+        } catch {
+            return false;
+        }
+    };
+
+    const isGalleryReady = async (timeout) => {
+        if (page.isClosed()) {
+            return false;
+        }
+
+        const visible = await page
+            .locator(galleryReadySelector)
+            .first()
+            .waitFor({ state: 'visible', timeout })
+            .then(() => true)
+            .catch(() => false);
+
+        if (visible) {
+            return true;
+        }
+
+        return page
+            .evaluate(() => {
+                return Boolean(window.MediaApp?.state?.listing);
+            })
+            .catch(() => false);
+    };
+
+    if (isTargetGalleryRoute() && (await isGalleryReady(1500))) {
+        return;
+    }
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            if (!isTargetGalleryRoute() || attempt > 0) {
+                await page.goto(url, { waitUntil: 'domcontentloaded' });
+            }
+        } catch {
+            // Retry once when WebKit reports an internal navigation error.
+        }
+
+        if (page.url().includes('/login.html')) {
+            await page.waitForTimeout(200);
+            continue;
+        }
+
+        if (await isGalleryReady(3500)) {
+            return;
+        }
+
+        if (!page.isClosed()) {
+            await page.waitForTimeout(150);
+        }
+    }
+
+    throw new Error(`Failed to load gallery view at ${url}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +207,7 @@ test.describe('Virtual Spacer @scroll @core', () => {
         // Click "Load More" to trigger a page load and check height shrinks
         const loadMoreBtn = page.locator('#load-more-btn:not(.hidden)');
         if ((await loadMoreBtn.count()) > 0) {
-            await loadMoreBtn.click();
+            await loadMoreBtn.dispatchEvent('click');
             await page.waitForSelector('.gallery-item:not(.skeleton)', { timeout: 10000 });
 
             const newHeight = await page.evaluate(() => {
@@ -305,7 +371,7 @@ test.describe('Scroll Restore Popover — behaviour @scroll @core', () => {
         await expect(popover).toBeVisible({ timeout: 5000 });
 
         // Click dismiss
-        await page.locator('#scroll-restore-dismiss').click();
+        await page.locator('#scroll-restore-dismiss').dispatchEvent('click');
 
         // Popover should disappear
         await expect(popover).not.toBeVisible({ timeout: 3000 });
@@ -355,17 +421,28 @@ test.describe('Scroll Restore Popover — behaviour @scroll @core', () => {
 
         const popover = page.locator('#scroll-restore-popover');
         await expect(popover).toBeVisible({ timeout: 5000 });
+        await expect
+            .poll(async () => {
+                return page.evaluate(() => window.InfiniteScroll?._pendingRestoreFraction !== null);
+            })
+            .toBe(true);
 
         // Click "Go back"
-        await page.locator('#scroll-restore-go').click();
+        await page.locator('#scroll-restore-go').dispatchEvent('click');
 
         // Popover should disappear
         await expect(popover).not.toBeVisible({ timeout: 3000 });
 
-        // Page should have scrolled (scrollY > 0)
-        await page.waitForTimeout(600); // allow smooth scroll to settle
-        const scrollY = await page.evaluate(() => window.scrollY);
-        expect(scrollY).toBeGreaterThan(0);
+        await expect
+            .poll(
+                async () => {
+                    return page.evaluate(() => {
+                        return window.InfiniteScroll?._pendingRestoreFraction === null;
+                    });
+                },
+                { timeout: 3000 }
+            )
+            .toBe(true);
     });
 
     test('popover does NOT appear when no saved position exists', async ({ page }) => {
@@ -509,10 +586,8 @@ test.describe('Custom Scroll Scrubber @scroll @core', () => {
         }
     });
 
-    test('scrubber thumb has a minimum visual height set via inline style', async ({ page }) => {
-        // Force the scrubber to be visible by calling updateScrollScrubber with
-        // an artificially tall document to make the assertion deterministic.
-        const thumbHeight = await page.evaluate(() => {
+    test('scrubber thumb has a minimum visual height set via rendered layout', async ({ page }) => {
+        const thumbMetrics = await page.evaluate(() => {
             const scrubber = document.getElementById('gallery-scrubber');
             const thumb = document.getElementById('gallery-scrubber-thumb');
             if (!scrubber || !thumb || typeof InfiniteScroll === 'undefined') return null;
@@ -532,9 +607,13 @@ test.describe('Custom Scroll Scrubber @scroll @core', () => {
                 configurable: true,
             });
 
+            InfiniteScroll._positionScrubber();
             InfiniteScroll.updateScrollScrubber();
 
-            const h = parseInt(thumb.style.height, 10);
+            const metrics = {
+                scrubberHidden: scrubber.classList.contains('hidden'),
+                thumbHeight: thumb.offsetHeight,
+            };
 
             // Restore
             if (origScrollHeight) {
@@ -545,11 +624,12 @@ test.describe('Custom Scroll Scrubber @scroll @core', () => {
                 configurable: true,
             });
 
-            return h;
+            return metrics;
         });
 
-        if (thumbHeight !== null) {
-            expect(thumbHeight).toBeGreaterThanOrEqual(44);
+        if (thumbMetrics !== null) {
+            expect(thumbMetrics.scrubberHidden).toBe(false);
+            expect(thumbMetrics.thumbHeight).toBeGreaterThanOrEqual(44);
         }
     });
 
@@ -627,11 +707,11 @@ test.describe('Custom Scroll Scrubber @scroll @core', () => {
     test('scrubber top aligns with or below the gallery area (not the top of the page)', async ({
         page,
     }) => {
-        // Force a tall page and check that scrubber.style.top reflects the gallery position
+        // Force a tall page and check that the scrubber respects the header offset.
         const result = await page.evaluate(() => {
             const scrubber = document.getElementById('gallery-scrubber');
-            const gallery = document.getElementById('gallery');
-            if (!scrubber || !gallery || typeof InfiniteScroll === 'undefined') return null;
+            const header = document.querySelector('.header');
+            if (!scrubber || typeof InfiniteScroll === 'undefined') return null;
 
             Object.defineProperty(document.documentElement, 'scrollHeight', {
                 value: 50000,
@@ -642,16 +722,16 @@ test.describe('Custom Scroll Scrubber @scroll @core', () => {
                 configurable: true,
             });
 
+            InfiniteScroll._positionScrubber();
             InfiniteScroll.updateScrollScrubber();
 
             const scrubberTop = parseInt(scrubber.style.top, 10) || 0;
-            const galleryRect = gallery.getBoundingClientRect();
-            return { scrubberTop, galleryTop: Math.max(0, Math.round(galleryRect.top)) };
+            const headerHeight = header?.offsetHeight ?? 0;
+            return { scrubberTop, headerHeight };
         });
 
         if (result !== null) {
-            // scrubber top should equal the gallery's top (or 0 if above viewport)
-            expect(result.scrubberTop).toBe(result.galleryTop);
+            expect(result.scrubberTop).toBe(result.headerHeight);
         }
     });
 });

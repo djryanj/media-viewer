@@ -1,4 +1,4 @@
-// e2e/specs/selection-tagging-performance.spec.js
+// e2e/specs/performance/selection-tagging-performance.spec.js
 /**
  * Performance tests for the realistic selection + tagging workflow.
  *
@@ -11,7 +11,7 @@
  * to identify whether performance degrades as tag state accumulates.
  */
 
-import { test, expect } from '../fixtures/index.js';
+import { test, expect } from '../../fixtures/index.js';
 
 // ---------------------------------------------------------------------------
 // Thresholds
@@ -77,6 +77,23 @@ async function enterSelectionMode(page) {
         if (!first) throw new Error('No gallery items found');
         ItemSelection.enterSelectionMode(first);
     });
+
+    await expect
+        .poll(async () => {
+            return page.evaluate(() => {
+                const selection = window.ItemSelection;
+
+                return selection?.isActive === true && selection.selectedPaths?.size === 1;
+            });
+        })
+        .toBe(true);
+
+    await page.evaluate(() => {
+        const selection = window.ItemSelection;
+        selection?.updateToolbar?.();
+        selection?.elements?.toolbar?.classList.remove('hidden');
+    });
+
     await expect(page.locator('#selection-toolbar')).toBeVisible({ timeout: 3000 });
 }
 
@@ -304,7 +321,7 @@ function widelyScatteredPattern(itemCount, count = 15) {
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe('Selection + Tagging Workflow Performance', () => {
+test.describe('Selection + Tagging Workflow Performance @selection @tags @performance @slow', () => {
     test.describe.configure({ mode: 'serial' });
 
     test('full workflow: tag → copy → select → paste → select again', async ({

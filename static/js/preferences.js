@@ -116,6 +116,17 @@ const Preferences = {
         if (sortOrderIcon) {
             sortOrderIcon.classList.toggle('desc', this.get('sortOrder') === 'desc');
         }
+
+        // Reapply runtime clock preferences after loading persisted state.
+        const lightbox = document.getElementById('lightbox');
+        if (lightbox) {
+            lightbox.classList.toggle('clock-always-visible', this.isClockAlwaysVisible());
+        }
+
+        if (typeof Clock !== 'undefined' && Clock) {
+            Clock.updateVisibility();
+            Clock.updateTime();
+        }
     },
 
     /**

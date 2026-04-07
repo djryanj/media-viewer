@@ -30,6 +30,12 @@ make frontend-test-integration  # Terminal 2
 # E2E tests (requires backend)
 make frontend-test-e2e
 
+# Visual regression checks against committed snapshot baselines
+make frontend-test-e2e-visual
+
+# Generate or refresh visual snapshot baselines
+make frontend-test-e2e-visual-baselines
+
 # All frontend tests
 make frontend-test
 ```
@@ -104,6 +110,8 @@ See [Frontend Test Structure](#frontend-test-structure) for complete file listin
 
 End-to-end browser tests using Playwright.
 
+The default E2E selection excludes performance specs and docs screenshot-generation specs. Regenerate docs screenshots only when needed with `make frontend-test-e2e-docs-screenshots` / `npm run test:e2e:docs-screenshots`, or include them in the default selection with `PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1`. Visual regression coverage runs separately with `make frontend-test-e2e-visual` and compares deterministic Chromium DOM/style snapshots against committed JSON baselines in `static/e2e/baselines/tagging/`. Refresh those baselines with `make frontend-test-e2e-visual-baselines` or `cd static && npm run test:e2e:visual:baselines`.
+
 **Prerequisites:**
 
 1. Start the backend server:
@@ -118,6 +126,17 @@ make dev
 # Run all E2E tests
 make frontend-test-e2e
 cd static && npm run test:e2e
+
+# Include docs screenshot-generation specs in the default E2E selection
+PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1 make frontend-test-e2e
+
+# Run visual regression checks against committed snapshot baselines
+make frontend-test-e2e-visual
+cd static && npm run test:e2e:visual
+
+# Generate or refresh visual snapshot baselines
+make frontend-test-e2e-visual-baselines
+cd static && npm run test:e2e:visual:baselines
 
 # Run with browser visible
 cd static && npm run test:e2e:headed
@@ -154,14 +173,14 @@ Override default settings:
 TEST_BASE_URL=http://localhost:3000 npm run test:integration
 
 # For E2E tests
-BASE_URL=http://localhost:3000 npm run test:e2e
+TEST_BASE_URL=http://localhost:3000 npm run test:e2e
 ```
 
 #### Test Configuration File
 
 Core configuration in `static/tests/test.config.js`:
 
-- `BASE_URL` - Backend server URL (default: http://localhost:8080)
+- `BASE_URL` - Effective backend server URL in shared frontend test config (populated from `TEST_BASE_URL`)
 - `TEST_USER` - Test credentials
 - `TIMEOUTS` - Various timeout settings
 - API endpoint paths
@@ -186,8 +205,10 @@ Frontend tests run automatically in GitHub Actions:
 
 1. **Unit tests** - Run first without backend (fast, ~60s)
 2. **Integration tests** - Run after starting backend (~45s)
-3. **E2E tests** - Run with backend and browser automation (~2min)
+3. **Playwright smoke tests** - Run the stable Chromium smoke lane with backend and browser automation
 4. **Coverage upload** - Coverage reports uploaded as artifacts
+
+Visual regression and docs screenshot generation are intentionally separate from the default PR lane. Run them locally when you are validating intentional UI changes or refreshing documentation assets.
 
 **Test Statistics (February 2026):**
 
@@ -766,7 +787,7 @@ func BenchmarkOperation(b *testing.B) {
 
 ## Continuous Integration
 
-Tests run automatically via GitHub Actions on every push to `main` and on all pull requests.
+Tests run automatically via GitHub Actions on pushes to repository branches and on pull requests targeting `main`.
 
 ### CI Workflow
 
@@ -793,33 +814,43 @@ The CI pipeline (`.github/workflows/ci.yml`) includes:
 - Uploads test results as artifacts
 - **Required on all PRs**
 
-#### 4. Integration Tests (`test-integration`)
+#### 4. Backend Integration Tests (`test-integration`)
 
-- Runs slower integration tests with real dependencies
+- Runs slower backend integration tests with real dependencies
 - Installs libvips and ffmpeg
-- Runs automatically on `main` branch
-- On PRs: only runs when labeled with `test:integration`
-- **Optional on PRs** (add label to run)
+- Runs on pull requests when Go code changes
 
-#### 5. Race Detector (`test-race`)
+#### 5. Backend Race Detector (`test-race`)
 
-- Runs tests with `-race` flag to detect data races
-- Runs automatically on `main` branch
-- On PRs: only runs when labeled with `test:race`
-- **Optional on PRs** (add label to run)
+- Runs tests with `-race` to detect data races
+- Runs on pull requests when Go code changes
 
-#### 6. Docker Build (`build-docker`)
+#### 6. Frontend Integration Tests (`test-frontend-integration`)
+
+- Starts the backend automatically
+- Runs frontend integration coverage against real APIs
+- Runs on pull requests when frontend code changes
+
+#### 7. Frontend Playwright Smoke (`test-frontend-e2e-smoke`)
+
+- Starts the backend automatically
+- Runs the stable Chromium smoke lane used for routine PR coverage
+- Excludes the separate visual regression and docs screenshot-generation workflows
+- Runs on pull requests when frontend code changes
+
+#### 8. Docker Build (`build-docker`)
 
 - Builds Docker image to verify it compiles
 - Only runs if tests pass
 - Uses BuildKit caching for speed
 
-### Pull Request Labels
+### Pull Request Scope
 
-Control which tests run on your PR:
+The workflow uses path-based change detection to skip unnecessary jobs. In practice:
 
-- **`test:integration`** - Run integration tests (normally skipped on PRs)
-- **`test:race`** - Run race detector (normally skipped on PRs)
+- Go changes trigger backend build, unit, integration, and race coverage.
+- Frontend changes trigger frontend unit, frontend integration, and Playwright smoke coverage.
+- Visual regression and docs screenshot generation remain manual workflows because they update or validate committed UI artifacts rather than routine behavior.
 
 ### CI Requirements
 
@@ -827,11 +858,10 @@ For a PR to be mergeable:
 
 1. ✅ Linting must pass
 2. ✅ Unit tests must pass
-3. ✅ Docker build must succeed
-4. ⚠️ Integration tests optional (unless labeled)
-5. ⚠️ Race detector optional (unless labeled)
-
-On the `main` branch, all tests including integration and race detection run automatically.
+3. ✅ Frontend integration must pass when frontend code changes
+4. ✅ Frontend Playwright smoke must pass when frontend code changes
+5. ✅ Backend integration and race detection must pass when Go code changes
+6. ✅ Docker build must succeed
 
 ### Viewing CI Results
 
@@ -849,17 +879,44 @@ Run the same checks locally:
 # Run linting
 make lint
 
-# Run unit tests (what CI runs by default)
+# Run the local PR gate for changed areas
+make pr-check
+
+# If you want Go lint autofixes before rerunning the same PR gate
+make pr-check-fix
+
+# Run unit tests
 make test-unit
 
-# Run integration tests (if you added the label)
+# Run backend integration and race coverage when Go changes are involved
 make test-integration
-
-# Run race detector (if you added the label)
 make test-race
 
 # Run everything
 make test-all
+```
+
+### Frontend PR Checklist
+
+Use this checklist to match local validation to the kind of frontend change in your PR:
+
+- Start with `make pr-check` when the PR changes frontend behavior, browser interactions, or page bootstrapping. It already covers frontend static checks, frontend unit/integration, and the Chromium smoke lane.
+- Use `make pr-check-fix` instead when you want Go lint autofixes applied before rerunning the same local PR gate.
+- Run `make frontend-test-e2e` as well when the affected area is outside the smoke subset or when you need broader functional browser coverage.
+- Run `make frontend-test-e2e-visual` when the PR intentionally changes UI presentation. If the updated rendering is expected, regenerate baselines with `make frontend-test-e2e-visual-baselines` and include the changed artifacts in the PR.
+- Run `make frontend-test-e2e-docs-screenshots` only when the PR updates documentation imagery, and include the refreshed `docs/images/` files in the PR.
+- Run the relevant `make frontend-test-e2e-performance*` lane for performance-sensitive changes. Those specs are excluded from the default E2E selection and from routine PR CI.
+
+### Running Additional UI Validation Locally
+
+Visual regression and docs screenshot generation are intentionally kept out of the default PR workflow because they validate committed UI artifacts rather than routine functional behavior.
+
+Use these commands locally when needed:
+
+```bash
+make frontend-test-e2e-visual
+make frontend-test-e2e-visual-baselines
+make frontend-test-e2e-docs-screenshots
 ```
 
 ### Build Tags
@@ -1047,17 +1104,17 @@ Integration Tests:
 
 **Pull Requests:**
 
-- ✅ Unit tests run automatically (`test-unit` job)
-- ⚠️ Integration tests only run with `test:integration` label
-- FFmpeg is **not** installed by default
+- ✅ Backend unit tests run automatically when Go changes are present
+- ✅ Backend integration and race coverage run automatically when Go changes are present
+- FFmpeg is installed in the backend integration jobs that need it
 
 **Main Branch:**
 
-- ✅ Unit tests run automatically
-- ✅ Integration tests run automatically
-- FFmpeg is installed in the `test-integration` job
+- Pushes still go through the same change-detected CI pipeline
+- Backend jobs run when Go files changed
+- FFmpeg is installed in the integration-oriented jobs that need it
 
-To run integration tests on your PR, add the `test:integration` label.
+There is no separate PR label required for backend integration coverage in the current workflow.
 
 #### Troubleshooting Transcoder Tests
 

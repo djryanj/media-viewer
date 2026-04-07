@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const testBaseURL = process.env.TEST_BASE_URL || process.env.BASE_URL || 'http://localhost:8080';
+
 /**
  * Playwright configuration for E2E testing
  * @see https://playwright.dev/docs/test-configuration
@@ -40,7 +42,7 @@ export default defineConfig({
     // Shared settings for all projects
     use: {
         // Base URL to use in actions like `await page.goto('/')`
-        baseURL: process.env.TEST_BASE_URL || 'http://localhost:8080',
+        baseURL: testBaseURL,
 
         // Collect trace on first retry
         trace: 'on-first-retry',

@@ -1,4 +1,4 @@
-// e2e/specs/selection-e2e-performance.spec.js
+// e2e/specs/performance/selection-e2e-performance.spec.js
 /**
  * End-to-end performance tests for the selection + tagging workflow.
  *
@@ -11,7 +11,7 @@
  * and recording their response times across cycles.
  */
 
-import { test, expect } from '../fixtures/index.js';
+import { test, expect } from '../../fixtures/index.js';
 
 const MIN_ITEMS = 250;
 const PER_ITEM_THRESHOLD_MS = 10;
@@ -261,6 +261,23 @@ async function enterSelectionMode(page) {
         if (!first) throw new Error('No gallery items');
         ItemSelection.enterSelectionMode(first);
     });
+
+    await expect
+        .poll(async () => {
+            return page.evaluate(() => {
+                const selection = window.ItemSelection;
+
+                return selection?.isActive === true && selection.selectedPaths?.size === 1;
+            });
+        })
+        .toBe(true);
+
+    await page.evaluate(() => {
+        const selection = window.ItemSelection;
+        selection?.updateToolbar?.();
+        selection?.elements?.toolbar?.classList.remove('hidden');
+    });
+
     await expect(page.locator('#selection-toolbar')).toBeVisible({ timeout: 3000 });
 }
 
@@ -619,7 +636,7 @@ function printServerDegradationReport(cycleResults) {
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe('End-to-End Workflow Performance', () => {
+test.describe('End-to-End Workflow Performance @selection @tags @performance @slow', () => {
     test.describe.configure({ mode: 'serial' });
 
     test('20-cycle E2E: full tag/copy/paste/merge with server timing', async ({

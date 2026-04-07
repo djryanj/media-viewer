@@ -102,11 +102,15 @@ make pr-check
 
 This runs:
 
-1. Lint fixes (`make lint-fix`)
-2. Full test suite (`make test`)
-3. Race detector (`make test-race`)
+1. Backend checks when Go-related files changed: lint (`make lint`), backend tests (`make test`), and race detection (`make test-race`)
+2. Frontend checks when frontend files changed: static checks (`make frontend-check`), frontend unit tests (`make frontend-test-unit`), frontend integration tests with an ephemeral server (`make frontend-test-integration-auto`), and the Chromium smoke suite with an ephemeral server (`make frontend-test-e2e-smoke-auto`)
+3. No-op when no Go or frontend-tracked files changed, unless you force it with `make pr-check FORCE=1`
 
-All test output is automatically saved to log files (`test.log`, `race.log`) for your review.
+Use `make pr-check-fix` when you want the same flow but with Go lint autofixes applied before the backend tests run.
+
+`make pr-check` does not run broader Playwright coverage outside smoke, visual regression, docs screenshot generation, or performance lanes. Run those separately when the PR checklist below calls for them.
+
+Test output is automatically saved to log files such as `test.log`, `race.log`, and the frontend command logs emitted by the invoked sub-targets.
 
 ### Individual Test Commands
 
@@ -152,6 +156,45 @@ Clean up test artifacts with:
 ```bash
 make test-clean
 ```
+
+### Frontend E2E Lanes
+
+Frontend browser coverage is intentionally split so routine PR checks stay fast and deterministic:
+
+```bash
+# Default browser E2E lane for normal feature work
+make frontend-test-e2e
+
+# Stable Chromium smoke lane used by CI for routine PR coverage
+make frontend-test-e2e-smoke
+
+# Separate visual regression lane against committed JSON baselines
+make frontend-test-e2e-visual
+
+# Refresh committed visual snapshot baselines after intentional UI changes
+make frontend-test-e2e-visual-baselines
+
+# Opt-in docs screenshot generation workflow that writes PNGs to docs/images/
+make frontend-test-e2e-docs-screenshots
+```
+
+Notes:
+
+- `make frontend-test-e2e` / `npm run test:e2e` excludes `@performance` specs and docs screenshot-generation specs by default.
+- Visual regression is a separate lane that compares deterministic DOM/style JSON snapshots in `static/e2e/baselines/tagging/`.
+- Docs screenshot generation is also separate and should only be run when documentation images in `docs/images/` need to be refreshed.
+- All integration, E2E, visual, and docs screenshot commands require a backend unless you use the corresponding `*-auto` Make targets.
+
+### PR Checklist
+
+Use this checklist to decide which local test lane to run before opening or updating a PR:
+
+- Run `make pr-check` for the standard local PR gate. It covers backend lint/test/race checks plus frontend check/unit/integration/smoke when matching files changed.
+- If you want Go lint issues auto-fixed before rerunning the same local PR gate, use `make pr-check-fix`.
+- If the PR changes frontend flows outside the smoke subset, also run `make frontend-test-e2e` or a focused target such as `make frontend-test-e2e-file <spec>` or `make frontend-test-e2e-module <tag>`.
+- If the PR intentionally changes visual output or committed UI baselines, run `make frontend-test-e2e-visual`. If the new visuals are expected, regenerate baselines with `make frontend-test-e2e-visual-baselines` and include the updated artifacts in the PR.
+- If the PR refreshes documentation imagery, run `make frontend-test-e2e-docs-screenshots` and include the updated `docs/images/` assets in the PR.
+- If the PR touches performance-sensitive frontend flows, run the relevant `make frontend-test-e2e-performance*` lane manually. Performance specs are excluded from the default E2E path and are not part of the routine PR smoke lane.
 
 ## Release Process
 
