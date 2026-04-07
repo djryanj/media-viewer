@@ -40,6 +40,22 @@ cd static && npm run test:integration
 make frontend-test-e2e
 cd static && npm run test:e2e
 
+# Run the stable Chromium smoke lane used for routine PR coverage
+make frontend-test-e2e-smoke
+cd static && npm run test:e2e:smoke
+
+# Run visual regression checks against committed JSON baselines
+make frontend-test-e2e-visual
+cd static && npm run test:e2e:visual
+
+# Refresh visual snapshot baselines after intentional UI changes
+make frontend-test-e2e-visual-baselines
+cd static && npm run test:e2e:visual:baselines
+
+# Refresh documentation screenshots written to docs/images/
+make frontend-test-e2e-docs-screenshots
+cd static && npm run test:e2e:docs-screenshots
+
 # Run all tests (unit + integration + E2E)
 make frontend-test
 cd static && npm test
@@ -59,6 +75,8 @@ cd static && npm run test:unit:ui
 
 See [static/tests/README.md](static/tests/README.md) for complete frontend testing documentation.
 
+The default `make frontend-test-e2e` / `npm run test:e2e` path excludes `@performance` specs and docs screenshot-generation specs so normal developer and PR runs stay predictable. Visual regression and docs screenshot generation are separate workflows.
+
 ## Continuous Integration
 
 Tests run automatically via GitHub Actions:
@@ -66,18 +84,20 @@ Tests run automatically via GitHub Actions:
 **Backend Tests:**
 
 - **Unit tests** run on all PRs (required)
-- **Integration tests** run on `main` or when PR is labeled `test:integration`
-- **Race detector** runs on `main` or when PR is labeled `test:race`
+- **Integration tests** run on PRs when Go changes are present
+- **Race detector** runs on PRs when Go changes are present
 - **Linting** runs on all PRs (required)
 
 **Frontend Tests:**
 
 - **Unit tests** run on all PRs (no backend required, fast)
 - **Integration tests** run on all PRs (backend started automatically)
-- **E2E tests** run on all PRs (Playwright with backend)
+- **Playwright smoke tests** run on all PRs (backend started automatically, Chromium only)
+- **Visual regression** is a separate opt-in local workflow and is not part of the default PR lane
+- **Docs screenshot generation** is a separate opt-in local workflow and is not part of the default PR lane
 - **Coverage reports** uploaded as artifacts
 
-Add labels to your PR to enable optional backend test suites.
+The workflow uses path-based change detection to skip backend jobs when Go files did not change.
 
 ## Documentation
 

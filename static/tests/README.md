@@ -148,7 +148,7 @@ Tests that verify frontend integration **with the real backend APIs**:
 
 Central configuration for all tests:
 
-- `BASE_URL` - Backend server URL (default: http://localhost:8080)
+- `BASE_URL` - Effective backend server URL inside the shared test config (sourced from `TEST_BASE_URL`)
 - `TEST_USER` - Test credentials (password only)
 - `TIMEOUTS` - Various timeout settings
 - API endpoint paths
@@ -267,7 +267,7 @@ curl http://localhost:8080/health
 
 ### Tests Pass Locally but Fail in CI
 
-- **Cause**: Backend not started in CI, or different BASE_URL
+- **Cause**: Backend not started in CI, or different TEST_BASE_URL
 - **Solution**: Ensure CI starts backend and sets TEST_BASE_URL
 
 ## VS Code Integration

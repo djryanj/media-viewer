@@ -10,7 +10,7 @@
  * benefits — regardless of whether the shell wrapper was used.
  */
 
-const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:8080';
+const BASE_URL = process.env.TEST_BASE_URL || process.env.BASE_URL || 'http://localhost:8080';
 const TEST_PASSWORD = process.env.TEST_PASSWORD || 'testpass123';
 
 export default async function globalSetup() {

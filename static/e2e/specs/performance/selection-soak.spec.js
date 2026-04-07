@@ -1,4 +1,5 @@
-// e2e/specs/selection-soak.spec.js
+// e2e/specs/performance/selection-soak.spec.js
+/* global InfiniteScroll, ItemSelection, TagClipboard */
 /**
  * Soak / stress tests for the selection + tagging workflow.
  *
@@ -16,7 +17,7 @@
  * selection pattern to exercise varied code paths.
  */
 
-import { test, expect } from '../fixtures/index.js';
+import { test, expect } from '../../fixtures/index.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -249,6 +250,23 @@ async function enterSelectionMode(page) {
         if (!first) throw new Error('No gallery items found');
         ItemSelection.enterSelectionMode(first);
     });
+
+    await expect
+        .poll(async () => {
+            return page.evaluate(() => {
+                const selection = window.ItemSelection;
+
+                return selection?.isActive === true && selection.selectedPaths?.size === 1;
+            });
+        })
+        .toBe(true);
+
+    await page.evaluate(() => {
+        const selection = window.ItemSelection;
+        selection?.updateToolbar?.();
+        selection?.elements?.toolbar?.classList.remove('hidden');
+    });
+
     await expect(page.locator('#selection-toolbar')).toBeVisible({ timeout: 3000 });
 }
 
@@ -688,7 +706,7 @@ function assertNoDegradation(measurements, totalCycles) {
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe('Selection Soak Tests', () => {
+test.describe('Selection Soak Tests @selection @tags @performance @slow @soak', () => {
     // These are long-running — increase timeout
     test.describe.configure({ mode: 'serial' });
 

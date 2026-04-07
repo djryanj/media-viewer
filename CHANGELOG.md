@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.17.0] - Unreleased
+
+### Changed
+
+- test(frontend): The Playwright test workflow has been overhauled and stabilized. PRs now have a dedicated Chromium smoke lane, default E2E runs are split from visual-regression, docs-screenshot, and performance lanes, the static E2E coverage report is now trustworthy, and coverage has been expanded across collections, paginated search, playlist, and tags/favorites flows including tag-tooltip behavior. Contributor docs and the PR template were updated to match the new expectations. ([#289](https://github.com/djryanj/media-viewer/issues/289))
+
+### Fixed
+
+- fix(frontend): Overflow tag tooltips now load and initialize correctly on the main page, including after the DOM is already ready, so tooltip search/remove behavior works reliably in the app and in end-to-end coverage. ([#289](https://github.com/djryanj/media-viewer/issues/289))
+- fix(frontend): Opening media via its parent directory now correctly handles both paged `/api/media` envelopes and plain array payloads when reconstructing the lightbox item list, fixing a gallery/lightbox fallback regression uncovered by the new frontend tests. ([#289](https://github.com/djryanj/media-viewer/issues/289))
+
 ## [0.16.1] - 04-04-2026
 
 ### Added

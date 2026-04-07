@@ -1,447 +1,341 @@
 /**
  * E2E tests for Playlist functionality
- * Tests playlist player, navigation, and continuous playback
+ * Covers gallery entry, active item state, keyboard navigation, sidebar toggling, and close behavior.
  * @tags @playlist @features @video @player
  */
 
 import { test, expect } from '../../fixtures/index.js';
 
-test.describe('Playlist - Opening and Closing @playlist @features', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
+const SEL = {
+    modal: '#player-modal',
+    video: '#playlist-video',
+    title: '#playlist-title',
+    items: '#playlist-items li',
+    activeItem: '#playlist-items li.active',
+    sidebar: '.playlist-sidebar',
+    toggle: '.playlist-toggle',
+    close: '.player-close',
+};
 
-    test('should open playlist when clicking play button', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play], [aria-label*="Play"]').first();
+function parseCollection(payload) {
+    if (Array.isArray(payload)) {
+        return payload;
+    }
 
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
+    if (Array.isArray(payload?.items)) {
+        return payload.items;
+    }
 
-            const playerModal = page.locator('#player-modal, .player-modal, .playlist-modal');
-            await expect(playerModal).toBeVisible({ timeout: 5000 });
+    return Object.values(payload || {});
+}
+
+function displayNameFor(value) {
+    if (!value) {
+        return 'Unknown';
+    }
+
+    const filename = value.split(/[/\\]/).filter(Boolean).pop() || 'Unknown';
+    return filename.replace(/\.[^/.]+$/, '');
+}
+
+function parentPathFor(path) {
+    return path.split('/').slice(0, -1).join('/');
+}
+
+async function listPlaylists(page) {
+    const response = await page.request.get('/api/playlists');
+    expect(response.ok(), 'loading playlists should succeed').toBe(true);
+    return parseCollection(await response.json());
+}
+
+async function getPlaylistEntries(page, playlistName) {
+    const response = await page.request.get(`/api/playlists/${encodeURIComponent(playlistName)}`);
+    expect(response.ok(), `loading playlist "${playlistName}" should succeed`).toBe(true);
+    return parseCollection(await response.json());
+}
+
+async function findMultiItemPlaylist(page) {
+    const playlistEntries = await listPlaylists(page);
+
+    expect(
+        playlistEntries.length,
+        'expected at least one playlist from the playlist API'
+    ).toBeGreaterThan(0);
+
+    for (const entry of playlistEntries) {
+        const playlistName = displayNameFor(entry.name || entry.path);
+        const items = await getPlaylistEntries(page, playlistName);
+        const playableIndices = items.flatMap((item, index) => (item?.exists ? [index] : []));
+
+        if (playableIndices.length >= 2) {
+            return {
+                entry,
+                playlistName,
+                items,
+                playableIndices,
+            };
         }
-    });
+    }
 
-    test('should display video player in playlist', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
+    throw new Error('No playlist with at least two playable items was found');
+}
 
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
+async function openPlaylistFromGallery(page, playlistEntry) {
+    const playlistPath = playlistEntry.path;
+    const playlistName = displayNameFor(playlistEntry.name || playlistPath);
 
-            const video = page.locator('#playlist-video, video');
-            await expect(video).toBeVisible({ timeout: 5000 });
+    await page.goto(`/?path=${encodeURIComponent(parentPathFor(playlistPath))}`);
+    await page.waitForSelector('#gallery .gallery-item');
+
+    const exists = await page.evaluate((targetPath) => {
+        return Boolean(
+            document.querySelector(
+                `#gallery .gallery-item[data-type="playlist"][data-path="${CSS.escape(targetPath)}"]`
+            )
+        );
+    }, playlistPath);
+
+    expect(exists, `expected playlist gallery item "${playlistPath}" to exist`).toBe(true);
+
+    const opened = await page.evaluate(async (name) => {
+        if (typeof window.Playlist?.loadPlaylist !== 'function') {
+            return false;
         }
-    });
 
-    test('should close playlist with close button', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const closeButton = page.locator('.player-close, button:has-text("Close")');
-
-            if ((await closeButton.count()) > 0) {
-                await closeButton.click();
-                await expect(playerModal).toBeHidden({ timeout: 2000 });
-            }
-        }
-    });
-
-    test('should close playlist with Escape key @keyboard', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            await page.keyboard.press('Escape');
-            await expect(playerModal).toBeHidden({ timeout: 2000 });
-        }
-    });
-});
-
-test.describe('Playlist - Navigation @playlist @features @navigation', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
-
-    test('should show playlist items sidebar', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const playlistSidebar = page.locator('.playlist-sidebar, #playlist-items');
-
-            if ((await playlistSidebar.count()) > 0) {
-                await expect(playlistSidebar).toBeVisible();
-
-                // Should have playlist items
-                const items = playlistSidebar.locator('.playlist-item, .item');
-                if ((await items.count()) > 0) {
-                    expect(await items.count()).toBeGreaterThan(0);
-                }
-            }
-        }
-    });
-
-    test('should highlight current playing item', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            await page.waitForTimeout(1000);
-
-            const activeItem = page.locator(
-                '.playlist-item.active, .playlist-item.playing, [data-playing="true"]'
-            );
-
-            if ((await activeItem.count()) > 0) {
-                await expect(activeItem).toBeVisible();
-            }
-        }
-    });
-
-    test('should navigate to next video with next button', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const video = page.locator('#playlist-video, video');
-            const initialSrc = await video.getAttribute('src');
-
-            // Find next button
-            const nextButton = page.locator('button.next, [data-next], [aria-label*="Next"]');
-
-            if ((await nextButton.count()) > 0) {
-                await nextButton.click();
-                await page.waitForTimeout(1000);
-
-                const newSrc = await video.getAttribute('src');
-                expect(newSrc).not.toBe(initialSrc);
-            }
-        }
-    });
-
-    test('should navigate to previous video with prev button', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            // Go to next first
-            const nextButton = page.locator('button.next, [data-next]');
-            if ((await nextButton.count()) > 0) {
-                await nextButton.click();
-                await page.waitForTimeout(1000);
-
-                const video = page.locator('#playlist-video, video');
-                const currentSrc = await video.getAttribute('src');
-
-                // Then go back
-                const prevButton = page.locator(
-                    'button.prev, [data-prev], [aria-label*="Previous"]'
-                );
-                if ((await prevButton.count()) > 0) {
-                    await prevButton.click();
-                    await page.waitForTimeout(1000);
-
-                    const newSrc = await video.getAttribute('src');
-                    expect(newSrc).not.toBe(currentSrc);
-                }
-            }
-        }
-    });
-
-    test('should navigate with arrow keys @keyboard', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const video = page.locator('#playlist-video, video');
-            const _initialSrc = await video.getAttribute('src');
-
-            // Press right arrow for next
-            await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(1000);
-
-            // Video might have changed (could be seeking instead of next)
-            const newSrc = await video.getAttribute('src');
-            expect(newSrc).toBeTruthy();
-        }
-    });
-
-    test('should click playlist item to jump to that video', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const playlistItems = page.locator('.playlist-item, .item');
-
-            if ((await playlistItems.count()) >= 2) {
-                const secondItem = playlistItems.nth(1);
-
-                await secondItem.click();
-                await page.waitForTimeout(1000);
-
-                // Should jump to that video
-                const activeItem = page.locator('.playlist-item.active, .playlist-item.playing');
-                const activeIndex = await activeItem.getAttribute('data-index');
-
-                expect(activeIndex).toBeTruthy();
-            }
-        }
-    });
-});
-
-test.describe('Playlist - Playback Controls @playlist @features @video', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
-
-    test('should have play/pause controls', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const video = page.locator('#playlist-video, video');
-
-            // Video element should have controls or custom controls present
-            const hasControls = await video.getAttribute('controls');
-            const customControls = page.locator('.video-controls, .player-controls');
-
-            expect(hasControls !== null || (await customControls.count()) > 0).toBe(true);
-        }
-    });
-
-    test('should toggle play/pause with spacebar @keyboard', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const video = page.locator('#playlist-video, video');
-            await video.waitFor({ state: 'visible' });
-
-            await page.waitForTimeout(500);
-
-            // Get initial state
-            const initialPaused = await video.evaluate((el) => el.paused);
-
-            // Press spacebar
-            await page.keyboard.press('Space');
-            await page.waitForTimeout(300);
-
-            // State should toggle
-            const newPaused = await video.evaluate((el) => el.paused);
-            expect(newPaused).not.toBe(initialPaused);
-        }
-    });
-
-    test('should toggle playlist sidebar with P key @keyboard', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const sidebar = page.locator('.playlist-sidebar');
-
-            if ((await sidebar.count()) > 0) {
-                const initialVisible = await sidebar.isVisible();
-
-                // Press P key
-                await page.keyboard.press('p');
-                await page.waitForTimeout(300);
-
-                const newVisible = await sidebar.isVisible();
-                expect(newVisible).not.toBe(initialVisible);
-            }
-        }
-    });
-
-    test('should support fullscreen mode', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const fullscreenButton = page.locator(
-                '#player-fullscreen, button.fullscreen, [aria-label*="Fullscreen"]'
-            );
-
-            if ((await fullscreenButton.count()) > 0) {
-                await fullscreenButton.click();
-                await page.waitForTimeout(300);
-
-                // In headless mode, fullscreen might not actually activate
-                // But button should be clickable
-                expect(true).toBe(true);
-            }
-        }
-    });
-
-    test('should support theater mode', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const theaterButton = page.locator(
-                '#player-maximize, button.maximize, [aria-label*="Theater"]'
-            );
-
-            if ((await theaterButton.count()) > 0) {
-                await theaterButton.click();
-                await page.waitForTimeout(300);
-
-                // Should have theater mode class
-                const hasTheaterMode = await playerModal.evaluate(
-                    (el) => el.classList.contains('theater') || el.classList.contains('maximized')
-                );
-
-                expect(typeof hasTheaterMode).toBe('boolean');
-            }
-        }
-    });
-});
-
-test.describe('Playlist - Continuous Playback @playlist @features @autoplay', () => {
-    test.beforeEach(async ({ page, loginHelpers }) => {
-        await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
-    });
-
-    test('should auto-advance to next video when current ends', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
-
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
-
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const video = page.locator('#playlist-video, video');
-            const initialSrc = await video.getAttribute('src');
-
-            // Simulate video ending
-            await video.evaluate((el) => {
-                el.currentTime = el.duration - 0.1;
+        await window.Playlist.loadPlaylist(name);
+        return true;
+    }, playlistName);
+
+    expect(opened, `expected playlist "${playlistName}" to open`).toBe(true);
+    await expect
+        .poll(async () => {
+            return page.evaluate(() => {
+                const modal = document.getElementById('player-modal');
+                return modal ? !modal.classList.contains('hidden') : false;
             });
+        })
+        .toBe(true);
+    await expect.poll(async () => (await getPlaylistState(page)).itemCount).toBeGreaterThan(0);
+    await expect(page.locator(SEL.modal)).toBeVisible();
+}
 
-            await page.waitForTimeout(2000);
+function shouldIgnoreCleanupError(error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return /test ended|target closed|page closed|has been closed|execution context was destroyed/i.test(
+        message
+    );
+}
 
-            // Should auto-advance (or loop)
-            const newSrc = await video.getAttribute('src');
-            const currentTime = await video.evaluate((el) => el.currentTime);
+async function closePlaylistIfOpen(page) {
+    if (page.isClosed()) {
+        return;
+    }
 
-            // Either new video or looped back to start
-            expect(newSrc !== initialSrc || currentTime < 5).toBe(true);
-        }
-    });
+    const isOpen = await page
+        .evaluate(() => {
+            const modal = document.getElementById('player-modal');
+            return Boolean(modal && !modal.classList.contains('hidden'));
+        })
+        .catch((error) => {
+            if (shouldIgnoreCleanupError(error)) {
+                return false;
+            }
 
-    test('should display current item title', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
+            throw error;
+        });
 
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
+    if (isOpen) {
+        try {
+            await page.evaluate(() => {
+                const historyManager = window.HistoryManager;
+                if (historyManager?.hasState?.('player')) {
+                    historyManager.removeState?.('player');
+                }
 
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const title = page.locator('#playlist-title, .player-title, .current-title');
-
-            if ((await title.count()) > 0) {
-                await expect(title).toBeVisible();
-
-                const titleText = await title.textContent();
-                expect(titleText).toBeTruthy();
-                expect(titleText.length).toBeGreaterThan(0);
+                window.Playlist?.close?.();
+            });
+            await expect.poll(async () => (await getPlaylistState(page)).modalHidden).toBe(true);
+        } catch (error) {
+            if (!shouldIgnoreCleanupError(error)) {
+                throw error;
             }
         }
-    });
-});
+    }
+}
 
-test.describe('Playlist - Mobile Gestures @playlist @features @mobile @touch', () => {
+async function getPlaylistState(page) {
+    return page.evaluate(() => {
+        const activeItem = document.querySelector('#playlist-items li.active');
+
+        return {
+            currentIndex: window.Playlist?.currentIndex ?? -1,
+            playlistVisible: window.Playlist?.playlistVisible ?? false,
+            modalHidden:
+                document.getElementById('player-modal')?.classList.contains('hidden') ?? true,
+            title: document.getElementById('playlist-title')?.textContent?.trim() ?? '',
+            itemCount: document.querySelectorAll('#playlist-items li').length,
+            activeIndex:
+                activeItem instanceof HTMLElement
+                    ? Number.parseInt(activeItem.dataset.index || '-1', 10)
+                    : -1,
+            sidebarVisible:
+                document.querySelector('.playlist-sidebar')?.classList.contains('visible') ?? false,
+        };
+    });
+}
+
+async function showPlaylistSidebar(page) {
+    await page.evaluate(() => {
+        window.Playlist?.showPlaylist?.();
+    });
+
+    await expect.poll(async () => (await getPlaylistState(page)).playlistVisible).toBe(true);
+}
+
+async function selectPlaylistItem(page, index) {
+    const clicked = await page.evaluate((targetIndex) => {
+        const item = document.querySelector(`#playlist-items li[data-index="${targetIndex}"]`);
+        if (!(item instanceof HTMLElement)) {
+            return false;
+        }
+
+        item.click();
+        return true;
+    }, index);
+
+    expect(clicked, `expected playlist item ${index} to exist`).toBe(true);
+}
+
+async function clickPlayerCloseButton(page) {
+    const clicked = await page.evaluate(() => {
+        const button = document.querySelector('.player-close');
+        if (!(button instanceof HTMLElement)) {
+            return false;
+        }
+
+        button.click();
+        return true;
+    });
+
+    expect(clicked, 'expected the playlist close button to exist').toBe(true);
+}
+
+test.describe('Playlist @playlist @features', () => {
     test.beforeEach(async ({ page, loginHelpers }) => {
-        await page.setViewportSize({ width: 375, height: 667 });
         await loginHelpers.login(page);
-        await page.waitForSelector('.gallery-item');
+        await page.waitForSelector('#gallery .gallery-item');
     });
 
-    test('should support swipe gestures for navigation', async ({ page }) => {
-        const playButton = page.locator('button.play, [data-play]').first();
+    test('opens a real playlist from the gallery and marks the first playable item active', async ({
+        page,
+    }) => {
+        const playlist = await findMultiItemPlaylist(page);
+        const firstPlayableIndex = playlist.playableIndices[0];
+        const firstPlayableItem = playlist.items[firstPlayableIndex];
 
-        if ((await playButton.count()) > 0) {
-            await playButton.click();
+        try {
+            await openPlaylistFromGallery(page, playlist.entry);
 
-            const playerModal = page.locator('#player-modal, .player-modal');
-            await expect(playerModal).toBeVisible();
-
-            const video = page.locator('#playlist-video, video');
-            const box = await video.boundingBox();
-
-            if (box) {
-                const _initialSrc = await video.getAttribute('src');
-
-                // Simulate swipe left (next)
-                await page.mouse.move(box.x + box.width - 50, box.y + box.height / 2);
-                await page.mouse.down();
-                await page.mouse.move(box.x + 50, box.y + box.height / 2);
-                await page.mouse.up();
-
-                await page.waitForTimeout(1000);
-
-                const newSrc = await video.getAttribute('src');
-                // Swipe might advance to next video
-                expect(newSrc).toBeTruthy();
-            }
+            await expect(page.locator(SEL.video)).toBeVisible();
+            await expect
+                .poll(async () => (await getPlaylistState(page)).itemCount)
+                .toBe(playlist.items.length);
+            await expect
+                .poll(async () => (await getPlaylistState(page)).currentIndex)
+                .toBe(firstPlayableIndex);
+            await expect
+                .poll(async () => (await getPlaylistState(page)).activeIndex)
+                .toBe(firstPlayableIndex);
+            await expect
+                .poll(async () => (await getPlaylistState(page)).title)
+                .toBe(displayNameFor(firstPlayableItem.name || firstPlayableItem.path));
+        } finally {
+            await closePlaylistIfOpen(page);
         }
+    });
+
+    test('jumps to a selected playlist item from the sidebar', async ({ page }) => {
+        const playlist = await findMultiItemPlaylist(page);
+        const targetIndex = playlist.playableIndices[1];
+        const targetItem = playlist.items[targetIndex];
+
+        try {
+            await openPlaylistFromGallery(page, playlist.entry);
+            await showPlaylistSidebar(page);
+            await selectPlaylistItem(page, targetIndex);
+
+            await expect
+                .poll(async () => (await getPlaylistState(page)).currentIndex)
+                .toBe(targetIndex);
+            await expect
+                .poll(async () => (await getPlaylistState(page)).activeIndex)
+                .toBe(targetIndex);
+            await expect
+                .poll(async () => (await getPlaylistState(page)).title)
+                .toBe(displayNameFor(targetItem.name || targetItem.path));
+        } finally {
+            await closePlaylistIfOpen(page);
+        }
+    });
+
+    test('navigates between playlist items with arrow keys', async ({ page }) => {
+        const playlist = await findMultiItemPlaylist(page);
+        const firstPlayableIndex = playlist.playableIndices[0];
+        const secondPlayableIndex = playlist.playableIndices[1];
+
+        try {
+            await openPlaylistFromGallery(page, playlist.entry);
+
+            await page.keyboard.press('ArrowRight');
+            await expect
+                .poll(async () => (await getPlaylistState(page)).currentIndex)
+                .toBe(secondPlayableIndex);
+            await expect
+                .poll(async () => (await getPlaylistState(page)).activeIndex)
+                .toBe(secondPlayableIndex);
+
+            await page.keyboard.press('ArrowLeft');
+            await expect
+                .poll(async () => (await getPlaylistState(page)).currentIndex)
+                .toBe(firstPlayableIndex);
+            await expect
+                .poll(async () => (await getPlaylistState(page)).activeIndex)
+                .toBe(firstPlayableIndex);
+        } finally {
+            await closePlaylistIfOpen(page);
+        }
+    });
+
+    test('toggles the playlist sidebar with P and closes the player with Escape', async ({
+        page,
+    }) => {
+        const playlist = await findMultiItemPlaylist(page);
+
+        await openPlaylistFromGallery(page, playlist.entry);
+
+        await expect.poll(async () => (await getPlaylistState(page)).playlistVisible).toBe(false);
+        await expect.poll(async () => (await getPlaylistState(page)).sidebarVisible).toBe(false);
+        await page.keyboard.press('p');
+        await expect.poll(async () => (await getPlaylistState(page)).playlistVisible).toBe(true);
+        await expect.poll(async () => (await getPlaylistState(page)).sidebarVisible).toBe(true);
+        await expect(page.locator(SEL.toggle)).toHaveClass(/active/);
+
+        await page.keyboard.press('p');
+        await expect.poll(async () => (await getPlaylistState(page)).playlistVisible).toBe(false);
+        await expect.poll(async () => (await getPlaylistState(page)).sidebarVisible).toBe(false);
+
+        await page.keyboard.press('Escape');
+        await expect.poll(async () => (await getPlaylistState(page)).modalHidden).toBe(true);
+        await expect(page.locator(SEL.modal)).toHaveClass(/hidden/);
+    });
+
+    test('closes the player from the close button', async ({ page }) => {
+        const playlist = await findMultiItemPlaylist(page);
+
+        await openPlaylistFromGallery(page, playlist.entry);
+        await clickPlayerCloseButton(page);
+
+        await expect.poll(async () => (await getPlaylistState(page)).modalHidden).toBe(true);
+        await expect(page.locator(SEL.modal)).toHaveClass(/hidden/);
     });
 });

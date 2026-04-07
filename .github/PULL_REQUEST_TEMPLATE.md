@@ -44,10 +44,18 @@
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings or errors
-- [ ] I have run `make pr-check` and all checks passed
-    - Lint fixes: ✓
-    - Tests: ✓
-    - Race detector: ✓
+- [ ] I have run `make pr-check` and all relevant checks passed
+    - Backend changes: `make lint`, `make test`, and `make test-race`
+    - Frontend changes: `make frontend-check`, `make frontend-test-unit`, `make frontend-test-integration-auto`, and `make frontend-test-e2e-smoke-auto`
+- [ ] If I needed Go lint autofixes before rerunning checks, I used `make pr-check-fix`
+
+### Frontend PR Checks
+
+- [ ] If this PR changes frontend flows outside the smoke subset, I also ran broader or focused browser coverage such as `make frontend-test-e2e`, `make frontend-test-e2e-file <spec>`, or `make frontend-test-e2e-module <tag>`
+- [ ] If this PR intentionally changes UI presentation, I ran `make frontend-test-e2e-visual`
+- [ ] If this PR intentionally changes committed visual baselines, I ran `make frontend-test-e2e-visual-baselines` and included the updated artifacts
+- [ ] If this PR refreshes documentation imagery, I ran `make frontend-test-e2e-docs-screenshots` and included the updated `docs/images/` assets
+- [ ] If this PR affects performance-sensitive frontend flows, I ran the relevant `make frontend-test-e2e-performance*` lane
 
 ## Related Issues
 

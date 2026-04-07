@@ -55,6 +55,7 @@ air.log
 # Coverage
 coverage.out
 coverage.html
+coverage-reports/
 
 sample-media/
 

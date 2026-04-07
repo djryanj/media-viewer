@@ -497,10 +497,12 @@ const Gallery = {
                 path: item.parentPath ?? '',
                 sort: MediaApp.state.currentSort.field,
                 order: MediaApp.state.currentSort.order,
+                limit: '0',
             });
             const response = await fetch(`/api/media?${params}`);
             if (!response.ok) return;
-            const files = await response.json();
+            const data = await response.json();
+            const files = Array.isArray(data) ? data : (data.items ?? []);
             const index = files.findIndex((f) => f.path === item.path);
             if (index >= 0) {
                 Lightbox.openWithItems(files, index);

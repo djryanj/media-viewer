@@ -11,6 +11,30 @@ npx playwright install
 # Run all E2E tests
 npm run test:e2e
 
+# Run every regular E2E spec plus the opt-in docs screenshot workflow
+npm run test:e2e:all
+
+# Run the stable Chromium smoke suite used on pull requests
+npm run test:e2e:smoke
+
+# Run visual regression checks against committed JSON baselines
+npm run test:e2e:visual
+
+# Refresh visual snapshot baselines after intentional UI changes
+npm run test:e2e:visual:baselines
+
+# Run the fast performance baseline suite
+npm run test:e2e:performance:smoke
+
+# Run the non-soak performance suite in Chromium
+npm run test:e2e:performance
+
+# Run the long-running soak suite in Chromium
+npm run test:e2e:performance:soak
+
+# Target a different backend
+TEST_BASE_URL=http://localhost:3000 npm run test:e2e
+
 # Generate documentation screenshots for tagging suggestions
 npm run test:e2e:docs-screenshots
 
@@ -33,6 +57,12 @@ npx playwright test specs/core/auth.spec.js
 npx playwright test specs/ui/gallery.spec.js
 ```
 
+Playwright reads `TEST_BASE_URL` for the backend URL. `BASE_URL` is still accepted as a legacy alias for local compatibility, but new commands and docs should use `TEST_BASE_URL`.
+
+`npm run test:e2e` excludes `@performance` specs and `@docs-screenshots` specs by default. Performance coverage is opt-in through the dedicated `test:e2e:performance:*` commands, and docs screenshot generation is opt-in through `npm run test:e2e:docs-screenshots`, so the regular developer and PR path stays stable.
+
+The regular pull request workflow runs `npm run test:e2e:smoke`, which currently covers the canonical auth, gallery, and lightbox/video specs in Chromium.
+
 ## Directory Structure
 
 ```
@@ -45,10 +75,13 @@ e2e/
 │   ├── ui/                         # UI component tests
 │   │   ├── gallery.spec.js        # Gallery navigation (@gallery @ui @navigation)
 │   │   └── lightbox-video.spec.js # Media viewing (@lightbox @video @ui @player)
+│   ├── visual/                     # Visual snapshot regression tests
+│   │   └── tagging-visual-regression.spec.js # Compares committed JSON baselines
 │   └── workflows/                  # Full user journey and docs-capture tests
 │       └── tagging-docs-screenshots.spec.js # Writes screenshots to docs/images/
 ├── fixtures/                       # Custom test fixtures and helpers
 │   └── index.js                   # Shared fixtures (loginHelpers, galleryHelpers, etc.)
+│   └── visual-regression.js       # DOM/style snapshot capture and comparison helpers
 ├── playwright-report/              # HTML test reports (generated)
 └── test-results/                   # Test artifacts (screenshots, videos, traces)
 ```
@@ -88,6 +121,13 @@ Tests are organized with tags for easy filtering:
 - `@touch` - Touch gestures
 - `@accessibility` - Accessibility features
 
+**Performance Tags:**
+
+- `@performance` - Any benchmark or performance-focused E2E spec
+- `@perf-smoke` - Fast baseline performance coverage suitable for routine local checks
+- `@slow` - Longer-running performance or workflow coverage
+- `@soak` - Extended stress or degradation runs intended for manual/nightly use
+
 ## Documentation Screenshots
 
 The repository includes a dedicated Playwright workflow for generating polished documentation screenshots for the main tagging user flows.
@@ -117,6 +157,24 @@ Current outputs:
 Covered flows include single-item tagging suggestions, bulk tagging, paste and merge flows, the lightbox tag drawer, search-result tag filtering, and the settings tag manager.
 
 Treat this spec as a reusable pattern for future documentation capture work.
+
+## Visual Snapshot Regression
+
+The repository also includes a separate Playwright lane for visual regression that does not generate screenshots for the docs site.
+
+```bash
+npm run test:e2e:visual
+npm run test:e2e:visual:baselines
+```
+
+This workflow:
+
+- Runs in `chromium` only
+- Captures deterministic DOM/style snapshots for selected UI states
+- Compares those snapshots against committed JSON baselines in `e2e/baselines/tagging/`
+- Uses `npm run test:e2e:visual:baselines` only when an intentional UI change requires baseline updates
+
+Keep this lane separate from docs screenshot generation: the visual suite protects against unintended UI drift, while the docs screenshot suite refreshes published PNG assets in `docs/images/`.
 
 ## Writing Tests
 
@@ -192,6 +250,15 @@ npx playwright test --grep "@auth|@session"
 
 # Exclude slow tests
 npx playwright test --grep-invert @slow
+
+# Run only performance tests
+npx playwright test --grep @performance --project=chromium
+
+# Run only the fast performance baseline tier
+npx playwright test --grep @perf-smoke --project=chromium
+
+# Run only soak tests
+npx playwright test --grep @soak --project=chromium
 ```
 
 ### By Module

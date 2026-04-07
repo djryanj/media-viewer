@@ -7,6 +7,7 @@ set +e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MEDIA_DIR="${MEDIA_DIR:-${SCRIPT_DIR}/../sample-media}"
+ENSURE_TEST_PLAYLIST_SCRIPT="${SCRIPT_DIR}/ensure-test-playlist.sh"
 
 # Configuration
 NUM_IMAGES=${NUM_IMAGES:-250}
@@ -659,6 +660,14 @@ echo ""
 
 # Create files with special filenames for path-encoding tests
 create_special_filename_files
+echo ""
+
+# Ensure a stable multi-item playlist fixture exists for CI and E2E coverage
+if [ -x "$ENSURE_TEST_PLAYLIST_SCRIPT" ]; then
+    "$ENSURE_TEST_PLAYLIST_SCRIPT" "$MEDIA_DIR"
+else
+    bash "$ENSURE_TEST_PLAYLIST_SCRIPT" "$MEDIA_DIR"
+fi
 echo ""
 
 # Summary

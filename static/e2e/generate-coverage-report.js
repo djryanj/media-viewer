@@ -26,31 +26,17 @@ const __dirname = path.dirname(__filename);
 // Configuration
 const SPECS_DIR = path.join(__dirname, 'specs');
 const OUTPUT_DIR = path.join(__dirname, 'coverage-reports');
-const FRONTEND_MODULES = [
-    'app',
-    'clock',
-    'favorites',
-    'gallery',
-    'history',
-    'infinite-scroll-search',
-    'infinite-scroll',
-    'lightbox',
-    'login',
-    'playlist',
-    'preferences',
-    'search',
-    'selection',
-    'session',
-    'settings',
-    'sw',
-    'tag-clipboard',
-    'tag-tooltip',
-    'tags',
-    'video-controls',
-    'video-player',
-    'wake-lock',
-    'webauthn',
-];
+const FRONTEND_JS_DIR = path.join(__dirname, '..', 'js');
+
+function getFrontendModules() {
+    return fs
+        .readdirSync(FRONTEND_JS_DIR, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
+        .map((entry) => entry.name.replace(/\.js$/, ''))
+        .sort((left, right) => left.localeCompare(right));
+}
+
+const FRONTEND_MODULES = getFrontendModules();
 
 /**
  * Parse a spec file to extract metadata
@@ -63,7 +49,7 @@ function parseSpecFile(filePath) {
 
     // Extract tags from file header and test.describe blocks
     const tags = new Set();
-    const tagMatches = content.matchAll(/@(\w+)/g);
+    const tagMatches = content.matchAll(/@([A-Za-z0-9_-]+)/g);
     for (const match of tagMatches) {
         tags.add(match[1]);
     }
@@ -92,6 +78,16 @@ function parseSpecFile(filePath) {
         describeCount,
         testCount,
         linesOfCode: content.split('\n').length,
+    };
+}
+
+function serializeCoverage(coverage) {
+    return {
+        ...coverage,
+        modules: coverage.modules.map((moduleInfo) => ({
+            ...moduleInfo,
+            tags: Array.from(moduleInfo.tags).sort(),
+        })),
     };
 }
 
@@ -286,7 +282,7 @@ function generateJSONReport(coverage, specs) {
     return JSON.stringify(
         {
             generated: new Date().toISOString(),
-            coverage,
+            coverage: serializeCoverage(coverage),
             specs,
         },
         null,
