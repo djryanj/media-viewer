@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Changelog
 
+## [0.17.1] - Unreleased
+
+### Changed
+
+- test(ci): Tagged releases now rerun the stable Chromium smoke suite before publishing, and CI now includes scheduled and manually triggered browser performance checks so regressions in key frontend workflows are more likely to be caught before they reach users. ([#493](https://github.com/djryanj/media-viewer/issues/493))
+
 ## [0.17.0] - 04-08-2026
 
 ### Added

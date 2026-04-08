@@ -106,6 +106,12 @@ cd static && npx vitest run tests/integration/session.test.js
 
 See [Frontend Test Structure](#frontend-test-structure) for complete file listing.
 
+For the same backend lifecycle used in CI and `make pr-check`, use the auto target instead of starting the backend manually:
+
+```bash
+make frontend-test-integration-auto
+```
+
 #### E2E Tests (Backend Required)
 
 End-to-end browser tests using Playwright.
@@ -126,6 +132,13 @@ make dev
 # Run all E2E tests
 make frontend-test-e2e
 cd static && npm run test:e2e
+
+# Run the same stable smoke lane and backend startup path used by PR CI
+make frontend-test-e2e-smoke-auto
+
+# Run the scheduled performance lanes locally with the same shared helper
+make frontend-test-e2e-performance-smoke-auto
+make frontend-test-e2e-performance-soak-auto
 
 # Include docs screenshot-generation specs in the default E2E selection
 PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1 make frontend-test-e2e
@@ -161,6 +174,8 @@ cd static && npm test
 ```
 
 This requires the backend to be running for integration and E2E tests.
+
+If you want the same ephemeral backend lifecycle used by CI and `pr-check`, prefer the `*-auto` targets. They all run through `hack/run-with-test-server.sh`, which prepares playlist fixtures when `MEDIA_DIR` is set, waits for both `/readyz` and `/api/auth/check`, and tears the backend down automatically.
 
 ### Frontend Test Configuration
 
@@ -205,10 +220,15 @@ Frontend tests run automatically in GitHub Actions:
 
 1. **Unit tests** - Run first without backend (fast, ~60s)
 2. **Integration tests** - Run after starting backend (~45s)
-3. **Playwright smoke tests** - Run the stable Chromium smoke lane with backend and browser automation
-4. **Coverage upload** - Coverage reports uploaded as artifacts
+3. **Playwright smoke tests** - Run the stable Chromium smoke lane with backend and browser automation on pull requests and again in the tagged release workflow before Docker publishing
+4. **Scheduled performance tests** - Run in a separate GitHub Actions workflow with a weekly baseline performance smoke lane and a monthly or manually-triggered soak tier
+5. **Coverage upload** - Coverage reports uploaded as artifacts
 
 Visual regression and docs screenshot generation are intentionally separate from the default PR lane. Run them locally when you are validating intentional UI changes or refreshing documentation assets.
+
+Release tags now repeat the Chromium smoke lane before container publishing. Performance and soak coverage remain out of the default PR and release paths so they can run on a scheduled or manual cadence without slowing routine validation.
+
+The PR, release, and scheduled performance workflows now reuse the same `make ...-auto` targets that local developers use, so CI and local smoke/performance runs share one backend startup path instead of maintaining separate shell logic.
 
 **Test Statistics (February 2026):**
 

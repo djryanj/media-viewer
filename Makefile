@@ -710,6 +710,12 @@ frontend-test-e2e-performance-soak:
 	@echo "Logging to ../e2e-performance-soak.log"
 	cd $(STATIC_DIR) && npm run test:e2e:performance:soak 2>&1 | tee ../e2e-performance-soak.log
 
+# Run the long-running soak performance suite in Chromium with an ephemeral test server
+frontend-test-e2e-performance-soak-auto:
+	@echo "Running frontend E2E performance soak suite with ephemeral test server..."
+	@echo "Logging to e2e-performance-soak-auto.log"
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-performance-soak 2>&1 | tee e2e-performance-soak-auto.log
+
 # Generate documentation screenshots from a dedicated Playwright workflow.
 frontend-test-e2e-docs-screenshots:
 	@echo "Generating documentation screenshots from Playwright..."
@@ -1158,6 +1164,7 @@ help:
 	@echo "  frontend-test-e2e-performance-smoke Run the fast baseline performance suite"
 	@echo "  frontend-test-e2e-performance-smoke-auto Run the fast performance smoke suite with ephemeral server"
 	@echo "  frontend-test-e2e-performance-soak Run long-running soak performance tests"
+	@echo "  frontend-test-e2e-performance-soak-auto Run long-running soak tests with ephemeral server"
 	@echo "  frontend-test-e2e-headed    Run E2E tests with visible browser"
 	@echo "  frontend-test-e2e-ui        Run E2E tests with interactive Playwright UI"
 	@echo "  frontend-test-e2e-debug     Run E2E tests in debug mode"
