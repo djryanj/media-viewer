@@ -64,6 +64,7 @@ type Config struct {
 	MetricsPort       string
 	IndexInterval     time.Duration
 	ThumbnailInterval time.Duration
+	ExifTagInterval   time.Duration
 	PollInterval      time.Duration
 	SessionDuration   time.Duration
 	SessionCleanup    time.Duration
@@ -81,6 +82,7 @@ type Config struct {
 	// Feature flags based on directory availability
 	ThumbnailsEnabled  bool
 	TranscodingEnabled bool
+	ExifTaggingEnabled bool
 
 	// Database options
 	DBMmapDisabled       bool    // Disable SQLite mmap for unreliable storage (Longhorn, NFS)
@@ -107,6 +109,7 @@ type rawConfig struct {
 	metricsPort           string
 	indexInterval         string
 	thumbnailInterval     string
+	exifTagInterval       string
 	pollInterval          string
 	sessionDuration       string
 	sessionCleanup        string
@@ -132,6 +135,7 @@ func loadRawConfig() *rawConfig {
 		metricsPort:           getEnv("METRICS_PORT", "9090"),
 		indexInterval:         getEnv("INDEX_INTERVAL", "30m"),
 		thumbnailInterval:     getEnv("THUMBNAIL_INTERVAL", "6h"),
+		exifTagInterval:       getEnv("EXIF_TAG_INTERVAL", "24h"),
 		pollInterval:          getEnv("POLL_INTERVAL", "30s"),
 		sessionDuration:       getEnv("SESSION_DURATION", "5m"),
 		sessionCleanup:        getEnv("SESSION_CLEANUP_INTERVAL", "1m"),
@@ -167,6 +171,7 @@ func logRawConfig(rc *rawConfig) {
 	logging.Info("  SLOW_QUERY_THRESHOLD_MS:         %sms", rc.slowQueryThresholdMs)
 	logging.Info("  INDEX_INTERVAL:          %s", rc.indexInterval)
 	logging.Info("  THUMBNAIL_INTERVAL:      %s", rc.thumbnailInterval)
+	logging.Info("  EXIF_TAG_INTERVAL:       %s", rc.exifTagInterval)
 	logging.Info("  POLL_INTERVAL:           %s", rc.pollInterval)
 	logWorkerConfig("INDEX_WORKERS", getEnv("INDEX_WORKERS", ""), "3 (default for NFS safety)")
 	logWorkerConfig("THUMBNAIL_WORKERS", getEnv("THUMBNAIL_WORKERS", ""), "(auto - CPU-based, max 6)")
@@ -206,6 +211,7 @@ func logWebAuthnConfig(rc *rawConfig) {
 type parsedDurations struct {
 	indexInterval        time.Duration
 	thumbnailInterval    time.Duration
+	exifTagInterval      time.Duration
 	pollInterval         time.Duration
 	sessionDuration      time.Duration
 	sessionCleanup       time.Duration
@@ -217,6 +223,7 @@ func parseDurations(rc *rawConfig) parsedDurations {
 	return parsedDurations{
 		indexInterval:        parseDurationWithDefault(rc.indexInterval, "INDEX_INTERVAL", 30*time.Minute),
 		thumbnailInterval:    parseDurationWithDefault(rc.thumbnailInterval, "THUMBNAIL_INTERVAL", 6*time.Hour),
+		exifTagInterval:      parseDurationWithDefault(rc.exifTagInterval, "EXIF_TAG_INTERVAL", 24*time.Hour),
 		pollInterval:         parseDurationWithDefault(rc.pollInterval, "POLL_INTERVAL", 30*time.Second),
 		sessionDuration:      parseDurationWithDefault(rc.sessionDuration, "SESSION_DURATION", 5*time.Minute),
 		sessionCleanup:       parseDurationWithDefault(rc.sessionCleanup, "SESSION_CLEANUP_INTERVAL", 1*time.Minute),
@@ -342,6 +349,7 @@ func LoadConfig() (*Config, error) {
 		MetricsPort:           rc.metricsPort,
 		IndexInterval:         durations.indexInterval,
 		ThumbnailInterval:     durations.thumbnailInterval,
+		ExifTagInterval:       durations.exifTagInterval,
 		PollInterval:          durations.pollInterval,
 		SessionDuration:       durations.sessionDuration,
 		SessionCleanup:        durations.sessionCleanup,
@@ -364,15 +372,17 @@ func LoadConfig() (*Config, error) {
 	// Setup optional directories
 	config.ThumbnailsEnabled = setupOptionalDir(config.ThumbnailDir, "thumbnails")
 	config.TranscodingEnabled = setupOptionalDir(config.TranscodeDir, "transcoding")
+	config.ExifTaggingEnabled = getEnvBool("EXIF_TAGGING_ENABLED", true)
 
 	// Summary
 	logging.Info("")
 	logging.Info("  Feature availability:")
-	logging.Info("    Database:    ENABLED (required)")
-	logging.Info("    Thumbnails:  %s", enabledString(config.ThumbnailsEnabled))
-	logging.Info("    Transcoding: %s", enabledString(config.TranscodingEnabled))
-	logging.Info("    Metrics:     %s", enabledString(config.MetricsEnabled))
-	logging.Info("    WebAuthn:    %s", enabledString(config.WebAuthnEnabled))
+	logging.Info("    Database:     ENABLED (required)")
+	logging.Info("    Thumbnails:   %s", enabledString(config.ThumbnailsEnabled))
+	logging.Info("    Transcoding:  %s", enabledString(config.TranscodingEnabled))
+	logging.Info("    EXIF tagging: %s", enabledString(config.ExifTaggingEnabled))
+	logging.Info("    Metrics:      %s", enabledString(config.MetricsEnabled))
+	logging.Info("    WebAuthn:     %s", enabledString(config.WebAuthnEnabled))
 
 	return config, nil
 }

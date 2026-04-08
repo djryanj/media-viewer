@@ -48,7 +48,7 @@ func setupHLSHandlerTest(t *testing.T) (h *Handlers, mediaDir string) {
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 	cfg := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
 
-	return New(db, idx, trans, thumbGen, cfg), mediaDir
+	return New(db, idx, trans, thumbGen, cfg, nil), mediaDir
 }
 
 // =============================================================================

@@ -48,6 +48,11 @@
 
 ### Managing Passkeys
 
+<div align="center">
+  <img src="../images/settings-tab-passkeys.png" alt="Settings Passkeys tab showing registered passkeys and the Add Passkey button" width="700">
+  <p><em>The Passkeys tab lists registered passkeys and lets you add or remove them.</em></p>
+</div>
+
 **View registered passkeys**:
 
 - Settings → Passkeys tab

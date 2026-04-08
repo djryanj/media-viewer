@@ -45,7 +45,7 @@ func setupHealthIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 		CacheDir: cacheDir,
 	}
 
-	handlers := New(db, idx, trans, thumbGen, config)
+	handlers := New(db, idx, trans, thumbGen, config, nil)
 
 	cleanup = func() {
 		db.Close()
@@ -523,7 +523,7 @@ func TestHealthCheckDegradedStatusIntegration(t *testing.T) {
 		CacheDir: cacheDir,
 	}
 
-	h := New(db, idx, trans, thumbGen, config)
+	h := New(db, idx, trans, thumbGen, config, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 	w := httptest.NewRecorder()

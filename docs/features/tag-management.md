@@ -60,8 +60,13 @@ The Tag Manager in Settings provides centralized management for your entire tag 
 3. The Tag Manager shows all tags with statistics
 
 <div align="center">
+    <img src="../images/settings-tab-tags.png" alt="Settings Tags tab showing the full tag library with name, usage count, and action buttons" width="700">
+    <p><em>The Tags tab in Settings shows your full tag library — sort by name or usage, search, rename, or delete tags from one place.</em></p>
+</div>
+
+<div align="center">
     <img src="../images/tagging-manager-settings.png" alt="Settings tag manager showing tag search and usage counts" width="700">
-    <p><em>The centralized Tag Manager gives you one place to search, audit, rename, and delete tags across the library.</em></p>
+    <p><em>Type in the search bar to filter tags instantly; use the filter button to isolate unused tags.</em></p>
 </div>
 
 ### Features

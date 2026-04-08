@@ -1077,3 +1077,83 @@ func buildPlaceholders(values []string) (clause string, args []interface{}) {
 	clause = strings.Join(placeholders, ",")
 	return clause, args
 }
+
+// MergeExifTagsForFile applies auto-detected EXIF/XMP tag names to a file
+// in a purely additive manner.  Existing tags are never removed.
+//
+// For each provided rawTag name the function performs a case-insensitive
+// lookup in the tags table:
+//   - If a matching tag exists, its canonical (user-set) name and ID are
+//     used — the tag is never renamed.
+//   - If no match is found, a new tag is created with the rawTag spelling.
+//
+// In both cases an INSERT OR IGNORE into file_tags ensures the association
+// exists after the call.  All operations run in a single transaction.
+func (d *Database) MergeExifTagsForFile(ctx context.Context, filePath string, rawTags []string) error {
+	done := d.observeQuery("merge_exif_tags_for_file")
+
+	if len(rawTags) == 0 {
+		done(nil)
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	tx, err := d.writer.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				logging.Error("MergeExifTagsForFile rollback failed: %v", rbErr)
+			}
+		}
+	}()
+
+	for _, rawTag := range rawTags {
+		name := strings.TrimSpace(rawTag)
+		if name == "" {
+			continue
+		}
+
+		// Look up existing tag case-insensitively to preserve user's spelling.
+		var tagID int64
+		err := tx.QueryRowContext(ctx,
+			"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+			name,
+		).Scan(&tagID)
+
+		if err != nil {
+			// Tag does not exist — create it with the EXIF-detected spelling.
+			result, createErr := tx.ExecContext(ctx, "INSERT INTO tags (name) VALUES (?)", name)
+			if createErr != nil {
+				done(createErr)
+				return fmt.Errorf("failed to create tag %q: %w", name, createErr)
+			}
+			tagID, _ = result.LastInsertId()
+		}
+
+		// Link tag to file; ignore if the association already exists.
+		if _, err := tx.ExecContext(ctx,
+			"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
+			filePath, tagID,
+		); err != nil {
+			done(err)
+			return fmt.Errorf("failed to link tag %q to %s: %w", name, filePath, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		done(err)
+		return fmt.Errorf("failed to commit: %w", err)
+	}
+	committed = true
+
+	done(nil)
+	return nil
+}

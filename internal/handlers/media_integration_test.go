@@ -62,7 +62,7 @@ func setupMediaIntegrationTest(t *testing.T) (h *Handlers, cleanup func()) {
 		CacheDir: cacheDir,
 	}
 
-	handlers := New(db, idx, trans, thumbGen, config)
+	handlers := New(db, idx, trans, thumbGen, config, nil)
 
 	cleanup = func() {
 		if err := db.Close(); err != nil {
@@ -113,7 +113,7 @@ func setupMediaIntegrationTestWithThumbnails(t *testing.T) (h *Handlers, cleanup
 		CacheDir: cacheDir,
 	}
 
-	handlers := New(db, idx, trans, thumbGen, config)
+	handlers := New(db, idx, trans, thumbGen, config, nil)
 
 	cleanup = func() {
 		if err := db.Close(); err != nil {
@@ -2413,7 +2413,7 @@ EOF
 	trans := transcoder.New(cacheDir, "", true, "none")
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 	config := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
-	h := New(db, idx, trans, thumbGen, config)
+	h := New(db, idx, trans, thumbGen, config, nil)
 
 	// Issue a HEAD request
 	req := httptest.NewRequest(http.MethodHead, "/api/stream/needs-transcode.flv", http.NoBody)
@@ -3157,7 +3157,7 @@ exit 187
 		CacheDir: cacheDir,
 	}
 
-	handlers := New(db, idx, trans, thumbGen, config)
+	handlers := New(db, idx, trans, thumbGen, config, nil)
 
 	// Create test request
 	req := httptest.NewRequest("GET", "/api/videos/bad_video.flv", http.NoBody)
@@ -3302,7 +3302,7 @@ exit 187
 		CacheDir: cacheDir,
 	}
 
-	handlers := New(db, idx, trans, thumbGen, config)
+	handlers := New(db, idx, trans, thumbGen, config, nil)
 
 	// Create request for the video
 	req := httptest.NewRequest("GET", "/api/videos/New%20Folder/video.flv", http.NoBody)

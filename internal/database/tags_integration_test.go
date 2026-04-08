@@ -1639,6 +1639,218 @@ func TestSetTagColorCaseInsensitiveIntegration(t *testing.T) {
 	t.Error("Did not find 'mixedcase' tag after case-insensitive color set")
 }
 
+// ---------------------------------------------------------------------------
+// MergeExifTagsForFile integration tests
+// ---------------------------------------------------------------------------
+
+func TestMergeExifTagsForFileNewTagsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	rawTags := []string{"landscape", "nature", "2024 Photos"}
+	if err := db.MergeExifTagsForFile(ctx, "/media/photo.jpg", rawTags); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+
+	tags, err := db.GetFileTags(ctx, "/media/photo.jpg")
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 3 {
+		t.Fatalf("Expected 3 tags, got %d: %v", len(tags), tags)
+	}
+}
+
+func TestMergeExifTagsForFilePreservesExistingCaseIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// User-created tag uses title case
+	if err := db.AddTagToFile(ctx, "/media/photo.jpg", "Nature"); err != nil {
+		t.Fatalf("AddTagToFile failed: %v", err)
+	}
+
+	// EXIF provides lowercase variant — existing spelling should be preserved
+	if err := db.MergeExifTagsForFile(ctx, "/media/photo.jpg", []string{"nature"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+
+	tags, err := db.GetFileTags(ctx, "/media/photo.jpg")
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 1 {
+		t.Fatalf("Expected exactly 1 tag (no duplicate), got %d: %v", len(tags), tags)
+	}
+	if tags[0] != "Nature" {
+		t.Errorf("Expected canonical spelling 'Nature', got %q", tags[0])
+	}
+}
+
+func TestMergeExifTagsForFileIsAdditiveIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Pre-existing user tags
+	_ = db.AddTagToFile(ctx, "/media/photo.jpg", "UserTag")
+	_ = db.AddTagToFile(ctx, "/media/photo.jpg", "Another")
+
+	// EXIF provides additional tags — user tags must survive
+	if err := db.MergeExifTagsForFile(ctx, "/media/photo.jpg", []string{"landscape", "nature"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+
+	tags, err := db.GetFileTags(ctx, "/media/photo.jpg")
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 4 {
+		t.Fatalf("Expected 4 tags (user + exif), got %d: %v", len(tags), tags)
+	}
+
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+	for _, expected := range []string{"UserTag", "Another", "landscape", "nature"} {
+		if !tagSet[expected] {
+			t.Errorf("Expected tag %q not found in %v", expected, tags)
+		}
+	}
+}
+
+func TestMergeExifTagsForFileIdempotentIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	rawTags := []string{"landscape", "nature"}
+
+	// Apply twice — no duplicates should result
+	for i := 0; i < 2; i++ {
+		if err := db.MergeExifTagsForFile(ctx, "/media/photo.jpg", rawTags); err != nil {
+			t.Fatalf("MergeExifTagsForFile (call %d) failed: %v", i+1, err)
+		}
+	}
+
+	tags, err := db.GetFileTags(ctx, "/media/photo.jpg")
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 2 {
+		t.Errorf("Expected 2 unique tags after idempotent merge, got %d: %v", len(tags), tags)
+	}
+}
+
+func TestMergeExifTagsForFileEmptyListIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	_ = db.AddTagToFile(ctx, "/media/photo.jpg", "existing")
+
+	// Empty list — no changes expected
+	if err := db.MergeExifTagsForFile(ctx, "/media/photo.jpg", []string{}); err != nil {
+		t.Fatalf("MergeExifTagsForFile with empty list failed: %v", err)
+	}
+
+	tags, _ := db.GetFileTags(ctx, "/media/photo.jpg")
+	if len(tags) != 1 || tags[0] != "existing" {
+		t.Errorf("Expected unchanged tags, got %v", tags)
+	}
+}
+
+func TestMergeExifTagsForFileTrimsWhitespaceSkipsEmptyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Raw tags with whitespace and empty strings
+	rawTags := []string{"  landscape  ", "", "  ", "nature"}
+	if err := db.MergeExifTagsForFile(ctx, "/media/photo.jpg", rawTags); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+
+	tags, _ := db.GetFileTags(ctx, "/media/photo.jpg")
+	if len(tags) != 2 {
+		t.Fatalf("Expected 2 tags (empty/whitespace skipped), got %d: %v", len(tags), tags)
+	}
+
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+	if !tagSet["landscape"] {
+		t.Error("Expected tag 'landscape' (trimmed from '  landscape  ')")
+	}
+	if !tagSet["nature"] {
+		t.Error("Expected tag 'nature'")
+	}
+}
+
+func TestMergeExifTagsForFileNewTagCreatedWithExifSpellingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// EXIF provides a tag that doesn't exist yet — should be created with EXIF spelling
+	if err := db.MergeExifTagsForFile(ctx, "/media/photo.jpg", []string{"Street Photography"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+
+	tags, _ := db.GetFileTags(ctx, "/media/photo.jpg")
+	if len(tags) != 1 {
+		t.Fatalf("Expected 1 tag, got %d", len(tags))
+	}
+	if tags[0] != "Street Photography" {
+		t.Errorf("Expected EXIF spelling 'Street Photography', got %q", tags[0])
+	}
+
+	// Merge again with different case — existing spelling must win
+	if err := db.MergeExifTagsForFile(ctx, "/media/other.jpg", []string{"street photography"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile second call failed: %v", err)
+	}
+
+	tags2, _ := db.GetFileTags(ctx, "/media/other.jpg")
+	if len(tags2) != 1 {
+		t.Fatalf("Expected 1 tag, got %d", len(tags2))
+	}
+	if tags2[0] != "Street Photography" {
+		t.Errorf("Expected canonical spelling 'Street Photography' (from first insert), got %q", tags2[0])
+	}
+}
+
 // TestGetFilesByTagFavoriteIntegration tests that GetFilesByTag includes is_favorite flag.
 func TestGetFilesByTagFavoriteIntegration(t *testing.T) {
 	if testing.Short() {

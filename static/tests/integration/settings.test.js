@@ -79,6 +79,12 @@ describe('SettingsManager Integration Tests', () => {
                 innerHTML: '',
                 dataset: {},
             },
+            'run-autotagger-btn': {
+                addEventListener: vi.fn(),
+                disabled: false,
+                innerHTML: '',
+                dataset: {},
+            },
             'add-passkey-btn': {
                 addEventListener: vi.fn(),
                 disabled: false,
@@ -825,6 +831,39 @@ describe('SettingsManager Integration Tests', () => {
             expect(globalThis.fetch).toHaveBeenCalledWith('/api/transcode/clear', {
                 method: 'POST',
             });
+        });
+
+        it('should run autotagger and call correct endpoint', async () => {
+            await settingsManager.runAutoTagger();
+
+            expect(globalThis.fetch).toHaveBeenCalledWith('/api/autotagger/run', {
+                method: 'POST',
+            });
+        });
+
+        it('should show success message after autotagger run', async () => {
+            globalThis.fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ success: true, message: 'Auto-tagger run started' }),
+                text: () => Promise.resolve(''),
+            });
+
+            await settingsManager.runAutoTagger();
+
+            const successEl = mockElements['cache-success'];
+            expect(successEl.classList.remove).toHaveBeenCalledWith('hidden');
+        });
+
+        it('should show error message when autotagger run fails', async () => {
+            globalThis.fetch.mockResolvedValueOnce({
+                ok: false,
+                text: () => Promise.resolve('Service unavailable'),
+            });
+
+            await settingsManager.runAutoTagger();
+
+            const errorEl = mockElements['cache-error'];
+            expect(errorEl.classList.remove).toHaveBeenCalledWith('hidden');
         });
     });
 

@@ -56,6 +56,17 @@ When you have favorites, they appear in a horizontal scrollable strip below the 
 
 The bottom bar displays library statistics including total images, videos, folders, and favorites.
 
+## Settings
+
+Access the Settings modal by clicking the ⚙️ gear icon in the header. It provides tabs for managing your password, passkeys, cache, display preferences, and tags.
+
+The **About** tab shows the application version and a summary of your library contents.
+
+<div align="center">
+  <img src="../images/settings-tab-about.png" alt="Settings About tab showing application version and library statistics" width="700">
+  <p><em>The About tab shows the current application version and a breakdown of your library by media type.</em></p>
+</div>
+
 ## Guide Sections
 
 - [Browsing Media](browsing.md) - Navigate and view your library

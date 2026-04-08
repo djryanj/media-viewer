@@ -60,6 +60,15 @@ func InitializeMetrics() {
 		ThumbnailFFmpegDuration.WithLabelValues(mt)
 	}
 
+	// --- EXIF auto-tagger ---
+	for _, runType := range []string{"full", "incremental"} {
+		ExifTagRunsTotal.WithLabelValues(runType)
+		ExifTagRunDuration.WithLabelValues(runType)
+	}
+	for _, status := range []string{"tagged", "skipped", "failed"} {
+		ExifTagFilesTotal.WithLabelValues(status)
+	}
+
 	// --- DB query operations ---
 	for _, op := range []string{"initialize_schema", "upsert_file", "delete_missing_files",
 		"get_file_by_path", "rebuild_fts", "begin_transaction", "commit", "rollback"} {

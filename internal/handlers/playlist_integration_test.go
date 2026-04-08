@@ -62,7 +62,7 @@ func setupPlaylistIntegrationTest(t *testing.T) (h *Handlers, mediaDir string, c
 	}
 
 	// Create handlers
-	handlers := New(db, idx, trans, thumbGen, config)
+	handlers := New(db, idx, trans, thumbGen, config, nil)
 
 	cleanup = func() {
 		if err := db.Close(); err != nil {

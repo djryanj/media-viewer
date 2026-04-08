@@ -631,6 +631,205 @@ create_special_filename_files() {
     echo "  [OK] Created $created files with special filenames"
 }
 
+# ============================================================
+# Function to embed EXIF/XMP description metadata into a
+# selection of the downloaded Picsum images so that the EXIF
+# auto-tagger has realistic, varied fixtures to process.
+#
+# Embedding tool priority: exiftool (preferred, widely
+# available) → ffmpeg (common in dev containers).
+# Skipped gracefully if neither is found.
+#
+# Patterns covered — explicit tags: format:
+#   picsum_001 – basic lowercase "tags:…;", two tags
+#   picsum_002 – mixed-case tag names
+#   picsum_003 – title-case "Tags:" prefix + surrounding text
+#   picsum_004 – plain description with NO tags: pattern (negative)
+#   picsum_005 – single tag; semicolon terminates mid-sentence
+#   picsum_006 – single tag; no semicolon
+#   picsum_007 – tags at end of sentence; no semicolon
+#
+# Patterns covered — extended IPTC/XMP keyword detection:
+#   picsum_008 – plain comma-separated keywords via Description
+#                (simulates XMP Subject / Lightroom export)
+#   picsum_009 – plain comma-separated multi-word keywords
+#   picsum_010 – prose with commas but sentence punctuation (negative:
+#                extended path must NOT fire)
+#   picsum_011 – IPTC Keywords written via standard -IPTC:Keywords
+#                field (simulates digiKam / Apple Photos tagging)
+# ============================================================
+embed_exif_tags_in_sample_media() {
+    echo -e "${YELLOW}[INFO] Embedding EXIF description metadata for auto-tagger testing...${NC}"
+
+    # --------------- resolve embedding tool ---------------
+    local embed_tool=""
+    if command -v exiftool &>/dev/null; then
+        embed_tool="exiftool"
+    elif command -v ffmpeg &>/dev/null; then
+        embed_tool="ffmpeg"
+    else
+        echo -e "${YELLOW}  [WARN] Neither exiftool nor ffmpeg found; skipping EXIF embedding${NC}"
+        return 0
+    fi
+    echo "  [INFO] Using $embed_tool to embed metadata"
+
+    # --------------- helper: embed description into a JPEG ---------------
+    # Usage: embed_description <file> <description_string>
+    embed_description() {
+        local file="$1"
+        local desc="$2"
+
+        if [ ! -f "$file" ]; then
+            echo "  [SKIP] $(basename "$file") not found"
+            return 1
+        fi
+
+        if [ "$embed_tool" = "exiftool" ]; then
+            # exiftool writes EXIF ImageDescription in-place
+            exiftool -quiet -Description="$desc" -overwrite_original "$file" 2>/dev/null
+        else
+            # ffmpeg: write to a temp file then replace the original
+            local tmp="${file}.tmp_exif.jpg"
+            # #nosec G204 -- controlled inputs; $file comes from MEDIA_DIR
+            ffmpeg -y -i "$file" -metadata description="$desc" "$tmp" &>/dev/null
+            if [ $? -eq 0 ] && [ -s "$tmp" ]; then
+                mv "$tmp" "$file"
+            else
+                rm -f "$tmp"
+                echo "  [WARN] ffmpeg failed to embed metadata in $(basename "$file")"
+                return 1
+            fi
+        fi
+        return 0
+    }
+
+    # --------------- helper: embed IPTC Keywords (exiftool only) ---------------
+    # Simulates the field written by digiKam, Apple Photos, and similar tools.
+    # Falls back to embed_description when exiftool is not available.
+    # Usage: embed_iptc_keywords <file> <keyword1> [<keyword2> ...]
+    embed_iptc_keywords() {
+        local file="$1"
+        shift
+        local keywords=("$@")
+
+        if [ ! -f "$file" ]; then
+            echo "  [SKIP] $(basename "$file") not found"
+            return 1
+        fi
+
+        if [ "$embed_tool" != "exiftool" ]; then
+            # ffmpeg cannot write IPTC keywords; fall back to description
+            local joined
+            joined=$(IFS=', '; echo "${keywords[*]}")
+            embed_description "$file" "$joined"
+            return $?
+        fi
+
+        # Build exiftool argument list: one -IPTC:Keywords= per keyword
+        local args=("-quiet" "-overwrite_original")
+        for kw in "${keywords[@]}"; do
+            args+=("-IPTC:Keywords+=$kw")
+            args+=("-XMP-dc:Subject+=$kw")
+        done
+        args+=("$file")
+        exiftool "${args[@]}" 2>/dev/null
+    }
+
+    local embedded=0
+
+    # --- picsum_001: basic lowercase tags, two values ---
+    local f="$MEDIA_DIR/picsum_001.jpg"
+    if embed_description "$f" "tags:landscape, nature;"; then
+        echo "  [OK] picsum_001.jpg — 'tags:landscape, nature;'"
+        ((embedded++))
+    fi
+
+    # --- picsum_002: mixed-case tag names ---
+    f="$MEDIA_DIR/picsum_002.jpg"
+    if embed_description "$f" "tags:Portrait, Indoor;"; then
+        echo "  [OK] picsum_002.jpg — 'tags:Portrait, Indoor;'"
+        ((embedded++))
+    fi
+
+    # --- picsum_003: title-case prefix + extra surrounding text ---
+    f="$MEDIA_DIR/picsum_003.jpg"
+    if embed_description "$f" "A beautiful walk in the park. Tags:Black & White, Street Photography; Shot in 2024."; then
+        echo "  [OK] picsum_003.jpg — 'Tags:Black & White, Street Photography;' (with surrounding text)"
+        ((embedded++))
+    fi
+
+    # --- picsum_004: plain description without any tag pattern ---
+    #     This file should NOT receive any auto-tags (negative fixture).
+    f="$MEDIA_DIR/picsum_004.jpg"
+    if embed_description "$f" "No tag markers here — just a plain photo description."; then
+        echo "  [OK] picsum_004.jpg — no-tags description (negative fixture)"
+        ((embedded++))
+    fi
+
+    # --- picsum_005: single tag; semicolon mid-sentence ---------------
+    f="$MEDIA_DIR/picsum_005.jpg"
+    if embed_description "$f" "tags:architecture; taken downtown with a 35mm lens"; then
+        echo "  [OK] picsum_005.jpg — 'tags:architecture;' (semicolon mid-sentence)"
+        ((embedded++))
+    fi
+
+    # --- picsum_006: single tag; no semicolon ---------------
+    f="$MEDIA_DIR/picsum_006.jpg"
+    if embed_description "$f" "tags:architecture"; then
+        echo "  [OK] picsum_006.jpg — 'tags:architecture' (no semicolon)"
+        ((embedded++))
+    fi
+
+    # --- picsum_007: tags at end of sentence; no semicolon ---------------
+    f="$MEDIA_DIR/picsum_007.jpg"
+    if embed_description "$f" "Fancy architecture; tags:architecture, fancy, beautiful"; then
+        echo "  [OK] picsum_007.jpg — 'Fancy architecture; tags:architecture, fancy, beautiful' (no semicolon)"
+        ((embedded++))
+    fi
+
+    # -----------------------------------------------------------------------
+    # Extended detection — plain keyword list (IPTC/XMP style)
+    # -----------------------------------------------------------------------
+
+    # --- picsum_008: plain comma-separated keywords in Description field ---
+    #     Simulates XMP Subject / Lightroom export with no tags: prefix.
+    #     Extended path should detect and import these as tags.
+    f="$MEDIA_DIR/picsum_008.jpg"
+    if embed_description "$f" "urban, city lights, night photography"; then
+        echo "  [OK] picsum_008.jpg — plain keywords 'urban, city lights, night photography' (extended path)"
+        ((embedded++))
+    fi
+
+    # --- picsum_009: multi-word keywords, no tags: prefix ---------------
+    #     Verifies extended path handles multi-word tokens correctly.
+    f="$MEDIA_DIR/picsum_009.jpg"
+    if embed_description "$f" "Black & White, Street Photography, Golden Hour"; then
+        echo "  [OK] picsum_009.jpg — 'Black & White, Street Photography, Golden Hour' (extended multi-word)"
+        ((embedded++))
+    fi
+
+    # --- picsum_010: prose with commas but sentence punctuation ----------
+    #     Extended path must NOT fire because of the period.
+    #     This is a negative fixture: no auto-tags should be applied.
+    f="$MEDIA_DIR/picsum_010.jpg"
+    if embed_description "$f" "A walk through the city, late in the evening. Shot handheld."; then
+        echo "  [OK] picsum_010.jpg — prose with period (negative fixture, extended path blocked)"
+        ((embedded++))
+    fi
+
+    # --- picsum_011: IPTC Keywords via standard field --------------------
+    #     Simulates digiKam, Apple Photos, or any IPTC-aware editor.
+    #     The keywords arrive as "comment" in ffprobe and as a plain
+    #     comma-separated list — the extended path picks them up.
+    f="$MEDIA_DIR/picsum_011.jpg"
+    if embed_iptc_keywords "$f" "travel" "mountains" "landscape"; then
+        echo "  [OK] picsum_011.jpg — IPTC Keywords: travel, mountains, landscape (standard field)"
+        ((embedded++))
+    fi
+
+    echo "  [OK] Embedded metadata in $embedded files"
+}
+
 
 # Main download process
 echo -e "${BLUE}[INFO] Starting downloads...${NC}"
@@ -660,6 +859,10 @@ echo ""
 
 # Create files with special filenames for path-encoding tests
 create_special_filename_files
+echo ""
+
+# Embed EXIF description metadata for auto-tagger testing
+embed_exif_tags_in_sample_media
 echo ""
 
 # Ensure a stable multi-item playlist fixture exists for CI and E2E coverage
