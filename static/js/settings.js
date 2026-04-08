@@ -93,6 +93,9 @@ class SettingsManager {
             .getElementById('reindex-btn')
             ?.addEventListener('click', () => this.reindexMedia());
         document
+            .getElementById('run-autotagger-btn')
+            ?.addEventListener('click', () => this.runAutoTagger());
+        document
             .getElementById('clear-transcode-btn')
             ?.addEventListener('click', () => this.clearTranscodeCache());
 
@@ -1049,6 +1052,35 @@ class SettingsManager {
             this.showError('cache-error', 'Connection error. Please try again.');
         } finally {
             this.setCacheLoading(btn, false, 'Reindex Now');
+            this.hideCacheStatus();
+        }
+    }
+
+    async runAutoTagger() {
+        const btn = document.getElementById('run-autotagger-btn');
+
+        this.setCacheLoading(btn, true, 'Running...');
+        this.showCacheStatus('Running auto-tagger pass on all media...');
+
+        try {
+            const response = await fetch('/api/autotagger/run', {
+                method: 'POST',
+            });
+
+            if (response.ok) {
+                this.showSuccess(
+                    'cache-success',
+                    'Auto-tagger run started. Tags will be applied to matching files shortly.'
+                );
+            } else {
+                const error = await response.text();
+                this.showError('cache-error', error || 'Failed to start auto-tagger');
+            }
+        } catch (err) {
+            console.error('Auto-tagger error:', err);
+            this.showError('cache-error', 'Connection error. Please try again.');
+        } finally {
+            this.setCacheLoading(btn, false, 'Run Now');
             this.hideCacheStatus();
         }
     }

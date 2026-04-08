@@ -45,7 +45,7 @@ func setupCollectionsHandlerTest(t *testing.T) (*Handlers, *database.Database) {
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 	cfg := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
 
-	return New(db, idx, trans, thumbGen, cfg), db
+	return New(db, idx, trans, thumbGen, cfg, nil), db
 }
 
 func seedCollectionsHandlerFiles(t *testing.T, db *database.Database, files []database.MediaFile) {

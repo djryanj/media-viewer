@@ -194,6 +194,109 @@ This behavior helps you refine searches without leaving the results view.
 
 See [Search](search.md) for more search options.
 
+## Auto-Tagging from File Metadata
+
+Media Viewer can automatically apply tags to images and videos based on metadata embedded directly in the files. This is useful for pre-tagging large photo or video libraries before importing, or for workflows where metadata is written by your camera, editor, or DAM software.
+
+### How It Works
+
+When the server indexes your media it also checks the `description` (or `comment`) field of each file for tags. Two formats are recognised:
+
+**Explicit `tags:` marker** — works in any description field, on any file type:
+
+```
+tags:<name1>, <name2>, <name3>
+```
+
+**Plain keyword list** — works automatically for photos tagged in Lightroom, digiKam, Apple Photos, or any tool that writes IPTC Keywords or XMP Subject. If the description contains a comma-separated list of short values with no sentence punctuation, the values are treated directly as tags — no special encoding required:
+
+```
+nature, landscape, golden hour
+```
+
+Existing manually-applied tags are never removed; auto-tags are always merged additively.
+
+### Embedding Tags in a File — Explicit Format
+
+Add a `tags:` entry anywhere in the file's description metadata:
+
+```
+tags:<name1>, <name2>, <name3>
+```
+
+A semicolon can be used to end the list early, which is useful when you want to include additional descriptive text after the tags:
+
+```
+tags:<name1>, <name2>, <name3>; rest of your description here
+```
+
+**Key points:**
+
+- The `tags:` prefix is **case-insensitive** (`Tags:`, `TAGS:`, and `tags:` all work)
+- The **semicolon is optional** — if omitted, the parser reads to the end of the string
+- Tag names **may contain spaces** (e.g., `New York`, `black and white`)
+- Leading and trailing whitespace in each tag name is trimmed automatically
+- Empty entries (two consecutive commas) are ignored
+
+**Examples:**
+
+| Description field                                             | Tags applied                                 |
+| ------------------------------------------------------------- | -------------------------------------------- |
+| `tags:landscape, nature, 2024`                                | `landscape`, `nature`, `2024`                |
+| `tags:landscape, nature, 2024;`                               | `landscape`, `nature`, `2024`                |
+| `tags:first tag,second,this is still a tag`                   | `first tag`, `second`, `this is still a tag` |
+| `Summer trip. tags: New York, street photography; Leica M10.` | `New York`, `street photography`             |
+| `Tags:Black & White, Architecture`                            | `Black & White`, `Architecture`              |
+
+### Auto-Detection of Standard Photo Keywords
+
+Photos exported from Lightroom, digiKam, Apple Photos, or any software that writes **IPTC Keywords** or **XMP Subject** are picked up automatically — no `tags:` prefix needed. When the description field contains a plain comma-separated list of short values with no sentence-ending punctuation (`.`, `!`, `?`), those values are imported as tags directly.
+
+| Description / Keywords field           | Tags applied                               |
+| -------------------------------------- | ------------------------------------------ |
+| `nature, landscape`                    | `nature`, `landscape`                      |
+| `Portrait, Indoor, Street Photography` | `Portrait`, `Indoor`, `Street Photography` |
+| `New York, Black & White, Golden Hour` | `New York`, `Black & White`, `Golden Hour` |
+| `A beautiful walk in the park. 2024.`  | _(not imported — sentence punctuation)_    |
+| `Wow! Great shot, fantastic light`     | _(not imported — exclamation mark)_        |
+
+### Writing Metadata to Files
+
+You can embed the description field using common tools:
+
+- **[ExifTool](https://exiftool.org/)** (images and videos):
+    ```bash
+    exiftool -Description="tags:landscape, nature, 2024" photo.jpg
+    ```
+- **[digiKam](https://www.digikam.org/)** — set the Caption/Description field in the metadata panel; IPTC Keywords are picked up automatically
+- **Adobe Bridge / Lightroom** — use the Description field in the IPTC or EXIF panel; keywords assigned in Lightroom are also picked up automatically
+- **ffmpeg** (videos):
+    ```bash
+    ffmpeg -i input.mp4 -metadata description="tags:landscape, nature" -c copy output.mp4
+    ```
+
+### When Tags Are Applied
+
+Tags are applied:
+
+1. **After each index run** — files changed since the last pass are processed automatically
+2. **On a periodic timer** (`EXIF_TAG_INTERVAL`, default `24h`) — ensures all files are eventually processed even if they were not caught by an incremental pass
+3. **On demand** — use the **Run Auto-Tagger** button in **Settings → Cache** to trigger an immediate full pass
+
+<div align="center">
+  <img src="../images/settings-tab-cache.png" alt="Settings Cache tab showing the Run Auto-Tagger button among other cache actions" width="700">
+  <p><em>The Cache tab in Settings lets you trigger an on-demand auto-tagger pass alongside other cache actions.</em></p>
+</div>
+
+### Conflict Resolution
+
+- If a tag from the file metadata already exists in the library under a different spelling (e.g., the library has `Nature` and the file has `nature`), the **existing spelling is kept** and no duplicate is created.
+- Tags are always **merged additively** — auto-tagging never removes a tag that was added manually.
+
+### Configuration
+
+See [EXIF_TAGGING_ENABLED and EXIF_TAG_INTERVAL](../admin/environment-variables.md#exif_tagging_enabled) in the environment-variables reference to enable/disable or adjust the scan interval.
+
 ## Tag Management Tips
 
 - Use consistent naming conventions (e.g., always lowercase)
@@ -204,6 +307,11 @@ See [Search](search.md) for more search options.
 ## Tag Manager
 
 Access the centralized Tag Manager from **Settings** → **Tags** tab to organize and maintain your entire tag library.
+
+<div align="center">
+  <img src="../images/settings-tab-tags.png" alt="Settings Tags tab showing the tag library with name, usage count, and action buttons" width="700">
+  <p><em>The Tag Manager lists every tag in your library with usage counts and quick rename/delete actions.</em></p>
+</div>
 
 ### Viewing Tags
 

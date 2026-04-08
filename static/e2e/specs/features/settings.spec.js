@@ -220,8 +220,27 @@ test.describe('Settings - Display, Cache, and Tags @settings @features @admin', 
         await expect(page.locator('#rebuild-thumbnails-btn')).toBeVisible();
         await expect(page.locator('#reindex-btn')).toBeVisible();
         await expect(page.locator('#clear-transcode-btn')).toBeVisible();
+        await expect(page.locator('#run-autotagger-btn')).toBeVisible();
         await expect(page.locator('#thumbnail-cache-size')).toBeVisible();
         await expect(page.locator('#transcode-cache-size')).toBeVisible();
+    });
+
+    test('should trigger autotagger run and show success message', async ({ page }) => {
+        // Intercept the API call so the test does not depend on a real running tagger.
+        await page.route('/api/autotagger/run', (route) => {
+            route.fulfill({
+                status: 202,
+                contentType: 'application/json',
+                body: JSON.stringify({ success: true, message: 'Auto-tagger run started' }),
+            });
+        });
+
+        await openSettings(page, 'cache');
+
+        await page.locator('#run-autotagger-btn').dispatchEvent('click');
+
+        // Wait for the success element to become visible (loading state resolves).
+        await expect(page.locator('#cache-success')).toBeVisible({ timeout: 5000 });
     });
 
     test('should show the tags manager controls', async ({ page }) => {

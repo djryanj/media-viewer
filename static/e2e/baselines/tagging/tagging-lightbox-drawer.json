@@ -676,7 +676,8 @@
     {
       "tag": "div",
       "classes": [
-        "lightbox-drawer-backdrop"
+        "lightbox-drawer-backdrop",
+        "open"
       ],
       "rect": {
         "x": 0,

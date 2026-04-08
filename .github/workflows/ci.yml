@@ -88,6 +88,11 @@ jobs:
                   restore-keys: |
                       sample-media-
 
+            - name: Install media tools
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl
+
             - name: Download sample media
               if: steps.cache-restore.outputs.cache-hit != 'true'
               run: |
@@ -350,7 +355,7 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+                  sudo apt-get install -y libvips-dev ffmpeg libimage-exiftool-perl
             - name: Set up Go
               uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
               with:
@@ -395,10 +400,10 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-            - name: Install libvips and ffmpeg
+            - name: Install libvips, ffmpeg, and exiftool
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+                  sudo apt-get install -y libvips-dev ffmpeg libimage-exiftool-perl
             - name: Set up Go
               uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
               with:

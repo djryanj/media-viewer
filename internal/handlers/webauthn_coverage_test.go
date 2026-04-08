@@ -81,7 +81,7 @@ func setupWebAuthnCoverageTest(t *testing.T, enableWebAuthn bool) (h *Handlers, 
 	}
 
 	// Create handlers
-	handlers := New(db, idx, trans, thumbGen, config)
+	handlers := New(db, idx, trans, thumbGen, config, nil)
 
 	cleanup = func() {
 		// Reset global state

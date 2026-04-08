@@ -23,6 +23,8 @@ Complete reference for all environment variables supported by Media Viewer.
 | `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                           |
 | `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                   |
 | `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                     |
+| `EXIF_TAGGING_ENABLED`        | `true`         | Enable EXIF/XMP auto-tagging                           |
+| `EXIF_TAG_INTERVAL`           | `24h`          | EXIF auto-tagging periodic scan interval               |
 | `INDEX_WORKERS`               | `3`            | Parallel indexer workers (tune for NFS/local)          |
 | `THUMBNAIL_WORKERS`           | _(auto)_       | Thumbnail generation workers (tune for performance)    |
 | **Authentication & Sessions** |                |                                                        |
@@ -260,6 +262,59 @@ THUMBNAIL_INTERVAL=6h
 - Small library (< 1000 files): `6h`
 - Medium library (1000-10000 files): `12h`
 - Large library (> 10000 files): `24h`
+
+### EXIF_TAGGING_ENABLED
+
+Enable or disable automatic tag application from embedded EXIF/XMP metadata.
+
+```bash
+EXIF_TAGGING_ENABLED=true
+```
+
+- Default: `true`
+- When enabled, the server reads the `description` (or `comment`) field from media files and applies any tags encoded in a `tags:<csv>` substring (semicolon terminator is optional)
+- Requires `ffprobe` to be available in the container (included by default)
+- Set to `false` to disable entirely if EXIF auto-tagging is not desired
+
+### EXIF_TAG_INTERVAL
+
+How often the EXIF auto-tagger performs a periodic full pass.
+
+```bash
+EXIF_TAG_INTERVAL=24h
+```
+
+- Default: `24h` (24 hours)
+- Incremental passes run automatically after each index completion (only files changed since the last pass)
+- The periodic full pass is a fallback ensuring all files are eventually processed
+- Accepts Go duration format: `s`, `m`, `h`
+- Only relevant when `EXIF_TAGGING_ENABLED=true`
+
+**Tag format:**
+
+Embed tags in the EXIF/XMP `description` field of an image or video using the following syntax:
+
+```
+tags:<name1>, <name2>, <name3>
+```
+
+Or, optionally terminated with a semicolon (everything after the semicolon is preserved as-is):
+
+```
+tags:<name1>, <name2>, <name3>;
+```
+
+The `tags:` prefix is case-insensitive. The semicolon is **optional** — if omitted the parser reads to the end of the string. Tag names may contain spaces and other characters; only commas are used as separators. For example:
+
+```
+Summer holiday. tags: landscape, nature, 2024; Shot with Canon R5.
+```
+
+```
+tags:first tag,second,this is still a tag
+```
+
+Tags are merged additively — existing tags are never removed — and case conflicts are resolved in favour of the existing tag's spelling.
 
 ### INDEX_WORKERS
 
@@ -617,7 +672,7 @@ SLOW_QUERY_THRESHOLD_MS=100
 
 ## Duration Format
 
-Duration values (`INDEX_INTERVAL`, `POLL_INTERVAL`, `THUMBNAIL_INTERVAL`, `SESSION_DURATION`, `SESSION_CLEANUP`) use Go's duration format:
+Duration values (`INDEX_INTERVAL`, `POLL_INTERVAL`, `THUMBNAIL_INTERVAL`, `EXIF_TAG_INTERVAL`, `SESSION_DURATION`, `SESSION_CLEANUP`) use Go's duration format:
 
 | Unit         | Suffix | Example |
 | ------------ | ------ | ------- |

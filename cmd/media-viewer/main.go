@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"media-viewer/internal/autotagger"
 	"media-viewer/internal/database"
 	"media-viewer/internal/filesystem"
 	"media-viewer/internal/handlers"
@@ -141,8 +142,12 @@ func main() {
 	idx := indexer.New(db, config.MediaDir, config.IndexInterval)
 	idx.SetPollInterval(config.PollInterval)
 
+	// Initialize EXIF auto-tagger
+	autoTagger := autotagger.New(db, config.MediaDir, config.ExifTagInterval, config.ExifTaggingEnabled)
+
 	idx.SetOnIndexComplete(func() {
 		thumbGen.NotifyIndexComplete()
+		autoTagger.NotifyIndexComplete()
 	})
 
 	// Start indexer in background
@@ -157,6 +162,9 @@ func main() {
 	thumbGen.Start()
 	logging.Info("Thumbnail generator started")
 
+	// Start EXIF auto-tagger in background
+	autoTagger.Start()
+
 	// Start metrics collector
 	metricsCollector := metrics.NewCollector(&dbStatsAdapter{db: db}, config.DatabasePath, 1*time.Minute)
 	metricsCollector.SetTranscoderCacheDir(config.TranscodeDir)
@@ -165,7 +173,7 @@ func main() {
 	logging.Info("Metrics collector started")
 
 	// Initialize handlers
-	h := handlers.New(db, idx, trans, thumbGen, config)
+	h := handlers.New(db, idx, trans, thumbGen, config, autoTagger)
 
 	// Start metrics server if enabled
 	var metricsSrv *http.Server
@@ -382,6 +390,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 
 	// Cache management
 	api.HandleFunc("/transcode/clear", h.ClearTranscodeCache).Methods("POST")
+	api.HandleFunc("/autotagger/run", h.RunAutoTagger).Methods("POST")
 
 	// Static files
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))

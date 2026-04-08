@@ -752,3 +752,67 @@ var (
 		},
 	)
 )
+
+// EXIF auto-tagger metrics
+var (
+	ExifTagRunsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_exif_tag_runs_total",
+			Help: "Total number of EXIF auto-tagging passes completed",
+		},
+		[]string{"type"}, // "full" or "incremental"
+	)
+
+	ExifTagRunning = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_exif_tag_running",
+			Help: "Whether the EXIF auto-tagger is currently running (1 = running, 0 = idle)",
+		},
+	)
+
+	ExifTagFilesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "media_viewer_exif_tag_files_total",
+			Help: "Total number of files processed by the EXIF auto-tagger by outcome",
+		},
+		[]string{"status"}, // "tagged", "skipped", "failed"
+	)
+
+	ExifTagRunDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_exif_tag_run_duration_seconds",
+			Help:    "Distribution of EXIF auto-tagging pass durations",
+			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800},
+		},
+		[]string{"type"}, // "full" or "incremental"
+	)
+
+	ExifTagLastRunDuration = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_exif_tag_last_run_duration_seconds",
+			Help: "Duration of the last EXIF auto-tagging pass in seconds",
+		},
+	)
+
+	ExifTagLastTimestamp = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_exif_tag_last_timestamp",
+			Help: "Unix timestamp of the last completed EXIF auto-tagging pass",
+		},
+	)
+
+	ExifTagFFprobeDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "media_viewer_exif_tag_ffprobe_duration_seconds",
+			Help:    "Duration of individual ffprobe metadata extraction calls",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5},
+		},
+	)
+
+	ExifTagErrorsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_exif_tag_errors_total",
+			Help: "Total number of errors encountered during EXIF auto-tagging",
+		},
+	)
+)
