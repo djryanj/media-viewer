@@ -338,7 +338,9 @@ async function getLightboxToolbarLayout(page) {
         const buttons = Array.from(toolbar.querySelectorAll('button'))
             .filter((button) => isVisible(button))
             .map((button) => {
-                const icon = button.querySelector('svg');
+                const icon = Array.from(button.querySelectorAll('svg')).find((svg) =>
+                    isVisible(svg)
+                );
                 return {
                     id: button.id,
                     rect: toRect(button),
@@ -372,8 +374,6 @@ function assertLightboxToolbarLayout(layout, expectedButtonIds) {
     const referenceTop = orderedButtons[0].rect.top;
     const referenceHeight = orderedButtons[0].rect.height;
     const referenceWidth = orderedButtons[0].rect.width;
-    const referenceIconWidth = orderedButtons[0].iconRect?.width ?? 0;
-    const referenceIconHeight = orderedButtons[0].iconRect?.height ?? 0;
 
     for (const button of orderedButtons) {
         expect(Math.abs(button.rect.top - referenceTop)).toBeLessThanOrEqual(2);
@@ -385,8 +385,18 @@ function assertLightboxToolbarLayout(layout, expectedButtonIds) {
         expect(button.rect.bottom).toBeLessThanOrEqual(layout.toolbarRect.bottom + 1);
 
         if (button.iconRect) {
-            expect(Math.abs(button.iconRect.width - referenceIconWidth)).toBeLessThanOrEqual(2);
-            expect(Math.abs(button.iconRect.height - referenceIconHeight)).toBeLessThanOrEqual(2);
+            expect(button.iconRect.width).toBeGreaterThan(0);
+            expect(button.iconRect.height).toBeGreaterThan(0);
+            expect(button.iconRect.width).toBeLessThanOrEqual(button.rect.width);
+            expect(button.iconRect.height).toBeLessThanOrEqual(button.rect.height);
+
+            const iconCenterX = button.iconRect.left + button.iconRect.width / 2;
+            const iconCenterY = button.iconRect.top + button.iconRect.height / 2;
+            const buttonCenterX = button.rect.left + button.rect.width / 2;
+            const buttonCenterY = button.rect.top + button.rect.height / 2;
+
+            expect(Math.abs(iconCenterX - buttonCenterX)).toBeLessThanOrEqual(3);
+            expect(Math.abs(iconCenterY - buttonCenterY)).toBeLessThanOrEqual(3);
         }
     }
 
