@@ -215,6 +215,7 @@ download_sample_videos() {
     )
 
     local downloaded=0
+    local failed=0
     for i in "${!video_urls[@]}"; do
         if [ $downloaded -ge $count ]; then
             break
@@ -244,6 +245,15 @@ download_sample_videos() {
 
         echo "  [DEBUG] Curl exit code: $curl_exit, HTTP: $http_code" >&2
 
+        # Reject non-2xx HTTP responses immediately (e.g. 403 Forbidden)
+        if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "  [ERROR] Failed: $filename (HTTP $http_code)"
+            rm -f "$filepath"
+            ((failed++))
+            sleep 0.5
+            continue
+        fi
+
         if [ $curl_exit -eq 0 ] && [ -s "$filepath" ]; then
             # Validate downloaded file
             echo "  [DEBUG] Validating downloaded file..." >&2
@@ -254,6 +264,7 @@ download_sample_videos() {
             else
                 echo "  [ERROR] Failed: $filename (invalid video, HTTP $http_code)"
                 rm -f "$filepath"
+                ((failed++))
             fi
         else
             echo "  [ERROR] Failed: $filename (curl exit code: $curl_exit)"
@@ -262,12 +273,45 @@ download_sample_videos() {
             fi
             echo "  [DEBUG] URL: $url" >&2
             rm -f "$filepath"
+            ((failed++))
         fi
 
         sleep 0.5
     done
 
     echo "  [INFO] Downloaded $downloaded videos"
+
+    # If all downloads failed, generate synthetic test videos with ffmpeg as fallback
+    # so downstream tests can still run. ffmpeg is available in the CI environment.
+    if [ $downloaded -eq 0 ] && [ $failed -gt 0 ]; then
+        if command -v ffmpeg &>/dev/null; then
+            echo -e "${YELLOW}  [FALLBACK] All $failed download(s) failed. Generating $count synthetic test video(s) with ffmpeg...${NC}"
+            local gen_count=0
+            for i in $(seq 1 $count); do
+                local gen_file="$MEDIA_DIR/sample_video_$(printf "%02d" $i).mp4"
+                if ffmpeg -y -f lavfi \
+                          -i "testsrc=duration=5:size=320x240:rate=24" \
+                          -f lavfi -i "sine=frequency=440:duration=5" \
+                          -c:v libx264 -c:a aac -pix_fmt yuv420p \
+                          -shortest "$gen_file" &>/dev/null; then
+                    echo "  [OK] Generated: sample_video_$(printf "%02d" $i).mp4 (synthetic fallback)"
+                    ((downloaded++))
+                    ((gen_count++))
+                fi
+            done
+            if [ $gen_count -gt 0 ]; then
+                echo -e "${YELLOW}  [WARN] $failed download(s) failed; generated $gen_count synthetic video(s) as fallback${NC}"
+            fi
+        else
+            echo -e "${RED}  [ERROR] Downloads failed and ffmpeg is not available for fallback generation${NC}"
+        fi
+    fi
+
+    if [ $downloaded -eq 0 ]; then
+        echo -e "${RED}  [ERROR] No valid videos obtained (all downloads failed, fallback also failed)${NC}"
+        return 1
+    fi
+    return 0
 }
 
 # Function to download from Pexels API (requires API key)
@@ -830,6 +874,51 @@ embed_exif_tags_in_sample_media() {
     echo "  [OK] Embedded metadata in $embedded files"
 }
 
+# ============================================================
+# Generate a video that requires transcoding to exercise the
+# transcode code path in CI integration tests.
+#
+# Strategy: .mkv container + h264 codec.  "mkv" is NOT in the
+# transcoder's compatibleContainers map, so NeedsTranscode=true
+# even though the codec itself is h264.  ffmpeg handles mkv
+# natively so thumbnail generation also works.
+#
+# The file is always (re-)created when invalid so that a stale
+# cache entry from before this function was added doesn't hide
+# the transcode path.
+# ============================================================
+generate_transcode_test_video() {
+    local dest="$MEDIA_DIR/sample_transcode_test.mkv"
+
+    # Skip if file already exists and ffprobe confirms it's valid
+    if [ -f "$dest" ] && command -v ffprobe &>/dev/null; then
+        if ffprobe -v error -show_entries format=duration \
+                   -of default=noprint_wrappers=1:nokey=1 "$dest" &>/dev/null; then
+            echo "  [SKIP] sample_transcode_test.mkv (already exists and valid)"
+            return 0
+        else
+            echo "  [RETRY] Regenerating sample_transcode_test.mkv (invalid file)"
+            rm -f "$dest"
+        fi
+    fi
+
+    if ! command -v ffmpeg &>/dev/null; then
+        echo -e "${YELLOW}  [WARN] ffmpeg not found; skipping transcode test video generation${NC}"
+        return 0
+    fi
+
+    echo "  [GENERATE] sample_transcode_test.mkv (mkv container → NeedsTranscode=true)..."
+    if ffmpeg -y \
+              -f lavfi -i "testsrc=duration=5:size=320x240:rate=24" \
+              -f lavfi -i "sine=frequency=440:duration=5" \
+              -c:v libx264 -c:a aac -pix_fmt yuv420p \
+              -shortest "$dest" &>/dev/null; then
+        echo -e "${GREEN}  [OK] Generated: sample_transcode_test.mkv${NC}"
+    else
+        echo -e "${RED}  [ERROR] Failed to generate sample_transcode_test.mkv${NC}"
+    fi
+}
+
 
 # Main download process
 echo -e "${BLUE}[INFO] Starting downloads...${NC}"
@@ -842,7 +931,10 @@ echo ""
 # Download videos
 if [ $NUM_VIDEOS -gt 0 ]; then
     # Try sample videos first (no API key needed)
-    download_sample_videos $((NUM_VIDEOS < 16 ? NUM_VIDEOS : 16))
+    if ! download_sample_videos $((NUM_VIDEOS < 16 ? NUM_VIDEOS : 16)); then
+        echo -e "${RED}[ERROR] Failed to obtain any video files. Exiting.${NC}"
+        exit 1
+    fi
     echo ""
 
     # If we want more than 16 videos and have API key, use Pexels
@@ -859,6 +951,11 @@ echo ""
 
 # Create files with special filenames for path-encoding tests
 create_special_filename_files
+echo ""
+
+# Generate a video that exercises the transcode code path
+echo -e "${YELLOW}[INFO] Generating transcode test video...${NC}"
+generate_transcode_test_video
 echo ""
 
 # Embed EXIF description metadata for auto-tagger testing
