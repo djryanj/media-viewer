@@ -167,35 +167,6 @@ if [ -f "requirements.txt" ]; then
     echo -e "${GREEN}[SUCCESS] mkdocs requirements installed${NC}"
 fi
 
-# Restore Copilot repo memory from committed files so it survives container rebuilds.
-# Files in .github/copilot/memories/ are copied into the VS Code workspaceStorage
-# location that Copilot Chat reads.  The workspace hash is stable for a given
-# workspace folder path, so this is safe to hardcode via the WORKSPACE_HASH
-# variable below.  If the extension storage layout ever changes, the copy is
-# harmless (extra files in an unused directory).
-#
-# How to update the committed copies after changing memory in a session:
-#   cp ~/.vscode-server/data/User/workspaceStorage/*/GitHub.copilot-chat/memory-tool/memories/repo/* \
-#      .github/copilot/memories/
-#   git add .github/copilot/memories && git commit -m "chore: update Copilot repo memory"
-COMMITTED_MEMORY_DIR=".github/copilot/memories"
-COPILOT_MEMORY_GLOB="${HOME}/.vscode-server/data/User/workspaceStorage/*/GitHub.copilot-chat/memory-tool/memories/repo"
-
-if [ -d "$COMMITTED_MEMORY_DIR" ]; then
-    echo -e "${BLUE}[INFO] Restoring Copilot repo memory from $COMMITTED_MEMORY_DIR ...${NC}"
-    # shellcheck disable=SC2086
-    for target_dir in $COPILOT_MEMORY_GLOB; do
-        if [ -d "$(dirname "$target_dir")" ] || mkdir -p "$target_dir" 2>/dev/null; then
-            cp -u "$COMMITTED_MEMORY_DIR/"* "$target_dir/" 2>/dev/null || true
-        fi
-    done
-    # Also pre-create the target in case the workspaceStorage hash doesn't exist yet.
-    # VS Code creates the hash directory on first open; we can't know it before that.
-    echo -e "${GREEN}[SUCCESS] Copilot repo memory restored ($(ls "$COMMITTED_MEMORY_DIR" | wc -l) files)${NC}"
-else
-    echo -e "${YELLOW}[INFO] No committed Copilot repo memory found at $COMMITTED_MEMORY_DIR — skipping restore${NC}"
-fi
-
 echo ""
 echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Post-create setup complete!${NC}"
