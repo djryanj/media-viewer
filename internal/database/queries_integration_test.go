@@ -1215,6 +1215,147 @@ func TestCountMediaFilesForThumbnailsIntegration(t *testing.T) {
 	}
 }
 
+// TestGetMediaFilesForAutoTaggingPagedIntegration tests
+// GetMediaFilesForAutoTaggingPaged pagination, ordering, and type filtering.
+func TestGetMediaFilesForAutoTaggingPagedIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	files := []MediaFile{
+		{Name: "root.jpg", Path: "root.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: time.Now()},
+		{Name: "folder", Path: "folder", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
+		{Name: "deep.jpg", Path: "folder/sub/deep.jpg", ParentPath: "folder/sub", Type: FileTypeImage, Size: 200, ModTime: time.Now()},
+		{Name: "mid.mp4", Path: "folder/mid.mp4", ParentPath: "folder", Type: FileTypeVideo, Size: 150, ModTime: time.Now()},
+		{Name: "list.wpl", Path: "list.wpl", ParentPath: "", Type: FileTypePlaylist, Size: 50, ModTime: time.Now()},
+	}
+
+	tx, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	for i := range files {
+		if err := tx.UpsertFile(ctx, &files[i]); err != nil {
+			_ = db.EndBatch(tx, err)
+			t.Fatalf("UpsertFile failed: %v", err)
+		}
+	}
+	if err := db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch failed: %v", err)
+	}
+
+	var all []MediaFile
+	const pageSize = 2
+	for offset := 0; ; {
+		page, err := db.GetMediaFilesForAutoTaggingPaged(ctx, offset, pageSize)
+		if err != nil {
+			t.Fatalf("GetMediaFilesForAutoTaggingPaged failed at offset %d: %v", offset, err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		all = append(all, page...)
+		offset += len(page)
+		if len(page) < pageSize {
+			break
+		}
+	}
+
+	if len(all) != 3 {
+		t.Fatalf("expected 3 auto-tagging files total across pages, got %d", len(all))
+	}
+
+	for _, file := range all {
+		if file.Type != FileTypeImage && file.Type != FileTypeVideo {
+			t.Fatalf("unexpected file type %q returned for auto-tagging query", file.Type)
+		}
+	}
+
+	for i := 1; i < len(all); i++ {
+		if all[i].Path < all[i-1].Path {
+			t.Errorf("files not ordered by path: %q before %q", all[i-1].Path, all[i].Path)
+		}
+	}
+}
+
+// TestCountMediaFilesForAutoTaggingIntegration verifies that
+// CountMediaFilesForAutoTagging matches the exact population returned by
+// GetMediaFilesForAutoTaggingPaged and excludes non-image/video types.
+func TestCountMediaFilesForAutoTaggingIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	count, err := db.CountMediaFilesForAutoTagging(ctx)
+	if err != nil {
+		t.Fatalf("CountMediaFilesForAutoTagging failed on empty db: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("empty db: got count %d, want 0", count)
+	}
+
+	files := []MediaFile{
+		{Name: "img.jpg", Path: "img.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: time.Now()},
+		{Name: "clip.mp4", Path: "clip.mp4", ParentPath: "", Type: FileTypeVideo, Size: 200, ModTime: time.Now()},
+		{Name: "album", Path: "album", ParentPath: "", Type: FileTypeFolder, Size: 0, ModTime: time.Now()},
+		{Name: "list.wpl", Path: "list.wpl", ParentPath: "", Type: FileTypePlaylist, Size: 50, ModTime: time.Now()},
+	}
+
+	tx, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch failed: %v", err)
+	}
+	for i := range files {
+		if err := tx.UpsertFile(ctx, &files[i]); err != nil {
+			_ = db.EndBatch(tx, err)
+			t.Fatalf("UpsertFile failed: %v", err)
+		}
+	}
+	if err := db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch failed: %v", err)
+	}
+
+	const wantEligible = 2
+
+	count, err = db.CountMediaFilesForAutoTagging(ctx)
+	if err != nil {
+		t.Fatalf("CountMediaFilesForAutoTagging failed: %v", err)
+	}
+	if count != wantEligible {
+		t.Errorf("got count %d, want %d", count, wantEligible)
+	}
+
+	var pagedTotal int
+	for offset := 0; ; {
+		page, pageErr := db.GetMediaFilesForAutoTaggingPaged(ctx, offset, 2)
+		if pageErr != nil {
+			t.Fatalf("GetMediaFilesForAutoTaggingPaged failed: %v", pageErr)
+		}
+		if len(page) == 0 {
+			break
+		}
+		pagedTotal += len(page)
+		offset += len(page)
+		if len(page) < 2 {
+			break
+		}
+	}
+	if pagedTotal != count {
+		t.Errorf("paged total %d != count %d — CountMediaFilesForAutoTagging and GetMediaFilesForAutoTaggingPaged disagree",
+			pagedTotal, count)
+	}
+}
+
 // TestGetFoldersWithUpdatedContentsIntegration tests GetFoldersWithUpdatedContents.
 func TestGetFoldersWithUpdatedContentsIntegration(t *testing.T) {
 	if testing.Short() {

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"media-viewer/internal/database"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // requireFFmpeg skips the test when ffmpeg, ffprobe, or exiftool is not
@@ -154,6 +156,44 @@ func setupAutoTaggerDB(t *testing.T, files []database.MediaFile) *database.Datab
 	}
 
 	return db
+}
+
+func gaugeVecValue(t *testing.T, metricName string, labels map[string]string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Logf("gather error (non-fatal): %v", err)
+	}
+
+	for _, mf := range families {
+		if mf.GetName() != metricName {
+			continue
+		}
+		for _, metric := range mf.GetMetric() {
+			matched := true
+			for key, want := range labels {
+				found := false
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == key && label.GetValue() == want {
+						found = true
+						break
+					}
+				}
+				if !found {
+					matched = false
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+			if gauge := metric.GetGauge(); gauge != nil {
+				return gauge.GetValue()
+			}
+		}
+	}
+
+	return 0
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +376,10 @@ func TestProcessFilesTagsAppliedIntegration(t *testing.T) {
 	db := setupAutoTaggerDB(t, files)
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
-	tagged, failed := tagger.processFiles(ctx, files)
+	tagged, failed, err := tagger.processFiles(ctx, files)
+	if err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 	if tagged != 1 {
 		t.Errorf("expected 1 tagged file, got %d (failed=%d)", tagged, failed)
 	}
@@ -386,7 +429,9 @@ func TestProcessFilesPreservesExistingTagsIntegration(t *testing.T) {
 	}
 
 	tagger := New(db, mediaDir, 24*time.Hour, true)
-	tagger.processFiles(ctx, files)
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 
 	fileTags, err := db.GetFileTags(ctx, "photo.mp4")
 	if err != nil {
@@ -430,7 +475,10 @@ func TestProcessFilesSkipsFolderEntriesIntegration(t *testing.T) {
 	db := setupAutoTaggerDB(t, nil) // no file records needed
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
-	tagged, failed := tagger.processFiles(ctx, files)
+	tagged, failed, err := tagger.processFiles(ctx, files)
+	if err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 	if tagged != 0 || failed != 0 {
 		t.Errorf("expected folders to be skipped (tagged=%d, failed=%d)", tagged, failed)
 	}
@@ -460,7 +508,10 @@ func TestProcessFilesMultipleFilesIntegration(t *testing.T) {
 	db := setupAutoTaggerDB(t, files)
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
-	tagged, failed := tagger.processFiles(ctx, files)
+	tagged, failed, err := tagger.processFiles(ctx, files)
+	if err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 	if tagged != 1 {
 		t.Errorf("expected 1 tagged file, got %d", tagged)
 	}
@@ -504,7 +555,9 @@ func TestProcessFilesCasePreservationIntegration(t *testing.T) {
 	db := setupAutoTaggerDB(t, files)
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
-	tagger.processFiles(ctx, files)
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 
 	for _, path := range []string{"first.mp4", "second.mp4"} {
 		tags, err := db.GetFileTags(ctx, path)
@@ -543,8 +596,12 @@ func TestProcessFilesIdempotentIntegration(t *testing.T) {
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
 	// Run twice to verify idempotency.
-	tagger.processFiles(ctx, files)
-	tagger.processFiles(ctx, files)
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles first run: %v", err)
+	}
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles second run: %v", err)
+	}
 
 	tags, err := db.GetFileTags(ctx, "photo.mp4")
 	if err != nil {
@@ -575,7 +632,10 @@ func TestProcessFilesNoTagsFileIntegration(t *testing.T) {
 	db := setupAutoTaggerDB(t, files)
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
-	tagged, failed := tagger.processFiles(ctx, files)
+	tagged, failed, err := tagger.processFiles(ctx, files)
+	if err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 	if tagged != 0 {
 		t.Errorf("expected 0 tagged, got %d", tagged)
 	}
@@ -586,6 +646,133 @@ func TestProcessFilesNoTagsFileIntegration(t *testing.T) {
 	tags, _ := db.GetFileTags(ctx, "photo.mp4")
 	if len(tags) != 0 {
 		t.Errorf("expected no tags on file with non-matching description, got %v", tags)
+	}
+}
+
+func TestRunPassFullUpdatesStatusAndMetricsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	requireFFmpeg(t)
+
+	ctx := context.Background()
+	mediaDir := t.TempDir()
+
+	createMediaWithDescription(t, filepath.Join(mediaDir, "tagged.mp4"), "tags:nature;")
+	createMediaNoMetadata(t, filepath.Join(mediaDir, "bare.mp4"))
+
+	files := []database.MediaFile{
+		{Name: "tagged.mp4", Path: "tagged.mp4", Type: database.FileTypeVideo, ModTime: time.Now(), MimeType: "video/mp4"},
+		{Name: "bare.mp4", Path: "bare.mp4", Type: database.FileTypeVideo, ModTime: time.Now(), MimeType: "video/mp4"},
+	}
+
+	db := setupAutoTaggerDB(t, files)
+	tagger := New(db, mediaDir, 24*time.Hour, true)
+
+	tagger.runPass(false)
+
+	tagger.runMu.RLock()
+	stats := tagger.runStats
+	tagger.runMu.RUnlock()
+
+	if stats.InProgress {
+		t.Fatal("runStats.InProgress should be false after run completes")
+	}
+	if stats.IsIncremental {
+		t.Fatal("runStats.IsIncremental should be false for full pass")
+	}
+	if stats.TotalFiles != 2 {
+		t.Fatalf("runStats.TotalFiles = %d, want 2", stats.TotalFiles)
+	}
+	if stats.Processed != 2 {
+		t.Fatalf("runStats.Processed = %d, want 2", stats.Processed)
+	}
+	if stats.Tagged != 1 {
+		t.Fatalf("runStats.Tagged = %d, want 1", stats.Tagged)
+	}
+	if stats.Skipped != 1 {
+		t.Fatalf("runStats.Skipped = %d, want 1", stats.Skipped)
+	}
+	if stats.Failed != 0 {
+		t.Fatalf("runStats.Failed = %d, want 0", stats.Failed)
+	}
+	if stats.CurrentFile != "" {
+		t.Fatalf("runStats.CurrentFile = %q, want empty after completion", stats.CurrentFile)
+	}
+	if stats.LastCompleted.IsZero() {
+		t.Fatal("status.Run.LastCompleted should be populated after completion")
+	}
+
+	if got := gaugeVecValue(t, "media_viewer_exif_tag_last_run_files", map[string]string{"status": "total"}); got != 2 {
+		t.Fatalf("last run total gauge = %v, want 2", got)
+	}
+	if got := gaugeVecValue(t, "media_viewer_exif_tag_last_run_files", map[string]string{"status": "processed"}); got != 2 {
+		t.Fatalf("last run processed gauge = %v, want 2", got)
+	}
+	if got := gaugeVecValue(t, "media_viewer_exif_tag_last_run_files", map[string]string{"status": "tagged"}); got != 1 {
+		t.Fatalf("last run tagged gauge = %v, want 1", got)
+	}
+	if got := gaugeVecValue(t, "media_viewer_exif_tag_last_run_files", map[string]string{"status": "skipped"}); got != 1 {
+		t.Fatalf("last run skipped gauge = %v, want 1", got)
+	}
+	if got := gaugeVecValue(t, "media_viewer_exif_tag_current_run_files", map[string]string{"status": "processed"}); got != 0 {
+		t.Fatalf("current run processed gauge = %v, want 0 after completion", got)
+	}
+
+	tags, err := db.GetFileTags(ctx, "tagged.mp4")
+	if err != nil {
+		t.Fatalf("GetFileTags: %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "nature" {
+		t.Fatalf("expected tagged.mp4 to have [nature], got %v", tags)
+	}
+}
+
+func TestRunPassIncrementalUpdatesStatusIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	requireFFmpeg(t)
+
+	ctx := context.Background()
+	mediaDir := t.TempDir()
+
+	createMediaWithDescription(t, filepath.Join(mediaDir, "tagged.mp4"), "tags:travel;")
+
+	files := []database.MediaFile{
+		{Name: "tagged.mp4", Path: "tagged.mp4", Type: database.FileTypeVideo, ModTime: time.Now(), MimeType: "video/mp4"},
+	}
+
+	db := setupAutoTaggerDB(t, files)
+	lastRun := time.Now().Add(-1 * time.Hour)
+	if err := db.SetLastExifTagRun(ctx, lastRun); err != nil {
+		t.Fatalf("SetLastExifTagRun: %v", err)
+	}
+
+	tagger := New(db, mediaDir, 24*time.Hour, true)
+	tagger.runPass(true)
+
+	tagger.runMu.RLock()
+	stats := tagger.runStats
+	tagger.runMu.RUnlock()
+
+	if stats.InProgress {
+		t.Fatal("runStats.InProgress should be false after completion")
+	}
+	if !stats.IsIncremental {
+		t.Fatal("runStats.IsIncremental should be true for incremental pass")
+	}
+	if stats.TotalFiles != 1 {
+		t.Fatalf("runStats.TotalFiles = %d, want 1", stats.TotalFiles)
+	}
+	if stats.Processed != 1 {
+		t.Fatalf("runStats.Processed = %d, want 1", stats.Processed)
+	}
+	if stats.Tagged != 1 {
+		t.Fatalf("runStats.Tagged = %d, want 1", stats.Tagged)
+	}
+	if stats.LastCompleted.IsZero() {
+		t.Fatal("runStats.LastCompleted should be populated after incremental completion")
 	}
 }
 
@@ -718,7 +905,10 @@ func TestProcessFilesJPEGTagsAppliedIntegration(t *testing.T) {
 	db := setupAutoTaggerDB(t, files)
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
-	tagged, failed := tagger.processFiles(ctx, files)
+	tagged, failed, err := tagger.processFiles(ctx, files)
+	if err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 	if tagged != 1 {
 		t.Errorf("expected 1 tagged file, got %d (failed=%d)", tagged, failed)
 	}
@@ -767,7 +957,9 @@ func TestProcessFilesJPEGPreservesExistingTagsIntegration(t *testing.T) {
 	}
 
 	tagger := New(db, mediaDir, 24*time.Hour, true)
-	tagger.processFiles(ctx, files)
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles: %v", err)
+	}
 
 	fileTags, err := db.GetFileTags(ctx, "photo.jpg")
 	if err != nil {
@@ -806,8 +998,12 @@ func TestProcessFilesJPEGIdempotentIntegration(t *testing.T) {
 	db := setupAutoTaggerDB(t, files)
 	tagger := New(db, mediaDir, 24*time.Hour, true)
 
-	tagger.processFiles(ctx, files)
-	tagger.processFiles(ctx, files)
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles first run: %v", err)
+	}
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles second run: %v", err)
+	}
 
 	tags, err := db.GetFileTags(ctx, "photo.jpg")
 	if err != nil {

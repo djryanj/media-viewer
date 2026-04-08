@@ -778,6 +778,22 @@ var (
 		[]string{"status"}, // "tagged", "skipped", "failed"
 	)
 
+	ExifTagCurrentRunFiles = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_exif_tag_current_run_files",
+			Help: "Number of files in the currently running EXIF auto-tagging pass by status",
+		},
+		[]string{"status"}, // "total", "processed", "tagged", "skipped", "failed"
+	)
+
+	ExifTagLastRunFiles = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "media_viewer_exif_tag_last_run_files",
+			Help: "Number of files in the last EXIF auto-tagging pass by status",
+		},
+		[]string{"status"}, // "total", "processed", "tagged", "skipped", "failed"
+	)
+
 	ExifTagRunDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "media_viewer_exif_tag_run_duration_seconds",

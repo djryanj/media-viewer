@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - test(ci): Tagged releases now rerun the stable Chromium smoke suite before publishing, and CI now includes scheduled and manually triggered browser performance checks so regressions in key frontend workflows are more likely to be caught before they reach users. ([#493](https://github.com/djryanj/media-viewer/issues/493))
+- fix(backend): The EXIF auto-tagger no longer runs as a black box. Server logs now report full and incremental pass start/progress/completion details, and Prometheus now exposes current-run and last-run auto-tagger counts so long-running metadata tagging work is easier to monitor and troubleshoot. ([#495](https://github.com/djryanj/media-viewer/issues/495))
 
 ## [0.17.0] - 04-08-2026
 

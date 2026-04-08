@@ -14,19 +14,19 @@ Returns aggregate library and cache statistics.
 
 ```json
 {
-	"totalFiles": 1200,
-	"totalFolders": 85,
-	"totalImages": 980,
-	"totalVideos": 180,
-	"totalPlaylists": 40,
-	"totalFavorites": 25,
-	"totalTags": 64,
-	"thumbnailCacheBytes": 104857600,
-	"thumbnailCacheFiles": 420,
-	"transcodeCacheBytes": 524288000,
-	"transcodeCacheFiles": 18,
-	"lastIndexed": "2026-04-03T18:25:19Z",
-	"indexDuration": "1.2s"
+    "totalFiles": 1200,
+    "totalFolders": 85,
+    "totalImages": 980,
+    "totalVideos": 180,
+    "totalPlaylists": 40,
+    "totalFavorites": 25,
+    "totalTags": 64,
+    "thumbnailCacheBytes": 104857600,
+    "thumbnailCacheFiles": 420,
+    "transcodeCacheBytes": 524288000,
+    "transcodeCacheFiles": 18,
+    "lastIndexed": "2026-04-03T18:25:19Z",
+    "indexDuration": "1.2s"
 }
 ```
 
@@ -44,8 +44,8 @@ Started:
 
 ```json
 {
-	"status": "started",
-	"message": "Re-indexing started"
+    "status": "started",
+    "message": "Re-indexing started"
 }
 ```
 
@@ -53,8 +53,25 @@ Already running:
 
 ```json
 {
-	"status": "already_running",
-	"message": "Indexing is already in progress"
+    "status": "already_running",
+    "message": "Indexing is already in progress"
+}
+```
+
+## Trigger Auto-Tagger
+
+```http
+POST /api/autotagger/run
+```
+
+Starts an on-demand full EXIF auto-tagging pass in the background.
+
+### Response
+
+```json
+{
+    "success": true,
+    "message": "Auto-tagger run started"
 }
 ```
 
@@ -68,8 +85,8 @@ POST /api/transcode/clear
 
 ```json
 {
-	"success": true,
-	"freedBytes": 524288000
+    "success": true,
+    "freedBytes": 524288000
 }
 ```
 
@@ -92,10 +109,10 @@ GET /version
 
 ```json
 {
-	"version": "0.16.0",
-	"commit": "abcdef1",
-	"buildTime": "2026-04-03T18:25:19Z",
-	"goVersion": "go1.24.1"
+    "version": "0.16.0",
+    "commit": "abcdef1",
+    "buildTime": "2026-04-03T18:25:19Z",
+    "goVersion": "go1.24.1"
 }
 ```
 

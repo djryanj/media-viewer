@@ -130,13 +130,14 @@ Collections are folder-scoped and ordered. See the dedicated [Collections API](c
 
 ### System
 
-| Method | Endpoint               | Description                  |
-| ------ | ---------------------- | ---------------------------- |
-| GET    | `/api/stats`           | Get library statistics       |
-| POST   | `/api/reindex`         | Trigger a background reindex |
-| POST   | `/api/transcode/clear` | Clear transcode cache        |
-| GET    | `/health`              | Health check                 |
-| GET    | `/healthz`             | Health check alias           |
-| GET    | `/livez`               | Liveness probe               |
-| GET    | `/readyz`              | Readiness probe              |
-| GET    | `/version`             | Version information          |
+| Method | Endpoint               | Description                               |
+| ------ | ---------------------- | ----------------------------------------- |
+| GET    | `/api/stats`           | Get library statistics                    |
+| POST   | `/api/reindex`         | Trigger a background reindex              |
+| POST   | `/api/transcode/clear` | Clear transcode cache                     |
+| GET    | `/health`              | Health check                              |
+| GET    | `/healthz`             | Health check alias                        |
+| GET    | `/livez`               | Liveness probe                            |
+| GET    | `/readyz`              | Readiness probe                           |
+| GET    | `/version`             | Version information                       |
+| POST   | `/api/autotagger/run`  | Trigger a background EXIF auto-tagger run |
