@@ -33,6 +33,25 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
         return result;
     }
 
+    async function getVideoItems(page, count = 1, startIndex = 0) {
+        const items = page.locator('#gallery .gallery-item.video');
+        await expect(items.first()).toBeVisible();
+
+        const total = await items.count();
+        expect(total).toBeGreaterThanOrEqual(startIndex + count);
+
+        const result = [];
+        for (let index = 0; index < count; index++) {
+            const locator = items.nth(startIndex + index);
+            result.push({
+                locator,
+                path: await locator.getAttribute('data-path'),
+            });
+        }
+
+        return result;
+    }
+
     async function setTagsViaApi(page, filePath, tags) {
         const response = await page.request.put('/api/tags/file', {
             data: { path: filePath, tags },
@@ -201,6 +220,21 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
         await expect(page.locator('#lightbox')).toBeVisible();
     }
 
+    async function setDeterministicVideoToolbarState(page) {
+        await page.evaluate(() => {
+            if (globalThis.Preferences) {
+                globalThis.Preferences.set('videoAutoplay', true);
+                globalThis.Preferences.set('mediaLoop', false);
+            }
+
+            globalThis.Lightbox?.updateAutoplayButton?.();
+            globalThis.Lightbox?.updateLoopButton?.();
+            document.getElementById('lightbox-tag')?.classList.add('has-tags');
+            document.getElementById('lightbox-collection')?.classList.add('active');
+            globalThis.Lightbox?.showUIOverlays?.();
+        });
+    }
+
     async function setTagManagerReferenceRows(page) {
         await page.evaluate(() => {
             if (!window.settingsManager) {
@@ -284,6 +318,7 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
         const drawer = page.locator('.lightbox-tags-drawer');
         await page.evaluate(() => {
             globalThis.Lightbox?.openTagsDrawer?.();
+            document.getElementById('lightbox-collection')?.classList.add('active');
         });
         await expect(drawer).toBeVisible();
         await expect(drawer.locator('.drawer-tags-list')).toContainText('night-sky');
@@ -291,9 +326,37 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
         await assertMatchesReference(page, lightbox, 'tagging-lightbox-drawer.png', testInfo, {
             snapshotOptions: {
                 maxNodes: 160,
-                ignoreTextSelectors: ['#lightbox-clock'],
+                ignoreTextSelectors: ['#lightbox-clock', '#lightbox-counter'],
+                ignoreSelectors: ['#lightbox-clock'],
             },
         });
+    });
+
+    test('matches lightbox video toolbar reference', async ({ page }, testInfo) => {
+        const [videoItem] = await getVideoItems(page, 1, 0);
+
+        await openLightboxForPath(page, videoItem.path);
+        await expect(page.locator('#lightbox')).toHaveClass(/video-mode/);
+        await setDeterministicVideoToolbarState(page);
+
+        const toolbar = page.locator('#lightbox-toolbar');
+        await expect(toolbar).toBeVisible();
+        await expect(page.locator('#lightbox-autoplay')).toBeVisible();
+        await expect(page.locator('#lightbox-loop-toggle')).toBeVisible();
+        await expect(page.locator('#lightbox-collection')).toBeVisible();
+
+        await assertMatchesReference(
+            page,
+            toolbar,
+            'tagging-lightbox-video-toolbar.png',
+            testInfo,
+            {
+                snapshotOptions: {
+                    maxNodes: 80,
+                    ignoreTextSelectors: ['#lightbox-clock'],
+                },
+            }
+        );
     });
 
     test('matches tag manager reference', async ({ page }, testInfo) => {

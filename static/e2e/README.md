@@ -145,6 +145,7 @@ This workflow:
 
 Current outputs:
 
+- `docs/images/lightbox-video-toolbar.png`
 - `docs/images/tagging-bulk-modal.png`
 - `docs/images/tagging-paste-modal.png`
 - `docs/images/tagging-merge-modal.png`
@@ -154,7 +155,7 @@ Current outputs:
 - `docs/images/tagging-suggestions-empty.png`
 - `docs/images/tagging-suggestions-typed.png`
 
-Covered flows include single-item tagging suggestions, bulk tagging, paste and merge flows, the lightbox tag drawer, search-result tag filtering, and the settings tag manager.
+Covered flows include single-item tagging suggestions, bulk tagging, paste and merge flows, the lightbox tag drawer, the video lightbox toolbar, search-result tag filtering, and the settings tag manager.
 
 Treat this spec as a reusable pattern for future documentation capture work.
 

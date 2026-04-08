@@ -25,6 +25,10 @@ function getLightboxVideoControls(page) {
     return getLightboxVideoWrapper(page).locator('.video-controls');
 }
 
+function getLightboxToolbar(page) {
+    return page.locator('#lightbox-toolbar');
+}
+
 function getGalleryItemThumb(itemLocator) {
     return itemLocator.locator('.gallery-item-thumb');
 }
@@ -278,6 +282,119 @@ async function revealLightboxVideoControls(page) {
         window.Lightbox?.videoPlayer?.showControls?.('e2e');
     });
     await expect(getLightboxVideoControls(page)).toHaveClass(/show/);
+}
+
+async function setDeterministicVideoToolbarState(
+    page,
+    { videoAutoplay = true, mediaLoop = false } = {}
+) {
+    await page.evaluate(
+        ({ nextVideoAutoplay, nextMediaLoop }) => {
+            if (globalThis.Preferences) {
+                globalThis.Preferences.set('videoAutoplay', nextVideoAutoplay);
+                globalThis.Preferences.set('mediaLoop', nextMediaLoop);
+            }
+
+            globalThis.Lightbox?.updateAutoplayButton?.();
+            globalThis.Lightbox?.updateLoopButton?.();
+            globalThis.Lightbox?.showUIOverlays?.();
+        },
+        { nextVideoAutoplay: videoAutoplay, nextMediaLoop: mediaLoop }
+    );
+}
+
+async function getLightboxToolbarLayout(page) {
+    return await page.evaluate(() => {
+        const toolbar = document.getElementById('lightbox-toolbar');
+        if (!toolbar) {
+            return null;
+        }
+
+        const round = (value) => Math.round(value * 100) / 100;
+        const toRect = (element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                left: round(rect.left),
+                top: round(rect.top),
+                right: round(rect.right),
+                bottom: round(rect.bottom),
+                width: round(rect.width),
+                height: round(rect.height),
+            };
+        };
+
+        const isVisible = (element) => {
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return (
+                style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                Number.parseFloat(style.opacity || '1') > 0 &&
+                rect.width > 0 &&
+                rect.height > 0
+            );
+        };
+
+        const buttons = Array.from(toolbar.querySelectorAll('button'))
+            .filter((button) => isVisible(button))
+            .map((button) => {
+                const icon = button.querySelector('svg');
+                return {
+                    id: button.id,
+                    rect: toRect(button),
+                    iconRect: icon ? toRect(icon) : null,
+                };
+            });
+
+        return {
+            toolbarRect: toRect(toolbar),
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            buttons,
+        };
+    });
+}
+
+function assertLightboxToolbarLayout(layout, expectedButtonIds) {
+    expect(layout).toBeTruthy();
+    expect(layout.buttons.length).toBeGreaterThanOrEqual(expectedButtonIds.length);
+
+    const buttonsById = new Map(layout.buttons.map((button) => [button.id, button]));
+    const orderedButtons = expectedButtonIds.map((id) => {
+        expect(buttonsById.has(id)).toBe(true);
+        return buttonsById.get(id);
+    });
+
+    const sortedIds = [...orderedButtons]
+        .sort((left, right) => left.rect.left - right.rect.left)
+        .map((button) => button.id);
+    expect(sortedIds).toEqual(expectedButtonIds);
+
+    const referenceTop = orderedButtons[0].rect.top;
+    const referenceHeight = orderedButtons[0].rect.height;
+    const referenceWidth = orderedButtons[0].rect.width;
+    const referenceIconWidth = orderedButtons[0].iconRect?.width ?? 0;
+    const referenceIconHeight = orderedButtons[0].iconRect?.height ?? 0;
+
+    for (const button of orderedButtons) {
+        expect(Math.abs(button.rect.top - referenceTop)).toBeLessThanOrEqual(2);
+        expect(Math.abs(button.rect.height - referenceHeight)).toBeLessThanOrEqual(2);
+        expect(Math.abs(button.rect.width - referenceWidth)).toBeLessThanOrEqual(2);
+        expect(button.rect.left).toBeGreaterThanOrEqual(layout.toolbarRect.left - 1);
+        expect(button.rect.right).toBeLessThanOrEqual(layout.toolbarRect.right + 1);
+        expect(button.rect.top).toBeGreaterThanOrEqual(layout.toolbarRect.top - 1);
+        expect(button.rect.bottom).toBeLessThanOrEqual(layout.toolbarRect.bottom + 1);
+
+        if (button.iconRect) {
+            expect(Math.abs(button.iconRect.width - referenceIconWidth)).toBeLessThanOrEqual(2);
+            expect(Math.abs(button.iconRect.height - referenceIconHeight)).toBeLessThanOrEqual(2);
+        }
+    }
+
+    for (let index = 1; index < orderedButtons.length; index++) {
+        const previousButton = orderedButtons[index - 1];
+        const currentButton = orderedButtons[index];
+        expect(currentButton.rect.left).toBeGreaterThan(previousButton.rect.right);
+    }
 }
 
 async function closeLightboxIfOpen(page) {
@@ -632,6 +749,32 @@ test.describe('Video Player @video @ui @player', () => {
         });
     });
 
+    test('should keep the video toolbar aligned without overlap on desktop', async ({ page }) => {
+        await runVideoLightboxTest(page, async () => {
+            if (await openFirstVideoInLightbox(page)) {
+                await setDeterministicVideoToolbarState(page, {
+                    videoAutoplay: true,
+                    mediaLoop: false,
+                });
+
+                const toolbar = getLightboxToolbar(page);
+                await expect(toolbar).toBeVisible();
+                await expect(page.locator('#lightbox-autoplay')).toBeVisible();
+                await expect(page.locator('#lightbox-loop-toggle')).toBeVisible();
+                await expect(page.locator('#lightbox-collection')).toBeVisible();
+
+                const layout = await getLightboxToolbarLayout(page);
+                assertLightboxToolbarLayout(layout, [
+                    'lightbox-pin',
+                    'lightbox-tag',
+                    'lightbox-autoplay',
+                    'lightbox-loop-toggle',
+                    'lightbox-collection',
+                ]);
+            }
+        });
+    });
+
     test('should display video duration', async ({ page }) => {
         await runVideoLightboxTest(page, async () => {
             const durationState = await runMockVideoCheck(page, 'duration');
@@ -701,5 +844,31 @@ test.describe('Lightbox - Mobile Touch Gestures @lightbox @ui @mobile @touch', (
                 expect(true).toBe(true);
             }
         }
+    });
+
+    test('should keep the video toolbar aligned on mobile', async ({ page }) => {
+        await runVideoLightboxTest(page, async () => {
+            if (await openFirstVideoInLightbox(page)) {
+                await setDeterministicVideoToolbarState(page, {
+                    videoAutoplay: true,
+                    mediaLoop: false,
+                });
+
+                const toolbar = getLightboxToolbar(page);
+                await expect(toolbar).toBeVisible();
+                await expect(page.locator('#lightbox-autoplay')).toBeVisible();
+                await expect(page.locator('#lightbox-loop-toggle')).toBeVisible();
+                await expect(page.locator('#lightbox-collection')).toBeVisible();
+
+                const layout = await getLightboxToolbarLayout(page);
+                assertLightboxToolbarLayout(layout, [
+                    'lightbox-pin',
+                    'lightbox-tag',
+                    'lightbox-autoplay',
+                    'lightbox-loop-toggle',
+                    'lightbox-collection',
+                ]);
+            }
+        });
     });
 });

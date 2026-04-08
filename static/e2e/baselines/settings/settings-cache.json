@@ -3,7 +3,7 @@
     "width": 650,
     "height": 650
   },
-  "text": "Settings Security Passkeys Cache Display Tags About Cache Management Manage thumbnail cache and media index. Use these options if you're experiencing display issues or have added new media. Rebuild Thumbnails Regenerate all thumbnail images. This may take a while depending on your library size. Current cache size: 4.1 MB (593 files) Rebuild Thumbnails Reindex Media Scan for new, modified, or deleted files. Usually happens automatically. Reindex Now Run Auto-Tagger Apply tags from embedded EXIF/IPTC metadata to all media files immediately. Run Now Clear Transcoded Videos Remove cached video transcodes to free up disk space. Current cache size: 690.8 MB (315 files) Clear Cache",
+  "text": "Settings Security Passkeys Cache Display Tags About Cache Management Manage thumbnail cache and media index. Use these options if you're experiencing display issues or have added new media. Rebuild Thumbnails Regenerate all thumbnail images. This may take a while depending on your library size. Current cache size: Rebuild Thumbnails Reindex Media Scan for new, modified, or deleted files. Usually happens automatically. Reindex Now Run Auto-Tagger Apply tags from embedded EXIF/IPTC metadata to all media files immediately. Run Now Clear Transcoded Videos Remove cached video transcodes to free up disk space. Current cache size: Clear Cache",
   "nodes": [
     {
       "tag": "div",
@@ -1125,7 +1125,6 @@
       "tag": "strong",
       "id": "thumbnail-cache-size",
       "classes": [],
-      "text": "4.1 MB (593 files)",
       "rect": {
         "x": 157,
         "y": 345,
@@ -1826,7 +1825,6 @@
       "tag": "strong",
       "id": "transcode-cache-size",
       "classes": [],
-      "text": "690.8 MB (315 files)",
       "rect": {
         "x": 157,
         "y": 693,

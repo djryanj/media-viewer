@@ -2018,11 +2018,13 @@ select:focus {
 }
 
 .lightbox-pin,
-.lightbox-tag {
-    position: absolute;
-    top: 0.5rem;
+.lightbox-tag,
+.lightbox-autoplay,
+.lightbox-loop-toggle,
+.lightbox-collection-btn {
     width: 40px;
     height: 40px;
+    flex: 0 0 auto;
     border: none;
     border-radius: 50%;
     background: rgb(255 255 255 / 10%);
@@ -2036,6 +2038,15 @@ select:focus {
         background var(--transition),
         color var(--transition),
         box-shadow var(--transition);
+}
+
+.lightbox-toolbar {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     z-index: 20;
 }
 
@@ -2059,14 +2070,6 @@ select:focus {
         color var(--transition),
         box-shadow var(--transition);
     z-index: 10;
-}
-
-.lightbox-pin {
-    left: 0.5rem;
-}
-
-.lightbox-tag {
-    left: 3.5rem;
 }
 
 .lightbox-pin:active,
@@ -2197,25 +2200,7 @@ select:focus {
 
 /* Lightbox Autoplay */
 .lightbox-autoplay {
-    position: absolute;
-    top: 0.5rem;
-    left: 7rem;
-    width: 40px;
-    height: 40px;
-    border: none;
-    border-radius: 50%;
-    background: rgb(255 255 255 / 10%);
-    color: var(--text-secondary);
     font-size: 1.25rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-        background var(--transition),
-        color var(--transition),
-        box-shadow var(--transition);
-    z-index: 20;
 }
 
 .lightbox-autoplay:hover,
@@ -2235,25 +2220,7 @@ select:focus {
 
 /* Lightbox Loop Toggle */
 .lightbox-loop-toggle {
-    position: absolute;
-    top: 0.5rem;
-    left: 10.5rem;
-    width: 40px;
-    height: 40px;
-    border: none;
-    border-radius: 50%;
-    background: rgb(255 255 255 / 10%);
-    color: var(--text-secondary);
     font-size: 1.25rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-        background var(--transition),
-        color var(--transition),
-        box-shadow var(--transition);
-    z-index: 20;
 }
 
 .lightbox-loop-toggle:hover,
@@ -2304,25 +2271,7 @@ select:focus {
 
 /* Lightbox Collection Button */
 .lightbox-collection-btn {
-    position: absolute;
-    top: 0.5rem;
-    left: 14rem;
-    width: 40px;
-    height: 40px;
-    border: none;
-    border-radius: 50%;
-    background: rgb(255 255 255 / 10%);
-    color: var(--text-secondary);
     font-size: 1.25rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-        background var(--transition),
-        color var(--transition),
-        box-shadow var(--transition);
-    z-index: 20;
 }
 
 .lightbox-collection-btn:hover,
@@ -3986,26 +3935,17 @@ select:focus {
         right: 1rem;
     }
 
-    .lightbox-pin,
-    .lightbox-tag {
-        width: 44px;
-        height: 44px;
-        font-size: 1.5rem;
-    }
-
-    .lightbox-pin {
+    .lightbox-toolbar {
+        top: 1rem;
         left: 1rem;
+        gap: 0.875rem;
     }
 
-    .lightbox-autoplay {
-        left: 8rem;
-        width: 44px;
-        height: 44px;
-        font-size: 1.5rem;
-    }
-
-    .lightbox-loop-toggle {
-        left: 11.5rem;
+    .lightbox-pin,
+    .lightbox-tag,
+    .lightbox-autoplay,
+    .lightbox-loop-toggle,
+    .lightbox-collection-btn {
         width: 44px;
         height: 44px;
         font-size: 1.5rem;
@@ -8147,7 +8087,9 @@ svg.lucide {
 .lightbox-autoplay [data-lucide],
 .lightbox-autoplay svg.lucide,
 .lightbox-loop-toggle [data-lucide],
-.lightbox-loop-toggle svg.lucide {
+.lightbox-loop-toggle svg.lucide,
+.lightbox-collection-btn [data-lucide],
+.lightbox-collection-btn svg.lucide {
     width: 1.25rem;
     height: 1.25rem;
 }
@@ -8522,22 +8464,9 @@ svg.lucide {
         right: calc(0.5rem + env(safe-area-inset-right));
     }
 
-    .lightbox-pin,
-    .lightbox-tag,
-    .lightbox-autoplay {
+    .lightbox-toolbar {
         top: calc(0.5rem + env(safe-area-inset-top));
-    }
-
-    .lightbox-pin {
         left: calc(0.5rem + env(safe-area-inset-left));
-    }
-
-    .lightbox-tag {
-        left: calc(3.5rem + env(safe-area-inset-left));
-    }
-
-    .lightbox-autoplay {
-        left: calc(7rem + env(safe-area-inset-left));
     }
 
     .lightbox-info {
@@ -8592,16 +8521,9 @@ svg.lucide {
             right: 1rem;
         }
 
-        .lightbox-pin {
+        .lightbox-toolbar {
+            top: 1rem;
             left: 1rem;
-        }
-
-        .lightbox-tag {
-            left: 4.5rem;
-        }
-
-        .lightbox-autoplay {
-            left: 8rem;
         }
 
         .lightbox-info {

@@ -87,9 +87,12 @@ Click any image or video thumbnail to open it in the lightbox.
 | Close button (X)  | Close lightbox                 |
 | Star icon         | Toggle favorite                |
 | Tag icon          | Open tag manager               |
-| Play icon         | Toggle autoplay (images)       |
+| Play icon         | Toggle video autoplay          |
 | Loop icon         | Toggle video loop              |
+| Layers icon       | Open collections drawer        |
 | Download icon     | Download current file          |
+
+The lightbox groups these top-left actions into a single toolbar so favorites, tags, autoplay, loop, and collections stay aligned across desktop and mobile layouts.
 
 !!! tip "Auto-Hide Interface"
 After 3 seconds of viewing, control buttons and interface elements automatically fade away for an unobstructed view. Tap or click anywhere on the image or video to show or hide them. On desktop, moving your mouse shows controls automatically. Navigation arrows remain visible based on your settings.
