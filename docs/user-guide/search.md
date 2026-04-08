@@ -3,7 +3,7 @@
 Media Viewer provides powerful search capabilities to quickly find media in your library.
 
 <div align="center">
-  <img src="../images/search-desktop.gif" alt="Search functionality" width="700">
+  <img src="../../images/search-desktop.gif" alt="Search functionality" width="700">
   <p><em>Full-text search with tag filtering and autocomplete</em></p>
 </div>
 
@@ -107,7 +107,7 @@ When viewing search results, tags have search-focused behavior:
 **Note:** In search view, clicking tags searches rather than opening the tag editor. This helps you refine your search without leaving the results.
 
 <div align="center">
-  <img src="../images/tagging-search-filter-modal.png" alt="Search tag filter modal showing included and excluded tags" width="700">
+  <img src="../../images/tagging-search-filter-modal.png" alt="Search tag filter modal showing included and excluded tags" width="700">
   <p><em>Search-result tag controls let you include and exclude tags directly from the results view.</em></p>
 </div>
 

@@ -63,7 +63,7 @@ Access the Settings modal by clicking the ⚙️ gear icon in the header. It pro
 The **About** tab shows the application version and a summary of your library contents.
 
 <div align="center">
-  <img src="../images/settings-tab-about.png" alt="Settings About tab showing application version and library statistics" width="700">
+  <img src="../../images/settings-tab-about.png" alt="Settings About tab showing application version and library statistics" width="700">
   <p><em>The About tab shows the current application version and a breakdown of your library by media type.</em></p>
 </div>
 

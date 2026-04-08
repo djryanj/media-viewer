@@ -60,12 +60,12 @@ The Tag Manager in Settings provides centralized management for your entire tag 
 3. The Tag Manager shows all tags with statistics
 
 <div align="center">
-    <img src="../images/settings-tab-tags.png" alt="Settings Tags tab showing the full tag library with name, usage count, and action buttons" width="700">
+    <img src="../../images/settings-tab-tags.png" alt="Settings Tags tab showing the full tag library with name, usage count, and action buttons" width="700">
     <p><em>The Tags tab in Settings shows your full tag library — sort by name or usage, search, rename, or delete tags from one place.</em></p>
 </div>
 
 <div align="center">
-    <img src="../images/tagging-manager-settings.png" alt="Settings tag manager showing tag search and usage counts" width="700">
+    <img src="../../images/tagging-manager-settings.png" alt="Settings tag manager showing tag search and usage counts" width="700">
     <p><em>Type in the search bar to filter tags instantly; use the filter button to isolate unused tags.</em></p>
 </div>
 
@@ -246,12 +246,12 @@ When the current item or selection already has tags, the modal can suggest tags 
 - Group labels change with context, for example **Suggested Next** for an empty input and **Suggested Together** while filtering
 
 <div align="center">
-    <img src="../images/tagging-suggestions-empty.png" alt="Tag suggestion groups for an empty input" width="680">
+    <img src="../../images/tagging-suggestions-empty.png" alt="Tag suggestion groups for an empty input" width="680">
     <p><em>Suggested tags and recent tags are shown as separate groups when the modal opens.</em></p>
 </div>
 
 <div align="center">
-    <img src="../images/tagging-suggestions-typed.png" alt="Filtered tag suggestion groups while typing" width="680">
+    <img src="../../images/tagging-suggestions-typed.png" alt="Filtered tag suggestion groups while typing" width="680">
     <p><em>While filtering, related suggestions continue to outrank recent and generic matches.</em></p>
 </div>
 

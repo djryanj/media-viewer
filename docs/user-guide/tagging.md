@@ -3,7 +3,7 @@
 Tags are labels you assign to media items for organization and quick retrieval. Media Viewer provides a flexible tagging system that supports individual and bulk operations.
 
 <div align="center">
-  <img src="../images/bulk-tagging-mobile.gif" alt="Bulk tagging in action" width="400">
+  <img src="../../images/bulk-tagging-mobile.gif" alt="Bulk tagging in action" width="400">
   <p><em>Selection mode enables efficient bulk tagging on mobile</em></p>
 </div>
 
@@ -32,7 +32,7 @@ Tags are labels you assign to media items for organization and quick retrieval. 
 3. Add tags using the same process as above
 
 <div align="center">
-  <img src="../images/tagging-lightbox-drawer.png" alt="Lightbox tag drawer showing existing tags and quick actions" width="700">
+  <img src="../../images/tagging-lightbox-drawer.png" alt="Lightbox tag drawer showing existing tags and quick actions" width="700">
   <p><em>The lightbox drawer keeps tagging close to full-screen review, including copy and paste actions.</em></p>
 </div>
 
@@ -50,12 +50,12 @@ The tag modal also ranks suggestions to speed up repeat tagging:
 Depending on context, suggestions may be grouped as **Suggested Next**, **Recent Tags**, **Suggested Together**, **Recent Matches**, or **Other Matches**.
 
 <div align="center">
-  <img src="../images/tagging-suggestions-empty.png" alt="Tag modal showing Suggested Next and Recent Tags sections" width="700">
+  <img src="../../images/tagging-suggestions-empty.png" alt="Tag modal showing Suggested Next and Recent Tags sections" width="700">
   <p><em>Empty-input suggestions can highlight likely next tags and recently used tags before you start typing.</em></p>
 </div>
 
 <div align="center">
-  <img src="../images/tagging-suggestions-typed.png" alt="Tag modal showing filtered suggested and recent tag matches while typing" width="700">
+  <img src="../../images/tagging-suggestions-typed.png" alt="Tag modal showing filtered suggested and recent tag matches while typing" width="700">
   <p><em>Typing narrows the list while keeping related tags ahead of general matches.</em></p>
 </div>
 
@@ -99,7 +99,7 @@ Selection mode allows you to tag multiple items at once.
 Bulk tagging uses the combined tag set from the current selection to generate follow-up suggestions. Tags already present on the selected items are excluded automatically.
 
 <div align="center">
-  <img src="../images/tagging-bulk-modal.png" alt="Bulk tag modal showing shared and partial tags across a selection" width="700">
+  <img src="../../images/tagging-bulk-modal.png" alt="Bulk tag modal showing shared and partial tags across a selection" width="700">
   <p><em>The bulk tag modal shows shared tags, partial tags, and the combined context used for suggestions.</em></p>
 </div>
 
@@ -128,7 +128,7 @@ Media Viewer supports copying tags from one item and pasting them to others.
 4. Click **Paste Tags** to apply
 
 <div align="center">
-  <img src="../images/tagging-paste-modal.png" alt="Paste tags modal showing copied tags ready to apply" width="700">
+  <img src="../../images/tagging-paste-modal.png" alt="Paste tags modal showing copied tags ready to apply" width="700">
   <p><em>Paste previews the copied tag set before it is applied to the current selection.</em></p>
 </div>
 
@@ -145,7 +145,7 @@ When multiple items are selected, you can merge all their tags:
 All selected tags are applied to all selected items.
 
 <div align="center">
-  <img src="../images/tagging-merge-modal.png" alt="Merge tags modal showing the combined tag set from multiple selected items" width="700">
+  <img src="../../images/tagging-merge-modal.png" alt="Merge tags modal showing the combined tag set from multiple selected items" width="700">
   <p><em>Merge collects the full tag set across selected items so you can normalize related media in one step.</em></p>
 </div>
 
@@ -284,7 +284,7 @@ Tags are applied:
 3. **On demand** — use the **Run Auto-Tagger** button in **Settings → Cache** to trigger an immediate full pass
 
 <div align="center">
-  <img src="../images/settings-tab-cache.png" alt="Settings Cache tab showing the Run Auto-Tagger button among other cache actions" width="700">
+  <img src="../../images/settings-tab-cache.png" alt="Settings Cache tab showing the Run Auto-Tagger button among other cache actions" width="700">
   <p><em>The Cache tab in Settings lets you trigger an on-demand auto-tagger pass alongside other cache actions.</em></p>
 </div>
 
@@ -309,7 +309,7 @@ See [EXIF_TAGGING_ENABLED and EXIF_TAG_INTERVAL](../admin/environment-variables.
 Access the centralized Tag Manager from **Settings** → **Tags** tab to organize and maintain your entire tag library.
 
 <div align="center">
-  <img src="../images/settings-tab-tags.png" alt="Settings Tags tab showing the tag library with name, usage count, and action buttons" width="700">
+  <img src="../../images/settings-tab-tags.png" alt="Settings Tags tab showing the tag library with name, usage count, and action buttons" width="700">
   <p><em>The Tag Manager lists every tag in your library with usage counts and quick rename/delete actions.</em></p>
 </div>
 
