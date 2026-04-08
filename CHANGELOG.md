@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump github.com/mattn/go-sqlite3 from 1.14.40 to 1.14.41 ([#487](https://github.com/djryanj/media-viewer/pull/487))
 - test(frontend): The Playwright test workflow has been overhauled and stabilized. PRs now have a dedicated Chromium smoke lane, default E2E runs are split from visual-regression, docs-screenshot, and performance lanes, the static E2E coverage report is now trustworthy, and coverage has been expanded across collections, paginated search, playlist, and tags/favorites flows including tag-tooltip behavior. Contributor docs and the PR template were updated to match the new expectations. ([#289](https://github.com/djryanj/media-viewer/issues/289))
 - fix(deps): update go modules ([#484](https://github.com/djryanj/media-viewer/pull/484))
 - chore(deps): update docker/login-action action to v4.1.0 ([#483](https://github.com/djryanj/media-viewer/pull/483))
