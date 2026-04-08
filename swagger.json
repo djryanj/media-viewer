@@ -2595,6 +2595,43 @@
                 }
             }
         },
+        "/api/autotagger/run": {
+            "post": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Trigger EXIF auto-tagger run",
+                "description": "Starts an on-demand full EXIF auto-tagging pass in the background.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Auto-tagger run started",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Auto-tagger not configured"
+                    }
+                }
+            }
+        },
         "/api/reindex": {
             "post": {
                 "tags": [
