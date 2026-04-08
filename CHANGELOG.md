@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.17.0] - Unreleased
 
+### Added
+
+- feat: Media files can now be automatically tagged from embedded metadata. When the library is indexed, any tags encoded in a file's EXIF/XMP description field are merged into its tag set — no manual steps required. Tags from Lightroom, digiKam, Apple Photos, and similar tools that use standard keyword fields are also picked up automatically. Auto-tagging runs after every index pass and on a configurable periodic interval, and can be triggered on demand from the new "Run Auto-Tagger" button in Settings → Cache. ([#151](https://github.com/djryanj/media-viewer/issues/151))
+
 ### Changed
 
 - build(deps): bump github.com/mattn/go-sqlite3 from 1.14.40 to 1.14.41 ([#487](https://github.com/djryanj/media-viewer/pull/487))
+- build(deps): bump renovatebot/github-action from 46.1.7 to 46.1.8 ([#488](https://github.com/djryanj/media-viewer/pull/488))
 - test(frontend): The Playwright test workflow has been overhauled and stabilized. PRs now have a dedicated Chromium smoke lane, default E2E runs are split from visual-regression, docs-screenshot, and performance lanes, the static E2E coverage report is now trustworthy, and coverage has been expanded across collections, paginated search, playlist, and tags/favorites flows including tag-tooltip behavior. Contributor docs and the PR template were updated to match the new expectations. ([#289](https://github.com/djryanj/media-viewer/issues/289))
 - fix(deps): update go modules ([#484](https://github.com/djryanj/media-viewer/pull/484))
 - chore(deps): update docker/login-action action to v4.1.0 ([#483](https://github.com/djryanj/media-viewer/pull/483))

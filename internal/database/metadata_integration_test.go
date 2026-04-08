@@ -289,3 +289,103 @@ func TestSetAndGetLastThumbnailRun(t *testing.T) {
 		t.Errorf("Expected zero time after clearing, got %v", ts2)
 	}
 }
+
+func TestGetLastExifTagRunNoValueIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Fetching when no value exists should return zero time, no error
+	ts, err := db.GetLastExifTagRun(ctx)
+	if err != nil {
+		t.Fatalf("GetLastExifTagRun on empty DB failed: %v", err)
+	}
+	if !ts.IsZero() {
+		t.Errorf("Expected zero time for missing key, got %v", ts)
+	}
+}
+
+func TestSetAndGetLastExifTagRunIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Set a specific time (truncate to seconds — RFC3339 resolution)
+	now := time.Now().Truncate(time.Second)
+	if err := db.SetLastExifTagRun(ctx, now); err != nil {
+		t.Fatalf("SetLastExifTagRun failed: %v", err)
+	}
+
+	ts, err := db.GetLastExifTagRun(ctx)
+	if err != nil {
+		t.Fatalf("GetLastExifTagRun failed: %v", err)
+	}
+	if !ts.Equal(now) {
+		t.Errorf("Expected %v, got %v", now, ts)
+	}
+
+	// Overwrite with a later time
+	later := now.Add(2 * time.Hour)
+	if err := db.SetLastExifTagRun(ctx, later); err != nil {
+		t.Fatalf("SetLastExifTagRun (update) failed: %v", err)
+	}
+
+	ts2, err := db.GetLastExifTagRun(ctx)
+	if err != nil {
+		t.Fatalf("GetLastExifTagRun after update failed: %v", err)
+	}
+	if !ts2.Equal(later) {
+		t.Errorf("After update: expected %v, got %v", later, ts2)
+	}
+
+	// Clear with zero time
+	if err := db.SetLastExifTagRun(ctx, time.Time{}); err != nil {
+		t.Fatalf("SetLastExifTagRun with zero time failed: %v", err)
+	}
+
+	ts3, err := db.GetLastExifTagRun(ctx)
+	if err != nil {
+		t.Fatalf("GetLastExifTagRun after zero-time set failed: %v", err)
+	}
+	if !ts3.IsZero() {
+		t.Errorf("Expected zero time after clearing, got %v", ts3)
+	}
+}
+
+func TestExifTagRunIsolatedFromThumbnailRunIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	thumbTime := time.Now().Truncate(time.Second)
+	exifTime := thumbTime.Add(90 * time.Minute)
+
+	if err := db.SetLastThumbnailRun(ctx, thumbTime); err != nil {
+		t.Fatalf("SetLastThumbnailRun failed: %v", err)
+	}
+	if err := db.SetLastExifTagRun(ctx, exifTime); err != nil {
+		t.Fatalf("SetLastExifTagRun failed: %v", err)
+	}
+
+	gotThumb, err := db.GetLastThumbnailRun(ctx)
+	if err != nil || !gotThumb.Equal(thumbTime) {
+		t.Errorf("Thumbnail run time contaminated by exif run: got %v, err %v", gotThumb, err)
+	}
+
+	gotExif, err := db.GetLastExifTagRun(ctx)
+	if err != nil || !gotExif.Equal(exifTime) {
+		t.Errorf("Exif run time wrong: got %v, err %v", gotExif, err)
+	}
+}

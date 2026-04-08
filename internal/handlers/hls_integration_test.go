@@ -55,7 +55,7 @@ func setupHLSIntegrationTest(t *testing.T) (h *Handlers, mediaDir, cacheDir stri
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 	cfg := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
 
-	return New(db, idx, trans, thumbGen, cfg), mediaDir, cacheDir
+	return New(db, idx, trans, thumbGen, cfg, nil), mediaDir, cacheDir
 }
 
 // writeMockFFProbe writes a mock ffprobe script that returns a HEVC/1080p

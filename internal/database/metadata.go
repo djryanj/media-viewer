@@ -62,3 +62,31 @@ func (d *Database) SetLastThumbnailRun(ctx context.Context, t time.Time) error {
 	}
 	return d.SetMetadata(ctx, "last_thumbnail_run", t.Format(time.RFC3339))
 }
+
+// GetLastExifTagRun returns the timestamp of the last EXIF auto-tagging run.
+func (d *Database) GetLastExifTagRun(ctx context.Context) (time.Time, error) {
+	value, err := d.GetMetadata(ctx, "last_exif_tag_run")
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	if value == "" {
+		return time.Time{}, nil
+	}
+
+	timestamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return timestamp, nil
+}
+
+// SetLastExifTagRun stores the timestamp of the last EXIF auto-tagging run.
+func (d *Database) SetLastExifTagRun(ctx context.Context, t time.Time) error {
+	if t.IsZero() {
+		return d.SetMetadata(ctx, "last_exif_tag_run", "")
+	}
+	return d.SetMetadata(ctx, "last_exif_tag_run", t.Format(time.RFC3339))
+}
