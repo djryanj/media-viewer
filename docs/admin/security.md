@@ -55,7 +55,7 @@ Users can change the password from the Settings modal:
 5. Click **Update Password**
 
 <div align="center">
-  <img src="../images/settings-tab-security.png" alt="Settings Security tab showing the Change Password form" width="700">
+    <img src="../../images/settings-tab-security.png" alt="Settings Security tab showing the Change Password form" width="700">
   <p><em>The Security tab provides a form to change the account password.</em></p>
 </div>
 

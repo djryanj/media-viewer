@@ -1,7 +1,7 @@
 # WebAuthn (Passkey) Authentication User Guide
 
 <div align="center">
-  <img src="../images/passkeys-mobile.gif" alt="Passkey authentication flow" width="400">
+  <img src="../../images/passkeys-mobile.gif" alt="Passkey authentication flow" width="400">
   <p><em>Secure biometric authentication with passkeys</em></p>
 </div>
 
@@ -49,7 +49,7 @@
 ### Managing Passkeys
 
 <div align="center">
-  <img src="../images/settings-tab-passkeys.png" alt="Settings Passkeys tab showing registered passkeys and the Add Passkey button" width="700">
+  <img src="../../images/settings-tab-passkeys.png" alt="Settings Passkeys tab showing registered passkeys and the Add Passkey button" width="700">
   <p><em>The Passkeys tab lists registered passkeys and lets you add or remove them.</em></p>
 </div>
 

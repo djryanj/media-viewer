@@ -3,7 +3,7 @@
 This guide covers the essential features to get you started with Media Viewer in five minutes.
 
 <div align="center">
-  <img src="../images/basics-desktop.gif" alt="Media Viewer basics" width="700">
+  <img src="../../images/basics-desktop.gif" alt="Media Viewer basics" width="700">
 </div>
 
 ## First-Time Setup

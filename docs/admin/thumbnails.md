@@ -31,7 +31,7 @@ The thumbnail cache can grow significantly for large libraries. Plan storage acc
 ## Cache Management
 
 <div align="center">
-  <img src="../images/settings-tab-cache.png" alt="Settings Cache tab showing Rebuild Thumbnails, Reindex Media, Run Auto-Tagger, and Clear Transcoded Videos actions" width="700">
+  <img src="../../images/settings-tab-cache.png" alt="Settings Cache tab showing Rebuild Thumbnails, Reindex Media, Run Auto-Tagger, and Clear Transcoded Videos actions" width="700">
   <p><em>The Cache tab in Settings provides quick access to all cache and index maintenance actions.</em></p>
 </div>
 
