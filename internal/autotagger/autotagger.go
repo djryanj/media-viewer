@@ -18,7 +18,9 @@ const (
 
 	// exifFetchPageSize controls how many DB rows are loaded per round-trip
 	// during a full pass.
-	exifFetchPageSize = 500
+	exifFetchPageSize  = 500
+	runTypeFull        = "full"
+	runTypeIncremental = "incremental"
 )
 
 var errAutoTaggerStopped = errors.New("autotagger stopped")
@@ -306,9 +308,9 @@ func (a *AutoTagger) startHeartbeat(startTime time.Time, incremental bool) chan 
 
 func (a *AutoTagger) finishRun(startTime time.Time, incremental bool, completedAt time.Time, runErr error) {
 	duration := time.Since(startTime)
-	runType := "full"
+	runType := runTypeFull
 	if incremental {
-		runType = "incremental"
+		runType = runTypeIncremental
 	}
 
 	a.runMu.Lock()
@@ -460,9 +462,9 @@ func (a *AutoTagger) logProgress(incremental bool) {
 	stats := a.runStats
 	a.runMu.RUnlock()
 
-	runType := "full"
+	runType := runTypeFull
 	if incremental {
-		runType = "incremental"
+		runType = runTypeIncremental
 	}
 
 	if stats.TotalFiles > 0 {
@@ -489,9 +491,9 @@ func (a *AutoTagger) logStillRunning(startTime time.Time, incremental bool) {
 	stats := a.runStats
 	a.runMu.RUnlock()
 
-	runType := "full"
+	runType := runTypeFull
 	if incremental {
-		runType = "incremental"
+		runType = runTypeIncremental
 	}
 
 	elapsed := time.Since(startTime).Round(time.Second)

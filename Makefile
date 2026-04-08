@@ -65,7 +65,7 @@ FORCE ?= 0
 		frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-file-auto \
         frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug \
         frontend-test-e2e-coverage frontend-test-e2e-report \
-		gofmt lint lint-fix lint-all lint-fix-all format-all check-all \
+		fmt gofmt lint lint-fix lint-all lint-fix-all format-all check-all \
         clean clean-all \
         docker-build docker-build-dev docker-run \
         icons docs-serve docs-build docs-deploy \
@@ -543,9 +543,26 @@ pr-check-all:
 # Go Lint Targets
 # =============================================================================
 
+fmt: format-all
+	@echo "Formatting finished."
+
 gofmt: _check-go-version
 	@echo "Formatting Go code..."
-	@gofmt -w $$(git ls-files '*.go')
+	@files="$$(gofmt -l $$(git ls-files '*.go'))"; \
+	if [ -z "$$files" ]; then \
+		echo "  No Go formatting changes needed."; \
+	else \
+		echo "  Updating Go files:"; \
+		printf '%s\n' "$$files" | sed 's/^/    - /'; \
+		gofmt -w $$files; \
+		remaining="$$(gofmt -l $$files)"; \
+		if [ -n "$$remaining" ]; then \
+			echo "  Remaining Go formatting issues:"; \
+			printf '%s\n' "$$remaining" | sed 's/^/    - /'; \
+			exit 1; \
+		fi; \
+		echo "  Go formatting complete."; \
+	fi
 
 lint: _check-go-version
 	@echo "Linting Go code..."
@@ -587,7 +604,22 @@ frontend-lint-css-fix:
 
 frontend-format:
 	@echo "Formatting frontend code..."
-	cd $(STATIC_DIR) && npm run format
+	@cd $(STATIC_DIR) && \
+	files="$$(npx prettier --list-different "js/**/*.js" "css/**/*.css" "*.html" 2>/dev/null || true)"; \
+	if [ -z "$$files" ]; then \
+		echo "  No frontend formatting changes needed."; \
+	else \
+		echo "  Updating frontend files:"; \
+		printf '%s\n' "$$files" | sed 's/^/    - /'; \
+		npm run format; \
+		remaining="$$(npx prettier --list-different "js/**/*.js" "css/**/*.css" "*.html" 2>/dev/null || true)"; \
+		if [ -n "$$remaining" ]; then \
+			echo "  Remaining frontend formatting issues:"; \
+			printf '%s\n' "$$remaining" | sed 's/^/    - /'; \
+			exit 1; \
+		fi; \
+		echo "  Frontend formatting complete."; \
+	fi
 
 frontend-format-check:
 	@echo "Checking frontend code formatting..."
@@ -1121,6 +1153,7 @@ help:
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo " Go Lint"
 	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  fmt                Format Go and frontend code"
 	@echo "  gofmt              Format Go code"
 	@echo "  lint               Lint Go code"
 	@echo "  lint-fix           Fix Go lint issues"
