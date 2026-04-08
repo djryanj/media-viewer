@@ -119,6 +119,7 @@ const Lightbox = {
             prevBtn: document.querySelector('.lightbox-prev'),
             nextBtn: document.querySelector('.lightbox-next'),
             content: document.querySelector('.lightbox-content'),
+            toolbar: document.getElementById('lightbox-toolbar'),
             pinBtn: document.getElementById('lightbox-pin'),
             tagBtn: document.getElementById('lightbox-tag'),
             downloadBtn: document.getElementById('lightbox-download'),
@@ -159,9 +160,8 @@ const Lightbox = {
             this.toggleAutoplay();
         });
 
-        const info = this.elements.lightbox.querySelector('.lightbox-info');
-        if (info) {
-            info.parentNode.insertBefore(toggle, info);
+        if (this.elements.toolbar) {
+            this.elements.toolbar.appendChild(toggle);
         } else {
             this.elements.lightbox.appendChild(toggle);
         }
@@ -205,9 +205,8 @@ const Lightbox = {
             this.toggleLoop();
         });
 
-        const info = this.elements.lightbox.querySelector('.lightbox-info');
-        if (info) {
-            info.parentNode.insertBefore(toggle, info);
+        if (this.elements.toolbar) {
+            this.elements.toolbar.appendChild(toggle);
         } else {
             this.elements.lightbox.appendChild(toggle);
         }
@@ -2589,9 +2588,8 @@ const Lightbox = {
             }
         });
 
-        const info = this.elements.lightbox.querySelector('.lightbox-info');
-        if (info) {
-            info.parentNode.insertBefore(btn, info);
+        if (this.elements.toolbar) {
+            this.elements.toolbar.appendChild(btn);
         } else {
             this.elements.lightbox.appendChild(btn);
         }

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- fix(frontend): The lightbox's top-left action icons now stay aligned in a single toolbar instead of overlapping or drifting out of sync between desktop and mobile layouts. Pin, tag, autoplay, loop, and collections controls now share the same toolbar layout and sizing rules, and the change is covered by updated docs screenshots plus new layout and visual-regression tests. ([#490](https://github.com/djryanj/media-viewer/issues/490))
 - fix(frontend): Overflow tag tooltips now load and initialize correctly on the main page, including after the DOM is already ready, so tooltip search/remove behavior works reliably in the app and in end-to-end coverage. ([#289](https://github.com/djryanj/media-viewer/issues/289))
 - fix(frontend): Opening media via its parent directory now correctly handles both paged `/api/media` envelopes and plain array payloads when reconstructing the lightbox item list, fixing a gallery/lightbox fallback regression uncovered by the new frontend tests. ([#289](https://github.com/djryanj/media-viewer/issues/289))
 

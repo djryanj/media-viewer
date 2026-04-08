@@ -11,6 +11,7 @@ const SCREENSHOTS = {
     pasteModal: path.join(DOCS_IMAGE_DIR, 'tagging-paste-modal.png'),
     mergeModal: path.join(DOCS_IMAGE_DIR, 'tagging-merge-modal.png'),
     lightboxDrawer: path.join(DOCS_IMAGE_DIR, 'tagging-lightbox-drawer.png'),
+    lightboxVideoToolbar: path.join(DOCS_IMAGE_DIR, 'lightbox-video-toolbar.png'),
     searchFilterModal: path.join(DOCS_IMAGE_DIR, 'tagging-search-filter-modal.png'),
     settingsManager: path.join(DOCS_IMAGE_DIR, 'tagging-manager-settings.png'),
 };
@@ -49,6 +50,61 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         }
 
         return result;
+    }
+
+    async function getVideoItems(page, count = 1, startIndex = 0) {
+        const items = page.locator('#gallery .gallery-item.video');
+        await expect(items.first()).toBeVisible();
+
+        const total = await items.count();
+        expect(total).toBeGreaterThanOrEqual(startIndex + count);
+
+        const result = [];
+        for (let index = 0; index < count; index++) {
+            const locator = items.nth(startIndex + index);
+            result.push({
+                locator,
+                path: await locator.getAttribute('data-path'),
+                name:
+                    (await locator.getAttribute('data-name')) || `video-${startIndex + index + 1}`,
+            });
+        }
+
+        return result;
+    }
+
+    async function setLightboxToolbarReferenceState(page, options = {}) {
+        const {
+            videoAutoplay = true,
+            mediaLoop = false,
+            hasTags = true,
+            inCollection = true,
+        } = options;
+
+        await page.evaluate(
+            ({ nextVideoAutoplay, nextMediaLoop, nextHasTags, nextInCollection }) => {
+                if (typeof Preferences !== 'undefined') {
+                    Preferences.set('videoAutoplay', nextVideoAutoplay);
+                    Preferences.set('mediaLoop', nextMediaLoop);
+                }
+
+                globalThis.Lightbox?.updateAutoplayButton?.();
+                globalThis.Lightbox?.updateLoopButton?.();
+                document
+                    .getElementById('lightbox-tag')
+                    ?.classList.toggle('has-tags', Boolean(nextHasTags));
+                document
+                    .getElementById('lightbox-collection')
+                    ?.classList.toggle('active', Boolean(nextInCollection));
+                globalThis.Lightbox?.showUIOverlays?.();
+            },
+            {
+                nextVideoAutoplay: videoAutoplay,
+                nextMediaLoop: mediaLoop,
+                nextHasTags: hasTags,
+                nextInCollection: inCollection,
+            }
+        );
     }
 
     async function setTagsViaApi(page, filePath, tags) {
@@ -752,7 +808,36 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(drawer).toBeVisible();
         await expect(drawer.locator('.drawer-tags-list')).toContainText('night-sky');
 
+        await setLightboxToolbarReferenceState(page, {
+            videoAutoplay: false,
+            mediaLoop: false,
+            hasTags: true,
+            inCollection: true,
+        });
+
         await captureScreenshot(page, lightbox, SCREENSHOTS.lightboxDrawer);
+    });
+
+    test('captures lightbox video toolbar screenshot', async ({ page }) => {
+        const [videoItem] = await getVideoItems(page, 1, 0);
+
+        await openLightboxForPath(page, videoItem.path);
+        await expect(page.locator('#lightbox')).toHaveClass(/video-mode/);
+
+        await setLightboxToolbarReferenceState(page, {
+            videoAutoplay: true,
+            mediaLoop: false,
+            hasTags: true,
+            inCollection: true,
+        });
+
+        const toolbar = page.locator('#lightbox-toolbar');
+        await expect(toolbar).toBeVisible();
+        await expect(page.locator('#lightbox-autoplay')).toBeVisible();
+        await expect(page.locator('#lightbox-loop-toggle')).toBeVisible();
+        await expect(page.locator('#lightbox-collection')).toBeVisible();
+
+        await captureScreenshot(page, toolbar, SCREENSHOTS.lightboxVideoToolbar);
     });
 
     test('captures search tag filter modal screenshot', async ({ page }) => {

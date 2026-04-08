@@ -9,6 +9,27 @@ import {
 
 const VISUAL_BASELINE_DIR = path.resolve(process.cwd(), 'e2e', 'baselines', 'settings');
 
+const TAG_MANAGER_REFERENCE_ROWS = [
+    { name: 'architecture', count: 3 },
+    { name: 'landscape', count: 2 },
+    { name: 'vacation', count: 2 },
+    { name: 'beautiful', count: 1 },
+    { name: 'Black & White', count: 1 },
+    { name: 'dance', count: 1 },
+    { name: 'fancy', count: 1 },
+    { name: 'favorites', count: 1 },
+    { name: 'group', count: 1 },
+    { name: 'Indoor', count: 1 },
+    { name: 'long-exposure', count: 1 },
+    { name: 'lovely group', count: 1 },
+    { name: 'nature', count: 1 },
+    { name: 'night-sky', count: 1 },
+    { name: 'Portrait', count: 1 },
+    { name: 'Street Photography', count: 1 },
+    { name: 'sunset', count: 1 },
+    { name: 'family', count: 0 },
+];
+
 /**
  * Open the settings modal on a given tab and wait for the panel to be active.
  *
@@ -31,6 +52,29 @@ async function closeSettings(page) {
         await page.evaluate(() => window.settingsManager?.close());
         await expect(modal).toHaveClass(/hidden/);
     }
+}
+
+async function setTagManagerReferenceRows(page) {
+    await page.evaluate((referenceRows) => {
+        if (!window.settingsManager) {
+            return;
+        }
+
+        const searchInput = document.getElementById('tag-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+        }
+
+        window.settingsManager.allTags = referenceRows.map((row) => ({ ...row }));
+        window.settingsManager.filteredTags = referenceRows.map((row) => ({ ...row }));
+        window.settingsManager.showingUnused = false;
+        window.settingsManager.currentSort = { field: 'count', order: 'desc' };
+        window.settingsManager.renderTags();
+        window.settingsManager.updateSortIndicators();
+    }, TAG_MANAGER_REFERENCE_ROWS);
+
+    await expect(page.locator('#tag-list-body')).toContainText('architecture');
+    await expect(page.locator('#tag-list-body')).toContainText('family');
 }
 
 /**
@@ -128,7 +172,12 @@ test.describe('Settings Modal Visual Regression @visual @settings', () => {
             page.locator('#settings-modal .settings-modal-content'),
             'settings-cache.png',
             testInfo,
-            { snapshotOptions: { maxNodes: 200 } }
+            {
+                snapshotOptions: {
+                    maxNodes: 200,
+                    ignoreTextSelectors: ['#thumbnail-cache-size', '#transcode-cache-size'],
+                },
+            }
         );
     });
 
@@ -161,6 +210,8 @@ test.describe('Settings Modal Visual Regression @visual @settings', () => {
                 { timeout: 10_000 }
             )
             .toBe(true);
+
+        await setTagManagerReferenceRows(page);
 
         await assertMatchesReference(
             page,

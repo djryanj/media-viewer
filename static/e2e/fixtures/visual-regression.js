@@ -80,6 +80,7 @@ export async function captureVisualSnapshot(page, locator, options = {}) {
 
         const rootRect = element.getBoundingClientRect();
         const ignoreTextSelectors = snapshotOptions.ignoreTextSelectors ?? [];
+        const ignoreSelectors = snapshotOptions.ignoreSelectors ?? [];
         const styleKeys = snapshotOptions.styleKeys ?? [
             'display',
             'position',
@@ -116,16 +117,26 @@ export async function captureVisualSnapshot(page, locator, options = {}) {
                 .replace(/\s+/g, ' ')
                 .trim();
 
+        const shouldIgnoreNode = (node) =>
+            ignoreSelectors.some((selector) => node.matches(selector) || node.closest(selector));
+
         const shouldIgnoreText = (node) =>
             ignoreTextSelectors.some((selector) => node.matches(selector));
 
         const getSnapshotText = (targetElement) => {
-            if (!ignoreTextSelectors.length) {
+            if (!ignoreTextSelectors.length && !ignoreSelectors.length) {
                 return normalizeText(targetElement.innerText || targetElement.textContent || '');
             }
 
-            const ignoredNodes = ignoreTextSelectors.flatMap((selector) =>
-                Array.from(targetElement.querySelectorAll(selector))
+            const ignoredNodes = Array.from(
+                new Set([
+                    ...ignoreTextSelectors.flatMap((selector) =>
+                        Array.from(targetElement.querySelectorAll(selector))
+                    ),
+                    ...ignoreSelectors.flatMap((selector) =>
+                        Array.from(targetElement.querySelectorAll(selector))
+                    ),
+                ])
             );
             const originalState = ignoredNodes.map((ignoredNode) => ({
                 ignoredNode,
@@ -169,6 +180,10 @@ export async function captureVisualSnapshot(page, locator, options = {}) {
 
         nodes.forEach((node) => {
             if (!(node instanceof HTMLElement)) {
+                return;
+            }
+
+            if (shouldIgnoreNode(node)) {
                 return;
             }
 
