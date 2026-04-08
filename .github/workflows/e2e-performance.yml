@@ -1,0 +1,278 @@
+name: E2E Performance
+
+on:
+    workflow_dispatch:
+        inputs:
+            run_soak:
+                description: Run the long-running soak tier in addition to the baseline performance suite
+                required: false
+                type: boolean
+                default: false
+    schedule:
+        - cron: '0 7 * * 1'
+        - cron: '0 8 1 * *'
+
+permissions:
+    contents: read
+
+concurrency:
+    group: e2e-performance-${{ github.event_name }}-${{ github.event.schedule || github.run_id }}
+    cancel-in-progress: false
+
+jobs:
+    prepare-sample-media:
+        name: Prepare Sample Media
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+            - name: Check if sample media cache exists
+              id: cache-check
+              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  lookup-only: true
+
+            - name: Install media tools
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl
+
+            - name: Download sample media
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              run: |
+                  chmod +x ./hack/download-sample-media.sh
+                  ./hack/download-sample-media.sh
+              env:
+                  MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
+
+            - name: Save sample media cache
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+    build-binary:
+        name: Build Binary
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+            - name: Install libvips
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up Go
+              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Build application
+              run: make build
+
+            - name: Upload binary artifact
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: media-viewer-binary
+                  path: media-viewer
+                  retention-days: 1
+
+    performance-smoke:
+        name: Frontend E2E Performance Smoke
+        runs-on: ubuntu-latest
+        needs: [prepare-sample-media, build-binary]
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Node.js
+              uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+              with:
+                  node-version: '24.14.1'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Install Playwright Chromium
+              working-directory: ./static
+              run: npx playwright install --with-deps chromium
+
+            - name: Download backend binary
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              with:
+                  name: media-viewer-binary
+                  path: .
+
+            - name: Make binary executable
+              run: chmod +x ./media-viewer
+
+            - name: Restore sample media cache
+              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Copy sample media to runtime location
+              run: |
+                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
+
+            - name: Run baseline performance suite
+              run: make frontend-test-e2e-performance-smoke-auto
+              env:
+                  CI: true
+                  MEDIA_DIR: /tmp/media
+                  BINARY_PATH: ${{ github.workspace }}/media-viewer
+                  TEST_SERVER_SKIP_BUILD: 'true'
+                  TEST_SERVER_KEEP_TEMP: 'true'
+                  TEST_SERVER_LOG_LEVEL: info
+                  LOG_HEALTH_CHECKS: 'false'
+                  METRICS_ENABLED: 'false'
+
+            - name: Add job summary
+              if: always()
+              run: |
+                  echo "## Playwright Performance Smoke" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "- Suite: make frontend-test-e2e-performance-smoke" >> $GITHUB_STEP_SUMMARY
+                  echo "- Trigger: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+                  if [ "${{ github.event_name }}" = "schedule" ]; then
+                    echo "- Schedule: ${{ github.event.schedule }}" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+            - name: Upload backend logs on failure
+              if: failure()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: performance-backend-server-logs-smoke
+                  path: ${{ env.TEST_SERVER_LOG }}
+                  retention-days: 7
+
+            - name: Upload performance smoke results
+              if: always()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: frontend-e2e-performance-smoke-results
+                  path: |
+                      static/e2e/test-results/
+                      static/e2e/test-results.json
+
+            - name: Upload performance smoke report
+              if: always()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: playwright-performance-smoke-report
+                  path: static/e2e/playwright-report/
+                  retention-days: 30
+
+    performance-soak:
+        name: Frontend E2E Performance Soak
+        runs-on: ubuntu-latest
+        needs: [prepare-sample-media, build-binary, performance-smoke]
+        if: |
+            (github.event_name == 'schedule' && github.event.schedule == '0 8 1 * *') ||
+            (github.event_name == 'workflow_dispatch' && inputs.run_soak)
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Node.js
+              uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+              with:
+                  node-version: '24.14.1'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Install Playwright Chromium
+              working-directory: ./static
+              run: npx playwright install --with-deps chromium
+
+            - name: Download backend binary
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              with:
+                  name: media-viewer-binary
+                  path: .
+
+            - name: Make binary executable
+              run: chmod +x ./media-viewer
+
+            - name: Restore sample media cache
+              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Copy sample media to runtime location
+              run: |
+                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
+
+            - name: Run soak performance suite
+              run: make frontend-test-e2e-performance-soak-auto
+              env:
+                  CI: true
+                  MEDIA_DIR: /tmp/media
+                  BINARY_PATH: ${{ github.workspace }}/media-viewer
+                  TEST_SERVER_SKIP_BUILD: 'true'
+                  TEST_SERVER_KEEP_TEMP: 'true'
+                  TEST_SERVER_LOG_LEVEL: info
+                  LOG_HEALTH_CHECKS: 'false'
+                  METRICS_ENABLED: 'false'
+
+            - name: Add job summary
+              if: always()
+              run: |
+                  echo "## Playwright Performance Soak" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "- Suite: make frontend-test-e2e-performance-soak" >> $GITHUB_STEP_SUMMARY
+                  echo "- Trigger: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+                  if [ "${{ github.event_name }}" = "schedule" ]; then
+                    echo "- Schedule: ${{ github.event.schedule }}" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+            - name: Upload backend logs on failure
+              if: failure()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: performance-backend-server-logs-soak
+                  path: ${{ env.TEST_SERVER_LOG }}
+                  retention-days: 7
+
+            - name: Upload soak results
+              if: always()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: frontend-e2e-performance-soak-results
+                  path: |
+                      static/e2e/test-results/
+                      static/e2e/test-results.json
+
+            - name: Upload soak report
+              if: always()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: playwright-performance-soak-report
+                  path: static/e2e/playwright-report/
+                  retention-days: 30

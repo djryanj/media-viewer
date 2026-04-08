@@ -1,11 +1,29 @@
 #!/usr/bin/env bash
 #
 # run-with-test-server.sh — Start an ephemeral media-viewer server and run a
-# command against it.  Designed for CI / pr-check so that:
+# command against it. Designed for both local auto targets and CI so they share
+# the same backend startup, readiness, and teardown behavior.
+#
+# Default behavior:
 #   • The server listens on a random free port (no conflict with make dev).
 #   • DATABASE_DIR and CACHE_DIR point at a fresh temp directory.
-#   • MEDIA_DIR is inherited from the environment (unchanged).
+#   • MEDIA_DIR is inherited from the environment; when set, playlist fixtures
+#     are prepared in that media tree before startup.
+#   • The helper waits for both /readyz and /api/auth/check so frontend tests
+#     do not race database/auth initialization.
 #   • The server is reliably killed on exit, even on Ctrl-C.
+#
+# Useful environment overrides:
+#   • BINARY_PATH: reuse an already-built binary instead of the default
+#     project-root media-viewer binary.
+#   • TEST_SERVER_SKIP_BUILD=true: skip the implicit `make build` step.
+#   • TEST_SERVER_KEEP_TEMP=true: preserve temp db/cache/log directories for
+#     CI artifact upload or local debugging.
+#   • TEST_SERVER_LOG_LEVEL=info: override backend log level for the helper.
+#   • TEST_SERVER_READY_TIMEOUT / TEST_SERVER_AUTH_TIMEOUT: tune readiness
+#     waits for slower environments.
+#   • TEST_SERVER_TMPDIR_ROOT: choose the parent directory for temp state.
+#   • TEST_SERVER_WAIT_FOR_AUTH=false: skip the auth endpoint readiness check.
 #
 # Usage:
 #   ./hack/run-with-test-server.sh <command> [args...]
@@ -16,6 +34,8 @@
 # Examples:
 #   ./hack/run-with-test-server.sh make frontend-test-integration
 #   ./hack/run-with-test-server.sh make frontend-test-e2e
+#   TEST_SERVER_SKIP_BUILD=true BINARY_PATH=./media-viewer MEDIA_DIR=/tmp/media \
+#     ./hack/run-with-test-server.sh make frontend-test-e2e-smoke
 
 set -euo pipefail
 
@@ -45,18 +65,35 @@ fi
 # ── Locate project root (directory containing the Makefile) ─────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARY="$PROJECT_ROOT/media-viewer"
+BINARY="${BINARY_PATH:-$PROJECT_ROOT/media-viewer}"
+TEST_SERVER_SKIP_BUILD="${TEST_SERVER_SKIP_BUILD:-false}"
+TEST_SERVER_KEEP_TEMP="${TEST_SERVER_KEEP_TEMP:-false}"
+TEST_SERVER_WAIT_FOR_AUTH="${TEST_SERVER_WAIT_FOR_AUTH:-true}"
+TEST_SERVER_READY_TIMEOUT="${TEST_SERVER_READY_TIMEOUT:-30}"
+TEST_SERVER_AUTH_TIMEOUT="${TEST_SERVER_AUTH_TIMEOUT:-15}"
+TEST_SERVER_TMPDIR_ROOT="${TEST_SERVER_TMPDIR_ROOT:-}"
+TEST_SERVER_LOG_LEVEL="${TEST_SERVER_LOG_LEVEL:-${LOG_LEVEL:-warn}}"
 
 # ── Build the server binary ─────────────────────────────────────────────────
-info "Building server binary..."
-make -C "$PROJECT_ROOT" build
+if [ "$TEST_SERVER_SKIP_BUILD" = "true" ]; then
+    info "Using existing server binary: $BINARY"
+else
+    info "Building server binary..."
+    make -C "$PROJECT_ROOT" build
+fi
+
 if [ ! -x "$BINARY" ]; then
-    error "Build succeeded but binary not found at $BINARY"
+    error "Server binary not found or not executable at $BINARY"
     exit 1
 fi
 
 # ── Create ephemeral directories ────────────────────────────────────────────
-TMPDIR_BASE="$(mktemp -d "${TMPDIR:-/tmp}/media-viewer-test.XXXXXXXXXX")"
+if [ -n "$TEST_SERVER_TMPDIR_ROOT" ]; then
+    mkdir -p "$TEST_SERVER_TMPDIR_ROOT"
+    TMPDIR_BASE="$(mktemp -d "$TEST_SERVER_TMPDIR_ROOT/media-viewer-test.XXXXXXXXXX")"
+else
+    TMPDIR_BASE="$(mktemp -d "${TMPDIR:-/tmp}/media-viewer-test.XXXXXXXXXX")"
+fi
 TEST_DATABASE_DIR="$TMPDIR_BASE/db"
 TEST_CACHE_DIR="$TMPDIR_BASE/cache"
 SERVER_LOG="$TMPDIR_BASE/server.log"
@@ -144,9 +181,11 @@ cleanup() {
         error "Exiting with code $exit_code"
     fi
 
-    if [ -d "$TMPDIR_BASE" ]; then
+    if [ "$TEST_SERVER_KEEP_TEMP" != "true" ] && [ -d "$TMPDIR_BASE" ]; then
         info "Removing temp directory: $TMPDIR_BASE"
         rm -rf "$TMPDIR_BASE"
+    elif [ "$TEST_SERVER_KEEP_TEMP" = "true" ]; then
+        info "Keeping temp directory: $TMPDIR_BASE"
     fi
 
     return $exit_code
@@ -154,13 +193,29 @@ cleanup() {
 
 trap cleanup EXIT INT TERM HUP
 
+if [ -n "${GITHUB_ENV:-}" ]; then
+    {
+        echo "TEST_SERVER_TMPDIR=$TMPDIR_BASE"
+        echo "TEST_SERVER_LOG=$SERVER_LOG"
+        echo "TEST_SERVER_DATABASE_DIR=$TEST_DATABASE_DIR"
+        echo "TEST_SERVER_CACHE_DIR=$TEST_CACHE_DIR"
+    } >> "$GITHUB_ENV"
+fi
+
 # ── Start the server ────────────────────────────────────────────────────────
 info "Starting server..."
+
+if [ -n "${MEDIA_DIR:-}" ]; then
+    bash "$SCRIPT_DIR/ensure-test-playlist.sh" "$MEDIA_DIR"
+    export MEDIA_DIR
+fi
 
 PORT="$TEST_PORT" \
 DATABASE_DIR="$TEST_DATABASE_DIR" \
 CACHE_DIR="$TEST_CACHE_DIR" \
-LOG_LEVEL="${LOG_LEVEL:-warn}" \
+METRICS_ENABLED="${METRICS_ENABLED:-false}" \
+LOG_HEALTH_CHECKS="${LOG_HEALTH_CHECKS:-false}" \
+LOG_LEVEL="$TEST_SERVER_LOG_LEVEL" \
 "$BINARY" >"$SERVER_LOG" 2>&1 &
 
 SERVER_PID=$!
@@ -168,7 +223,7 @@ info "Server started (PID $SERVER_PID)"
 
 # ── Wait for readiness ──────────────────────────────────────────────────────
 READY_URL="${TEST_BASE_URL}/readyz"
-TIMEOUT=30
+TIMEOUT="$TEST_SERVER_READY_TIMEOUT"
 INTERVAL=1
 
 info "Waiting for server to be ready at $READY_URL (timeout: ${TIMEOUT}s)..."
@@ -195,6 +250,27 @@ if [ $elapsed -ge $TIMEOUT ]; then
     error "Server failed to become ready within ${TIMEOUT}s"
     dump_server_log 80
     exit 1
+fi
+
+if [ "$TEST_SERVER_WAIT_FOR_AUTH" = "true" ]; then
+    info "Verifying auth endpoint is ready..."
+    auth_elapsed=0
+    while [ $auth_elapsed -lt $TEST_SERVER_AUTH_TIMEOUT ]; do
+        AUTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "${TEST_BASE_URL}/api/auth/check" 2>/dev/null)
+        if [ "$AUTH_RESPONSE" != "000" ] && [ "$AUTH_RESPONSE" != "502" ] && [ "$AUTH_RESPONSE" != "503" ]; then
+            ok "Auth endpoint is ready (HTTP $AUTH_RESPONSE)"
+            break
+        fi
+
+        sleep "$INTERVAL"
+        auth_elapsed=$((auth_elapsed + INTERVAL))
+    done
+
+    if [ $auth_elapsed -ge $TEST_SERVER_AUTH_TIMEOUT ]; then
+        error "Auth endpoint failed to become ready within ${TEST_SERVER_AUTH_TIMEOUT}s"
+        dump_server_log 80
+        exit 1
+    fi
 fi
 
 # ── Run the user-supplied command ────────────────────────────────────────────

@@ -94,7 +94,7 @@ jobs:
                   sudo apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl
 
             - name: Download sample media
-              if: steps.cache-restore.outputs.cache-hit != 'true'
+              if: steps.cache-check.outputs.cache-hit != 'true'
               run: |
                   chmod +x ./hack/download-sample-media.sh
                   ./hack/download-sample-media.sh
@@ -466,75 +466,24 @@ jobs:
               run: |
                   cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
 
-            - name: Ensure playlist fixture exists
-              run: |
-                  chmod +x ./hack/ensure-test-playlist.sh
-                  ./hack/ensure-test-playlist.sh /tmp/media
-            - name: Start backend server
-              run: |
-                  mkdir -p /tmp/backend-logs
-                  MEDIA_DIR=/tmp/media \
-                  CACHE_DIR=/tmp/cache \
-                  DATABASE_DIR=/tmp/database \
-                  METRICS_ENABLED=false \
-                  LOG_HEALTH_CHECKS=false \
-                  LOG_LEVEL=info \
-                  ./media-viewer > /tmp/backend-logs/backend-stdout.log 2>&1 &
-                  BACKEND_PID=$!
-                  echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
-                  echo "Waiting for backend to be ready..."
-                  for i in {1..30}; do
-                    if curl -f http://localhost:8080/readyz > /dev/null 2>&1; then
-                      echo "Backend is ready!"
-                      break
-                    fi
-                    if [ $i -eq 30 ]; then
-                      echo "Backend failed to become ready within 30 seconds"
-                      echo "--- Backend logs ---"
-                      cat /tmp/backend-logs/backend-stdout.log
-                      exit 1
-                    fi
-                    sleep 1
-                  done
-                  sleep 5 # just because
-                  # Also verify the auth endpoint is responding (database is initialized)
-                  echo "Verifying auth endpoint is ready..."
-                  for i in {1..15}; do
-                    AUTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/auth/check 2>/dev/null)
-                    if [ "$AUTH_RESPONSE" != "000" ] && [ "$AUTH_RESPONSE" != "502" ] && [ "$AUTH_RESPONSE" != "503" ]; then
-                      echo "Auth endpoint is ready (HTTP $AUTH_RESPONSE)"
-                      break
-                    fi
-                    if [ $i -eq 15 ]; then
-                      echo "Auth endpoint not ready after 15 seconds"
-                      exit 1
-                    fi
-                    sleep 1
-                  done
-                  echo "Backend is fully ready!"
-                  echo "--- Backend startup logs ---"
-                  cat /tmp/backend-logs/backend-stdout.log
-                  echo "--- End startup logs ---"
             - name: Run frontend integration tests
               run: |
-                  make frontend-test-integration
+                  make frontend-test-integration-auto
               env:
-                  TEST_BASE_URL: http://localhost:8080
+                  MEDIA_DIR: /tmp/media
+                  BINARY_PATH: ${{ github.workspace }}/media-viewer
+                  TEST_SERVER_SKIP_BUILD: 'true'
+                  TEST_SERVER_KEEP_TEMP: 'true'
+                  TEST_SERVER_LOG_LEVEL: info
+                  LOG_HEALTH_CHECKS: 'false'
+                  METRICS_ENABLED: 'false'
 
-            - name: Stop backend server
-              if: always()
-              run: |
-                  if [ -n "$BACKEND_PID" ]; then
-                    kill $BACKEND_PID || true
-                    # Give it a moment to flush logs
-                    sleep 2
-                  fi
             - name: Upload backend logs on failure
               if: failure()
               uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: backend-server-logs
-                  path: /tmp/backend-logs/
+                  path: ${{ env.TEST_SERVER_LOG }}
                   retention-days: 7
 
             - name: Upload frontend integration results
@@ -611,74 +560,25 @@ jobs:
               run: |
                   cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
 
-            - name: Ensure playlist fixture exists
-              run: |
-                  chmod +x ./hack/ensure-test-playlist.sh
-                  ./hack/ensure-test-playlist.sh /tmp/media
-
-            - name: Start backend server
-              run: |
-                  mkdir -p /tmp/backend-logs
-                  MEDIA_DIR=/tmp/media \
-                  CACHE_DIR=/tmp/cache \
-                  DATABASE_DIR=/tmp/database \
-                  METRICS_ENABLED=false \
-                  LOG_HEALTH_CHECKS=false \
-                  LOG_LEVEL=info \
-                  ./media-viewer > /tmp/backend-logs/backend-stdout.log 2>&1 &
-                  BACKEND_PID=$!
-                  echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
-                  echo "Waiting for backend to be ready..."
-                  for i in {1..30}; do
-                    if curl -f http://localhost:8080/readyz > /dev/null 2>&1; then
-                      echo "Backend is ready!"
-                      break
-                    fi
-                    if [ $i -eq 30 ]; then
-                      echo "Backend failed to become ready within 30 seconds"
-                      echo "--- Backend logs ---"
-                      cat /tmp/backend-logs/backend-stdout.log
-                      exit 1
-                    fi
-                    sleep 1
-                  done
-                  sleep 5
-                  echo "Verifying auth endpoint is ready..."
-                  for i in {1..15}; do
-                    AUTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/auth/check 2>/dev/null)
-                    if [ "$AUTH_RESPONSE" != "000" ] && [ "$AUTH_RESPONSE" != "502" ] && [ "$AUTH_RESPONSE" != "503" ]; then
-                      echo "Auth endpoint is ready (HTTP $AUTH_RESPONSE)"
-                      break
-                    fi
-                    if [ $i -eq 15 ]; then
-                      echo "Auth endpoint not ready after 15 seconds"
-                      exit 1
-                    fi
-                    sleep 1
-                  done
-                  echo "Backend is fully ready!"
-
             - name: Run Playwright smoke suite
               run: |
-                  make frontend-test-e2e-smoke
+                  make frontend-test-e2e-smoke-auto
               env:
                   CI: true
-                  TEST_BASE_URL: http://localhost:8080
-
-            - name: Stop backend server
-              if: always()
-              run: |
-                  if [ -n "$BACKEND_PID" ]; then
-                    kill $BACKEND_PID || true
-                    sleep 2
-                  fi
+                  MEDIA_DIR: /tmp/media
+                  BINARY_PATH: ${{ github.workspace }}/media-viewer
+                  TEST_SERVER_SKIP_BUILD: 'true'
+                  TEST_SERVER_KEEP_TEMP: 'true'
+                  TEST_SERVER_LOG_LEVEL: info
+                  LOG_HEALTH_CHECKS: 'false'
+                  METRICS_ENABLED: 'false'
 
             - name: Upload backend logs on failure
               if: failure()
               uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: backend-server-logs-e2e-smoke
-                  path: /tmp/backend-logs/
+                  path: ${{ env.TEST_SERVER_LOG }}
                   retention-days: 7
 
             - name: Upload Playwright smoke results

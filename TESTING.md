@@ -36,6 +36,9 @@ make dev
 make frontend-test-integration
 cd static && npm run test:integration
 
+# Run integration tests with the same ephemeral backend lifecycle used in CI/pr-check
+make frontend-test-integration-auto
+
 # Run E2E tests
 make frontend-test-e2e
 cd static && npm run test:e2e
@@ -43,6 +46,13 @@ cd static && npm run test:e2e
 # Run the stable Chromium smoke lane used for routine PR coverage
 make frontend-test-e2e-smoke
 cd static && npm run test:e2e:smoke
+
+# Run the same smoke lane with the shared ephemeral backend helper
+make frontend-test-e2e-smoke-auto
+
+# Run the performance lanes with the shared ephemeral backend helper
+make frontend-test-e2e-performance-smoke-auto
+make frontend-test-e2e-performance-soak-auto
 
 # Run visual regression checks against committed JSON baselines
 make frontend-test-e2e-visual
@@ -77,6 +87,8 @@ See [static/tests/README.md](static/tests/README.md) for complete frontend testi
 
 The default `make frontend-test-e2e` / `npm run test:e2e` path excludes `@performance` specs and docs screenshot-generation specs so normal developer and PR runs stay predictable. Visual regression and docs screenshot generation are separate workflows.
 
+The `*-auto` frontend targets all route through `hack/run-with-test-server.sh`. That shared helper is also used by CI, so local auto runs, `make pr-check`, release smoke, and scheduled performance jobs now use the same backend startup and readiness checks.
+
 ## Continuous Integration
 
 Tests run automatically via GitHub Actions:
@@ -93,6 +105,8 @@ Tests run automatically via GitHub Actions:
 - **Unit tests** run on all PRs (no backend required, fast)
 - **Integration tests** run on all PRs (backend started automatically)
 - **Playwright smoke tests** run on all PRs (backend started automatically, Chromium only)
+- **Release smoke tests** rerun the Chromium smoke lane before tagged Docker publishing
+- **Scheduled performance tests** run through a separate weekly/monthly workflow using the same shared backend helper as local auto targets
 - **Visual regression** is a separate opt-in local workflow and is not part of the default PR lane
 - **Docs screenshot generation** is a separate opt-in local workflow and is not part of the default PR lane
 - **Coverage reports** uploaded as artifacts

@@ -299,74 +299,106 @@ jobs:
               run: |
                   cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
 
-            - name: Start backend server
-              run: |
-                  mkdir -p /tmp/backend-logs
-                  MEDIA_DIR=/tmp/media \
-                  CACHE_DIR=/tmp/cache \
-                  DATABASE_DIR=/tmp/database \
-                  METRICS_ENABLED=false \
-                  LOG_HEALTH_CHECKS=false \
-                  LOG_LEVEL=info \
-                  ./media-viewer > /tmp/backend-logs/backend-stdout.log 2>&1 &
-                  BACKEND_PID=$!
-                  echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
-                  echo "Waiting for backend to be ready..."
-                  for i in {1..30}; do
-                    if curl -f http://localhost:8080/readyz > /dev/null 2>&1; then
-                      echo "Backend is ready!"
-                      break
-                    fi
-                    if [ $i -eq 30 ]; then
-                      echo "Backend failed to become ready within 30 seconds"
-                      echo "--- Backend logs ---"
-                      cat /tmp/backend-logs/backend-stdout.log
-                      exit 1
-                    fi
-                    sleep 1
-                  done
-                  sleep 5
-                  echo "Verifying auth endpoint is ready..."
-                  for i in {1..15}; do
-                    AUTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/auth/check 2>/dev/null)
-                    if [ "$AUTH_RESPONSE" != "000" ] && [ "$AUTH_RESPONSE" != "502" ] && [ "$AUTH_RESPONSE" != "503" ]; then
-                      echo "Auth endpoint is ready (HTTP $AUTH_RESPONSE)"
-                      break
-                    fi
-                    if [ $i -eq 15 ]; then
-                      echo "Auth endpoint not ready after 15 seconds"
-                      exit 1
-                    fi
-                    sleep 1
-                  done
-                  echo "Backend is fully ready!"
-
             - name: Run frontend integration tests
-              run: make frontend-test-integration
+              run: make frontend-test-integration-auto
               env:
-                  TEST_BASE_URL: http://localhost:8080
-
-            - name: Stop backend server
-              if: always()
-              run: |
-                  if [ -n "$BACKEND_PID" ]; then
-                    kill $BACKEND_PID || true
-                    sleep 2
-                  fi
+                  MEDIA_DIR: /tmp/media
+                  BINARY_PATH: ${{ github.workspace }}/media-viewer
+                  TEST_SERVER_SKIP_BUILD: 'true'
+                  TEST_SERVER_KEEP_TEMP: 'true'
+                  TEST_SERVER_LOG_LEVEL: info
+                  LOG_HEALTH_CHECKS: 'false'
+                  METRICS_ENABLED: 'false'
 
             - name: Upload backend logs on failure
               if: failure()
               uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: backend-server-logs
-                  path: /tmp/backend-logs/
+                  path: ${{ env.TEST_SERVER_LOG }}
                   retention-days: 7
 
-            - name: Upload Playwright report
+    test-frontend-e2e-smoke:
+        name: Frontend Playwright Smoke
+        runs-on: ubuntu-latest
+        needs: [test-frontend-unit, build-binary, prepare-sample-media]
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libvips-dev ffmpeg
+
+            - name: Set up Node.js
+              uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+              with:
+                  node-version: '24.14.1'
+                  cache: 'npm'
+                  cache-dependency-path: static/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: ./static
+              run: npm ci
+
+            - name: Install Playwright Chromium
+              working-directory: ./static
+              run: npx playwright install --with-deps chromium
+
+            - name: Download backend binary
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              with:
+                  name: media-viewer-binary
+                  path: .
+
+            - name: Make binary executable
+              run: chmod +x ./media-viewer
+
+            - name: Restore sample media cache
+              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              with:
+                  path: ${{ github.workspace }}/.sample-media-cache
+                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+
+            - name: Copy sample media to runtime location
+              run: |
+                  cp -r ${{ github.workspace }}/.sample-media-cache /tmp/media
+
+            - name: Run Playwright smoke suite
+              run: make frontend-test-e2e-smoke-auto
+              env:
+                  CI: true
+                  MEDIA_DIR: /tmp/media
+                  BINARY_PATH: ${{ github.workspace }}/media-viewer
+                  TEST_SERVER_SKIP_BUILD: 'true'
+                  TEST_SERVER_KEEP_TEMP: 'true'
+                  TEST_SERVER_LOG_LEVEL: info
+                  LOG_HEALTH_CHECKS: 'false'
+                  METRICS_ENABLED: 'false'
+
+            - name: Upload backend logs on failure
+              if: failure()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: release-backend-server-logs-e2e-smoke
+                  path: ${{ env.TEST_SERVER_LOG }}
+                  retention-days: 7
+
+            - name: Upload Playwright smoke results
               if: always()
               uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
-                  name: playwright-report
+                  name: release-frontend-e2e-smoke-results
+                  path: |
+                      static/e2e/test-results/
+                      static/e2e/test-results.json
+
+            - name: Upload Playwright smoke report
+              if: always()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: release-playwright-smoke-report
                   path: static/e2e/playwright-report/
                   retention-days: 30
 
@@ -378,7 +410,12 @@ jobs:
         name: Build and Push Docker
         runs-on: ubuntu-latest
         needs:
-            [test-unit, test-integration, test-race, test-frontend-unit, test-frontend-integration]
+            - test-unit
+            - test-integration
+            - test-race
+            - test-frontend-unit
+            - test-frontend-integration
+            - test-frontend-e2e-smoke
         outputs:
             digest: ${{ steps.build-push.outputs.digest }}
             tags: ${{ steps.meta.outputs.tags }}
@@ -445,7 +482,12 @@ jobs:
         name: Build and Push Docker (NVIDIA)
         runs-on: ubuntu-latest
         needs:
-            [test-unit, test-integration, test-race, test-frontend-unit, test-frontend-integration]
+            - test-unit
+            - test-integration
+            - test-race
+            - test-frontend-unit
+            - test-frontend-integration
+            - test-frontend-e2e-smoke
         outputs:
             digest: ${{ steps.build-push.outputs.digest }}
             tags: ${{ steps.meta.outputs.tags }}
