@@ -2,7 +2,9 @@ package autotagger
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +21,23 @@ const (
 	exifFetchPageSize = 500
 )
 
+var errAutoTaggerStopped = errors.New("autotagger stopped")
+
+// runStats tracks autotagger progress for the active or most recent run.
+type runStats struct {
+	InProgress    bool      `json:"inProgress"`
+	StartedAt     time.Time `json:"startedAt,omitempty"`
+	LastCompleted time.Time `json:"lastCompleted,omitempty"`
+	CurrentFile   string    `json:"currentFile,omitempty"`
+	IsIncremental bool      `json:"isIncremental"`
+	TotalFiles    int       `json:"totalFiles"`
+	Processed     int       `json:"processed"`
+	Tagged        int       `json:"tagged"`
+	Skipped       int       `json:"skipped"`
+	Failed        int       `json:"failed"`
+	LastError     string    `json:"lastError,omitempty"`
+}
+
 // AutoTagger applies tags derived from EXIF/XMP metadata to indexed media files.
 //
 // It mirrors the ThumbnailGenerator scheduling model: it waits for the first
@@ -32,6 +51,8 @@ type AutoTagger struct {
 	stopChan        chan struct{}
 	onIndexComplete chan struct{}
 	isRunning       atomic.Bool
+	runMu           sync.RWMutex
+	runStats        runStats
 }
 
 // New creates a new AutoTagger.  When enabled is false [AutoTagger.Start] is a
@@ -124,7 +145,7 @@ func (a *AutoTagger) loop() {
 func (a *AutoTagger) runPass(incremental bool) {
 	// Guard against concurrent passes.
 	if !a.isRunning.CompareAndSwap(false, true) {
-		logging.Info("AutoTagger: pass already in progress, skipping")
+		logging.Info("AutoTagger: pass already in progress, skipping new request")
 		return
 	}
 	defer a.isRunning.Store(false)
@@ -134,6 +155,7 @@ func (a *AutoTagger) runPass(incremental bool) {
 
 	ctx := context.Background()
 	start := time.Now()
+	actualIncremental := incremental
 
 	if incremental {
 		lastRun, err := a.db.GetLastExifTagRun(ctx)
@@ -141,99 +163,212 @@ func (a *AutoTagger) runPass(incremental bool) {
 		case err != nil:
 			logging.Warn("AutoTagger: failed to read last run time, falling back to full pass: %v", err)
 			metrics.ExifTagErrorsTotal.Inc()
+			actualIncremental = false
 		case lastRun.IsZero():
 			logging.Info("AutoTagger: no previous run recorded, performing full pass")
+			actualIncremental = false
 		default:
-			a.runIncrementalPass(ctx, lastRun, start)
+			a.beginRun(start, true)
+			heartbeatDone := a.startHeartbeat(start, true)
+			completedAt, runErr := a.runIncrementalPass(ctx, lastRun)
+			close(heartbeatDone)
+			a.finishRun(start, true, completedAt, runErr)
 			return
 		}
 	}
 
-	a.runFullPass(ctx, start)
+	a.beginRun(start, actualIncremental)
+	heartbeatDone := a.startHeartbeat(start, actualIncremental)
+	completedAt, runErr := a.runFullPass(ctx)
+	close(heartbeatDone)
+	a.finishRun(start, false, completedAt, runErr)
 }
 
 // runIncrementalPass fetches only files changed since lastRun and processes them.
-func (a *AutoTagger) runIncrementalPass(ctx context.Context, lastRun, start time.Time) {
-	logging.Info("AutoTagger: incremental pass (changes since %v)", lastRun.Format(time.RFC3339))
+func (a *AutoTagger) runIncrementalPass(ctx context.Context, lastRun time.Time) (time.Time, error) {
+	logging.Info("AutoTagger: starting incremental pass (changes since %v)", lastRun.Format(time.RFC3339))
 
 	files, err := a.db.GetFilesUpdatedSince(ctx, lastRun)
 	if err != nil {
-		logging.Error("AutoTagger: failed to fetch updated files: %v", err)
 		metrics.ExifTagErrorsTotal.Inc()
-		return
+		return time.Time{}, err
 	}
 
-	tagged, failed := a.processFiles(ctx, files)
-	duration := time.Since(start)
+	files = filterTaggableFiles(files)
+	a.setTotalFiles(len(files))
+	logging.Info("AutoTagger: incremental pass discovered %d eligible files", len(files))
 
-	if err := a.db.SetLastExifTagRun(ctx, time.Now()); err != nil {
+	if len(files) == 0 {
+		completedAt := time.Now()
+		if err := a.db.SetLastExifTagRun(ctx, completedAt); err != nil {
+			logging.Warn("AutoTagger: failed to record run time: %v", err)
+		}
+		return completedAt, nil
+	}
+
+	if _, _, err := a.processFiles(ctx, files); err != nil {
+		return time.Time{}, err
+	}
+	a.logProgress(true)
+
+	completedAt := time.Now()
+	if err := a.db.SetLastExifTagRun(ctx, completedAt); err != nil {
 		logging.Warn("AutoTagger: failed to record run time: %v", err)
 	}
 
-	metrics.ExifTagRunsTotal.WithLabelValues("incremental").Inc()
-	metrics.ExifTagRunDuration.WithLabelValues("incremental").Observe(duration.Seconds())
-	metrics.ExifTagLastRunDuration.Set(duration.Seconds())
-	metrics.ExifTagLastTimestamp.Set(float64(time.Now().Unix()))
-
-	logging.Info("AutoTagger: incremental pass complete in %v — tagged %d files, %d errors",
-		duration.Round(time.Millisecond), tagged, failed)
+	return completedAt, nil
 }
 
 // runFullPass pages through all media files and processes them.
-func (a *AutoTagger) runFullPass(ctx context.Context, start time.Time) {
-	logging.Info("AutoTagger: full pass (page size %d)", exifFetchPageSize)
+func (a *AutoTagger) runFullPass(ctx context.Context) (time.Time, error) {
+	totalFiles, err := a.db.CountMediaFilesForAutoTagging(ctx)
+	if err != nil {
+		logging.Warn("AutoTagger: failed to count eligible files, continuing without total: %v", err)
+		metrics.ExifTagErrorsTotal.Inc()
+	} else {
+		a.setTotalFiles(totalFiles)
+	}
 
-	tagged, failed, total := 0, 0, 0
+	if totalFiles > 0 {
+		logging.Info("AutoTagger: starting full pass across %d eligible files (page size %d)", totalFiles, exifFetchPageSize)
+	} else {
+		logging.Info("AutoTagger: starting full pass (page size %d)", exifFetchPageSize)
+	}
+
 	offset := 0
-
 	for {
 		select {
 		case <-a.stopChan:
-			logging.Info("AutoTagger: stopped mid-full-pass after %d files", total)
-			return
+			return time.Time{}, errAutoTaggerStopped
 		default:
 		}
 
-		page, err := a.db.GetMediaFilesForThumbnailsPaged(ctx, offset, exifFetchPageSize)
+		page, err := a.db.GetMediaFilesForAutoTaggingPaged(ctx, offset, exifFetchPageSize)
 		if err != nil {
-			logging.Error("AutoTagger: failed to fetch files at offset %d: %v", offset, err)
 			metrics.ExifTagErrorsTotal.Inc()
-			break
+			return time.Time{}, err
 		}
 		if len(page) == 0 {
 			break
 		}
 
-		t, f := a.processFiles(ctx, page)
-		tagged += t
-		failed += f
-		total += len(page)
+		if _, _, err := a.processFiles(ctx, page); err != nil {
+			return time.Time{}, err
+		}
 		offset += len(page)
+		a.logProgress(false)
 
 		if len(page) < exifFetchPageSize {
 			break
 		}
 	}
 
-	duration := time.Since(start)
-
-	if err := a.db.SetLastExifTagRun(ctx, time.Now()); err != nil {
+	completedAt := time.Now()
+	if err := a.db.SetLastExifTagRun(ctx, completedAt); err != nil {
 		logging.Warn("AutoTagger: failed to record run time: %v", err)
 	}
+	return completedAt, nil
+}
 
-	metrics.ExifTagRunsTotal.WithLabelValues("full").Inc()
-	metrics.ExifTagRunDuration.WithLabelValues("full").Observe(duration.Seconds())
-	metrics.ExifTagLastRunDuration.Set(duration.Seconds())
-	metrics.ExifTagLastTimestamp.Set(float64(time.Now().Unix()))
+func (a *AutoTagger) beginRun(startTime time.Time, incremental bool) {
+	a.runMu.Lock()
+	a.runStats = runStats{
+		InProgress:    true,
+		StartedAt:     startTime,
+		IsIncremental: incremental,
+	}
+	stats := a.runStats
+	a.runMu.Unlock()
+	a.updateCurrentRunMetrics(stats)
+}
 
-	logging.Info("AutoTagger: full pass complete in %v — scanned %d files, tagged %d, %d errors",
-		duration.Round(time.Millisecond), total, tagged, failed)
+func (a *AutoTagger) startHeartbeat(startTime time.Time, incremental bool) chan struct{} {
+	done := make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				a.logStillRunning(startTime, incremental)
+			case <-done:
+				return
+			case <-a.stopChan:
+				return
+			}
+		}
+	}()
+
+	return done
+}
+
+func (a *AutoTagger) finishRun(startTime time.Time, incremental bool, completedAt time.Time, runErr error) {
+	duration := time.Since(startTime)
+	runType := "full"
+	if incremental {
+		runType = "incremental"
+	}
+
+	a.runMu.Lock()
+	a.runStats.InProgress = false
+	a.runStats.CurrentFile = ""
+	a.runStats.LastError = ""
+	if runErr != nil {
+		a.runStats.LastError = runErr.Error()
+	}
+	if !completedAt.IsZero() {
+		a.runStats.LastCompleted = completedAt
+	}
+	stats := a.runStats
+	a.runMu.Unlock()
+
+	a.resetCurrentRunMetrics()
+	a.updateLastRunMetrics(stats)
+
+	if runErr == nil {
+		metrics.ExifTagRunsTotal.WithLabelValues(runType).Inc()
+		metrics.ExifTagRunDuration.WithLabelValues(runType).Observe(duration.Seconds())
+		metrics.ExifTagLastRunDuration.Set(duration.Seconds())
+		metrics.ExifTagLastTimestamp.Set(float64(completedAt.Unix()))
+		logging.Info("AutoTagger: %s pass complete in %v: processed %d/%d files, tagged %d, skipped %d, failed %d",
+			runType,
+			duration.Round(time.Millisecond),
+			stats.Processed,
+			stats.TotalFiles,
+			stats.Tagged,
+			stats.Skipped,
+			stats.Failed)
+		return
+	}
+
+	if errors.Is(runErr, errAutoTaggerStopped) {
+		logging.Info("AutoTagger: %s pass stopped after %v: processed %d/%d files, tagged %d, skipped %d, failed %d",
+			runType,
+			duration.Round(time.Millisecond),
+			stats.Processed,
+			stats.TotalFiles,
+			stats.Tagged,
+			stats.Skipped,
+			stats.Failed)
+		return
+	}
+
+	logging.Error("AutoTagger: %s pass failed after %v: processed %d/%d files, tagged %d, skipped %d, failed %d: %v",
+		runType,
+		duration.Round(time.Millisecond),
+		stats.Processed,
+		stats.TotalFiles,
+		stats.Tagged,
+		stats.Skipped,
+		stats.Failed,
+		runErr)
 }
 
 // processFiles iterates over files, extracts EXIF tags, and merges them into
-// the database.  It returns the number of files that had tags applied and the
-// number that encountered errors.  Folders are silently skipped.
-func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFile) (tagged, failed int) {
+// the database. Folders are silently skipped.
+func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFile) (tagged, failed int, err error) {
 	for _, f := range files {
 		// Only images and videos carry EXIF/XMP metadata.
 		if f.Type != database.FileTypeImage && f.Type != database.FileTypeVideo {
@@ -242,20 +377,24 @@ func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFil
 
 		select {
 		case <-a.stopChan:
-			return
+			return tagged, failed, errAutoTaggerStopped
 		default:
 		}
 
+		a.setCurrentFile(f.Path)
 		absPath := filepath.Join(a.mediaDir, f.Path)
 		tags, err := extractTagsFromFile(ctx, absPath)
 		if err != nil {
 			logging.Debug("AutoTagger: skipping %s (ffprobe error): %v", f.Path, err)
 			metrics.ExifTagFilesTotal.WithLabelValues("failed").Inc()
+			metrics.ExifTagErrorsTotal.Inc()
+			a.recordOutcome("failed")
 			failed++
 			continue
 		}
 		if len(tags) == 0 {
 			metrics.ExifTagFilesTotal.WithLabelValues("skipped").Inc()
+			a.recordOutcome("skipped")
 			continue
 		}
 
@@ -263,13 +402,138 @@ func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFil
 			logging.Error("AutoTagger: failed to merge tags for %s: %v", f.Path, err)
 			metrics.ExifTagFilesTotal.WithLabelValues("failed").Inc()
 			metrics.ExifTagErrorsTotal.Inc()
+			a.recordOutcome("failed")
 			failed++
 			continue
 		}
 
 		logging.Debug("AutoTagger: applied tags %v to %s", tags, f.Path)
 		metrics.ExifTagFilesTotal.WithLabelValues("tagged").Inc()
+		a.recordOutcome("tagged")
 		tagged++
 	}
-	return
+	return tagged, failed, nil
+}
+
+func filterTaggableFiles(files []database.MediaFile) []database.MediaFile {
+	filtered := make([]database.MediaFile, 0, len(files))
+	for _, file := range files {
+		if file.Type == database.FileTypeImage || file.Type == database.FileTypeVideo {
+			filtered = append(filtered, file)
+		}
+	}
+	return filtered
+}
+
+func (a *AutoTagger) setTotalFiles(total int) {
+	a.runMu.Lock()
+	a.runStats.TotalFiles = total
+	stats := a.runStats
+	a.runMu.Unlock()
+	a.updateCurrentRunMetrics(stats)
+}
+
+func (a *AutoTagger) setCurrentFile(path string) {
+	a.runMu.Lock()
+	a.runStats.CurrentFile = path
+	a.runMu.Unlock()
+}
+
+func (a *AutoTagger) recordOutcome(outcome string) {
+	a.runMu.Lock()
+	a.runStats.Processed++
+	switch outcome {
+	case "tagged":
+		a.runStats.Tagged++
+	case "skipped":
+		a.runStats.Skipped++
+	case "failed":
+		a.runStats.Failed++
+	}
+	stats := a.runStats
+	a.runMu.Unlock()
+	a.updateCurrentRunMetrics(stats)
+}
+
+func (a *AutoTagger) logProgress(incremental bool) {
+	a.runMu.RLock()
+	stats := a.runStats
+	a.runMu.RUnlock()
+
+	runType := "full"
+	if incremental {
+		runType = "incremental"
+	}
+
+	if stats.TotalFiles > 0 {
+		logging.Info("AutoTagger: %s progress %d/%d files processed (tagged %d, skipped %d, failed %d)",
+			runType,
+			stats.Processed,
+			stats.TotalFiles,
+			stats.Tagged,
+			stats.Skipped,
+			stats.Failed)
+		return
+	}
+
+	logging.Info("AutoTagger: %s progress %d files processed (tagged %d, skipped %d, failed %d)",
+		runType,
+		stats.Processed,
+		stats.Tagged,
+		stats.Skipped,
+		stats.Failed)
+}
+
+func (a *AutoTagger) logStillRunning(startTime time.Time, incremental bool) {
+	a.runMu.RLock()
+	stats := a.runStats
+	a.runMu.RUnlock()
+
+	runType := "full"
+	if incremental {
+		runType = "incremental"
+	}
+
+	elapsed := time.Since(startTime).Round(time.Second)
+	if stats.TotalFiles > 0 {
+		logging.Info("AutoTagger still running (%s), elapsed time: %v, processed %d/%d files (tagged %d, skipped %d, failed %d)",
+			runType,
+			elapsed,
+			stats.Processed,
+			stats.TotalFiles,
+			stats.Tagged,
+			stats.Skipped,
+			stats.Failed)
+		return
+	}
+
+	logging.Info("AutoTagger still running (%s), elapsed time: %v, processed %d files (tagged %d, skipped %d, failed %d)",
+		runType,
+		elapsed,
+		stats.Processed,
+		stats.Tagged,
+		stats.Skipped,
+		stats.Failed)
+}
+
+func (a *AutoTagger) updateCurrentRunMetrics(stats runStats) {
+	metrics.ExifTagCurrentRunFiles.WithLabelValues("total").Set(float64(stats.TotalFiles))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues("processed").Set(float64(stats.Processed))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues("tagged").Set(float64(stats.Tagged))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues("skipped").Set(float64(stats.Skipped))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues("failed").Set(float64(stats.Failed))
+}
+
+func (a *AutoTagger) resetCurrentRunMetrics() {
+	for _, status := range []string{"total", "processed", "tagged", "skipped", "failed"} {
+		metrics.ExifTagCurrentRunFiles.WithLabelValues(status).Set(0)
+	}
+}
+
+func (a *AutoTagger) updateLastRunMetrics(stats runStats) {
+	metrics.ExifTagLastRunFiles.WithLabelValues("total").Set(float64(stats.TotalFiles))
+	metrics.ExifTagLastRunFiles.WithLabelValues("processed").Set(float64(stats.Processed))
+	metrics.ExifTagLastRunFiles.WithLabelValues("tagged").Set(float64(stats.Tagged))
+	metrics.ExifTagLastRunFiles.WithLabelValues("skipped").Set(float64(stats.Skipped))
+	metrics.ExifTagLastRunFiles.WithLabelValues("failed").Set(float64(stats.Failed))
 }

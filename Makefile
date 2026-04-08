@@ -65,7 +65,7 @@ FORCE ?= 0
 		frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-file-auto \
         frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug \
         frontend-test-e2e-coverage frontend-test-e2e-report \
-        lint lint-fix lint-all lint-fix-all format-all check-all \
+		gofmt lint lint-fix lint-all lint-fix-all format-all check-all \
         clean clean-all \
         docker-build docker-build-dev docker-run \
         icons docs-serve docs-build docs-deploy \
@@ -543,6 +543,10 @@ pr-check-all:
 # Go Lint Targets
 # =============================================================================
 
+gofmt: _check-go-version
+	@echo "Formatting Go code..."
+	@gofmt -w $$(git ls-files '*.go')
+
 lint: _check-go-version
 	@echo "Linting Go code..."
 	golangci-lint run --config=.golangci.yml
@@ -960,7 +964,7 @@ lint-all: lint frontend-lint
 lint-fix-all: lint-fix frontend-lint-fix
 	@echo "All lint fixes applied."
 
-format-all: frontend-format
+format-all: gofmt frontend-format
 	@echo "All formatting complete."
 
 check-all: lint frontend-check
@@ -1117,6 +1121,7 @@ help:
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo " Go Lint"
 	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  gofmt              Format Go code"
 	@echo "  lint               Lint Go code"
 	@echo "  lint-fix           Fix Go lint issues"
 	@echo ""

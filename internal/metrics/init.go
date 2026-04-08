@@ -68,6 +68,10 @@ func InitializeMetrics() {
 	for _, status := range []string{"tagged", "skipped", "failed"} {
 		ExifTagFilesTotal.WithLabelValues(status)
 	}
+	for _, status := range []string{"total", "processed", "tagged", "skipped", "failed"} {
+		ExifTagCurrentRunFiles.WithLabelValues(status)
+		ExifTagLastRunFiles.WithLabelValues(status)
+	}
 
 	// --- DB query operations ---
 	for _, op := range []string{"initialize_schema", "upsert_file", "delete_missing_files",

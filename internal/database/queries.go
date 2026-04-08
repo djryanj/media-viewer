@@ -1569,6 +1569,71 @@ func (d *Database) GetMediaFilesForThumbnailsPaged(ctx context.Context, offset, 
 	return files, nil
 }
 
+// GetMediaFilesForAutoTaggingPaged returns a page of image and video files
+// eligible for EXIF auto-tagging, ordered by path.
+func (d *Database) GetMediaFilesForAutoTaggingPaged(ctx context.Context, offset, limit int) ([]MediaFile, error) {
+	done := d.observeQuery("get_media_files_for_autotagging_paged")
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, name, path, parent_path, type, size, mod_time, mime_type
+		FROM files
+		WHERE type IN (?, ?)
+		ORDER BY path ASC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := d.reader.QueryContext(ctx, query, FileTypeImage, FileTypeVideo, limit, offset)
+	if err != nil {
+		done(err)
+		return nil, fmt.Errorf("failed to query EXIF auto-tagging files: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logging.Error("error closing rows: %v", err)
+		}
+	}()
+
+	files := make([]MediaFile, 0, limit)
+	for rows.Next() {
+		var f MediaFile
+		var modTime int64
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&f.ID,
+			&f.Name,
+			&f.Path,
+			&f.ParentPath,
+			&f.Type,
+			&f.Size,
+			&modTime,
+			&mimeType,
+		)
+		if err != nil {
+			logging.Warn("error scanning EXIF auto-tagging file row: %v", err)
+			continue
+		}
+
+		f.ModTime = time.Unix(modTime, 0)
+		if mimeType.Valid {
+			f.MimeType = mimeType.String
+		}
+
+		files = append(files, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		done(err)
+		return nil, fmt.Errorf("error iterating EXIF auto-tagging file rows: %w", err)
+	}
+
+	done(nil)
+	return files, nil
+}
+
 // CountMediaFilesForThumbnails returns the total number of media files (images, videos,
 // folders) eligible for thumbnail generation. This matches the population returned by
 // GetMediaFilesForThumbnailsPaged so that progress reporting shows an accurate denominator.
@@ -1585,6 +1650,27 @@ func (d *Database) CountMediaFilesForThumbnails(ctx context.Context) (int, error
 	if err != nil {
 		done(err)
 		return 0, fmt.Errorf("failed to count media files for thumbnails: %w", err)
+	}
+
+	done(nil)
+	return count, nil
+}
+
+// CountMediaFilesForAutoTagging returns the total number of image and video
+// files eligible for EXIF auto-tagging.
+func (d *Database) CountMediaFilesForAutoTagging(ctx context.Context) (int, error) {
+	done := d.observeQuery("count_media_files_for_autotagging")
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	query := `SELECT COUNT(*) FROM files WHERE type IN (?, ?)`
+
+	var count int
+	err := d.reader.QueryRowContext(ctx, query, FileTypeImage, FileTypeVideo).Scan(&count)
+	if err != nil {
+		done(err)
+		return 0, fmt.Errorf("failed to count EXIF auto-tagging files: %w", err)
 	}
 
 	done(nil)
