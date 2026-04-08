@@ -196,36 +196,57 @@ download_sample_videos() {
     local count=$1
     echo -e "${YELLOW}[INFO] Downloading $count sample videos...${NC}"
 
-    # Sample video URLs (creative commons / free to use)
-    # Commented out videos are large and caused timeouts in CI, but can be re-enabled for local testing.
-    local video_urls=(
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+    # ── Tier 1: Google TV sample CDN (CC, previously public; may return 403) ──
+    local primary_urls=(
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"     # large
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"   # large
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4"
+        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"           # large
         "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
-
     )
+
+    # ── Tier 2: Intel open-source sample videos (Apache-2.0) ──────────────────
+    # Hosted on GitHub raw CDN — very stable, small files (~1-4 MB each).
+    # Source: https://github.com/intel-iot-devkit/sample-videos
+    local alt_urls=(
+        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/bolt-detection.mp4"
+        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/head-pose-face-detection-male-and-female.mp4"
+        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/worker-zone-detection.mp4"
+        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/people-detection.mp4"
+        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/face-demographics-walking-and-pause.mp4"
+        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/car-detection.mp4"
+        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/face-demographics-walking.mp4"
+    )
+
+    # Combine tiers; record split point so we can log when tier 1 is exhausted
+    local num_primary=${#primary_urls[@]}
+    local video_urls=("${primary_urls[@]}" "${alt_urls[@]}")
 
     local downloaded=0
     local failed=0
-    for i in "${!video_urls[@]}"; do
+    local url_idx
+
+    for url_idx in "${!video_urls[@]}"; do
         if [ $downloaded -ge $count ]; then
             break
         fi
 
-        url="${video_urls[$i]}"
-        filename="sample_video_$(printf "%02d" $((i+1))).mp4"
-        filepath="$MEDIA_DIR/$filename"
+        # Log once when all tier-1 URLs have been tried without success
+        if [ $url_idx -eq $num_primary ] && [ $downloaded -eq 0 ]; then
+            echo -e "${YELLOW}  [WARN] All primary (GCS) sources failed, trying alternative sources...${NC}"
+        fi
 
-        # Check if file exists and is valid
+        local url="${video_urls[$url_idx]}"
+        # Name files sequentially by successful-download count, not by URL index.
+        # This prevents gaps (e.g. sample_video_07.mp4) when early URLs fail.
+        local filename="sample_video_$(printf "%02d" $((downloaded + 1))).mp4"
+        local filepath="$MEDIA_DIR/$filename"
+
+        # Skip files that already exist and are valid
         if [ -f "$filepath" ]; then
             if validate_video "$filepath"; then
                 echo "  [SKIP] $filename (already exists and valid)"
@@ -239,7 +260,7 @@ download_sample_videos() {
 
         echo "  [DOWNLOAD] Downloading: $filename..."
         echo "  [DEBUG] URL: $url" >&2
-        curl_output=$(curl -L -w "\n%{http_code}" --max-time 60 "$url" -o "$filepath" 2>&1)
+        curl_output=$(curl -L -w "\n%{http_code}" --max-time 90 "$url" -o "$filepath" 2>&1)
         curl_exit=$?
         http_code=$(echo "$curl_output" | tail -n1)
 
@@ -271,7 +292,6 @@ download_sample_videos() {
             if [ $curl_exit -eq 7 ]; then
                 echo "  [DEBUG] Error 7: Failed to connect to host. Check network/firewall." >&2
             fi
-            echo "  [DEBUG] URL: $url" >&2
             rm -f "$filepath"
             ((failed++))
         fi
@@ -281,20 +301,21 @@ download_sample_videos() {
 
     echo "  [INFO] Downloaded $downloaded videos"
 
-    # If all downloads failed, generate synthetic test videos with ffmpeg as fallback
-    # so downstream tests can still run. ffmpeg is available in the CI environment.
+    # ── Tier 3: ffmpeg synthetic fallback ──────────────────────────────────────
+    # If every real download failed, generate minimal valid videos so downstream
+    # tests can still run.  ffmpeg is installed in the CI prepare-sample-media job.
     if [ $downloaded -eq 0 ] && [ $failed -gt 0 ]; then
         if command -v ffmpeg &>/dev/null; then
             echo -e "${YELLOW}  [FALLBACK] All $failed download(s) failed. Generating $count synthetic test video(s) with ffmpeg...${NC}"
             local gen_count=0
-            for i in $(seq 1 $count); do
-                local gen_file="$MEDIA_DIR/sample_video_$(printf "%02d" $i).mp4"
+            for gen_idx in $(seq 1 $count); do
+                local gen_file="$MEDIA_DIR/sample_video_$(printf "%02d" $gen_idx).mp4"
                 if ffmpeg -y -f lavfi \
                           -i "testsrc=duration=5:size=320x240:rate=24" \
                           -f lavfi -i "sine=frequency=440:duration=5" \
                           -c:v libx264 -c:a aac -pix_fmt yuv420p \
                           -shortest "$gen_file" &>/dev/null; then
-                    echo "  [OK] Generated: sample_video_$(printf "%02d" $i).mp4 (synthetic fallback)"
+                    echo "  [OK] Generated: sample_video_$(printf "%02d" $gen_idx).mp4 (synthetic fallback)"
                     ((downloaded++))
                     ((gen_count++))
                 fi
@@ -869,6 +890,94 @@ embed_exif_tags_in_sample_media() {
     if embed_iptc_keywords "$f" "travel" "mountains" "landscape"; then
         echo "  [OK] picsum_011.jpg — IPTC Keywords: travel, mountains, landscape (standard field)"
         ((embedded++))
+    fi
+
+    # -----------------------------------------------------------------------
+    # Video metadata — ffmpeg format.tags (description / comment fields)
+    #
+    # For MP4/MKV the autotagger reads ffprobe's format.tags entries
+    # "description" and "comment" (case-insensitive).  ffmpeg embeds these
+    # via -metadata key=value when re-muxing.  We use -c copy to avoid
+    # re-encoding; a temp file is written then renamed in-place.
+    #
+    # Patterns covered:
+    #   sample_video_01 – explicit tags: prefix in description (primary path)
+    #   sample_video_02 – plain comma-separated keywords in description
+    #                     (extended path: 2–5 tokens, no sentence punctuation)
+    #   sample_video_03 – tags: prefix via comment field instead of description
+    #   sample_video_04 – plain description, no recognisable tag pattern
+    #                     (negative fixture)
+    #   sample_transcode_test.mkv – same tags: prefix pattern, different container
+    # -----------------------------------------------------------------------
+
+    if command -v ffmpeg &>/dev/null; then
+
+        # Helper: embed format-level metadata into an MP4 or MKV without re-encoding.
+        # Usage: embed_video_metadata <file> <key> <value>
+        embed_video_metadata() {
+            local file="$1"
+            local key="$2"
+            local value="$3"
+
+            if [ ! -f "$file" ]; then
+                echo "  [SKIP] $(basename "$file") not found"
+                return 1
+            fi
+
+            local ext="${file##*.}"
+            local tmp="${file}.tmp_meta.${ext}"
+            # -map_metadata 0 copies existing tags; -metadata key=value adds/overrides.
+            # #nosec G204 -- controlled inputs from MEDIA_DIR
+            if ffmpeg -y -i "$file" \
+                      -map_metadata 0 \
+                      -metadata "${key}=${value}" \
+                      -c copy "$tmp" &>/dev/null; then
+                mv "$tmp" "$file"
+                return 0
+            else
+                rm -f "$tmp"
+                echo "  [WARN] ffmpeg failed to embed metadata in $(basename "$file")"
+                return 1
+            fi
+        }
+
+        # --- sample_video_01: explicit tags: prefix in description ---
+        f="$MEDIA_DIR/sample_video_01.mp4"
+        if embed_video_metadata "$f" "description" "tags:outdoor, nature;"; then
+            echo "  [OK] sample_video_01.mp4 — description: 'tags:outdoor, nature;'"
+            ((embedded++))
+        fi
+
+        # --- sample_video_02: plain comma-separated keywords (extended path) ---
+        f="$MEDIA_DIR/sample_video_02.mp4"
+        if embed_video_metadata "$f" "description" "indoor, people, work"; then
+            echo "  [OK] sample_video_02.mp4 — description: 'indoor, people, work' (extended path)"
+            ((embedded++))
+        fi
+
+        # --- sample_video_03: tags: prefix in comment field ---
+        f="$MEDIA_DIR/sample_video_03.mp4"
+        if embed_video_metadata "$f" "comment" "tags:motion, detection;"; then
+            echo "  [OK] sample_video_03.mp4 — comment: 'tags:motion, detection;'"
+            ((embedded++))
+        fi
+
+        # --- sample_video_04: plain prose, no tag pattern (negative fixture) ---
+        f="$MEDIA_DIR/sample_video_04.mp4"
+        if embed_video_metadata "$f" "description" "A short sample clip with no tag markers."; then
+            echo "  [OK] sample_video_04.mp4 — no-tags description (negative fixture)"
+            ((embedded++))
+        fi
+
+        # --- sample_transcode_test.mkv: tags: prefix, mkv container ---
+        f="$MEDIA_DIR/sample_transcode_test.mkv"
+        if embed_video_metadata "$f" "description" "tags:test, transcode;"; then
+            echo "  [OK] sample_transcode_test.mkv — description: 'tags:test, transcode;'"
+            ((embedded++))
+        fi
+
+    else
+        echo -e "${YELLOW}  [WARN] ffmpeg not found; skipping video metadata embedding${NC}"
     fi
 
     echo "  [OK] Embedded metadata in $embedded files"
