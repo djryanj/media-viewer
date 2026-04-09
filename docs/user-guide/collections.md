@@ -2,6 +2,14 @@
 
 Collections let you save your own named groups of images and videos so you can come back to them later, browse them in order, and keep related items together without moving files on disk.
 
+<div align="center">
+	<video autoplay loop muted playsinline width="700">
+		<source src="../../images/collections-workflow.mp4" type="video/mp4">
+		<img src="../../images/collections-workflow.gif" alt="Collections workflow" width="700">
+	</video>
+	<p><em>Collections support quick filtering, secondary actions, and repeat curation workflows from a single panel.</em></p>
+</div>
+
 ## What Collections Are
 
 - Collections are custom groups that you create yourself.
@@ -39,6 +47,11 @@ When you add an item to collections, Media Viewer separates the experience into 
 
 If an item is already in a collection, you can browse that collection directly, reorder it, or remove the item from it.
 
+<div align="center">
+	<img src="../../images/collections-modal.png" alt="Collections modal showing current collections, recent collections, and create-new controls" width="700">
+	<p><em>The item-level collections modal keeps current memberships first, then surfaces recent collections for quick repeat actions.</em></p>
+</div>
+
 ## Browsing and Reordering
 
 Opening a collection switches the gallery into that collection's ordered view. This is useful when the order matters, such as for a shortlist or a presentation flow.
@@ -63,6 +76,11 @@ The collections manager gives you a compact overview of your collections and sup
 
 Recent collections are shown first where it helps speed up repeat actions.
 
+<div align="center">
+	<img src="../../images/collections-panel.png" alt="Collections manager panel showing collection search and secondary actions" width="700">
+	<p><em>The collections manager supports browse, search, reorder, rename, and delete actions without leaving the main library view.</em></p>
+</div>
+
 ## Lightbox Workflow
 
 The lightbox collection drawer is designed for quick curation while you are reviewing media one item at a time.
@@ -73,6 +91,11 @@ From the drawer you can:
 - browse or manage those collections
 - add the item to recent collections quickly
 - jump to the full collections modal when you want the complete workflow
+
+<div align="center">
+	<img src="../../images/collections-lightbox-drawer.png" alt="Lightbox collections drawer showing current and recent collections" width="520">
+	<p><em>The lightbox drawer mirrors the same membership-first model while keeping full-screen review in place.</em></p>
+</div>
 
 ## Tips
 

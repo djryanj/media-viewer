@@ -23,12 +23,20 @@ When browsing the gallery:
 
 When viewing media in the lightbox:
 
-| Shortcut   | Action              |
-| ---------- | ------------------- |
-| ++left++   | Previous item       |
-| ++right++  | Next item           |
-| ++escape++ | Close lightbox      |
-| ++space++  | Play/pause (videos) |
+| Shortcut   | Action                           |
+| ---------- | -------------------------------- |
+| ++left++   | Previous item                    |
+| ++right++  | Next item                        |
+| ++escape++ | Close lightbox                   |
+| ++space++  | Play/pause (videos)              |
+| ++f++      | Toggle favorite                  |
+| ++t++      | Open or close tag drawer         |
+| ++c++      | Open or close collections drawer |
+| ++a++      | Toggle video autoplay            |
+| ++l++      | Toggle video loop                |
+| ++d++      | Download current file            |
+
+Autoplay and loop shortcuts are available only when the current item is a video.
 
 ## Selection Mode Shortcuts
 

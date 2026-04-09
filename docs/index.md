@@ -22,6 +22,14 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
   <p><em>Full-text search with tag filtering</em></p>
 </div>
 
+<div align="center">
+  <video autoplay loop muted playsinline width="800">
+    <source src="images/collections-workflow.mp4" type="video/mp4">
+    <img src="images/collections-workflow.gif" alt="Collections workflow" width="800">
+  </video>
+  <p><em>Collections keep curation, browsing, and ordering close together.</em></p>
+</div>
+
 ### Mobile Experience
 
 <div align="center">
@@ -41,10 +49,13 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
 
 - **Gallery Browsing**: Navigate your media library with an intuitive grid-based interface
 - **Infinite Scroll**: Seamlessly browse large libraries with automatic pagination
-- **Tagging System**: Organize media with custom tags for easy categorization and retrieval
-- **Favorites**: Mark frequently accessed items for quick access
+- **Collections**: Save ordered, folder-scoped groups of images and videos
+- **Tagging System**: Organize media with custom tags, bulk editing, recent tags, and related suggestions
+- **Auto-Tagging**: Import tags automatically from standard EXIF/XMP keyword metadata
+- **Favorites**: Mark frequently accessed items for quick access and reorder them in the favorites strip
 - **Search**: Full-text fuzzy search by name, tag, or file type with suggestions
 - **Playlists**: Play Windows Media Player (.wpl) playlist files
+- **Passkeys**: Sign in with WebAuthn passkeys and biometrics on supported devices
 - **Progressive Web App**: Install on mobile devices for a native app experience
 - **Responsive Design**: Optimized for desktop, tablet, and mobile viewing
 - **Video Transcoding**: Automatic transcoding for browser compatibility

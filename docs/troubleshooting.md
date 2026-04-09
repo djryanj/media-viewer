@@ -199,6 +199,30 @@ histogram_quantile(0.99, rate(media_viewer_filesystem_retry_duration_seconds_buc
 3. For tag search, use the `tag:` prefix
 4. Try rebuilding the index by restarting the server
 
+### Auto-tagging Not Working
+
+**Symptoms:** Files with embedded EXIF/XMP tags are not being tagged automatically.
+
+**Solutions:**
+
+1. Confirm `EXIF_TAGGING_ENABLED` is not set to `false` (it defaults to `true`)
+2. Allow time for an auto-tagging pass to complete — it runs after every index pass and on the `EXIF_TAG_INTERVAL` schedule (default: 24 hours)
+3. Trigger an immediate run from **Settings → Cache → Run Auto-Tagger**
+4. Check server logs for lines beginning with `exif` or `autotagger` — progress and errors are logged at INFO level
+5. Confirm your files contain tags in a supported field (IPTC Keywords, XMP Subject, EXIF ImageDescription, or equivalent fields written by Lightroom, digiKam, Apple Photos, etc.)
+6. Monitor `media_viewer_exif_tag_running` and `media_viewer_exif_tag_errors_total` in [Prometheus metrics](admin/metrics.md#auto-tagger-metrics) to track pass progress and errors
+
+### Auto-tagging Pass Stalled or Slow
+
+**Symptoms:** Auto-tagger shows as running (`media_viewer_exif_tag_running = 1`) for an unexpectedly long time.
+
+**Solutions:**
+
+1. Large libraries or slow storage will cause passes to take longer — check `media_viewer_exif_tag_current_run_files` to confirm progress is being made
+2. On NFS, ffprobe metadata reads may be slow; monitor `media_viewer_exif_tag_ffprobe_duration_seconds`
+3. Check for errors with `rate(media_viewer_exif_tag_errors_total[5m])` in Prometheus
+4. Review server logs for repeated errors on specific files; a failing file is skipped after an error so the pass will still complete
+
 ## Installation Issues
 
 ### Container Won't Start

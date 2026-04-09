@@ -130,7 +130,7 @@ Tests are organized with tags for easy filtering:
 
 ## Documentation Screenshots
 
-The repository includes a dedicated Playwright workflow for generating polished documentation screenshots for the main tagging user flows.
+The repository includes a dedicated Playwright workflow for generating polished documentation media for the published docs site and root README.
 
 ```bash
 npm run test:e2e:docs-screenshots
@@ -140,11 +140,18 @@ This workflow:
 
 - Runs in `chromium` only
 - Seeds deterministic tag data through the API
+- Seeds deterministic collections and favorites state through the API
 - Uses stable selection-toolbar interactions instead of brittle context-menu paths
-- Writes screenshots directly into `../docs/images/`
+- Writes screenshots and animated docs media directly into `../docs/images/`
 
 Current outputs:
 
+- `docs/images/collections-lightbox-drawer.png`
+- `docs/images/collections-modal.png`
+- `docs/images/collections-panel.png`
+- `docs/images/collections-workflow.gif`
+- `docs/images/collections-workflow.mp4`
+- `docs/images/favorites-strip.png`
 - `docs/images/lightbox-video-toolbar.png`
 - `docs/images/tagging-bulk-modal.png`
 - `docs/images/tagging-paste-modal.png`
@@ -155,7 +162,9 @@ Current outputs:
 - `docs/images/tagging-suggestions-empty.png`
 - `docs/images/tagging-suggestions-typed.png`
 
-Covered flows include single-item tagging suggestions, bulk tagging, paste and merge flows, the lightbox tag drawer, the video lightbox toolbar, search-result tag filtering, and the settings tag manager.
+Covered flows include single-item tagging suggestions, bulk tagging, paste and merge flows, the lightbox tag drawer, the video lightbox toolbar, search-result tag filtering, the settings tag manager, the favorites strip, collection management surfaces, and an animated collections workflow capture.
+
+Animated assets are generated from the same Playwright lane. The workflow records a Chromium session, then transcodes the captured WebM into documentation-ready `mp4` and `gif` outputs with `ffmpeg`.
 
 Treat this spec as a reusable pattern for future documentation capture work.
 

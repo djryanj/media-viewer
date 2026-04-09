@@ -71,6 +71,18 @@ Favorites provide quick access to frequently viewed items.
 
 Favorites appear in a horizontal strip at the top of the gallery when you have items marked as favorites.
 
+You can drag favorites to reorder them, and favorites from other folders remain available there for quick access.
+
+## Collections
+
+Collections let you create ordered groups of images and videos without changing your folder structure.
+
+### Creating a Collection
+
+1. Click the **collections** button on an item
+2. Create a new collection or add the item to a recent one
+3. Open **Collections** from the header to browse or manage saved groups
+
 ## Basic Tagging
 
 Tags help organize your media into categories.
@@ -86,6 +98,8 @@ Tags help organize your media into categories.
 
 - Click any tag to search for all items with that tag
 - Or type `tag:tagname` in the search box
+
+If your files already contain standard EXIF/XMP keywords, Media Viewer can also import those tags automatically during indexing.
 
 ## Search
 
@@ -129,6 +143,7 @@ On supported devices, you can install Media Viewer as a Progressive Web App:
 ## Next Steps
 
 - Learn about [Selection Mode](../features/selection-mode.md) for bulk operations
+- Learn how to use [Collections](../user-guide/collections.md) for ordered shortlists and albums
 - Explore [Tag Management](../features/tag-management.md) for advanced organization
 - Review [Keyboard Shortcuts](../user-guide/keyboard-shortcuts.md) to speed up your workflow
 - Set up [Passkey Authentication](../user-guide/webauthn.md) for passwordless login

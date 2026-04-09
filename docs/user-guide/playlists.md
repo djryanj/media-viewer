@@ -47,9 +47,15 @@ Click any playlist item in the gallery to open the playlist player.
 
 The playlist player displays:
 
+- **Header controls**: Theater mode, fullscreen, and close buttons
 - **Video area**: The currently playing video
 - **Playlist sidebar**: List of all videos in the playlist
 - **Playback controls**: Previous, play/pause, next buttons
+
+<div align="center">
+  <img src="../../images/playlist-theater-mode.png" alt="Playlist player in theater mode with the video area expanded and the sidebar hidden" width="700">
+  <p><em>Theater mode expands the video area inside Media Viewer without entering browser fullscreen.</em></p>
+</div>
 
 ### Navigation
 
@@ -120,6 +126,23 @@ Use forward slashes (`/`) or backslashes (`\`) for paths. Relative paths are res
 ### Auto-Advance
 
 Videos automatically advance to the next item when playback completes. The playlist loops back to the beginning after the last video.
+
+### Theater Mode
+
+Use the **Theater mode** button (monitor icon) in the player header when you want a larger video area without leaving the app chrome entirely.
+
+- Theater mode hides the playlist sidebar
+- The video area expands to fill more of the player
+- Click the same button again to return to the normal split view
+
+This is useful when you want a distraction-free view but still want quick access back to the playlist UI.
+
+### Fullscreen
+
+Use the **Fullscreen** button in the player header when you want the playlist player to take over the entire screen.
+
+- Press ++escape++ or use your browser's fullscreen controls to exit
+- Entering fullscreen also hides the sidebar until you leave fullscreen mode
 
 ### Video Controls
 

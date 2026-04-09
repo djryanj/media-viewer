@@ -36,9 +36,10 @@ This section covers server administration, configuration, and monitoring for Med
 
 ### Maintenance
 
-- **Clear Thumbnail Cache**: Use the clear cache button to regenerate all thumbnails
+- **Rebuild Thumbnails**: Use **Settings → Cache → Rebuild Thumbnails** to regenerate the thumbnail cache
+- **Clear Transcoded Videos**: Use **Settings → Cache → Clear Cache** in the **Clear Transcoded Videos** card to delete cached video conversions and reclaim disk space
 - **Session Cleanup**: Expired sessions are automatically removed
-- **Cache Management**: Monitor cache size via [metrics](metrics.md)
+- **Cache Management**: Monitor thumbnail and transcode cache size via [metrics](metrics.md)
 
 ## Performance Tuning
 

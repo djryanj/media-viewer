@@ -1,7 +1,7 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { test, expect } from '../../fixtures/index.js';
+import { captureDocsScreenshot } from './docs-media-utils.js';
 
 const DOCS_IMAGE_DIR = path.resolve(process.cwd(), '..', 'docs', 'images');
 const SCREENSHOTS = {
@@ -33,179 +33,6 @@ const TAG_MANAGER_REFERENCE_ROWS = [
     { name: 'sunset', count: 1 },
     { name: 'family', count: 0 },
 ];
-
-/**
- * Captures a screenshot of a Playwright locator by cloning its DOM into an
- * isolated page and using the CDP screenshot API.  Mirrors the approach used
- * in tagging-docs-screenshots.spec.js so all docs images are rendered
- * consistently.
- *
- * @param {import('@playwright/test').Page} page
- * @param {import('@playwright/test').Locator} locator
- * @param {string} screenshotPath
- */
-async function captureScreenshot(page, locator, screenshotPath) {
-    const existingScreenshotPromise = fs.access(screenshotPath).then(
-        () => true,
-        () => false
-    );
-
-    const snapshot = await locator.evaluate((element) => {
-        element.scrollIntoView({ block: 'center', inline: 'nearest' });
-        void element.getBoundingClientRect();
-
-        const clone = element.cloneNode(true);
-
-        // Mirror live input/select/checkbox state into the clone so that
-        // toggle switches and select boxes look correct in the screenshot.
-        const originalFields = Array.from(element.querySelectorAll('input, textarea, select'));
-        const clonedFields = Array.from(clone.querySelectorAll('input, textarea, select'));
-        originalFields.forEach((originalField, index) => {
-            const clonedField = clonedFields[index];
-            if (!clonedField) return;
-
-            if (
-                originalField instanceof HTMLInputElement &&
-                clonedField instanceof HTMLInputElement
-            ) {
-                clonedField.value = originalField.value;
-                clonedField.setAttribute('value', originalField.value);
-                clonedField.checked = originalField.checked;
-                if (originalField.checked) {
-                    clonedField.setAttribute('checked', '');
-                } else {
-                    clonedField.removeAttribute('checked');
-                }
-                return;
-            }
-
-            if (
-                originalField instanceof HTMLSelectElement &&
-                clonedField instanceof HTMLSelectElement
-            ) {
-                Array.from(clonedField.options).forEach((option, optionIndex) => {
-                    const isSelected = originalField.options[optionIndex]?.selected === true;
-                    option.selected = isSelected;
-                    if (isSelected) {
-                        option.setAttribute('selected', '');
-                    } else {
-                        option.removeAttribute('selected');
-                    }
-                });
-            }
-        });
-
-        const rect = element.getBoundingClientRect();
-        const headMarkup = Array.from(
-            document.querySelectorAll('head style, head link[rel="stylesheet"]')
-        )
-            .map((node) => node.outerHTML)
-            .join('\n');
-
-        return {
-            width: Math.max(1, Math.ceil(rect.width)),
-            height: Math.max(1, Math.ceil(rect.height)),
-            html: clone.outerHTML,
-            headMarkup,
-        };
-    });
-
-    const capturePage = await page.context().newPage();
-    const baseHref = new URL('/', page.url()).href;
-
-    try {
-        await capturePage.setViewportSize({
-            width: Math.max(400, snapshot.width),
-            height: Math.max(300, snapshot.height),
-        });
-
-        await capturePage.setContent(
-            `<!doctype html>
-            <html>
-                <head>
-                    <meta charset="utf-8">
-                    <base href="${baseHref}">
-                    ${snapshot.headMarkup}
-                    <style>
-                        html, body {
-                            margin: 0;
-                            padding: 0;
-                            background: transparent;
-                            overflow: hidden;
-                        }
-
-                        #e2e-screenshot-root,
-                        #e2e-screenshot-root * {
-                            animation: none !important;
-                            transition: none !important;
-                            caret-color: transparent !important;
-                            scroll-behavior: auto !important;
-                        }
-
-                        #e2e-screenshot-root {
-                            width: ${snapshot.width}px;
-                            min-width: ${snapshot.width}px;
-                            height: ${snapshot.height}px;
-                            overflow: hidden;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div id="e2e-screenshot-root">${snapshot.html}</div>
-                </body>
-            </html>`,
-            { waitUntil: 'load' }
-        );
-
-        await capturePage.evaluate(async () => {
-            const images = Array.from(document.images);
-            await Promise.all(
-                images.map((image) => {
-                    if (image.complete) return Promise.resolve();
-                    return new Promise((resolve) => {
-                        image.addEventListener('load', resolve, { once: true });
-                        image.addEventListener('error', resolve, { once: true });
-                    });
-                })
-            );
-            if (document.fonts?.ready) {
-                await document.fonts.ready;
-            }
-        });
-
-        const cdpSession = await page.context().newCDPSession(capturePage);
-        try {
-            try {
-                const { data } = await Promise.race([
-                    cdpSession.send('Page.captureScreenshot', {
-                        format: 'png',
-                        fromSurface: true,
-                        captureBeyondViewport: false,
-                        clip: {
-                            x: 0,
-                            y: 0,
-                            width: snapshot.width,
-                            height: snapshot.height,
-                            scale: 1,
-                        },
-                    }),
-                    new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('CDP screenshot timed out')), 15000);
-                    }),
-                ]);
-                await fs.writeFile(screenshotPath, data, 'base64');
-            } catch (error) {
-                const hasExistingScreenshot = await existingScreenshotPromise;
-                if (hasExistingScreenshot) return;
-                throw error;
-            }
-        } finally {
-            await cdpSession.detach();
-        }
-    } finally {
-        await capturePage.close();
-    }
-}
 
 /**
  * Open the settings modal on a given tab and wait for the panel to be active.
@@ -275,7 +102,7 @@ test.describe('Settings Modal Docs Screenshots @docs @screenshots @docs-screensh
         const modalContent = page.locator('#settings-modal').locator('.settings-modal-content');
         await expect(page.locator('#settings-security')).toHaveClass(/active/);
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.security);
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.security);
     });
 
     test('captures Passkeys tab screenshot', async ({ page }) => {
@@ -299,7 +126,7 @@ test.describe('Settings Modal Docs Screenshots @docs @screenshots @docs-screensh
             )
             .toBe(true);
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.passkeys);
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.passkeys);
     });
 
     test('captures Cache tab screenshot', async ({ page }) => {
@@ -321,7 +148,7 @@ test.describe('Settings Modal Docs Screenshots @docs @screenshots @docs-screensh
             )
             .toBe(true);
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.cache);
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.cache);
     });
 
     test('captures Display tab screenshot', async ({ page }) => {
@@ -330,7 +157,7 @@ test.describe('Settings Modal Docs Screenshots @docs @screenshots @docs-screensh
         const modalContent = page.locator('#settings-modal').locator('.settings-modal-content');
         await expect(page.locator('#settings-display')).toHaveClass(/active/);
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.display);
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.display);
     });
 
     test('captures Tags tab screenshot', async ({ page }) => {
@@ -356,7 +183,7 @@ test.describe('Settings Modal Docs Screenshots @docs @screenshots @docs-screensh
 
         await setTagManagerReferenceRows(page);
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.tags);
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.tags);
     });
 
     test('captures About tab screenshot', async ({ page }) => {
@@ -379,6 +206,6 @@ test.describe('Settings Modal Docs Screenshots @docs @screenshots @docs-screensh
             )
             .toBe(true);
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.about);
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.about);
     });
 });

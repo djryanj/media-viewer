@@ -1,7 +1,7 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { test, expect } from '../../fixtures/index.js';
+import { captureDocsScreenshot } from './docs-media-utils.js';
 
 const DOCS_IMAGE_DIR = path.resolve(process.cwd(), '..', 'docs', 'images');
 const SCREENSHOTS = {
@@ -378,232 +378,6 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(page.locator('#lightbox')).toBeVisible();
     }
 
-    async function captureScreenshot(page, locator, screenshotPath, options = {}) {
-        const existingScreenshotPromise = fs.access(screenshotPath).then(
-            () => true,
-            () => false
-        );
-
-        const snapshot = await locator.evaluate((element, captureOptions) => {
-            element.scrollIntoView({ block: 'center', inline: 'nearest' });
-
-            const temporaryTargets = [];
-            const rememberStyle = (target) => {
-                if (!(target instanceof HTMLElement)) {
-                    return;
-                }
-
-                temporaryTargets.push({
-                    target,
-                    style: target.getAttribute('style'),
-                });
-            };
-
-            try {
-                if (captureOptions.flattenTagSuggestions) {
-                    const modalBody = element.querySelector('.modal-body');
-                    const suggestions = element.querySelector('#tag-suggestions, .tag-suggestions');
-
-                    rememberStyle(modalBody);
-                    rememberStyle(suggestions);
-
-                    if (modalBody instanceof HTMLElement) {
-                        modalBody.style.overflow = 'visible';
-                        modalBody.style.maxHeight = 'none';
-                    }
-
-                    if (suggestions instanceof HTMLElement) {
-                        suggestions.style.maxHeight = 'none';
-                        suggestions.style.overflowY = 'visible';
-                        suggestions.style.height = `${suggestions.scrollHeight}px`;
-                        suggestions.style.contain = 'none';
-                    }
-                }
-
-                void element.getBoundingClientRect();
-
-                const clone = element.cloneNode(true);
-                const originalFields = Array.from(
-                    element.querySelectorAll('input, textarea, select')
-                );
-                const clonedFields = Array.from(clone.querySelectorAll('input, textarea, select'));
-
-                originalFields.forEach((originalField, index) => {
-                    const clonedField = clonedFields[index];
-                    if (!clonedField) {
-                        return;
-                    }
-
-                    if (
-                        originalField instanceof HTMLInputElement &&
-                        clonedField instanceof HTMLInputElement
-                    ) {
-                        clonedField.value = originalField.value;
-                        clonedField.setAttribute('value', originalField.value);
-                        clonedField.checked = originalField.checked;
-                        if (originalField.checked) {
-                            clonedField.setAttribute('checked', '');
-                        } else {
-                            clonedField.removeAttribute('checked');
-                        }
-                        return;
-                    }
-
-                    if (
-                        originalField instanceof HTMLTextAreaElement &&
-                        clonedField instanceof HTMLTextAreaElement
-                    ) {
-                        clonedField.value = originalField.value;
-                        clonedField.textContent = originalField.value;
-                        return;
-                    }
-
-                    if (
-                        originalField instanceof HTMLSelectElement &&
-                        clonedField instanceof HTMLSelectElement
-                    ) {
-                        Array.from(clonedField.options).forEach((option, optionIndex) => {
-                            const isSelected =
-                                originalField.options[optionIndex]?.selected === true;
-                            option.selected = isSelected;
-                            if (isSelected) {
-                                option.setAttribute('selected', '');
-                            } else {
-                                option.removeAttribute('selected');
-                            }
-                        });
-                    }
-                });
-
-                const rect = element.getBoundingClientRect();
-                const headMarkup = Array.from(
-                    document.querySelectorAll('head style, head link[rel="stylesheet"]')
-                )
-                    .map((node) => node.outerHTML)
-                    .join('\n');
-
-                return {
-                    width: Math.max(1, Math.ceil(rect.width)),
-                    height: Math.max(1, Math.ceil(rect.height)),
-                    html: clone.outerHTML,
-                    headMarkup,
-                };
-            } finally {
-                temporaryTargets.forEach(({ target, style }) => {
-                    if (style === null) {
-                        target.removeAttribute('style');
-                    } else {
-                        target.setAttribute('style', style);
-                    }
-                });
-            }
-        }, options);
-
-        const capturePage = await page.context().newPage();
-        const baseHref = new URL('/', page.url()).href;
-
-        try {
-            await capturePage.setViewportSize({
-                width: Math.max(400, snapshot.width),
-                height: Math.max(300, snapshot.height),
-            });
-
-            await capturePage.setContent(
-                `<!doctype html>
-                <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <base href="${baseHref}">
-                        ${snapshot.headMarkup}
-                        <style>
-                            html, body {
-                                margin: 0;
-                                padding: 0;
-                                background: transparent;
-                                overflow: hidden;
-                            }
-
-                            #e2e-screenshot-root,
-                            #e2e-screenshot-root * {
-                                animation: none !important;
-                                transition: none !important;
-                                caret-color: transparent !important;
-                                scroll-behavior: auto !important;
-                            }
-
-                            #e2e-screenshot-root {
-                                width: ${snapshot.width}px;
-                                min-width: ${snapshot.width}px;
-                                height: ${snapshot.height}px;
-                                overflow: hidden;
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <div id="e2e-screenshot-root">${snapshot.html}</div>
-                    </body>
-                </html>`,
-                { waitUntil: 'load' }
-            );
-
-            await capturePage.evaluate(async () => {
-                const images = Array.from(document.images);
-                await Promise.all(
-                    images.map((image) => {
-                        if (image.complete) {
-                            return Promise.resolve();
-                        }
-
-                        return new Promise((resolve) => {
-                            image.addEventListener('load', resolve, { once: true });
-                            image.addEventListener('error', resolve, { once: true });
-                        });
-                    })
-                );
-
-                if (document.fonts?.ready) {
-                    await document.fonts.ready;
-                }
-            });
-
-            const cdpSession = await page.context().newCDPSession(capturePage);
-
-            try {
-                try {
-                    const { data } = await Promise.race([
-                        cdpSession.send('Page.captureScreenshot', {
-                            format: 'png',
-                            fromSurface: true,
-                            captureBeyondViewport: false,
-                            clip: {
-                                x: 0,
-                                y: 0,
-                                width: snapshot.width,
-                                height: snapshot.height,
-                                scale: 1,
-                            },
-                        }),
-                        new Promise((_, reject) => {
-                            setTimeout(() => reject(new Error('CDP screenshot timed out')), 15000);
-                        }),
-                    ]);
-
-                    await fs.writeFile(screenshotPath, data, 'base64');
-                } catch (error) {
-                    const hasExistingScreenshot = await existingScreenshotPromise;
-                    if (hasExistingScreenshot) {
-                        return;
-                    }
-                    throw error;
-                }
-            } finally {
-                await cdpSession.detach();
-            }
-        } finally {
-            await capturePage.close();
-        }
-    }
-
     test.afterEach(async ({ page }) => {
         const searchTagModal = page.locator('.search-tag-modal');
         if (
@@ -706,7 +480,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         ).toBeVisible();
         await expect(suggestions.locator(`.tag-suggestion[data-tag="${recentTag}"]`)).toBeVisible();
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.suggestionsEmpty, {
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.suggestionsEmpty, {
             flattenTagSuggestions: true,
         });
 
@@ -724,7 +498,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         ).toBeVisible();
         await expect(suggestions.locator(`.tag-suggestion[data-tag="${recentTag}"]`)).toBeVisible();
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.suggestionsTyped, {
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.suggestionsTyped, {
             flattenTagSuggestions: true,
         });
 
@@ -745,7 +519,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(page.locator('#current-tags')).toContainText('family');
         await expect(page.locator('#current-tags')).toContainText('sunset');
 
-        await captureScreenshot(page, modalContent, SCREENSHOTS.bulkModal);
+        await captureDocsScreenshot(page, modalContent, SCREENSHOTS.bulkModal);
     });
 
     test('captures paste and merge modal screenshots', async ({ page }) => {
@@ -775,7 +549,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(pasteModalContent).toContainText('Paste Tags');
         await expect(pasteModalContent).toContainText('coast');
         await expect(pasteModalContent).toContainText('golden-hour');
-        await captureScreenshot(page, pasteModalContent, SCREENSHOTS.pasteModal);
+        await captureDocsScreenshot(page, pasteModalContent, SCREENSHOTS.pasteModal);
 
         await closePasteModal(page);
         await clearSelection(page);
@@ -789,7 +563,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(mergeModalContent).toContainText('Merge Tags');
         await expect(mergeModalContent).toContainText('family');
         await expect(mergeModalContent).toContainText('travel');
-        await captureScreenshot(page, mergeModalContent, SCREENSHOTS.mergeModal);
+        await captureDocsScreenshot(page, mergeModalContent, SCREENSHOTS.mergeModal);
     });
 
     test('captures lightbox tagging drawer screenshot', async ({ page }) => {
@@ -799,9 +573,8 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
 
         await openLightboxForPath(page, lightboxItem.path);
 
-        const lightbox = page.locator('#lightbox');
         const drawer = page.locator('.lightbox-tags-drawer');
-        await expect(lightbox).toBeVisible();
+        await expect(page.locator('#lightbox')).toBeVisible();
         await page.evaluate(() => {
             globalThis.Lightbox?.openTagsDrawer?.();
         });
@@ -815,7 +588,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
             inCollection: true,
         });
 
-        await captureScreenshot(page, lightbox, SCREENSHOTS.lightboxDrawer);
+        await captureDocsScreenshot(page, drawer, SCREENSHOTS.lightboxDrawer);
     });
 
     test('captures lightbox video toolbar screenshot', async ({ page }) => {
@@ -837,7 +610,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(page.locator('#lightbox-loop-toggle')).toBeVisible();
         await expect(page.locator('#lightbox-collection')).toBeVisible();
 
-        await captureScreenshot(page, toolbar, SCREENSHOTS.lightboxVideoToolbar);
+        await captureDocsScreenshot(page, toolbar, SCREENSHOTS.lightboxVideoToolbar);
     });
 
     test('captures search tag filter modal screenshot', async ({ page }) => {
@@ -869,7 +642,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(searchTagModal).toContainText('excluded');
         await expect(searchTagModal).toContainText('included');
 
-        await captureScreenshot(
+        await captureDocsScreenshot(
             page,
             searchTagModal.locator('.search-tag-modal-content'),
             SCREENSHOTS.searchFilterModal
@@ -900,7 +673,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(page.locator('#tag-list-body')).toContainText('docs-archive');
         await expect(page.locator('#tag-list-body')).toContainText('docs-sunset');
 
-        await captureScreenshot(
+        await captureDocsScreenshot(
             page,
             settingsModal.locator('.settings-modal-content'),
             SCREENSHOTS.settingsManager

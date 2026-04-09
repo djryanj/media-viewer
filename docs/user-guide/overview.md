@@ -1,6 +1,6 @@
 # User Guide Overview
 
-This guide provides comprehensive documentation for all Media Viewer features. Whether you're browsing your collection, organizing with tags, curating collections, or managing playlists, you'll find detailed instructions here.
+This guide provides comprehensive documentation for the main Media Viewer workflows. Whether you're browsing your collection, organizing with tags and metadata-driven auto-tagging, curating collections, pinning favorites, or managing playlists, you'll find the core interactions here.
 
 ## Core Concepts
 
@@ -14,11 +14,11 @@ The lightbox is a full-screen viewer for images and videos. It provides navigati
 
 ### Tags
 
-Tags are labels you assign to media items for organization. An item can have multiple tags, and tags can be searched, filtered, and managed in bulk.
+Tags are labels you assign to media items for organization. An item can have multiple tags, and tags can be searched, filtered, managed in bulk, or imported automatically from embedded file metadata.
 
 ### Favorites
 
-Favorites are bookmarked items that appear in a quick-access strip at the top of the gallery. Use favorites for items you access frequently.
+Favorites are bookmarked items that appear in a quick-access strip at the top of the gallery. Use favorites for items you access frequently, then reorder them when you want a predictable shortcut strip.
 
 ### Collections
 
@@ -38,7 +38,8 @@ The header contains:
 - **Search box**: Find media by name or tag
 - **Sort controls**: Change sort field and order
 - **Filter dropdown**: Show specific media types
-- **User controls**: Change password, clear cache, logout
+- **Settings**: Open password, passkeys, cache tools, display preferences, tag management, and About information
+- **Logout**: End the current session
 
 ### Breadcrumb
 
@@ -54,13 +55,20 @@ When you have favorites, they appear in a horizontal scrollable strip below the 
 
 ### Stats Bar
 
-The bottom bar displays library statistics including total images, videos, folders, and favorites.
+The bottom bar displays live library information including total images, videos, folders, favorites, the last indexed time, and the running version/build when available.
+
+<div align="center">
+  <img src="../../images/stats-bar.png" alt="Stats bar showing counts for images, videos, folders, favorites, last indexed time, and version" width="900">
+  <p><em>The stats bar keeps basic library counts, index freshness, and build information visible while you browse.</em></p>
+</div>
 
 ## Settings
 
-Access the Settings modal by clicking the ⚙️ gear icon in the header. It provides tabs for managing your password, passkeys, cache, display preferences, and tags.
+Access the Settings modal by clicking the gear icon in the header. It provides tabs for managing your password, passkeys, cache tools, display preferences, tags, and library information.
 
-The **About** tab shows the application version and a summary of your library contents.
+The Cache tab also includes maintenance actions such as reindexing, thumbnail rebuilds, clearing cached video transcodes, and on-demand auto-tagger runs.
+
+The **About** tab shows the application version and a summary of your library contents, including total files, images, videos, and folders.
 
 <div align="center">
   <img src="../../images/settings-tab-about.png" alt="Settings About tab showing application version and library statistics" width="700">

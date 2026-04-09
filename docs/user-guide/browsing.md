@@ -94,6 +94,11 @@ Click any image or video thumbnail to open it in the lightbox.
 
 The lightbox groups these top-left actions into a single toolbar so favorites, tags, autoplay, loop, and collections stay aligned across desktop and mobile layouts.
 
+<div align="center">
+  <img src="../../images/lightbox-video-toolbar.png" alt="Lightbox action toolbar showing star, tag, play, loop, and collections icons" width="300">
+  <p><em>The top-left toolbar in the lightbox. Left to right: favorite, tag, autoplay, loop, and collections.</em></p>
+</div>
+
 !!! tip "Auto-Hide Interface"
 After 3 seconds of viewing, control buttons and interface elements automatically fade away for an unobstructed view. Tap or click anywhere on the image or video to show or hide them. On desktop, moving your mouse shows controls automatically. Navigation arrows remain visible based on your settings.
 
@@ -115,6 +120,29 @@ After 3 seconds of viewing, control buttons and interface elements automatically
 - Press ++escape++
 - Click the X button
 - Click outside the media
+
+## Display Settings
+
+Display preferences are stored per browser and persist across sessions.
+
+Open **Settings** (⚙️ icon) and navigate to the **Display** tab.
+
+### Clock
+
+| Setting                       | Options           | Description                                                  |
+| ----------------------------- | ----------------- | ------------------------------------------------------------ |
+| **Show Clock**                | On / Off          | Display the current time in the lightbox and playlist player |
+| **Time Format**               | 12-hour / 24-hour | Choose AM/PM or 24-hour format                               |
+| **Always Keep Clock Visible** | On / Off          | Keep the clock visible even when other controls fade out     |
+
+### Default Sort Order
+
+| Setting            | Options                     | Description                              |
+| ------------------ | --------------------------- | ---------------------------------------- |
+| **Sort By**        | Name / Date Modified / Size | Default field used to sort gallery items |
+| **Sort Direction** | Ascending / Descending      | Default sort direction for the gallery   |
+
+The sort preference is applied when you open a folder for the first time; changing the sort in the gallery header overrides it for that session.
 
 ## Infinite Scroll
 
