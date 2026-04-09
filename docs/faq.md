@@ -6,7 +6,7 @@ Common questions about Media Viewer features, setup, and usage.
 
 ### What is Media Viewer?
 
-Media Viewer is a self-hosted web application for browsing and organizing your personal media collection. It provides a clean interface for viewing images and videos, with features like tagging, favorites, search, and progressive web app (PWA) support for mobile devices
+Media Viewer is a self-hosted web application for browsing and organizing your personal media collection. It provides a clean interface for viewing images and videos, with features like tagging, collections, favorites, search, passkeys, and progressive web app (PWA) support for mobile devices.
 
 ### Why did you make this? Why not use \<insert favorite app here\>
 
@@ -114,17 +114,21 @@ See the [Tagging Guide](user-guide/tagging.md) for more information.
 
 ### What are favorites?
 
-Favorites are items you pin to the top of your home page for quick access. They appear in a special section above the regular gallery.
+Favorites are items you pin to the top of your home page for quick access. They appear in a special section above the regular gallery and can be reordered to keep your most-used shortcuts in a predictable order.
+
+### What are collections?
+
+Collections are ordered, folder-scoped groups of images and videos that you create inside the app. Use them for shortlists, albums, review sets, or any other curated sequence you want to revisit later.
 
 ### Can I organize files into albums?
 
-Media Viewer doesn't create albums, but you can:
+Yes. Media Viewer supports collections for album-like organization without moving files on disk.
 
-- Use your existing folder structure (folders appear as navigable directories)
-- Use tags to create virtual collections (e.g., tag items with "vacation 2024")
-- Add items to favorites for a quick access collection
+You can also:
 
-Note that this functionality is [planned](https://github.com/djryanj/media-viewer/issues/87).
+- Use your existing folder structure for physical organization
+- Use tags to create flexible cross-cutting groupings (e.g., tag items with "vacation 2024")
+- Add items to favorites for a lightweight quick-access strip
 
 ### Does Media Viewer support playlists?
 

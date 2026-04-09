@@ -37,21 +37,39 @@ The thumbnail cache can grow significantly for large libraries. Plan storage acc
 
 ### Viewing Cache Status
 
-The stats bar at the bottom of the gallery shows library statistics, including when the library was last indexed.
+The stats bar at the bottom of the gallery shows library statistics including total images, videos, folders, favorites, the last indexed time, and the running version/build.
 
-### Clearing the Cache
+### Rebuilding Thumbnails
 
 To clear and rebuild all thumbnails:
 
-1. Click the **clear cache** button (trash icon) in the header
-2. Confirm the action
-3. The page reloads and thumbnails regenerate in the background
+1. Open **Settings** (⚙️ icon)
+2. Go to the **Cache** tab
+3. Click **Rebuild Thumbnails**
+4. Confirm the action — thumbnails regenerate in the background
 
 This is useful when:
 
 - Thumbnails appear corrupted
 - You want to reclaim disk space and regenerate
 - Source files have been modified
+
+### Clearing Transcoded Videos
+
+To remove cached transcoded videos and free disk space:
+
+1. Open **Settings** (⚙️ icon)
+2. Go to the **Cache** tab
+3. In the **Clear Transcoded Videos** card, click **Clear Cache**
+4. Confirm the action — Media Viewer reports the space freed after deletion
+
+This is useful when:
+
+- The transcode cache has grown larger than you want to keep
+- You want stale transcodes to be recreated from the source files on next playback
+- You need to reclaim storage without affecting original media files
+
+Cleared transcodes are regenerated automatically the next time an affected video needs browser-compatible playback.
 
 ### Manual Cache Clearing
 

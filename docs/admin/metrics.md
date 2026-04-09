@@ -90,6 +90,30 @@ Track change detection for automatic re-indexing.
 | `media_viewer_indexer_poll_changes_detected_total` | Counter   | -      | Times polling detected changes        |
 | `media_viewer_indexer_poll_duration_seconds`       | Histogram | -      | Duration of polling scans             |
 
+### Auto-tagger Metrics
+
+Monitor EXIF/XMP auto-tagging performance and progress.
+
+| Metric                                            | Type      | Labels   | Description                                                                           |
+| ------------------------------------------------- | --------- | -------- | ------------------------------------------------------------------------------------- |
+| `media_viewer_exif_tag_runs_total`                | Counter   | `type`   | Total auto-tagging passes completed (`full`/`incremental`)                            |
+| `media_viewer_exif_tag_running`                   | Gauge     | -        | Whether the auto-tagger is currently running (1=running, 0=idle)                      |
+| `media_viewer_exif_tag_files_total`               | Counter   | `status` | Total files processed by the auto-tagger (`tagged`/`skipped`/`failed`)                |
+| `media_viewer_exif_tag_current_run_files`         | Gauge     | `status` | Files in the currently running pass (`total`/`processed`/`tagged`/`skipped`/`failed`) |
+| `media_viewer_exif_tag_last_run_files`            | Gauge     | `status` | Files in the last completed pass (`total`/`processed`/`tagged`/`skipped`/`failed`)    |
+| `media_viewer_exif_tag_run_duration_seconds`      | Histogram | `type`   | Distribution of auto-tagging pass durations by type (`full`/`incremental`)            |
+| `media_viewer_exif_tag_last_run_duration_seconds` | Gauge     | -        | Duration of the last auto-tagging pass in seconds                                     |
+| `media_viewer_exif_tag_last_timestamp`            | Gauge     | -        | Unix timestamp of the last completed auto-tagging pass                                |
+| `media_viewer_exif_tag_ffprobe_duration_seconds`  | Histogram | -        | Duration of individual ffprobe metadata extraction calls                              |
+| `media_viewer_exif_tag_errors_total`              | Counter   | -        | Total errors encountered during auto-tagging                                          |
+
+**Use cases:**
+
+- Monitor progress of a long-running tagging pass using `current_run_files`
+- Compare tagged vs. skipped vs. failed counts after each pass
+- Alert when the auto-tagger becomes stuck or experiences elevated errors
+- Track ffprobe performance when tagging is slow on large libraries
+
 ### Thumbnail Metrics
 
 Monitor thumbnail generation performance and cache efficiency.
@@ -244,6 +268,27 @@ histogram_quantile(0.95, rate(media_viewer_indexer_run_duration_seconds_bucket[5
 media_viewer_indexer_files_per_second
 ```
 
+### Auto-tagger Performance
+
+```promql
+# Auto-tagger currently running?
+media_viewer_exif_tag_running
+
+# Files processed in the current pass
+media_viewer_exif_tag_current_run_files
+
+# Fraction of last-pass files that received new tags
+media_viewer_exif_tag_last_run_files{status="tagged"}
+  /
+media_viewer_exif_tag_last_run_files{status="total"}
+
+# P95 auto-tagging pass duration
+histogram_quantile(0.95, rate(media_viewer_exif_tag_run_duration_seconds_bucket[1h]))
+
+# Error rate
+rate(media_viewer_exif_tag_errors_total[5m])
+```
+
 ### Thumbnail Performance
 
 ```promql
@@ -396,6 +441,24 @@ Import this dashboard to visualize:
   for: 10m
   annotations:
       summary: 'No indexer run in 4 hours'
+```
+
+### Auto-tagger Alerts
+
+```yaml
+# Auto-tagger stuck (no run in 48 hours)
+- alert: AutoTaggerStuck
+  expr: time() - media_viewer_exif_tag_last_timestamp > 172800
+  for: 15m
+  annotations:
+      summary: 'No auto-tagging pass completed in 48 hours'
+
+# Elevated auto-tagger error rate
+- alert: AutoTaggerErrors
+  expr: rate(media_viewer_exif_tag_errors_total[15m]) > 0.1
+  for: 10m
+  annotations:
+      summary: 'Auto-tagger encountering persistent errors'
 ```
 
 ### Thumbnail Alerts

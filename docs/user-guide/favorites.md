@@ -2,6 +2,11 @@
 
 Favorites provide quick access to items you view frequently. Favorited items appear in a dedicated strip at the top of the gallery for one-click access.
 
+<div align="center">
+	<img src="../../images/favorites-strip.png" alt="Favorites strip showing pinned items from multiple folders with parent-path badges" width="700">
+	<p><em>The favorites strip stays available across folders and adds parent-path badges when same-named items would otherwise look identical.</em></p>
+</div>
+
 ## Adding Favorites
 
 There are several ways to mark an item as a favorite:
@@ -46,8 +51,17 @@ When you have favorites, they appear in a horizontal strip below the breadcrumb 
 
 - Scroll horizontally to see all favorites
 - Click any favorite to open it directly
-- Favorites show the same thumbnail and name as in the gallery
+- Favorites reuse the same thumbnail treatment as the main gallery
 - The star icon on favorites is always visible
+- Same-named items from different folders show a parent-folder badge for clarity
+
+### Reordering Favorites
+
+You can reorder favorites directly in the strip:
+
+- **Desktop**: Drag a favorite left or right to reposition it
+- **Touch devices**: Long-press a favorite to lift it into drag mode, then move it
+- The new order is saved immediately and reused the next time you open the app
 
 ### Visibility
 
@@ -56,6 +70,7 @@ The favorites strip:
 - Appears automatically when you have at least one favorite
 - Hides automatically when you remove your last favorite
 - Persists across folders (favorites from any location are shown)
+- Can open media from other folders without forcing you to navigate to that folder first
 
 ## Favorites and Folders
 

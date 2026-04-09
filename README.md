@@ -4,7 +4,7 @@
   <img src="static/icons/icon-192x192.png" alt="Media Viewer Logo">
 </div>
 
-A lightweight, containerized, single-user web application for browsing and viewing images and videos from a mounted directory.
+A lightweight, containerized, single-user web application for browsing, organizing, and viewing images, videos, and playlists from a mounted media directory.
 
 ## Screenshots
 
@@ -18,6 +18,11 @@ A lightweight, containerized, single-user web application for browsing and viewi
 <div align="center">
   <img src="docs/images/search-desktop.gif" alt="Search functionality" width="800">
   <p><em>Full-text search with tag filtering</em></p>
+</div>
+
+<div align="center">
+  <img src="docs/images/collections-workflow.gif" alt="Collections workflow" width="800">
+  <p><em>Collections for curating ordered groups of media without moving files on disk</em></p>
 </div>
 
 ### Mobile Experience
@@ -35,16 +40,17 @@ A lightweight, containerized, single-user web application for browsing and viewi
 
 ## Features
 
-- Browse folders and files with thumbnail previews
-- Lightbox viewer with swipe/keyboard navigation
-- Windows Media Player playlist support (.wpl)
+- Browse folders, images, videos, and Windows Media Player playlists with thumbnail previews
+- Lightbox viewer with keyboard navigation and touch gestures, including swipe-to-close on mobile
+- Collections for saving ordered, folder-scoped groups of media
+- Favorites strip with quick access and drag-and-drop reordering
+- Tags with bulk editing, recent tags, related suggestions, and centralized tag management
+- Automatic metadata-based tagging from embedded EXIF/XMP keywords
+- Full-text fuzzy search across names and tags, including tag include/exclude filters
+- Selection mode for bulk tag and favorite actions on desktop and mobile
 - Automatic video transcoding with optional GPU acceleration (NVIDIA/Intel/AMD)
-- Full-text fuzzy search with tag support
-- Tag files for organization
-- Pin favorites to the home page
 - Passkey (WebAuthn) authentication with biometric support
-- Progressive Web App (PWA) for mobile
-- Prometheus metrics for monitoring
+- Progressive Web App (PWA) support and Prometheus metrics for monitoring
 
 ## Documentation
 
@@ -54,10 +60,13 @@ A lightweight, containerized, single-user web application for browsing and viewi
 - [Installation](https://djryanj.github.io/media-viewer/getting-started/installation/)
 - [Configuration](https://djryanj.github.io/media-viewer/getting-started/configuration/)
 - [User Guide](https://djryanj.github.io/media-viewer/user-guide/overview/)
+- [Collections Guide](https://djryanj.github.io/media-viewer/user-guide/collections/)
+- [Tag Management](https://djryanj.github.io/media-viewer/features/tag-management/)
 - [API Documentation](https://djryanj.github.io/media-viewer/api/overview/)
 - [Development Guide](https://djryanj.github.io/media-viewer/development/contributing/)
-- [Performance Profiling](https://djryanj.github.io/media-viewer/development/profiling/)
-- [Monitoring & Performance Testing](https://djryanj.github.io/media-viewer/development/monitoring/)
+- [Architecture](https://djryanj.github.io/media-viewer/development/architecture/)
+- [Testing Guide](https://djryanj.github.io/media-viewer/development/testing/)
+- [Monitoring & Performance Tuning](https://djryanj.github.io/media-viewer/development/monitoring/)
 
 ## AI Disclosure
 
