@@ -1,6 +1,8 @@
 package autotagger
 
 import (
+	"context"
+	"errors"
 	"testing"
 )
 
@@ -90,6 +92,50 @@ func TestJoinKeywordField(t *testing.T) {
 			got := joinKeywordField(tt.raw)
 			if got != tt.want {
 				t.Errorf("joinKeywordField(%#v) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldRetryMetadataToolError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		stderr   string
+		timedOut bool
+		want     bool
+	}{
+		{
+			name:     "retries context deadline exceeded",
+			err:      context.DeadlineExceeded,
+			timedOut: true,
+			want:     true,
+		},
+		{
+			name:   "retries stale file handle stderr",
+			err:    errors.New("ffprobe failed"),
+			stderr: "sample.webp: Stale file handle",
+			want:   true,
+		},
+		{
+			name:   "retries io error stderr",
+			err:    errors.New("exiftool failed"),
+			stderr: "Error: Input/output error",
+			want:   true,
+		},
+		{
+			name:   "does not retry regular metadata miss",
+			err:    errors.New("ffprobe failed"),
+			stderr: "No such metadata tag",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldRetryMetadataToolError(tt.err, tt.stderr, tt.timedOut)
+			if got != tt.want {
+				t.Fatalf("shouldRetryMetadataToolError(%v, %q, %v) = %v, want %v", tt.err, tt.stderr, tt.timedOut, got, tt.want)
 			}
 		})
 	}

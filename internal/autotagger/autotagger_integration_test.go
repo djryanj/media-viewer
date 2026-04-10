@@ -1036,7 +1036,10 @@ func TestExtractDescriptionViaExiftoolIntegration(t *testing.T) {
 	filePath := filepath.Join(mediaDir, "et_fallback.jpg")
 	createJPEGWithDescription(t, filePath, "tags:fallback, test;")
 
-	desc := extractDescriptionViaExiftool(context.Background(), filePath)
+	desc, err := extractDescriptionViaExiftool(context.Background(), filePath)
+	if err != nil {
+		t.Fatalf("extractDescriptionViaExiftool: %v", err)
+	}
 	if desc == "" {
 		t.Fatal("expected non-empty description via exiftool fallback, got empty string")
 	}
@@ -1066,7 +1069,10 @@ func TestExtractDescriptionViaExiftoolNoMetadataIntegration(t *testing.T) {
 	filePath := filepath.Join(mediaDir, "bare_et.jpg")
 	createJPEGNoMetadata(t, filePath)
 
-	desc := extractDescriptionViaExiftool(context.Background(), filePath)
+	desc, err := extractDescriptionViaExiftool(context.Background(), filePath)
+	if err != nil {
+		t.Fatalf("extractDescriptionViaExiftool: %v", err)
+	}
 	if desc != "" {
 		t.Errorf("expected empty description for bare JPEG, got %q", desc)
 	}
@@ -1143,6 +1149,28 @@ func createJPEGWithIPTCKeywords(t *testing.T, dest string, keywords ...string) {
 	}
 }
 
+func createWebPWithXMPKeywords(t *testing.T, dest string, keywords ...string) {
+	t.Helper()
+	createCmd := exec.Command("ffmpeg",
+		"-y", "-f", "lavfi", "-i", "color=c=black:size=2x2", "-frames:v", "1", dest,
+	)
+	if out, err := createCmd.CombinedOutput(); err != nil {
+		t.Fatalf("ffmpeg failed to create WebP %q: %v\noutput: %s", dest, err, out)
+	}
+
+	args := make([]string, 0, 1+len(keywords)+1)
+	args = append(args, "-overwrite_original")
+	for _, kw := range keywords {
+		args = append(args, "-XMP-dc:Subject+="+kw)
+	}
+	args = append(args, dest)
+	// #nosec G204 -- test helper; args are caller-controlled test data
+	tagCmd := exec.Command("exiftool", args...)
+	if out, err := tagCmd.CombinedOutput(); err != nil {
+		t.Fatalf("exiftool failed to write XMP keywords to %q: %v\noutput: %s", dest, err, out)
+	}
+}
+
 // TestExtractTagsFromFileExtendedKeywordListIntegration verifies that a JPEG
 // whose Description field contains a plain comma-separated keyword list (no
 // "tags:" prefix) is correctly picked up by the extended detection path.
@@ -1214,6 +1242,34 @@ func TestExtractTagsFromFileIPTCKeywordsIntegration(t *testing.T) {
 	}
 	if len(tags) == 0 {
 		t.Fatal("expected tags from IPTC Keywords field, got none")
+	}
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+	for _, want := range []string{"travel", "mountains", "landscape"} {
+		if !tagSet[want] {
+			t.Errorf("expected tag %q in result %v", want, tags)
+		}
+	}
+}
+
+func TestExtractTagsFromFileWebPXMPKeywordsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	requireFFmpeg(t)
+
+	mediaDir := t.TempDir()
+	filePath := filepath.Join(mediaDir, "iptc_keywords.webp")
+	createWebPWithXMPKeywords(t, filePath, "travel", "mountains", "landscape")
+
+	tags, err := extractTagsFromFile(context.Background(), filePath)
+	if err != nil {
+		t.Fatalf("extractTagsFromFile: %v", err)
+	}
+	if len(tags) == 0 {
+		t.Fatal("expected tags from WebP XMP Subject field, got none")
 	}
 	tagSet := make(map[string]bool)
 	for _, tag := range tags {

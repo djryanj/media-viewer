@@ -4,15 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"media-viewer/internal/filesystem"
 	"media-viewer/internal/logging"
 	"media-viewer/internal/metrics"
 )
+
+const metadataToolTimeout = 45 * time.Second
+
+var errExiftoolUnavailable = errors.New("exiftool not available")
 
 // ffprobeFormat mirrors the "format" section of ffprobe JSON output.
 type ffprobeFormat struct {
@@ -50,40 +56,71 @@ func isImagePath(absPath string) bool {
 // tools such as Lightroom or Digikam.  When ffprobe returns no description,
 // the function falls back to exiftool for these formats.
 func extractDescriptionField(ctx context.Context, absPath string) (string, error) {
+	if err := validateAbsPath(absPath); err != nil {
+		return "", err
+	}
+
+	retryConfig := filesystem.DefaultRetryConfig()
+	if _, err := filesystem.StatWithRetry(absPath, retryConfig); err != nil {
+		return "", fmt.Errorf("file not accessible: %w", err)
+	}
+
+	desc, ffprobeErr := extractDescriptionViaFFprobe(ctx, absPath)
+	if ffprobeErr == nil {
+		if desc != "" {
+			return desc, nil
+		}
+		if !isImagePath(absPath) {
+			return "", nil
+		}
+	} else if !isImagePath(absPath) {
+		return "", ffprobeErr
+	}
+
+	fallbackDesc, fallbackErr := extractDescriptionViaExiftool(ctx, absPath)
+	if fallbackErr == nil {
+		return fallbackDesc, nil
+	}
+
+	if errors.Is(fallbackErr, errExiftoolUnavailable) {
+		if ffprobeErr != nil {
+			return "", ffprobeErr
+		}
+		return "", nil
+	}
+
+	if ffprobeErr != nil {
+		return "", fmt.Errorf(
+			"metadata extraction failed: %w",
+			errors.Join(
+				fmt.Errorf("ffprobe failed: %w", ffprobeErr),
+				fmt.Errorf("exiftool fallback failed: %w", fallbackErr),
+			),
+		)
+	}
+
+	return "", fallbackErr
+}
+
+func extractDescriptionViaFFprobe(ctx context.Context, absPath string) (string, error) {
 	ffprobePath, err := exec.LookPath("ffprobe")
 	if err != nil {
 		return "", fmt.Errorf("ffprobe not found: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	if err := validateAbsPath(absPath); err != nil {
-		return "", err
-	}
-
-	// #nosec G204 -- absPath is from the indexed media library, validated above
-	cmd := exec.CommandContext(ctx, ffprobePath,
+	stdout, err := runMetadataTool(ctx, absPath, ffprobePath, metadataToolTimeout,
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_format",
 		absPath,
 	)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	probeStart := time.Now()
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		logging.Debug("ffprobe failed for %s: %v", filepath.Base(absPath), err)
-		return "", fmt.Errorf("ffprobe failed: %w", err)
+		return "", err
 	}
-	metrics.ExifTagFFprobeDuration.Observe(time.Since(probeStart).Seconds())
 
 	var out ffprobeOutput
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
 		return "", fmt.Errorf("ffprobe JSON parse error: %w", err)
 	}
 
@@ -96,13 +133,6 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 		}
 	}
 
-	// ffprobe found no description-like tag.  For still-image formats
-	// (JPEG, TIFF, HEIC, …) the image2 demuxer frequently misses XMP/EXIF
-	// metadata written by standard photo editors.  Try exiftool as a fallback.
-	if isImagePath(absPath) {
-		return extractDescriptionViaExiftool(ctx, absPath), nil
-	}
-
 	return "", nil
 }
 
@@ -113,16 +143,15 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 //   - IPTC Caption-Abstract
 //   - IPTC Keywords / XMP Subject (joined as a comma-separated list)
 //
-// Returns ("", nil) when exiftool is not installed or finds nothing — this is
-// always a non-fatal outcome.
-func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
+// Returns ("", errExiftoolUnavailable) when exiftool is not installed. Returns
+// ("", nil) when exiftool runs but finds nothing.
+func extractDescriptionViaExiftool(ctx context.Context, absPath string) (string, error) {
 	exiftoolPath, err := exec.LookPath("exiftool")
 	if err != nil {
-		return "" // exiftool not installed; skip silently
+		return "", errExiftoolUnavailable
 	}
 
-	// #nosec G204 -- absPath is validated by the caller (validateAbsPath)
-	cmd := exec.CommandContext(ctx, exiftoolPath,
+	stdout, err := runMetadataTool(ctx, absPath, exiftoolPath, metadataToolTimeout,
 		"-j",
 		"-Description",
 		"-ImageDescription",
@@ -131,18 +160,18 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
 		"-Subject",
 		absPath,
 	)
-
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		logging.Debug("exiftool failed for %s: %v", filepath.Base(absPath), err)
-		return "" // non-fatal
+		return "", err
 	}
 
 	// exiftool -j returns a JSON array; we only ever pass one file.
 	var results []map[string]interface{}
-	if err := json.Unmarshal(stdout.Bytes(), &results); err != nil || len(results) == 0 {
-		return ""
+	if err := json.Unmarshal([]byte(stdout), &results); err != nil {
+		return "", fmt.Errorf("exiftool JSON parse error: %w", err)
+	}
+	if len(results) == 0 {
+		return "", nil
 	}
 
 	fields := results[0]
@@ -151,7 +180,7 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
 	for _, key := range []string{"Description", "ImageDescription", "Caption-Abstract"} {
 		if raw, ok := fields[key]; ok {
 			if v, ok := raw.(string); ok && strings.TrimSpace(v) != "" {
-				return strings.TrimSpace(v)
+				return strings.TrimSpace(v), nil
 			}
 		}
 	}
@@ -162,12 +191,107 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
 	for _, key := range []string{"Keywords", "Subject"} {
 		if raw, ok := fields[key]; ok {
 			if joined := joinKeywordField(raw); joined != "" {
-				return joined
+				return joined, nil
 			}
 		}
 	}
 
-	return ""
+	return "", nil
+}
+
+func runMetadataTool(ctx context.Context, absPath, toolPath string, timeout time.Duration, args ...string) (string, error) {
+	retryConfig := filesystem.DefaultRetryConfig()
+	backoff := retryConfig.InitialBackoff
+	var lastErr error
+	var lastStderr string
+
+	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+
+		// #nosec G204 -- absPath is from the indexed media library, validated above
+		cmd := exec.CommandContext(attemptCtx, toolPath, args...)
+		var stdoutBuf bytes.Buffer
+		var stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
+		start := time.Now()
+		err := cmd.Run()
+		timedOut := errors.Is(attemptCtx.Err(), context.DeadlineExceeded)
+		cancel()
+
+		if filepath.Base(toolPath) == "ffprobe" {
+			metrics.ExifTagFFprobeDuration.Observe(time.Since(start).Seconds())
+		}
+
+		stdoutText := stdoutBuf.String()
+		stderrText := stderrBuf.String()
+
+		if err == nil {
+			return stdoutText, nil
+		}
+
+		lastErr = wrapMetadataToolError(toolPath, err, stderrText, timedOut)
+		lastStderr = stderrText
+
+		if attempt == retryConfig.MaxRetries || !shouldRetryMetadataToolError(lastErr, lastStderr, timedOut) {
+			break
+		}
+
+		logging.Debug(
+			"AutoTagger: retrying %s for %s in %v (attempt %d/%d): %v",
+			filepath.Base(toolPath),
+			filepath.Base(absPath),
+			backoff,
+			attempt+1,
+			retryConfig.MaxRetries,
+			lastErr,
+		)
+
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+
+		backoff *= 2
+		if backoff > retryConfig.MaxBackoff {
+			backoff = retryConfig.MaxBackoff
+		}
+	}
+
+	return "", lastErr
+}
+
+func wrapMetadataToolError(toolPath string, err error, stderr string, timedOut bool) error {
+	if timedOut {
+		return fmt.Errorf("%s timed out: %w", filepath.Base(toolPath), context.DeadlineExceeded)
+	}
+
+	trimmedStderr := strings.TrimSpace(stderr)
+	if trimmedStderr == "" {
+		return fmt.Errorf("%s failed: %w", filepath.Base(toolPath), err)
+	}
+
+	return fmt.Errorf("%s failed: %w, stderr: %s", filepath.Base(toolPath), err, trimmedStderr)
+}
+
+func shouldRetryMetadataToolError(err error, stderr string, timedOut bool) bool {
+	if err == nil {
+		return false
+	}
+	if timedOut || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	lower := strings.ToLower(stderr + " " + err.Error())
+	for _, fragment := range []string{"stale file handle", "input/output error", "resource temporarily unavailable"} {
+		if strings.Contains(lower, fragment) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // joinKeywordField coerces the raw JSON value of a keyword/subject field into

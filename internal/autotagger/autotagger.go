@@ -211,7 +211,6 @@ func (a *AutoTagger) runIncrementalPass(ctx context.Context, lastRun time.Time) 
 	if _, _, err := a.processFiles(ctx, files); err != nil {
 		return time.Time{}, err
 	}
-	a.logProgress(true)
 
 	completedAt := time.Now()
 	if err := a.db.SetLastExifTagRun(ctx, completedAt); err != nil {
@@ -258,7 +257,6 @@ func (a *AutoTagger) runFullPass(ctx context.Context) (time.Time, error) {
 			return time.Time{}, err
 		}
 		offset += len(page)
-		a.logProgress(false)
 
 		if len(page) < exifFetchPageSize {
 			break
@@ -387,7 +385,7 @@ func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFil
 		absPath := filepath.Join(a.mediaDir, f.Path)
 		tags, err := extractTagsFromFile(ctx, absPath)
 		if err != nil {
-			logging.Debug("AutoTagger: skipping %s (ffprobe error): %v", f.Path, err)
+			logging.Warn("AutoTagger: metadata extraction failed for %s: %v", f.Path, err)
 			metrics.ExifTagFilesTotal.WithLabelValues("failed").Inc()
 			metrics.ExifTagErrorsTotal.Inc()
 			a.recordOutcome("failed")
@@ -455,35 +453,6 @@ func (a *AutoTagger) recordOutcome(outcome string) {
 	stats := a.runStats
 	a.runMu.Unlock()
 	a.updateCurrentRunMetrics(stats)
-}
-
-func (a *AutoTagger) logProgress(incremental bool) {
-	a.runMu.RLock()
-	stats := a.runStats
-	a.runMu.RUnlock()
-
-	runType := runTypeFull
-	if incremental {
-		runType = runTypeIncremental
-	}
-
-	if stats.TotalFiles > 0 {
-		logging.Info("AutoTagger: %s progress %d/%d files processed (tagged %d, skipped %d, failed %d)",
-			runType,
-			stats.Processed,
-			stats.TotalFiles,
-			stats.Tagged,
-			stats.Skipped,
-			stats.Failed)
-		return
-	}
-
-	logging.Info("AutoTagger: %s progress %d files processed (tagged %d, skipped %d, failed %d)",
-		runType,
-		stats.Processed,
-		stats.Tagged,
-		stats.Skipped,
-		stats.Failed)
 }
 
 func (a *AutoTagger) logStillRunning(startTime time.Time, incremental bool) {
