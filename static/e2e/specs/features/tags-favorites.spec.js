@@ -380,6 +380,95 @@ async function closeTagModalAndClearSelection(page) {
     await clearSelection(page);
 }
 
+async function openLightboxForPath(page, filePath) {
+    const opened = await page.evaluate(async (targetPath) => {
+        const parentPath = targetPath.split('/').slice(0, -1).join('/');
+        const params = new URLSearchParams({
+            path: parentPath,
+            sort: window.MediaApp?.state?.currentSort?.field ?? 'name',
+            order: window.MediaApp?.state?.currentSort?.order ?? 'asc',
+            limit: '0',
+        });
+
+        const response = await fetch(`/api/media?${params.toString()}`);
+        if (!response.ok || typeof window.Lightbox?.openWithItems !== 'function') {
+            return false;
+        }
+
+        const data = await response.json();
+        const files = data.items ?? [];
+        const itemIndex = files.findIndex((item) => item.path === targetPath);
+        if (itemIndex < 0) {
+            return false;
+        }
+
+        window.Lightbox.openWithItems(files, itemIndex);
+        return true;
+    }, filePath);
+
+    expect(opened).toBe(true);
+    await expect(page.locator('#lightbox')).toBeVisible();
+}
+
+async function closeLightbox(page) {
+    const lightbox = page.locator('#lightbox');
+    if (await lightbox.isVisible().catch(() => false)) {
+        await page.evaluate(() => {
+            globalThis.Lightbox?.close?.();
+        });
+        await expect(lightbox).toBeHidden();
+    }
+}
+
+async function waitForLightboxSuggestions(page, query, expectedTitles, expectedTags) {
+    await expect
+        .poll(
+            async () => {
+                return page.evaluate(
+                    async ({ queryValue, requiredTitles, requiredTags }) => {
+                        if (typeof Lightbox === 'undefined' || typeof Tags === 'undefined') {
+                            return false;
+                        }
+
+                        await Tags.loadAllTags?.();
+                        Lightbox.showDrawerSuggestions?.(queryValue);
+
+                        const groups =
+                            Tags.getSuggestionGroups?.(queryValue, {
+                                allTags: Lightbox.allTagSuggestions ?? [],
+                                recentTagNames: Tags.getRecentTagNames?.() ?? [],
+                                relatedTagSuggestions: Lightbox.drawerRelatedTagSuggestions ?? [],
+                                excludedTagNames:
+                                    Lightbox.items?.[Lightbox.currentIndex]?.tags ?? [],
+                                limit: 5,
+                            }) ?? [];
+                        const groupTitles = groups.map((group) => group.title);
+                        const groupTags = groups.flatMap((group) =>
+                            group.items.map((tag) => tag.name)
+                        );
+                        const suggestions = document.querySelector(
+                            '.lightbox-tags-drawer .drawer-tag-suggestions'
+                        );
+
+                        return (
+                            Boolean(suggestions) &&
+                            !suggestions.classList.contains('hidden') &&
+                            requiredTitles.every((title) => groupTitles.includes(title)) &&
+                            requiredTags.every((tagName) => groupTags.includes(tagName))
+                        );
+                    },
+                    {
+                        queryValue: query,
+                        requiredTitles: expectedTitles,
+                        requiredTags: expectedTags,
+                    }
+                );
+            },
+            { timeout: 10000 }
+        )
+        .toBe(true);
+}
+
 test.describe('Tag Management @tags @features', () => {
     test.beforeEach(async ({ page, loginHelpers }) => {
         await loginHelpers.login(page);
@@ -536,6 +625,132 @@ test.describe('Tag Management @tags @features', () => {
         });
 
         await closeTagModalAndClearSelection(page);
+    });
+
+    test('should surface recent and related suggestions in the lightbox drawer @autocomplete @lightbox', async ({
+        page,
+    }, testInfo) => {
+        const startIndex = getProjectItemStartIndex(testInfo.project.name, 8, 4);
+        const suffix = buildProjectSuffix(testInfo);
+        const themeTag = `e2e-lightbox-theme-${suffix}`;
+        const relatedPrimaryTag = `e2e-lightbox-related-primary-${suffix}`;
+        const relatedSecondaryTag = `e2e-lightbox-related-secondary-${suffix}`;
+        const recentTag = `e2e-lightbox-recent-${suffix}`;
+
+        const [seedItem, relatedItemA, relatedItemB, recentItem] = await getTaggableItems(
+            page,
+            4,
+            startIndex
+        );
+
+        await test.step('clear existing tags and recent history for isolated test items', async () => {
+            await setTagsViaApi(page, seedItem.path, []);
+            await setTagsViaApi(page, relatedItemA.path, []);
+            await setTagsViaApi(page, relatedItemB.path, []);
+            await setTagsViaApi(page, recentItem.path, []);
+
+            await refreshGalleryTags(page, seedItem.path, []);
+            await refreshGalleryTags(page, relatedItemA.path, []);
+            await refreshGalleryTags(page, relatedItemB.path, []);
+            await refreshGalleryTags(page, recentItem.path, []);
+
+            await page.evaluate(() => {
+                localStorage.setItem('media-viewer.tags.recent', JSON.stringify([]));
+                if (typeof Tags !== 'undefined') {
+                    Tags._recentTagNames = [];
+                }
+            });
+        });
+
+        await test.step('seed co-occurring tag data via API', async () => {
+            await setTagsViaApi(page, seedItem.path, [themeTag]);
+            await setTagsViaApi(page, relatedItemA.path, [themeTag, relatedPrimaryTag]);
+            await setTagsViaApi(page, relatedItemB.path, [
+                themeTag,
+                relatedPrimaryTag,
+                relatedSecondaryTag,
+            ]);
+
+            await refreshGalleryTags(page, seedItem.path, [themeTag]);
+            await refreshGalleryTags(page, relatedItemA.path, [themeTag, relatedPrimaryTag]);
+            await refreshGalleryTags(page, relatedItemB.path, [
+                themeTag,
+                relatedPrimaryTag,
+                relatedSecondaryTag,
+            ]);
+        });
+
+        await test.step('create a recent tag through the lightbox drawer UI', async () => {
+            await openLightboxForPath(page, recentItem.path);
+            await page.evaluate(() => {
+                globalThis.Lightbox?.openTagsDrawer?.();
+            });
+
+            const drawer = page.locator('.lightbox-tags-drawer');
+            const input = drawer.locator('.drawer-tag-input');
+            await expect(drawer).toBeVisible();
+
+            await input.fill(recentTag);
+            await input.press('Enter');
+
+            await expect(drawer.locator('.drawer-tags-list')).toContainText(recentTag);
+            await waitForTagCatalogToInclude(page, recentTag);
+            await closeLightbox(page);
+        });
+
+        await test.step('show grouped empty-query suggestions in the lightbox drawer', async () => {
+            await openLightboxForPath(page, seedItem.path);
+            await page.evaluate(() => {
+                globalThis.Lightbox?.openTagsDrawer?.();
+            });
+
+            const drawer = page.locator('.lightbox-tags-drawer');
+            const suggestions = drawer.locator('.drawer-tag-suggestions');
+            await expect(drawer).toBeVisible();
+
+            await waitForLightboxSuggestions(
+                page,
+                '',
+                ['Suggested Next', 'Recent Tags'],
+                [relatedPrimaryTag, recentTag]
+            );
+            await expect(suggestions).toContainText('Suggested Next');
+            await expect(suggestions).toContainText('Recent Tags');
+            await expect(suggestions.locator('.drawer-suggestion').first()).toHaveAttribute(
+                'data-tag',
+                relatedPrimaryTag
+            );
+            await expect(suggestions).toContainText('Seen together on 2 items');
+            await expect(
+                suggestions.locator(`.drawer-suggestion[data-tag="${recentTag}"]`)
+            ).toBeVisible();
+        });
+
+        await test.step('keep preferring related matches over recent ones while typing', async () => {
+            const drawer = page.locator('.lightbox-tags-drawer');
+            const input = drawer.locator('.drawer-tag-input');
+            const suggestions = drawer.locator('.drawer-tag-suggestions');
+
+            await input.fill('e2e-lightbox-');
+
+            await waitForLightboxSuggestions(
+                page,
+                'e2e-lightbox-',
+                ['Suggested Together', 'Recent Matches'],
+                [relatedSecondaryTag, recentTag]
+            );
+            await expect(suggestions).toContainText('Suggested Together');
+            await expect(suggestions).toContainText('Recent Matches');
+            await expect(suggestions.locator('.drawer-suggestion').first()).toHaveAttribute(
+                'data-tag',
+                relatedPrimaryTag
+            );
+            await expect(
+                suggestions.locator(`.drawer-suggestion[data-tag="${relatedSecondaryTag}"]`)
+            ).toBeVisible();
+        });
+
+        await closeLightbox(page);
     });
 
     test('should remove a tag from an item', async ({ page }) => {

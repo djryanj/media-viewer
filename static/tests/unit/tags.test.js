@@ -605,6 +605,43 @@ describe('Tags Module', () => {
             expect(groups[2].items[0].name).toBe('vacation');
         });
 
+        test('supports explicit suggestion options for alternate tag surfaces', () => {
+            const groups = Tags.getSuggestionGroups('', {
+                allTags: [
+                    { name: 'mountain', itemCount: 2 },
+                    { name: 'winter', itemCount: 3 },
+                    { name: 'vacation', itemCount: 10 },
+                ],
+                recentTagNames: ['winter'],
+                relatedTagSuggestions: [{ name: 'summer', itemCount: 8, relatedCount: 4 }],
+                excludedTagNames: ['vacation'],
+                limit: 5,
+            });
+
+            expect(groups.map((group) => group.key)).toEqual(['related', 'recent', 'all']);
+            expect(groups[0].items[0].name).toBe('summer');
+            expect(groups[1].items[0].name).toBe('winter');
+            expect(groups[2].items[0].name).toBe('mountain');
+        });
+
+        test('renders suggestion groups with alternate suggestion classes', () => {
+            const html = Tags.renderSuggestionGroups(
+                [
+                    {
+                        key: 'related',
+                        title: 'Suggested Next',
+                        items: [{ name: 'summer', itemCount: 8, relatedCount: 4, isRelated: true }],
+                    },
+                ],
+                '',
+                { suggestionClassName: 'drawer-suggestion tag-suggestion' }
+            );
+
+            expect(html).toContain('Suggested Next');
+            expect(html).toContain('class="drawer-suggestion tag-suggestion"');
+            expect(html).toContain('summer');
+        });
+
         test('markTagRecent deduplicates tags case-insensitively', () => {
             Tags._recentTagNames = ['Vacation'];
 

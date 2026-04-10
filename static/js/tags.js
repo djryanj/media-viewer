@@ -198,6 +198,10 @@ const Tags = {
             .toLocaleLowerCase();
     },
 
+    normalizeTagName(tagName) {
+        return this._normalizeTagName(tagName);
+    },
+
     _loadRecentTagNames() {
         try {
             const raw = globalThis.localStorage?.getItem(this._recentTagsStorageKey);
@@ -285,6 +289,10 @@ const Tags = {
         ].slice(0, 24);
 
         this._saveRecentTagNames();
+    },
+
+    getRecentTagNames() {
+        return [...this._recentTagNames];
     },
 
     /**
@@ -760,6 +768,29 @@ const Tags = {
         return this.isBulkMode ? this.allUniqueTags : this.currentTagsList;
     },
 
+    async fetchRelatedSuggestions({ sourceTags = [], excludeTags = [], limit = 8 } = {}) {
+        if (!Array.isArray(sourceTags) || sourceTags.length === 0) {
+            return [];
+        }
+
+        const response = await fetch('/api/tags/suggestions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tags: sourceTags,
+                exclude: excludeTags,
+                limit,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch related tag suggestions');
+        }
+
+        const suggestions = await response.json();
+        return Array.isArray(suggestions) ? suggestions : [];
+    },
+
     async refreshRelatedTagSuggestions() {
         const sourceTags = this.getSuggestionSourceTags();
         if (!Array.isArray(sourceTags) || sourceTags.length === 0) {
@@ -770,23 +801,13 @@ const Tags = {
         const requestId = ++this._relatedSuggestionRequestId;
 
         try {
-            const response = await fetch('/api/tags/suggestions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tags: sourceTags,
-                    exclude: this.getExcludedSuggestionTags(),
-                    limit: 8,
-                }),
+            const suggestions = await this.fetchRelatedSuggestions({
+                sourceTags,
+                excludeTags: this.getExcludedSuggestionTags(),
+                limit: 8,
             });
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch related tag suggestions');
-            }
-
-            const suggestions = await response.json();
             if (requestId === this._relatedSuggestionRequestId) {
-                this.relatedTagSuggestions = Array.isArray(suggestions) ? suggestions : [];
+                this.relatedTagSuggestions = suggestions;
             }
         } catch (error) {
             console.error('Error loading related tag suggestions:', error);
@@ -798,17 +819,48 @@ const Tags = {
         return this.relatedTagSuggestions;
     },
 
-    getRankedSuggestions(query = '') {
+    _getSuggestionOptions(options = {}) {
+        const allTags = Array.isArray(options.allTags)
+            ? options.allTags
+            : Array.isArray(this.allTags)
+              ? this.allTags
+              : [];
+        const relatedTagSuggestions = Array.isArray(options.relatedTagSuggestions)
+            ? options.relatedTagSuggestions
+            : Array.isArray(this.relatedTagSuggestions)
+              ? this.relatedTagSuggestions
+              : [];
+        const recentTagNames = Array.isArray(options.recentTagNames)
+            ? options.recentTagNames
+            : Array.isArray(this._recentTagNames)
+              ? this._recentTagNames
+              : [];
+        const excludedTagNames = Array.isArray(options.excludedTagNames)
+            ? options.excludedTagNames
+            : this.getExcludedSuggestionTags();
+
+        return {
+            allTags,
+            relatedTagSuggestions,
+            recentTagNames,
+            excludedTagNames: Array.isArray(excludedTagNames) ? excludedTagNames : [],
+            limit: Number.isFinite(options.limit) ? options.limit : 5,
+        };
+    },
+
+    getRankedSuggestions(query = '', options = {}) {
+        const { allTags, relatedTagSuggestions, recentTagNames, excludedTagNames, limit } =
+            this._getSuggestionOptions(options);
         const normalizedQuery = this._normalizeTagName(query);
         const recentRanks = new Map(
-            this._recentTagNames.map((tagName, index) => [this._normalizeTagName(tagName), index])
+            recentTagNames.map((tagName, index) => [this._normalizeTagName(tagName), index])
         );
         const excludedTags = new Set(
-            this.getExcludedSuggestionTags().map((tagName) => this._normalizeTagName(tagName))
+            excludedTagNames.map((tagName) => this._normalizeTagName(tagName))
         );
         const suggestionsByName = new Map();
 
-        this.allTags.forEach((tag) => {
+        allTags.forEach((tag) => {
             const normalizedName = this._normalizeTagName(tag.name);
             if (!normalizedName || excludedTags.has(normalizedName)) {
                 return;
@@ -826,7 +878,7 @@ const Tags = {
             });
         });
 
-        this.relatedTagSuggestions.forEach((tag) => {
+        relatedTagSuggestions.forEach((tag) => {
             const normalizedName = this._normalizeTagName(tag.name);
             if (!normalizedName || excludedTags.has(normalizedName)) {
                 return;
@@ -910,12 +962,12 @@ const Tags = {
             });
         });
 
-        return suggestions.slice(0, 5);
+        return suggestions.slice(0, limit);
     },
 
-    getSuggestionGroups(query = '') {
+    getSuggestionGroups(query = '', options = {}) {
         const normalizedQuery = this._normalizeTagName(query);
-        const suggestions = this.getRankedSuggestions(query);
+        const suggestions = this.getRankedSuggestions(query, options);
 
         const related = suggestions.filter((tag) => tag.isRelated);
         const recent = suggestions.filter((tag) => !tag.isRelated && tag.isRecent);
@@ -949,7 +1001,7 @@ const Tags = {
         return groups;
     },
 
-    renderSuggestionRow(tag, normalizedQuery) {
+    renderSuggestionRow(tag, normalizedQuery, suggestionClassName = 'tag-suggestion') {
         let subtitle = '';
         let badgeLabel = '';
         let badgeClass = 'tag-suggestion-meta';
@@ -965,7 +1017,7 @@ const Tags = {
         }
 
         return `
-            <div class="tag-suggestion" data-tag="${this.escapeAttr(tag.name)}">
+            <div class="${suggestionClassName}" data-tag="${this.escapeAttr(tag.name)}">
                 <div class="tag-suggestion-main">
                     <span class="tag-suggestion-label">${this.highlightMatch(tag.name, normalizedQuery)}</span>
                     ${subtitle ? `<span class="tag-suggestion-subtitle">${this.escapeHtml(subtitle)}</span>` : ''}
@@ -978,9 +1030,30 @@ const Tags = {
         `;
     },
 
+    renderSuggestionGroups(groups, query = '', options = {}) {
+        const normalizedQuery = this._normalizeTagName(query);
+        const suggestionClassName = options.suggestionClassName || 'tag-suggestion';
+
+        return groups
+            .map(
+                (group) => `
+                <div class="tag-suggestion-group tag-suggestion-group-${group.key}">
+                    <div class="tag-suggestion-group-title">${this.escapeHtml(group.title)}</div>
+                    <div class="tag-suggestion-group-list">
+                        ${group.items
+                            .map((tag) =>
+                                this.renderSuggestionRow(tag, normalizedQuery, suggestionClassName)
+                            )
+                            .join('')}
+                    </div>
+                </div>
+            `
+            )
+            .join('');
+    },
+
     showSuggestions(query) {
         this.highlightedSuggestionIndex = -1;
-        const normalizedQuery = this._normalizeTagName(query);
         const groups = this.getSuggestionGroups(query);
 
         if (groups.length === 0) {
@@ -988,18 +1061,7 @@ const Tags = {
             return;
         }
 
-        this.elements.tagSuggestions.innerHTML = groups
-            .map(
-                (group) => `
-                <div class="tag-suggestion-group tag-suggestion-group-${group.key}">
-                    <div class="tag-suggestion-group-title">${this.escapeHtml(group.title)}</div>
-                    <div class="tag-suggestion-group-list">
-                        ${group.items.map((tag) => this.renderSuggestionRow(tag, normalizedQuery)).join('')}
-                    </div>
-                </div>
-            `
-            )
-            .join('');
+        this.elements.tagSuggestions.innerHTML = this.renderSuggestionGroups(groups, query);
 
         this.elements.tagSuggestions.querySelectorAll('.tag-suggestion').forEach((el) => {
             el.addEventListener('click', () => {
