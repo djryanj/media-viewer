@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import {
     ensureAuthenticated,
+    getMediaFiles,
     listFiles,
     addFavorite,
     removeFavorite,
@@ -22,6 +23,7 @@ describe('Lightbox Integration', () => {
     let _Tags;
     let _Player;
     let TagClipboard;
+    const LIGHTBOX_FAVORITES_FILE_OFFSET = 88;
 
     beforeAll(async () => {
         await ensureAuthenticated();
@@ -1324,31 +1326,34 @@ describe('Lightbox Integration', () => {
         });
 
         it('should handle favorites with real API', async () => {
-            const filesResult = await listFiles('');
+            const filesResult = await getMediaFiles('');
 
-            if (!filesResult.success || !filesResult.data.items) {
+            if (!filesResult.success || !filesResult.data) {
                 console.log('No files available, skipping');
                 return;
             }
 
-            const mediaFiles = filesResult.data.items.filter((f) => f.type !== 'folder');
+            const mediaFiles = filesResult.data;
 
             if (mediaFiles.length === 0) {
                 console.log('No media files, skipping');
                 return;
             }
 
-            const testFile = mediaFiles[0];
+            const testFile =
+                mediaFiles[LIGHTBOX_FAVORITES_FILE_OFFSET] || mediaFiles[mediaFiles.length - 1];
 
-            await addFavorite(testFile.path);
+            try {
+                await addFavorite(testFile.path);
 
-            Lightbox.openWithItems([{ ...testFile, isPinned: true }], 0);
-            Lightbox.updatePinButton(Lightbox.items[0]);
+                Lightbox.openWithItems([{ ...testFile, isPinned: true }], 0);
+                Lightbox.updatePinButton(Lightbox.items[0]);
 
-            const pinButton = document.getElementById('lightbox-pin');
-            expect(pinButton.classList.contains('pinned')).toBe(true);
-
-            await removeFavorite(testFile.path);
+                const pinButton = document.getElementById('lightbox-pin');
+                expect(pinButton.classList.contains('pinned')).toBe(true);
+            } finally {
+                await removeFavorite(testFile.path);
+            }
         });
     });
 

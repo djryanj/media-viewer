@@ -8,9 +8,43 @@
 import { describe, test, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { ensureAuthenticated, getMediaFiles, TEST_CONFIG } from '../helpers/api-helpers.js';
 
+const FAVORITES_TEST_FILE_OFFSET = 24;
+
 describe('Favorites Integration', () => {
     let testMediaFiles = [];
     let addedFavorites = [];
+
+    function getSuiteTestFile(index = 0) {
+        const preferredIndex = FAVORITES_TEST_FILE_OFFSET + index;
+        const fallbackIndex = Math.max(0, testMediaFiles.length - (index + 1));
+        const file = testMediaFiles[preferredIndex] || testMediaFiles[fallbackIndex];
+
+        expect(file, `expected a media file for favorites integration index ${index}`).toBeTruthy();
+        return file;
+    }
+
+    function getSuiteTestFiles(count, startIndex = 0) {
+        const files = Array.from({ length: count }, (_, index) =>
+            getSuiteTestFile(startIndex + index)
+        );
+        expect(files).toHaveLength(count);
+        return files;
+    }
+
+    async function waitForFavoritePresence(path, shouldExist) {
+        await expect
+            .poll(
+                async () => {
+                    const response = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
+                        credentials: 'include',
+                    });
+                    const favorites = await response.json();
+                    return favorites.some((favorite) => favorite.path === path);
+                },
+                { timeout: 5000 }
+            )
+            .toBe(shouldExist);
+    }
 
     beforeAll(async () => {
         await ensureAuthenticated();
@@ -36,6 +70,7 @@ describe('Favorites Integration', () => {
                     body: JSON.stringify({ path }),
                     credentials: 'include',
                 });
+                await waitForFavoritePresence(path, false);
             } catch (error) {
                 console.error('Cleanup error:', error);
             }
@@ -74,7 +109,7 @@ describe('Favorites Integration', () => {
 
     describe('POST /api/favorites', () => {
         test('adds a file to favorites', async () => {
-            const testFile = testMediaFiles[0];
+            const testFile = getSuiteTestFile(0);
 
             const response = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
                 method: 'POST',
@@ -89,6 +124,7 @@ describe('Favorites Integration', () => {
 
             expect(response.ok).toBe(true);
             addedFavorites.push(testFile.path);
+            await waitForFavoritePresence(testFile.path, true);
 
             // Verify it was added
             const listResponse = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -102,7 +138,7 @@ describe('Favorites Integration', () => {
         });
 
         test('handles duplicate add gracefully (idempotent)', async () => {
-            const testFile = testMediaFiles[0];
+            const testFile = getSuiteTestFile(1);
 
             // Add first time
             const response1 = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -117,6 +153,7 @@ describe('Favorites Integration', () => {
             });
             expect(response1.ok).toBe(true);
             addedFavorites.push(testFile.path);
+            await waitForFavoritePresence(testFile.path, true);
 
             // Add second time (duplicate)
             const response2 = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -163,7 +200,7 @@ describe('Favorites Integration', () => {
         });
 
         test('allows optional name and type fields', async () => {
-            const testFile = testMediaFiles[0];
+            const testFile = getSuiteTestFile(2);
 
             // Only path is required, name and type are optional
             const response = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -175,12 +212,13 @@ describe('Favorites Integration', () => {
 
             expect(response.ok).toBe(true);
             addedFavorites.push(testFile.path);
+            await waitForFavoritePresence(testFile.path, true);
         });
     });
 
     describe('DELETE /api/favorites', () => {
         test('removes a file from favorites', async () => {
-            const testFile = testMediaFiles[0];
+            const testFile = getSuiteTestFile(3);
 
             // First add it
             await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -193,6 +231,8 @@ describe('Favorites Integration', () => {
                 }),
                 credentials: 'include',
             });
+            addedFavorites.push(testFile.path);
+            await waitForFavoritePresence(testFile.path, true);
 
             // Then remove it
             const deleteResponse = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -203,6 +243,8 @@ describe('Favorites Integration', () => {
             });
 
             expect(deleteResponse.ok).toBe(true);
+            addedFavorites = addedFavorites.filter((path) => path !== testFile.path);
+            await waitForFavoritePresence(testFile.path, false);
 
             // Verify it was removed
             const listResponse = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -245,7 +287,7 @@ describe('Favorites Integration', () => {
                 return;
             }
 
-            const filesToAdd = testMediaFiles.slice(0, 3);
+            const filesToAdd = getSuiteTestFiles(3, 4);
 
             // Add multiple favorites
             for (const file of filesToAdd) {
@@ -261,6 +303,7 @@ describe('Favorites Integration', () => {
                 });
                 expect(response.ok).toBe(true);
                 addedFavorites.push(file.path);
+                await waitForFavoritePresence(file.path, true);
             }
 
             // Verify all were added
@@ -283,6 +326,7 @@ describe('Favorites Integration', () => {
                 credentials: 'include',
             });
             addedFavorites = addedFavorites.filter((p) => p !== toRemove.path);
+            await waitForFavoritePresence(toRemove.path, false);
 
             // Verify removal
             const listResponse2 = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -302,7 +346,7 @@ describe('Favorites Integration', () => {
         });
 
         test('favorites persist across requests', async () => {
-            const testFile = testMediaFiles[0];
+            const testFile = getSuiteTestFile(7);
 
             // Add favorite
             await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {
@@ -316,6 +360,7 @@ describe('Favorites Integration', () => {
                 credentials: 'include',
             });
             addedFavorites.push(testFile.path);
+            await waitForFavoritePresence(testFile.path, true);
 
             // Fetch favorites multiple times
             const response1 = await fetch(`${TEST_CONFIG.BASE_URL}/api/favorites`, {

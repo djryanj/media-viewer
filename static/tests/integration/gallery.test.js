@@ -5,7 +5,7 @@
  * Requires a running backend and some test media files.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 
 import {
     ensureAuthenticated,
@@ -16,11 +16,40 @@ import {
     removeFavorite,
 } from '../helpers/api-helpers.js';
 
+const GALLERY_FAVORITES_FILE_OFFSET = 56;
+
 describe('Gallery and Media Integration', () => {
+    let favoriteCleanupPaths = [];
+
     beforeAll(async () => {
         // Ensure authenticated for these tests
         await ensureAuthenticated();
     });
+
+    beforeEach(() => {
+        favoriteCleanupPaths = [];
+    });
+
+    afterEach(async () => {
+        for (const path of favoriteCleanupPaths) {
+            await removeFavorite(path);
+            await expect
+                .poll(async () => {
+                    const result = await getFavorites();
+                    return result.data.some((favorite) => favorite.path === path);
+                })
+                .toBe(false);
+        }
+    });
+
+    function getGalleryFavoritesTestFile(mediaFiles, index = 0) {
+        const preferredIndex = GALLERY_FAVORITES_FILE_OFFSET + index;
+        const fallbackIndex = Math.max(0, mediaFiles.length - (index + 1));
+        const file = mediaFiles[preferredIndex] || mediaFiles[fallbackIndex];
+
+        expect(file, `expected a gallery favorites test file for index ${index}`).toBeTruthy();
+        return file;
+    }
 
     describe('File Listing', () => {
         it('should list files in root directory', async () => {
@@ -95,30 +124,26 @@ describe('Gallery and Media Integration', () => {
 
         it('should add and remove favorites', async () => {
             // Get a file to work with
-            const filesResult = await listFiles('');
+            const filesResult = await getMediaFiles('');
 
-            if (
-                !filesResult.success ||
-                !filesResult.data.items ||
-                filesResult.data.items.length === 0
-            ) {
+            if (!filesResult.success || !filesResult.data || filesResult.data.length === 0) {
                 console.log('No files available for favorites testing, skipping');
                 return;
             }
 
-            // Find a media file (not a directory)
-            const mediaFile = filesResult.data.items.find((f) => f.type !== 'folder');
-
-            if (!mediaFile) {
-                console.log('No media files available, skipping');
-                return;
-            }
-
+            const mediaFile = getGalleryFavoritesTestFile(filesResult.data, 0);
             const testFilePath = mediaFile.path;
 
             // Add to favorites
             const addResult = await addFavorite(testFilePath, mediaFile.name, mediaFile.type);
             expect(addResult.success).toBe(true);
+            favoriteCleanupPaths.push(testFilePath);
+            await expect
+                .poll(async () => {
+                    const favoritesResult = await getFavorites();
+                    return favoritesResult.data.map((favorite) => favorite.path);
+                })
+                .toContain(testFilePath);
 
             // Verify it's in favorites
             const favoritesResult = await getFavorites();
@@ -129,37 +154,33 @@ describe('Gallery and Media Integration', () => {
             // Remove from favorites
             const removeResult = await removeFavorite(testFilePath);
             expect(removeResult.success).toBe(true);
+            favoriteCleanupPaths = favoriteCleanupPaths.filter((path) => path !== testFilePath);
 
             // Verify it's removed
-            const finalFavoritesResult = await getFavorites();
-            expect(finalFavoritesResult.success).toBe(true);
-            const finalFavoritePaths = finalFavoritesResult.data.map((f) => f.path);
-            expect(finalFavoritePaths).not.toContain(testFilePath);
+            await expect
+                .poll(async () => {
+                    const finalFavoritesResult = await getFavorites();
+                    expect(finalFavoritesResult.success).toBe(true);
+                    return finalFavoritesResult.data.map((favorite) => favorite.path);
+                })
+                .not.toContain(testFilePath);
         });
 
         it('should handle adding same favorite twice', async () => {
-            const filesResult = await listFiles('');
+            const filesResult = await getMediaFiles('');
 
-            if (
-                !filesResult.success ||
-                !filesResult.data.items ||
-                filesResult.data.items.length === 0
-            ) {
+            if (!filesResult.success || !filesResult.data || filesResult.data.length === 0) {
                 console.log('No files available, skipping');
                 return;
             }
 
-            const mediaFile = filesResult.data.items.find((f) => f.type !== 'folder');
-            if (!mediaFile) {
-                console.log('No media files available, skipping');
-                return;
-            }
-
+            const mediaFile = getGalleryFavoritesTestFile(filesResult.data, 1);
             const testFilePath = mediaFile.path;
 
             // Add twice
             const add1 = await addFavorite(testFilePath, mediaFile.name, mediaFile.type);
             expect(add1.success).toBe(true);
+            favoriteCleanupPaths.push(testFilePath);
 
             const add2 = await addFavorite(testFilePath, mediaFile.name, mediaFile.type);
             // Should either succeed (idempotent) or fail gracefully
@@ -167,6 +188,7 @@ describe('Gallery and Media Integration', () => {
 
             // Clean up
             await removeFavorite(testFilePath);
+            favoriteCleanupPaths = favoriteCleanupPaths.filter((path) => path !== testFilePath);
         });
 
         it('should handle removing non-existent favorite', async () => {
