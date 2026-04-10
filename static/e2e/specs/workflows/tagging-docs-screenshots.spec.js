@@ -107,6 +107,39 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         );
     }
 
+    async function setLightboxDrawerReferenceSuggestions(page) {
+        await page.evaluate(() => {
+            if (!globalThis.Lightbox || !globalThis.Tags) {
+                return;
+            }
+
+            globalThis.Tags._recentTagNames = ['journal'];
+            globalThis.Lightbox.allTagSuggestions = [
+                { name: 'campfire', itemCount: 6 },
+                { name: 'night-hike', itemCount: 4 },
+                { name: 'journal', itemCount: 3 },
+            ];
+            globalThis.Lightbox.drawerRelatedTagSuggestions = [
+                { name: 'campfire', itemCount: 6, relatedCount: 2 },
+                { name: 'night-hike', itemCount: 4, relatedCount: 1 },
+            ];
+
+            if (globalThis.Lightbox.elements?.drawerTagInput) {
+                globalThis.Lightbox.elements.drawerTagInput.value = '';
+            }
+
+            globalThis.Lightbox.showDrawerSuggestions?.('');
+        });
+
+        await expect(page.locator('.lightbox-tags-drawer .drawer-suggestion')).toHaveCount(3);
+        await expect(page.locator('.lightbox-tags-drawer .drawer-tag-suggestions')).toContainText(
+            'Suggested Next'
+        );
+        await expect(page.locator('.lightbox-tags-drawer .drawer-tag-suggestions')).toContainText(
+            'Recent Tags'
+        );
+    }
+
     async function setTagsViaApi(page, filePath, tags) {
         const response = await page.request.put('/api/tags/file', {
             data: { path: filePath, tags },
@@ -580,6 +613,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         });
         await expect(drawer).toBeVisible();
         await expect(drawer.locator('.drawer-tags-list')).toContainText('night-sky');
+        await setLightboxDrawerReferenceSuggestions(page);
 
         await setLightboxToolbarReferenceState(page, {
             videoAutoplay: false,

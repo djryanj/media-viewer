@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import {
     ensureAuthenticated,
+    getMediaFiles,
     listFiles,
     addFavorite,
     removeFavorite,
@@ -22,6 +23,7 @@ describe('Lightbox Integration', () => {
     let _Tags;
     let _Player;
     let TagClipboard;
+    const LIGHTBOX_FAVORITES_FILE_OFFSET = 88;
 
     beforeAll(async () => {
         await ensureAuthenticated();
@@ -610,6 +612,8 @@ describe('Lightbox Integration', () => {
                 })
             );
 
+            const markRecentSpy = vi.spyOn(_Tags, 'markTagRecent');
+
             Lightbox.openTagsDrawer();
             Lightbox.elements.drawerTagInput.value = 'new-tag';
 
@@ -622,6 +626,7 @@ describe('Lightbox Integration', () => {
                     body: expect.stringContaining('new-tag'),
                 })
             );
+            expect(markRecentSpy).toHaveBeenCalledWith('new-tag');
         });
 
         it('should reload suggestion cache after adding a tag so subsequent typing still shows suggestions', async () => {
@@ -630,30 +635,38 @@ describe('Lightbox Integration', () => {
                 { name: 'vacation', itemCount: 5 },
                 { name: 'beach', itemCount: 3 },
             ];
+            Lightbox.drawerRelatedTagSuggestions = [];
 
             // Stub Tags.loadAllTags so it doesn't consume a fetch mock slot;
             // we only care about the POST and the cache-reload fetch here.
             vi.spyOn(_Tags, 'loadAllTags').mockResolvedValue();
+            vi.spyOn(_Tags, 'fetchRelatedSuggestions').mockResolvedValue([]);
 
-            // First fetch call handles the POST, second handles the cache reload
-            global.fetch = vi
-                .fn()
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve({ success: true }),
-                })
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () =>
-                        Promise.resolve([
-                            { name: 'vacation', itemCount: 5 },
-                            { name: 'beach', itemCount: 3 },
-                            { name: 'new-tag', itemCount: 1 },
-                            // 'mountain' is not on the file's tag list, so it won't
-                            // be filtered out by showDrawerSuggestions
-                            { name: 'mountain', itemCount: 2 },
-                        ]),
-                });
+            global.fetch = vi.fn((url) => {
+                if (url === '/api/tags/file') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({ success: true }),
+                    });
+                }
+
+                if (url === '/api/tags') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve([
+                                { name: 'vacation', itemCount: 5 },
+                                { name: 'beach', itemCount: 3 },
+                                { name: 'new-tag', itemCount: 1 },
+                                // 'mountain' is not on the file's tag list, so it won't
+                                // be filtered out by showDrawerSuggestions
+                                { name: 'mountain', itemCount: 2 },
+                            ]),
+                    });
+                }
+
+                return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+            });
 
             const cacheSpy = vi.spyOn(Lightbox, 'loadTagSuggestionsCache');
 
@@ -673,9 +686,42 @@ describe('Lightbox Integration', () => {
             // Suggestions should now work again for the next tag the user types;
             // query for 'moun' which matches 'mountain' — a tag not already on the file
             Lightbox.showDrawerSuggestions('moun');
-            const items =
-                Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
-            expect(items.length).toBeGreaterThan(0);
+            await vi.waitFor(() => {
+                const items =
+                    Lightbox.elements.drawerSuggestions.querySelectorAll('.drawer-suggestion');
+                expect(items.length).toBeGreaterThan(0);
+            });
+        });
+
+        it('should render related drawer suggestions after async refresh resolves', async () => {
+            Lightbox.allTagSuggestions = [{ name: 'mountain', itemCount: 2 }];
+
+            const fetchRelatedSpy = vi
+                .spyOn(_Tags, 'fetchRelatedSuggestions')
+                .mockResolvedValue([{ name: 'mountain', itemCount: 2, relatedCount: 3 }]);
+
+            Lightbox.openTagsDrawer();
+
+            await vi.waitFor(() => {
+                expect(fetchRelatedSpy).toHaveBeenCalledWith({
+                    sourceTags: ['vacation', 'beach'],
+                    excludeTags: ['vacation', 'beach'],
+                    limit: 8,
+                });
+            });
+
+            await vi.waitFor(() => {
+                expect(Lightbox.drawerRelatedTagSuggestions).toEqual([
+                    { name: 'mountain', itemCount: 2, relatedCount: 3 },
+                ]);
+            });
+
+            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(false);
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain('Suggested Next');
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain(
+                'Seen together on 3 items'
+            );
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain('mountain');
         });
 
         it('should remove tag via drawer chip', async () => {
@@ -712,6 +758,7 @@ describe('Lightbox Integration', () => {
         let testFiles;
 
         beforeEach(() => {
+            _Tags._recentTagNames = [];
             testFiles = [
                 {
                     name: 'photo.jpg',
@@ -727,6 +774,29 @@ describe('Lightbox Integration', () => {
             ];
             Lightbox.openWithItems(testFiles, 0);
             Lightbox.openTagsDrawer();
+        });
+
+        it('should show recent tag groups for an empty query', () => {
+            _Tags._recentTagNames = ['vanilla'];
+
+            Lightbox.showDrawerSuggestions('');
+
+            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(false);
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain('Recent Tags');
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain('vanilla');
+        });
+
+        it('should show related suggestion groups in the drawer', () => {
+            Lightbox.drawerRelatedTagSuggestions = [
+                { name: 'village', itemCount: 3, relatedCount: 2 },
+            ];
+
+            Lightbox.showDrawerSuggestions('');
+
+            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(false);
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain('Suggested Next');
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain('Suggested');
+            expect(Lightbox.elements.drawerSuggestions.innerHTML).toContain('village');
         });
 
         it('should reset drawerHighlightedIndex when showDrawerSuggestions is called', () => {
@@ -1256,31 +1326,34 @@ describe('Lightbox Integration', () => {
         });
 
         it('should handle favorites with real API', async () => {
-            const filesResult = await listFiles('');
+            const filesResult = await getMediaFiles('');
 
-            if (!filesResult.success || !filesResult.data.items) {
+            if (!filesResult.success || !filesResult.data) {
                 console.log('No files available, skipping');
                 return;
             }
 
-            const mediaFiles = filesResult.data.items.filter((f) => f.type !== 'folder');
+            const mediaFiles = filesResult.data;
 
             if (mediaFiles.length === 0) {
                 console.log('No media files, skipping');
                 return;
             }
 
-            const testFile = mediaFiles[0];
+            const testFile =
+                mediaFiles[LIGHTBOX_FAVORITES_FILE_OFFSET] || mediaFiles[mediaFiles.length - 1];
 
-            await addFavorite(testFile.path);
+            try {
+                await addFavorite(testFile.path);
 
-            Lightbox.openWithItems([{ ...testFile, isPinned: true }], 0);
-            Lightbox.updatePinButton(Lightbox.items[0]);
+                Lightbox.openWithItems([{ ...testFile, isPinned: true }], 0);
+                Lightbox.updatePinButton(Lightbox.items[0]);
 
-            const pinButton = document.getElementById('lightbox-pin');
-            expect(pinButton.classList.contains('pinned')).toBe(true);
-
-            await removeFavorite(testFile.path);
+                const pinButton = document.getElementById('lightbox-pin');
+                expect(pinButton.classList.contains('pinned')).toBe(true);
+            } finally {
+                await removeFavorite(testFile.path);
+            }
         });
     });
 

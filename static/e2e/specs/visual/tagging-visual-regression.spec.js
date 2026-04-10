@@ -235,6 +235,40 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
         });
     }
 
+    async function setLightboxDrawerReferenceSuggestions(page) {
+        await page.evaluate(() => {
+            if (!globalThis.Lightbox || !globalThis.Tags) {
+                return;
+            }
+
+            globalThis.Tags._recentTagNames = ['journal'];
+            globalThis.Lightbox.allTagSuggestions = [
+                { name: 'campfire', itemCount: 6 },
+                { name: 'night-hike', itemCount: 4 },
+                { name: 'journal', itemCount: 3 },
+            ];
+            globalThis.Lightbox.drawerRelatedTagSuggestions = [
+                { name: 'campfire', itemCount: 6, relatedCount: 2 },
+                { name: 'night-hike', itemCount: 4, relatedCount: 1 },
+            ];
+
+            if (globalThis.Lightbox.elements?.drawerTagInput) {
+                globalThis.Lightbox.elements.drawerTagInput.value = '';
+            }
+
+            globalThis.Lightbox.showDrawerSuggestions?.('');
+            document.getElementById('lightbox-collection')?.classList.add('active');
+        });
+
+        await expect(page.locator('.lightbox-tags-drawer .drawer-suggestion')).toHaveCount(3);
+        await expect(page.locator('.lightbox-tags-drawer .drawer-tag-suggestions')).toContainText(
+            'Suggested Next'
+        );
+        await expect(page.locator('.lightbox-tags-drawer .drawer-tag-suggestions')).toContainText(
+            'Recent Tags'
+        );
+    }
+
     async function setTagManagerReferenceRows(page) {
         await page.evaluate(() => {
             if (!window.settingsManager) {
@@ -318,10 +352,10 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
         const drawer = page.locator('.lightbox-tags-drawer');
         await page.evaluate(() => {
             globalThis.Lightbox?.openTagsDrawer?.();
-            document.getElementById('lightbox-collection')?.classList.add('active');
         });
         await expect(drawer).toBeVisible();
         await expect(drawer.locator('.drawer-tags-list')).toContainText('night-sky');
+        await setLightboxDrawerReferenceSuggestions(page);
 
         await assertMatchesReference(page, lightbox, 'tagging-lightbox-drawer.png', testInfo, {
             snapshotOptions: {
