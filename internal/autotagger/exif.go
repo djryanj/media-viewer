@@ -4,15 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"media-viewer/internal/filesystem"
 	"media-viewer/internal/logging"
 	"media-viewer/internal/metrics"
 )
+
+const metadataToolTimeout = 45 * time.Second
+
+var errExiftoolUnavailable = errors.New("exiftool not available")
 
 // ffprobeFormat mirrors the "format" section of ffprobe JSON output.
 type ffprobeFormat struct {
@@ -25,9 +31,9 @@ type ffprobeOutput struct {
 }
 
 // isImagePath reports whether absPath has a still-image file extension.
-// ffprobe's image2 / mjpeg demuxer does not reliably surface EXIF/XMP
-// description fields for all real-world JPEG/TIFF/HEIC files; for those
-// formats we fall back to exiftool when ffprobe returns nothing.
+// Still-image metadata extraction prefers exiftool because ffprobe's image2 /
+// mjpeg demuxers do not reliably surface EXIF/XMP description and keyword
+// fields for real-world JPEG/TIFF/HEIC/WebP files.
 func isImagePath(absPath string) bool {
 	switch strings.ToLower(filepath.Ext(absPath)) {
 	case ".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".heif", ".avif", ".webp", ".png":
@@ -36,54 +42,116 @@ func isImagePath(absPath string) bool {
 	return false
 }
 
-// extractDescriptionField runs ffprobe on absPath and returns the raw value of
-// the description or comment field from the format-level tags map.  Returns an
-// empty string when no such field is present.  The lookup is case-insensitive
-// so that containers that capitalise the field name (e.g. "Description") are
-// handled correctly alongside the lowercase convention used by most encoders.
+// extractDescriptionField returns the raw metadata field from absPath that may
+// contain embedded tags. For still images it prefers exiftool and falls back to
+// ffprobe; for video and other non-image formats it uses ffprobe directly.
+// Returns an empty string when no supported field is present. The ffprobe
+// lookup is case-insensitive so that containers that capitalise the field name
+// (e.g. "Description") are handled correctly alongside the lowercase
+// convention used by most encoders.
 //
 // GIFs store metadata as XMP Application Extensions; ffprobe surfaces these
 // under the same format.tags map, so no special-casing is required.
 //
-// For still-image formats (JPEG, TIFF, HEIC, …) ffprobe's image2 demuxer does
-// not reliably surface XMP/EXIF description fields written by standard photo
-// tools such as Lightroom or Digikam.  When ffprobe returns no description,
-// the function falls back to exiftool for these formats.
+// For still-image formats (JPEG, TIFF, HEIC, WebP, …) exiftool is more
+// reliable at surfacing XMP/EXIF description and keyword fields written by
+// standard photo tools such as Lightroom or Digikam. ffprobe remains as a
+// fallback for image metadata it can expose that exiftool did not surface.
 func extractDescriptionField(ctx context.Context, absPath string) (string, error) {
+	if err := validateAbsPath(absPath); err != nil {
+		return "", err
+	}
+
+	logging.Debug("AutoTagger: extracting metadata from %s", absPath)
+
+	retryConfig := filesystem.DefaultRetryConfig()
+	if _, err := filesystem.StatWithRetry(absPath, retryConfig); err != nil {
+		return "", fmt.Errorf("file not accessible: %w", err)
+	}
+
+	if isImagePath(absPath) {
+		return extractStillImageDescription(ctx, absPath)
+	}
+
+	desc, ffprobeErr := extractDescriptionViaFFprobe(ctx, absPath)
+	if ffprobeErr != nil {
+		return "", ffprobeErr
+	}
+	if desc != "" {
+		logging.Debug("AutoTagger: ffprobe returned metadata for %s", filepath.Base(absPath))
+		return desc, nil
+	}
+
+	logging.Debug("AutoTagger: ffprobe found no description/comment for %s", filepath.Base(absPath))
+
+	return "", nil
+}
+
+func extractStillImageDescription(ctx context.Context, absPath string) (string, error) {
+	desc, exifErr := extractDescriptionViaExiftool(ctx, absPath)
+	switch {
+	case exifErr == nil && desc != "":
+		logging.Debug("AutoTagger: exiftool returned metadata for %s", filepath.Base(absPath))
+		return desc, nil
+	case exifErr == nil:
+		logging.Debug("AutoTagger: exiftool found no usable metadata for %s; trying ffprobe fallback", filepath.Base(absPath))
+	case errors.Is(exifErr, errExiftoolUnavailable):
+		logging.Warn("AutoTagger: exiftool unavailable for %s; trying ffprobe fallback", filepath.Base(absPath))
+	default:
+		logging.Debug("AutoTagger: exiftool failed for still image %s; trying ffprobe fallback: %v", filepath.Base(absPath), exifErr)
+	}
+
+	ffprobeDesc, ffprobeErr := extractDescriptionViaFFprobe(ctx, absPath)
+	if ffprobeErr == nil {
+		if ffprobeDesc != "" {
+			logging.Debug("AutoTagger: ffprobe returned fallback metadata for %s", filepath.Base(absPath))
+			return ffprobeDesc, nil
+		}
+
+		logging.Debug("AutoTagger: ffprobe fallback found no description/comment for %s", filepath.Base(absPath))
+		if exifErr != nil && !errors.Is(exifErr, errExiftoolUnavailable) {
+			return "", exifErr
+		}
+		return "", nil
+	}
+
+	if exifErr == nil {
+		logging.Debug("AutoTagger: ffprobe fallback failed for still image %s after exiftool found no usable metadata: %v", filepath.Base(absPath), ffprobeErr)
+		return "", nil
+	}
+
+	if errors.Is(exifErr, errExiftoolUnavailable) {
+		return "", ffprobeErr
+	}
+
+	return "", fmt.Errorf(
+		"metadata extraction failed: %w",
+		errors.Join(
+			fmt.Errorf("exiftool failed: %w", exifErr),
+			fmt.Errorf("ffprobe fallback failed: %w", ffprobeErr),
+		),
+	)
+}
+
+func extractDescriptionViaFFprobe(ctx context.Context, absPath string) (string, error) {
 	ffprobePath, err := exec.LookPath("ffprobe")
 	if err != nil {
 		return "", fmt.Errorf("ffprobe not found: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	if err := validateAbsPath(absPath); err != nil {
-		return "", err
-	}
-
-	// #nosec G204 -- absPath is from the indexed media library, validated above
-	cmd := exec.CommandContext(ctx, ffprobePath,
+	stdout, err := runMetadataTool(ctx, absPath, ffprobePath, metadataToolTimeout,
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_format",
 		absPath,
 	)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	probeStart := time.Now()
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		logging.Debug("ffprobe failed for %s: %v", filepath.Base(absPath), err)
-		return "", fmt.Errorf("ffprobe failed: %w", err)
+		return "", err
 	}
-	metrics.ExifTagFFprobeDuration.Observe(time.Since(probeStart).Seconds())
 
 	var out ffprobeOutput
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
 		return "", fmt.Errorf("ffprobe JSON parse error: %w", err)
 	}
 
@@ -91,38 +159,34 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 	for _, key := range []string{"description", "comment"} {
 		for k, v := range out.Format.Tags {
 			if strings.EqualFold(k, key) {
+				logging.Debug("AutoTagger: ffprobe found %s tag for %s", key, filepath.Base(absPath))
 				return v, nil
 			}
 		}
 	}
 
-	// ffprobe found no description-like tag.  For still-image formats
-	// (JPEG, TIFF, HEIC, …) the image2 demuxer frequently misses XMP/EXIF
-	// metadata written by standard photo editors.  Try exiftool as a fallback.
-	if isImagePath(absPath) {
-		return extractDescriptionViaExiftool(ctx, absPath), nil
-	}
+	logging.Debug("AutoTagger: ffprobe found no description/comment tag for %s", filepath.Base(absPath))
 
 	return "", nil
 }
 
 // extractDescriptionViaExiftool reads description/keyword fields from an image
-// file using exiftool.  It checks (in priority order):
+// file using exiftool. It is the primary extractor for still images and checks
+// (in priority order):
 //   - XMP Description
 //   - EXIF ImageDescription
 //   - IPTC Caption-Abstract
 //   - IPTC Keywords / XMP Subject (joined as a comma-separated list)
 //
-// Returns ("", nil) when exiftool is not installed or finds nothing — this is
-// always a non-fatal outcome.
-func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
+// Returns ("", errExiftoolUnavailable) when exiftool is not installed. Returns
+// ("", nil) when exiftool runs but finds nothing.
+func extractDescriptionViaExiftool(ctx context.Context, absPath string) (string, error) {
 	exiftoolPath, err := exec.LookPath("exiftool")
 	if err != nil {
-		return "" // exiftool not installed; skip silently
+		return "", errExiftoolUnavailable
 	}
 
-	// #nosec G204 -- absPath is validated by the caller (validateAbsPath)
-	cmd := exec.CommandContext(ctx, exiftoolPath,
+	stdout, err := runMetadataTool(ctx, absPath, exiftoolPath, metadataToolTimeout,
 		"-j",
 		"-Description",
 		"-ImageDescription",
@@ -131,18 +195,18 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
 		"-Subject",
 		absPath,
 	)
-
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		logging.Debug("exiftool failed for %s: %v", filepath.Base(absPath), err)
-		return "" // non-fatal
+		return "", err
 	}
 
 	// exiftool -j returns a JSON array; we only ever pass one file.
 	var results []map[string]interface{}
-	if err := json.Unmarshal(stdout.Bytes(), &results); err != nil || len(results) == 0 {
-		return ""
+	if err := json.Unmarshal([]byte(stdout), &results); err != nil {
+		return "", fmt.Errorf("exiftool JSON parse error: %w", err)
+	}
+	if len(results) == 0 {
+		return "", nil
 	}
 
 	fields := results[0]
@@ -151,7 +215,8 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
 	for _, key := range []string{"Description", "ImageDescription", "Caption-Abstract"} {
 		if raw, ok := fields[key]; ok {
 			if v, ok := raw.(string); ok && strings.TrimSpace(v) != "" {
-				return strings.TrimSpace(v)
+				logging.Debug("AutoTagger: exiftool found %s field for %s", key, filepath.Base(absPath))
+				return strings.TrimSpace(v), nil
 			}
 		}
 	}
@@ -162,12 +227,120 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) string {
 	for _, key := range []string{"Keywords", "Subject"} {
 		if raw, ok := fields[key]; ok {
 			if joined := joinKeywordField(raw); joined != "" {
-				return joined
+				logging.Debug("AutoTagger: exiftool found %s keywords for %s", key, filepath.Base(absPath))
+				return joined, nil
 			}
 		}
 	}
 
-	return ""
+	logging.Debug("AutoTagger: exiftool found no supported description or keyword fields for %s", filepath.Base(absPath))
+
+	return "", nil
+}
+
+func runMetadataTool(ctx context.Context, absPath, toolPath string, timeout time.Duration, args ...string) (string, error) {
+	retryConfig := filesystem.DefaultRetryConfig()
+	backoff := retryConfig.InitialBackoff
+	var lastErr error
+	var lastStderr string
+
+	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+		logging.Debug(
+			"AutoTagger: running %s for %s (attempt %d/%d, timeout=%v)",
+			filepath.Base(toolPath),
+			filepath.Base(absPath),
+			attempt+1,
+			retryConfig.MaxRetries+1,
+			timeout,
+		)
+
+		// #nosec G204 -- absPath is from the indexed media library, validated above
+		cmd := exec.CommandContext(attemptCtx, toolPath, args...)
+		var stdoutBuf bytes.Buffer
+		var stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
+		start := time.Now()
+		err := cmd.Run()
+		timedOut := errors.Is(attemptCtx.Err(), context.DeadlineExceeded)
+		cancel()
+
+		if filepath.Base(toolPath) == "ffprobe" {
+			metrics.ExifTagFFprobeDuration.Observe(time.Since(start).Seconds())
+		}
+
+		stdoutText := stdoutBuf.String()
+		stderrText := stderrBuf.String()
+		duration := time.Since(start)
+
+		if err == nil {
+			logging.Debug("AutoTagger: %s succeeded for %s in %v", filepath.Base(toolPath), filepath.Base(absPath), duration.Round(time.Millisecond))
+			return stdoutText, nil
+		}
+
+		lastErr = wrapMetadataToolError(toolPath, err, stderrText, timedOut)
+		lastStderr = stderrText
+
+		if attempt == retryConfig.MaxRetries || !shouldRetryMetadataToolError(lastErr, lastStderr, timedOut) {
+			break
+		}
+
+		logging.Debug(
+			"AutoTagger: retrying %s for %s in %v (attempt %d/%d): %v",
+			filepath.Base(toolPath),
+			filepath.Base(absPath),
+			backoff,
+			attempt+1,
+			retryConfig.MaxRetries,
+			lastErr,
+		)
+
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+
+		backoff *= 2
+		if backoff > retryConfig.MaxBackoff {
+			backoff = retryConfig.MaxBackoff
+		}
+	}
+
+	return "", lastErr
+}
+
+func wrapMetadataToolError(toolPath string, err error, stderr string, timedOut bool) error {
+	if timedOut {
+		return fmt.Errorf("%s timed out: %w", filepath.Base(toolPath), context.DeadlineExceeded)
+	}
+
+	trimmedStderr := strings.TrimSpace(stderr)
+	if trimmedStderr == "" {
+		return fmt.Errorf("%s failed: %w", filepath.Base(toolPath), err)
+	}
+
+	return fmt.Errorf("%s failed: %w, stderr: %s", filepath.Base(toolPath), err, trimmedStderr)
+}
+
+func shouldRetryMetadataToolError(err error, stderr string, timedOut bool) bool {
+	if err == nil {
+		return false
+	}
+	if timedOut || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	lower := strings.ToLower(stderr + " " + err.Error())
+	for _, fragment := range []string{"stale file handle", "input/output error", "resource temporarily unavailable"} {
+		if strings.Contains(lower, fragment) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // joinKeywordField coerces the raw JSON value of a keyword/subject field into

@@ -373,12 +373,18 @@ describe('Favorites Integration', () => {
             });
             const favorites2 = await response2.json();
 
-            // Should be consistent
-            expect(favorites1.length).toBe(favorites2.length);
-            const found1 = favorites1.find((f) => f.path === testFile.path);
-            const found2 = favorites2.find((f) => f.path === testFile.path);
+            // Other integration files also mutate shared favorites state, so this
+            // test should only assert persistence for the specific file it added.
+            const matches1 = favorites1.filter((f) => f.path === testFile.path);
+            const matches2 = favorites2.filter((f) => f.path === testFile.path);
+            expect(matches1).toHaveLength(1);
+            expect(matches2).toHaveLength(1);
+
+            const [found1] = matches1;
+            const [found2] = matches2;
             expect(found1).toBeTruthy();
             expect(found2).toBeTruthy();
+            expect(found1.path).toBe(found2.path);
         });
     });
 });

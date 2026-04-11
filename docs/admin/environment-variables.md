@@ -4,47 +4,47 @@ Complete reference for all environment variables supported by Media Viewer.
 
 ## Quick Reference
 
-| Variable                      | Default        | Description                                            |
-| ----------------------------- | -------------- | ------------------------------------------------------ |
-| **Paths**                     |                |                                                        |
-| `MEDIA_DIR`                   | `/media`       | Media directory path                                   |
-| `CACHE_DIR`                   | `/cache`       | Cache directory for thumbnails and transcoded videos   |
-| `DATABASE_DIR`                | `/database`    | Database directory path                                |
-| **Database**                  |                |                                                        |
-| `DB_MMAP_DISABLED`            | `false`        | Disable SQLite mmap (avoid SIGBUS on network storage)  |
-| `TRANSCODER_LOG_DIR`          | _(none)_       | Transcoder log directory (optional)                    |
-| **Video Transcoding**         |                |                                                        |
-| `GPU_ACCEL`                   | `auto`         | GPU acceleration (auto/nvidia/vaapi/videotoolbox/none) |
-| **Network**                   |                |                                                        |
-| `PORT`                        | `8080`         | HTTP server port                                       |
-| `METRICS_PORT`                | `9090`         | Prometheus metrics port                                |
-| `METRICS_ENABLED`             | `true`         | Enable/disable metrics server                          |
-| **Indexing & Scanning**       |                |                                                        |
-| `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                           |
-| `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                   |
-| `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                     |
-| `EXIF_TAGGING_ENABLED`        | `true`         | Enable EXIF/XMP auto-tagging                           |
-| `EXIF_TAG_INTERVAL`           | `24h`          | EXIF auto-tagging periodic scan interval               |
-| `INDEX_WORKERS`               | `3`            | Parallel indexer workers (tune for NFS/local)          |
-| `THUMBNAIL_WORKERS`           | _(auto)_       | Thumbnail generation workers (tune for performance)    |
-| **Authentication & Sessions** |                |                                                        |
-| `SESSION_DURATION`            | `24h`          | User session lifetime                                  |
-| `SESSION_CLEANUP`             | `1h`           | Expired session cleanup interval                       |
-| **WebAuthn**                  |                |                                                        |
-| `WEBAUTHN_ENABLED`            | `false`        | Enable passkey authentication                          |
-| `WEBAUTHN_RP_ID`              | _(none)_       | Relying Party ID (required if enabled)                 |
-| `WEBAUTHN_RP_NAME`            | `Media Viewer` | Display name for WebAuthn prompts                      |
-| `WEBAUTHN_ORIGINS`            | _(none)_       | Allowed origins (required if enabled)                  |
-| **Memory Management**         |                |                                                        |
-| `MEMORY_LIMIT`                | _(none)_       | Container memory limit in bytes                        |
-| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.75 recommended)            |
-| `GOGC`                        | `150`          | Go GC target percentage (Go default: 100)              |
-| `GOMEMLIMIT`                  | _(none)_       | Direct Go memory limit override                        |
-| **Logging**                   |                |                                                        |
-| `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                  |
-| `LOG_STATIC_FILES`            | `false`        | Log static file requests                               |
-| `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                              |
-| `SLOW_QUERY_THRESHOLD_MS`     | `100`          | Threshold (ms) for logging slow database queries       |
+| Variable                      | Default        | Description                                                         |
+| ----------------------------- | -------------- | ------------------------------------------------------------------- |
+| **Paths**                     |                |                                                                     |
+| `MEDIA_DIR`                   | `/media`       | Media directory path                                                |
+| `CACHE_DIR`                   | `/cache`       | Cache directory for thumbnails and transcoded videos                |
+| `DATABASE_DIR`                | `/database`    | Database directory path                                             |
+| **Database**                  |                |                                                                     |
+| `DB_MMAP_DISABLED`            | `false`        | Disable SQLite mmap (avoid SIGBUS on network or WSL-backed storage) |
+| `TRANSCODER_LOG_DIR`          | _(none)_       | Transcoder log directory (optional)                                 |
+| **Video Transcoding**         |                |                                                                     |
+| `GPU_ACCEL`                   | `auto`         | GPU acceleration (auto/nvidia/vaapi/videotoolbox/none)              |
+| **Network**                   |                |                                                                     |
+| `PORT`                        | `8080`         | HTTP server port                                                    |
+| `METRICS_PORT`                | `9090`         | Prometheus metrics port                                             |
+| `METRICS_ENABLED`             | `true`         | Enable/disable metrics server                                       |
+| **Indexing & Scanning**       |                |                                                                     |
+| `INDEX_INTERVAL`              | `30m`          | Full media re-index interval                                        |
+| `POLL_INTERVAL`               | `30s`          | Filesystem change detection interval                                |
+| `THUMBNAIL_INTERVAL`          | `6h`           | Thumbnail generation scan interval                                  |
+| `EXIF_TAGGING_ENABLED`        | `true`         | Enable EXIF/XMP auto-tagging                                        |
+| `EXIF_TAG_INTERVAL`           | `24h`          | EXIF auto-tagging periodic scan interval                            |
+| `INDEX_WORKERS`               | `3`            | Parallel indexer workers (tune for NFS/local)                       |
+| `THUMBNAIL_WORKERS`           | _(auto)_       | Thumbnail generation workers (tune for performance)                 |
+| **Authentication & Sessions** |                |                                                                     |
+| `SESSION_DURATION`            | `24h`          | User session lifetime                                               |
+| `SESSION_CLEANUP`             | `1h`           | Expired session cleanup interval                                    |
+| **WebAuthn**                  |                |                                                                     |
+| `WEBAUTHN_ENABLED`            | `false`        | Enable passkey authentication                                       |
+| `WEBAUTHN_RP_ID`              | _(none)_       | Relying Party ID (required if enabled)                              |
+| `WEBAUTHN_RP_NAME`            | `Media Viewer` | Display name for WebAuthn prompts                                   |
+| `WEBAUTHN_ORIGINS`            | _(none)_       | Allowed origins (required if enabled)                               |
+| **Memory Management**         |                |                                                                     |
+| `MEMORY_LIMIT`                | _(none)_       | Container memory limit in bytes                                     |
+| `MEMORY_RATIO`                | `0.85`         | Go heap allocation ratio (0.75 recommended)                         |
+| `GOGC`                        | `150`          | Go GC target percentage (Go default: 100)                           |
+| `GOMEMLIMIT`                  | _(none)_       | Direct Go memory limit override                                     |
+| **Logging**                   |                |                                                                     |
+| `LOG_LEVEL`                   | `info`         | Log verbosity (debug/info/warn/error)                               |
+| `LOG_STATIC_FILES`            | `false`        | Log static file requests                                            |
+| `LOG_HEALTH_CHECKS`           | `true`         | Log health check requests                                           |
+| `SLOW_QUERY_THRESHOLD_MS`     | `100`          | Threshold (ms) for logging slow database queries                    |
 
 ## Paths
 
@@ -94,6 +94,9 @@ DB_MMAP_DISABLED=true
 ```
 
 - Default: `false`
+- If unset, the app will automatically enable this when `DATABASE_DIR` is on a
+  detected unsafe filesystem such as NFS, CIFS/SMB, or WSL/9P.
+- An explicit `DB_MMAP_DISABLED=false` still forces standard mmap behavior.
 - When set to `true`, the application disables SQLite mmap usage. This can
   prevent SIGBUS crashes when the database file is stored on network filesystems
   that do not fully support memory-mapped I/O. There may be a small performance

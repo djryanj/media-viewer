@@ -3,6 +3,7 @@ package autotagger
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -92,8 +93,24 @@ func (a *AutoTagger) Start() {
 		logging.Info("EXIF auto-tagging disabled")
 		return
 	}
+	logMetadataToolAvailability()
+	logging.Debug("AutoTagger: enabled for media dir %s", a.mediaDir)
 	logging.Info("EXIF auto-tagger started (interval: %v)", a.interval)
 	go a.loop()
+}
+
+func logMetadataToolAvailability() {
+	if exiftoolPath, err := exec.LookPath("exiftool"); err != nil {
+		logging.Warn("AutoTagger: exiftool not found in PATH; still-image metadata extraction will fall back to ffprobe only")
+	} else {
+		logging.Debug("AutoTagger: using exiftool at %s", exiftoolPath)
+	}
+
+	if ffprobePath, err := exec.LookPath("ffprobe"); err != nil {
+		logging.Warn("AutoTagger: ffprobe not found in PATH; video metadata extraction will fail and still-image fallback will be unavailable")
+	} else {
+		logging.Debug("AutoTagger: using ffprobe at %s", ffprobePath)
+	}
 }
 
 // TriggerRun launches an on-demand full (non-incremental) pass in the
@@ -145,6 +162,8 @@ func (a *AutoTagger) loop() {
 // incremental is true only files changed since the last recorded run are
 // processed; when false the entire library is scanned in pages.
 func (a *AutoTagger) runPass(incremental bool) {
+	logging.Debug("AutoTagger: run requested (incremental=%t)", incremental)
+
 	// Guard against concurrent passes.
 	if !a.isRunning.CompareAndSwap(false, true) {
 		logging.Info("AutoTagger: pass already in progress, skipping new request")
@@ -211,7 +230,6 @@ func (a *AutoTagger) runIncrementalPass(ctx context.Context, lastRun time.Time) 
 	if _, _, err := a.processFiles(ctx, files); err != nil {
 		return time.Time{}, err
 	}
-	a.logProgress(true)
 
 	completedAt := time.Now()
 	if err := a.db.SetLastExifTagRun(ctx, completedAt); err != nil {
@@ -245,11 +263,13 @@ func (a *AutoTagger) runFullPass(ctx context.Context) (time.Time, error) {
 		default:
 		}
 
+		logging.Debug("AutoTagger: loading full-pass page offset=%d limit=%d", offset, exifFetchPageSize)
 		page, err := a.db.GetMediaFilesForAutoTaggingPaged(ctx, offset, exifFetchPageSize)
 		if err != nil {
 			metrics.ExifTagErrorsTotal.Inc()
 			return time.Time{}, err
 		}
+		logging.Debug("AutoTagger: full-pass page offset=%d returned %d files", offset, len(page))
 		if len(page) == 0 {
 			break
 		}
@@ -258,7 +278,6 @@ func (a *AutoTagger) runFullPass(ctx context.Context) (time.Time, error) {
 			return time.Time{}, err
 		}
 		offset += len(page)
-		a.logProgress(false)
 
 		if len(page) < exifFetchPageSize {
 			break
@@ -384,10 +403,11 @@ func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFil
 		}
 
 		a.setCurrentFile(f.Path)
+		logging.Debug("AutoTagger: processing %s (type: %s)", f.Path, f.Type)
 		absPath := filepath.Join(a.mediaDir, f.Path)
 		tags, err := extractTagsFromFile(ctx, absPath)
 		if err != nil {
-			logging.Debug("AutoTagger: skipping %s (ffprobe error): %v", f.Path, err)
+			logging.Warn("AutoTagger: metadata extraction failed for %s: %v", f.Path, err)
 			metrics.ExifTagFilesTotal.WithLabelValues("failed").Inc()
 			metrics.ExifTagErrorsTotal.Inc()
 			a.recordOutcome("failed")
@@ -395,10 +415,13 @@ func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFil
 			continue
 		}
 		if len(tags) == 0 {
+			logging.Debug("AutoTagger: no embedded tags found for %s", f.Path)
 			metrics.ExifTagFilesTotal.WithLabelValues("skipped").Inc()
 			a.recordOutcome("skipped")
 			continue
 		}
+
+		logging.Debug("AutoTagger: extracted tags %v from %s", tags, f.Path)
 
 		if err := a.db.MergeExifTagsForFile(ctx, f.Path, tags); err != nil {
 			logging.Error("AutoTagger: failed to merge tags for %s: %v", f.Path, err)
@@ -455,35 +478,6 @@ func (a *AutoTagger) recordOutcome(outcome string) {
 	stats := a.runStats
 	a.runMu.Unlock()
 	a.updateCurrentRunMetrics(stats)
-}
-
-func (a *AutoTagger) logProgress(incremental bool) {
-	a.runMu.RLock()
-	stats := a.runStats
-	a.runMu.RUnlock()
-
-	runType := runTypeFull
-	if incremental {
-		runType = runTypeIncremental
-	}
-
-	if stats.TotalFiles > 0 {
-		logging.Info("AutoTagger: %s progress %d/%d files processed (tagged %d, skipped %d, failed %d)",
-			runType,
-			stats.Processed,
-			stats.TotalFiles,
-			stats.Tagged,
-			stats.Skipped,
-			stats.Failed)
-		return
-	}
-
-	logging.Info("AutoTagger: %s progress %d files processed (tagged %d, skipped %d, failed %d)",
-		runType,
-		stats.Processed,
-		stats.Tagged,
-		stats.Skipped,
-		stats.Failed)
 }
 
 func (a *AutoTagger) logStillRunning(startTime time.Time, incremental bool) {

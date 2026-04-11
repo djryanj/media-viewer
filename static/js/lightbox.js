@@ -1144,12 +1144,13 @@ const Lightbox = {
             typeof Tags.renderSuggestionGroups === 'function';
 
         if (canUseSharedSuggestions) {
-            const recentTagNames =
-                typeof Tags.getRecentTagNames === 'function'
-                    ? Tags.getRecentTagNames()
-                    : Array.isArray(Tags._recentTagNames)
-                      ? [...Tags._recentTagNames]
-                      : [];
+            let recentTagNames = [];
+            if (typeof Tags.getRecentTagNames === 'function') {
+                recentTagNames = Tags.getRecentTagNames();
+            } else if (Array.isArray(Tags._recentTagNames)) {
+                recentTagNames = [...Tags._recentTagNames];
+            }
+
             const groups = Tags.getSuggestionGroups(query, {
                 allTags: this.allTagSuggestions,
                 recentTagNames,

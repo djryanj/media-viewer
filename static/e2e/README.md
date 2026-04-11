@@ -17,6 +17,9 @@ npm run test:e2e:all
 # Run the stable Chromium smoke suite used on pull requests
 npm run test:e2e:smoke
 
+# Run the Docker-backed Chromium smoke suite (auth, gallery, lightbox/video, autotagger runtime)
+npm run test:e2e:runtime-smoke
+
 # Run visual regression checks against committed JSON baselines
 npm run test:e2e:visual
 
@@ -62,6 +65,8 @@ Playwright reads `TEST_BASE_URL` for the backend URL. `BASE_URL` is still accept
 `npm run test:e2e` excludes `@performance` specs and `@docs-screenshots` specs by default. Performance coverage is opt-in through the dedicated `test:e2e:performance:*` commands, and docs screenshot generation is opt-in through `npm run test:e2e:docs-screenshots`, so the regular developer and PR path stays stable.
 
 The regular pull request workflow runs `npm run test:e2e:smoke`, which currently covers the canonical auth, gallery, and lightbox/video specs in Chromium.
+
+The Docker runtime smoke lane extends that Chromium smoke coverage with a real container-backed autotagger assertion, so image/runtime regressions can surface even when the regular host-backed smoke suite is green.
 
 ## Directory Structure
 

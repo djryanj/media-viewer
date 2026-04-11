@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
+const reporters = process.env.CI ? ['verbose', 'json'] : ['verbose'];
+const outputFile = process.env.CI ? { json: './test-results/vitest-results.json' } : undefined;
+
 export default defineConfig({
     test: {
         // Test environment - happy-dom is faster than jsdom
@@ -43,7 +46,8 @@ export default defineConfig({
         hookTimeout: 10000,
 
         // Reporter configuration
-        reporters: ['verbose'],
+        reporters,
+        outputFile,
 
         // Watch mode settings
         watch: false,

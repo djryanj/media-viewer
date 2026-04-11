@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,156 @@ func TestGetEnv(t *testing.T) {
 			got := getEnv(tt.key, tt.defaultValue)
 			if got != tt.want {
 				t.Errorf("getEnv(%q, %q) = %q, want %q", tt.key, tt.defaultValue, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetEnvBoolWithSet(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          string
+		defaultValue bool
+		envValue     string
+		setEnv       bool
+		wantValue    bool
+		wantSet      bool
+	}{
+		{
+			name:         "unset uses default",
+			key:          "TEST_BOOL_UNSET",
+			defaultValue: false,
+			wantValue:    false,
+			wantSet:      false,
+		},
+		{
+			name:         "true override",
+			key:          "TEST_BOOL_TRUE",
+			defaultValue: false,
+			envValue:     "true",
+			setEnv:       true,
+			wantValue:    true,
+			wantSet:      true,
+		},
+		{
+			name:         "false override",
+			key:          "TEST_BOOL_FALSE",
+			defaultValue: true,
+			envValue:     "false",
+			setEnv:       true,
+			wantValue:    false,
+			wantSet:      true,
+		},
+		{
+			name:         "empty value treated as unset",
+			key:          "TEST_BOOL_EMPTY",
+			defaultValue: true,
+			envValue:     "",
+			setEnv:       true,
+			wantValue:    true,
+			wantSet:      false,
+		},
+		{
+			name:         "invalid value falls back",
+			key:          "TEST_BOOL_INVALID",
+			defaultValue: true,
+			envValue:     "not-a-bool",
+			setEnv:       true,
+			wantValue:    true,
+			wantSet:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setEnv {
+				t.Setenv(tt.key, tt.envValue)
+			} else {
+				os.Unsetenv(tt.key)
+				t.Cleanup(func() {
+					os.Unsetenv(tt.key)
+				})
+			}
+
+			gotValue, gotSet := getEnvBoolWithSet(tt.key, tt.defaultValue)
+			if gotValue != tt.wantValue {
+				t.Errorf("getEnvBoolWithSet(%q) value = %v, want %v", tt.key, gotValue, tt.wantValue)
+			}
+			if gotSet != tt.wantSet {
+				t.Errorf("getEnvBoolWithSet(%q) set = %v, want %v", tt.key, gotSet, tt.wantSet)
+			}
+		})
+	}
+}
+
+func TestResolveDBMmapDisabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		explicitValue bool
+		explicitSet   bool
+		storageUnsafe bool
+		storageName   string
+		wantDisabled  bool
+		wantMessage   string
+	}{
+		{
+			name:          "explicit true on safe storage",
+			explicitValue: true,
+			explicitSet:   true,
+			storageUnsafe: false,
+			wantDisabled:  true,
+		},
+		{
+			name:          "unsafe storage auto disables mmap",
+			explicitValue: false,
+			explicitSet:   false,
+			storageUnsafe: true,
+			storageName:   "9P/WSL",
+			wantDisabled:  true,
+			wantMessage:   "automatically enabling DB_MMAP_DISABLED",
+		},
+		{
+			name:          "explicit false wins on unsafe storage",
+			explicitValue: false,
+			explicitSet:   true,
+			storageUnsafe: true,
+			storageName:   "NFS",
+			wantDisabled:  false,
+			wantMessage:   "set explicitly",
+		},
+		{
+			name:          "safe storage keeps default",
+			explicitValue: false,
+			explicitSet:   false,
+			storageUnsafe: false,
+			wantDisabled:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotDisabled, gotMessage := resolveDBMmapDisabled(
+				tt.explicitValue,
+				tt.explicitSet,
+				tt.storageUnsafe,
+				tt.storageName,
+			)
+
+			if gotDisabled != tt.wantDisabled {
+				t.Errorf("resolveDBMmapDisabled() disabled = %v, want %v", gotDisabled, tt.wantDisabled)
+			}
+			if tt.wantMessage == "" {
+				if gotMessage != "" {
+					t.Errorf("resolveDBMmapDisabled() message = %q, want empty", gotMessage)
+				}
+				return
+			}
+			if !strings.Contains(gotMessage, tt.wantMessage) {
+				t.Errorf("resolveDBMmapDisabled() message = %q, want substring %q", gotMessage, tt.wantMessage)
 			}
 		})
 	}

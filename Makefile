@@ -54,7 +54,7 @@ FORCE ?= 0
         frontend-dev \
         frontend-test frontend-test-unit frontend-test-integration \
         frontend-test-integration-auto frontend-test-e2e-auto \
-			frontend-test-e2e frontend-test-e2e-smoke frontend-test-e2e-smoke-auto \
+			frontend-test-e2e frontend-test-e2e-smoke frontend-test-e2e-smoke-auto frontend-test-e2e-runtime-smoke frontend-test-e2e-runtime-smoke-auto \
 			frontend-test-e2e-visual frontend-test-e2e-visual-auto frontend-test-e2e-visual-baselines \
 			frontend-test-e2e-performance frontend-test-e2e-performance-auto \
 			frontend-test-e2e-performance-smoke frontend-test-e2e-performance-smoke-auto frontend-test-e2e-performance-soak \
@@ -64,10 +64,10 @@ FORCE ?= 0
         frontend-test-file \
 		frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-file-auto \
         frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug \
-        frontend-test-e2e-coverage frontend-test-e2e-report \
+		frontend-test-e2e-coverage frontend-test-e2e-report \
 		fmt gofmt lint lint-fix lint-all lint-fix-all format-all check-all \
         clean clean-all \
-        docker-build docker-build-dev docker-run \
+		docker-build docker-build-dev docker-run \
         icons docs-serve docs-build docs-deploy \
         download-sample-media \
         setup help
@@ -706,6 +706,19 @@ frontend-test-e2e-smoke-auto:
 	@echo "Logging to e2e-smoke-auto.log"
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-smoke 2>&1 | tee e2e-smoke-auto.log
 
+# Run the Docker-backed runtime smoke suite (canonical smoke coverage plus real autotagger extraction)
+frontend-test-e2e-runtime-smoke:
+	@echo "Running frontend Docker runtime smoke suite..."
+	@echo "Note: Requires backend running (use 'make frontend-test-e2e-runtime-smoke-auto' for automatic Docker server)"
+	@echo "Logging to ../e2e-runtime-smoke.log"
+	cd $(STATIC_DIR) && npm run test:e2e:runtime-smoke 2>&1 | tee ../e2e-runtime-smoke.log
+
+# Run the Docker-backed runtime smoke suite with an ephemeral Docker test server
+frontend-test-e2e-runtime-smoke-auto:
+	@echo "Running frontend Docker runtime smoke suite with ephemeral Docker server..."
+	@echo "Logging to e2e-runtime-smoke-auto.log"
+	@bash ./hack/run-with-docker-test-server.sh $(MAKE) frontend-test-e2e-runtime-smoke 2>&1 | tee e2e-runtime-smoke-auto.log
+
 # Run frontend E2E tests with an ephemeral test server
 frontend-test-e2e-auto:
 	@echo "Running frontend E2E tests with ephemeral test server..."
@@ -1197,6 +1210,8 @@ help:
 	@echo "  frontend-test-e2e-auto      Run E2E tests with ephemeral server"
 	@echo "  frontend-test-e2e-smoke     Run stable Chromium E2E smoke suite"
 	@echo "  frontend-test-e2e-smoke-auto Run smoke suite with ephemeral server"
+	@echo "  frontend-test-e2e-runtime-smoke Run Docker-backed autotagger smoke suite"
+	@echo "  frontend-test-e2e-runtime-smoke-auto Run Docker-backed autotagger smoke suite with ephemeral Docker server"
 	@echo "  frontend-test-e2e-performance Run non-soak Playwright performance suite"
 	@echo "  frontend-test-e2e-performance-auto Run performance suite with ephemeral server"
 	@echo "  frontend-test-e2e-performance-smoke Run the fast baseline performance suite"

@@ -146,6 +146,18 @@ test.describe('Authentication @auth @core @login', () => {
     });
 
     test('should support keyboard navigation on login form @keyboard', async ({ page }) => {
+        await page.route('**/api/auth/webauthn/available', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    enabled: false,
+                    available: false,
+                    hasCredentials: false,
+                }),
+            });
+        });
+
         await page.goto('/login.html');
         await page.locator('#login-submit').waitFor({ state: 'visible', timeout: 15000 });
 
@@ -156,11 +168,6 @@ test.describe('Authentication @auth @core @login', () => {
         await expect(passwordInput).toBeFocused();
 
         await page.keyboard.press('Tab');
-
-        const focusedId = await page.evaluate(() => document.activeElement?.id);
-        if (focusedId !== 'login-submit') {
-            await page.keyboard.press('Tab');
-        }
 
         await expect(submitButton).toBeFocused();
     });

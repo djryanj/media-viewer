@@ -1015,12 +1015,12 @@ func TestProcessFilesJPEGIdempotentIntegration(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// exiftool fallback tests
+// exiftool image extraction tests
 //
-// extractDescriptionViaExiftool is the fallback for image files where ffprobe
-// returns no description.  These tests exercise it directly rather than via the
-// full ffprobe pipeline so they remain reliable regardless of which metadata
-// embedding strategy ffprobe happens to surface.
+// extractDescriptionViaExiftool is the preferred extractor for still-image
+// files. These tests exercise it directly rather than via the full fallback
+// pipeline so they remain reliable regardless of which metadata embedding
+// strategy ffprobe happens to surface.
 // ---------------------------------------------------------------------------
 
 // TestExtractDescriptionViaExiftoolIntegration verifies that
@@ -1036,9 +1036,12 @@ func TestExtractDescriptionViaExiftoolIntegration(t *testing.T) {
 	filePath := filepath.Join(mediaDir, "et_fallback.jpg")
 	createJPEGWithDescription(t, filePath, "tags:fallback, test;")
 
-	desc := extractDescriptionViaExiftool(context.Background(), filePath)
+	desc, err := extractDescriptionViaExiftool(context.Background(), filePath)
+	if err != nil {
+		t.Fatalf("extractDescriptionViaExiftool: %v", err)
+	}
 	if desc == "" {
-		t.Fatal("expected non-empty description via exiftool fallback, got empty string")
+		t.Fatal("expected non-empty description via exiftool image extraction, got empty string")
 	}
 	tags := parseTagsFromDescription(desc)
 	if len(tags) != 2 {
@@ -1066,20 +1069,23 @@ func TestExtractDescriptionViaExiftoolNoMetadataIntegration(t *testing.T) {
 	filePath := filepath.Join(mediaDir, "bare_et.jpg")
 	createJPEGNoMetadata(t, filePath)
 
-	desc := extractDescriptionViaExiftool(context.Background(), filePath)
+	desc, err := extractDescriptionViaExiftool(context.Background(), filePath)
+	if err != nil {
+		t.Fatalf("extractDescriptionViaExiftool: %v", err)
+	}
 	if desc != "" {
 		t.Errorf("expected empty description for bare JPEG, got %q", desc)
 	}
 }
 
-// TestExtractTagsFromFileJPEGExiftoolFallbackIntegration verifies the code path
-// where ffprobe returns no description for a JPEG but exiftool can read the
-// metadata.  IPTC Keywords are not surfaced by ffprobe's image2 demuxer (they
+// TestExtractTagsFromFileJPEGExiftoolPreferredIntegration verifies the code
+// path where exiftool supplies JPEG metadata that ffprobe's image2 demuxer does
+// not surface. IPTC Keywords are not surfaced by ffprobe's image2 demuxer (they
 // arrive as format.tags["comment"] only when an EXIF/XMP field is written via
 // exiftool), so a JPEG with only IPTC Keywords / XMP Subject is the canonical
-// fixture for this scenario.  The fixture is self-contained and does not depend
+// fixture for this scenario. The fixture is self-contained and does not depend
 // on any files in sample-media/.
-func TestExtractTagsFromFileJPEGExiftoolFallbackIntegration(t *testing.T) {
+func TestExtractTagsFromFileJPEGExiftoolPreferredIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -1087,8 +1093,8 @@ func TestExtractTagsFromFileJPEGExiftoolFallbackIntegration(t *testing.T) {
 
 	mediaDir := t.TempDir()
 	filePath := filepath.Join(mediaDir, "fallback.jpg")
-	// IPTC Keywords / XMP Subject are invisible to ffprobe → exiftool fallback
-	// is the only path that can surface them.
+	// IPTC Keywords / XMP Subject are invisible to ffprobe, so exiftool should
+	// be the first and successful extractor for this file.
 	createJPEGWithIPTCKeywords(t, filePath, "nature", "landscape", "travel")
 
 	tags, err := extractTagsFromFile(context.Background(), filePath)
@@ -1096,7 +1102,7 @@ func TestExtractTagsFromFileJPEGExiftoolFallbackIntegration(t *testing.T) {
 		t.Fatalf("extractTagsFromFile: %v", err)
 	}
 	if len(tags) == 0 {
-		t.Fatal("expected tags via exiftool fallback, got none")
+		t.Fatal("expected tags via exiftool-preferred image extraction, got none")
 	}
 	tagSet := make(map[string]bool)
 	for _, tag := range tags {
@@ -1140,6 +1146,28 @@ func createJPEGWithIPTCKeywords(t *testing.T, dest string, keywords ...string) {
 	tagCmd := exec.Command("exiftool", args...)
 	if out, err := tagCmd.CombinedOutput(); err != nil {
 		t.Fatalf("exiftool failed to write IPTC keywords to %q: %v\noutput: %s", dest, err, out)
+	}
+}
+
+func createWebPWithXMPKeywords(t *testing.T, dest string, keywords ...string) {
+	t.Helper()
+	createCmd := exec.Command("ffmpeg",
+		"-y", "-f", "lavfi", "-i", "color=c=black:size=2x2", "-frames:v", "1", dest,
+	)
+	if out, err := createCmd.CombinedOutput(); err != nil {
+		t.Fatalf("ffmpeg failed to create WebP %q: %v\noutput: %s", dest, err, out)
+	}
+
+	args := make([]string, 0, 1+len(keywords)+1)
+	args = append(args, "-overwrite_original")
+	for _, kw := range keywords {
+		args = append(args, "-XMP-dc:Subject+="+kw)
+	}
+	args = append(args, dest)
+	// #nosec G204 -- test helper; args are caller-controlled test data
+	tagCmd := exec.Command("exiftool", args...)
+	if out, err := tagCmd.CombinedOutput(); err != nil {
+		t.Fatalf("exiftool failed to write XMP keywords to %q: %v\noutput: %s", dest, err, out)
 	}
 }
 
@@ -1214,6 +1242,34 @@ func TestExtractTagsFromFileIPTCKeywordsIntegration(t *testing.T) {
 	}
 	if len(tags) == 0 {
 		t.Fatal("expected tags from IPTC Keywords field, got none")
+	}
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+	for _, want := range []string{"travel", "mountains", "landscape"} {
+		if !tagSet[want] {
+			t.Errorf("expected tag %q in result %v", want, tags)
+		}
+	}
+}
+
+func TestExtractTagsFromFileWebPXMPKeywordsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	requireFFmpeg(t)
+
+	mediaDir := t.TempDir()
+	filePath := filepath.Join(mediaDir, "iptc_keywords.webp")
+	createWebPWithXMPKeywords(t, filePath, "travel", "mountains", "landscape")
+
+	tags, err := extractTagsFromFile(context.Background(), filePath)
+	if err != nil {
+		t.Fatalf("extractTagsFromFile: %v", err)
+	}
+	if len(tags) == 0 {
+		t.Fatal("expected tags from WebP XMP Subject field, got none")
 	}
 	tagSet := make(map[string]bool)
 	for _, tag := range tags {
