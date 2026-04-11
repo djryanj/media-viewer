@@ -140,11 +140,14 @@ jobs:
               working-directory: ./static
               run: npm ci
 
+            - name: Archive frontend dependencies
+              run: tar -czf frontend-deps.tgz -C static node_modules
+
             - name: Upload frontend dependency artifact
               uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
               with:
                   name: frontend-deps
-                  path: static/node_modules
+                  path: frontend-deps.tgz
                   retention-days: 1
 
     build-binary-pr:
@@ -230,7 +233,12 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: frontend-deps
-                  path: ./static/node_modules
+                  path: ./artifacts/frontend-deps
+
+            - name: Extract frontend dependency artifact
+              run: |
+                  rm -rf ./static/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
 
             - name: Run ESLint (JavaScript)
               working-directory: ./static
@@ -353,7 +361,12 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: frontend-deps
-                  path: ./static/node_modules
+                  path: ./artifacts/frontend-deps
+
+            - name: Extract frontend dependency artifact
+              run: |
+                  rm -rf ./static/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
 
             - name: Run frontend unit tests
               working-directory: ./static
@@ -497,7 +510,12 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: frontend-deps
-                  path: ./static/node_modules
+                  path: ./artifacts/frontend-deps
+
+            - name: Extract frontend dependency artifact
+              run: |
+                  rm -rf ./static/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
 
             - name: Download backend binary
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -596,7 +614,12 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: frontend-deps
-                  path: ./static/node_modules
+                  path: ./artifacts/frontend-deps
+
+            - name: Extract frontend dependency artifact
+              run: |
+                  rm -rf ./static/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
 
             - name: Install Playwright Chromium
               working-directory: ./static
@@ -689,7 +712,12 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: frontend-deps
-                  path: ./static/node_modules
+                  path: ./artifacts/frontend-deps
+
+            - name: Extract frontend dependency artifact
+              run: |
+                  rm -rf ./static/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
 
             - name: Install Playwright Chromium
               working-directory: ./static
@@ -780,7 +808,12 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: frontend-deps
-                  path: ./static/node_modules
+                  path: ./artifacts/frontend-deps
+
+            - name: Extract frontend dependency artifact
+              run: |
+                  rm -rf ./static/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
 
             - name: Install Playwright Chromium
               working-directory: ./static
