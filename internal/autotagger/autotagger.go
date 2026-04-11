@@ -92,6 +92,7 @@ func (a *AutoTagger) Start() {
 		logging.Info("EXIF auto-tagging disabled")
 		return
 	}
+	logging.Debug("AutoTagger: enabled for media dir %s", a.mediaDir)
 	logging.Info("EXIF auto-tagger started (interval: %v)", a.interval)
 	go a.loop()
 }
@@ -145,6 +146,8 @@ func (a *AutoTagger) loop() {
 // incremental is true only files changed since the last recorded run are
 // processed; when false the entire library is scanned in pages.
 func (a *AutoTagger) runPass(incremental bool) {
+	logging.Debug("AutoTagger: run requested (incremental=%t)", incremental)
+
 	// Guard against concurrent passes.
 	if !a.isRunning.CompareAndSwap(false, true) {
 		logging.Info("AutoTagger: pass already in progress, skipping new request")
@@ -244,11 +247,13 @@ func (a *AutoTagger) runFullPass(ctx context.Context) (time.Time, error) {
 		default:
 		}
 
+		logging.Debug("AutoTagger: loading full-pass page offset=%d limit=%d", offset, exifFetchPageSize)
 		page, err := a.db.GetMediaFilesForAutoTaggingPaged(ctx, offset, exifFetchPageSize)
 		if err != nil {
 			metrics.ExifTagErrorsTotal.Inc()
 			return time.Time{}, err
 		}
+		logging.Debug("AutoTagger: full-pass page offset=%d returned %d files", offset, len(page))
 		if len(page) == 0 {
 			break
 		}
@@ -382,6 +387,7 @@ func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFil
 		}
 
 		a.setCurrentFile(f.Path)
+		logging.Debug("AutoTagger: processing %s (type: %s)", f.Path, f.Type)
 		absPath := filepath.Join(a.mediaDir, f.Path)
 		tags, err := extractTagsFromFile(ctx, absPath)
 		if err != nil {
@@ -393,10 +399,13 @@ func (a *AutoTagger) processFiles(ctx context.Context, files []database.MediaFil
 			continue
 		}
 		if len(tags) == 0 {
+			logging.Debug("AutoTagger: no embedded tags found for %s", f.Path)
 			metrics.ExifTagFilesTotal.WithLabelValues("skipped").Inc()
 			a.recordOutcome("skipped")
 			continue
 		}
+
+		logging.Debug("AutoTagger: extracted tags %v from %s", tags, f.Path)
 
 		if err := a.db.MergeExifTagsForFile(ctx, f.Path, tags); err != nil {
 			logging.Error("AutoTagger: failed to merge tags for %s: %v", f.Path, err)

@@ -60,6 +60,8 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 		return "", err
 	}
 
+	logging.Debug("AutoTagger: extracting metadata from %s", absPath)
+
 	retryConfig := filesystem.DefaultRetryConfig()
 	if _, err := filesystem.StatWithRetry(absPath, retryConfig); err != nil {
 		return "", fmt.Errorf("file not accessible: %w", err)
@@ -68,21 +70,32 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 	desc, ffprobeErr := extractDescriptionViaFFprobe(ctx, absPath)
 	if ffprobeErr == nil {
 		if desc != "" {
+			logging.Debug("AutoTagger: ffprobe returned metadata for %s", filepath.Base(absPath))
 			return desc, nil
 		}
 		if !isImagePath(absPath) {
+			logging.Debug("AutoTagger: ffprobe found no description/comment for %s", filepath.Base(absPath))
 			return "", nil
 		}
+		logging.Debug("AutoTagger: ffprobe found no description/comment for %s; trying exiftool fallback", filepath.Base(absPath))
 	} else if !isImagePath(absPath) {
 		return "", ffprobeErr
+	} else {
+		logging.Debug("AutoTagger: ffprobe failed for still image %s; trying exiftool fallback: %v", filepath.Base(absPath), ffprobeErr)
 	}
 
 	fallbackDesc, fallbackErr := extractDescriptionViaExiftool(ctx, absPath)
 	if fallbackErr == nil {
+		if fallbackDesc == "" {
+			logging.Debug("AutoTagger: exiftool found no usable metadata for %s", filepath.Base(absPath))
+		} else {
+			logging.Debug("AutoTagger: exiftool returned metadata for %s", filepath.Base(absPath))
+		}
 		return fallbackDesc, nil
 	}
 
 	if errors.Is(fallbackErr, errExiftoolUnavailable) {
+		logging.Debug("AutoTagger: exiftool unavailable; no image fallback for %s", filepath.Base(absPath))
 		if ffprobeErr != nil {
 			return "", ffprobeErr
 		}
@@ -128,10 +141,13 @@ func extractDescriptionViaFFprobe(ctx context.Context, absPath string) (string, 
 	for _, key := range []string{"description", "comment"} {
 		for k, v := range out.Format.Tags {
 			if strings.EqualFold(k, key) {
+				logging.Debug("AutoTagger: ffprobe found %s tag for %s", key, filepath.Base(absPath))
 				return v, nil
 			}
 		}
 	}
+
+	logging.Debug("AutoTagger: ffprobe found no description/comment tag for %s", filepath.Base(absPath))
 
 	return "", nil
 }
@@ -180,6 +196,7 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) (string,
 	for _, key := range []string{"Description", "ImageDescription", "Caption-Abstract"} {
 		if raw, ok := fields[key]; ok {
 			if v, ok := raw.(string); ok && strings.TrimSpace(v) != "" {
+				logging.Debug("AutoTagger: exiftool found %s field for %s", key, filepath.Base(absPath))
 				return strings.TrimSpace(v), nil
 			}
 		}
@@ -191,10 +208,13 @@ func extractDescriptionViaExiftool(ctx context.Context, absPath string) (string,
 	for _, key := range []string{"Keywords", "Subject"} {
 		if raw, ok := fields[key]; ok {
 			if joined := joinKeywordField(raw); joined != "" {
+				logging.Debug("AutoTagger: exiftool found %s keywords for %s", key, filepath.Base(absPath))
 				return joined, nil
 			}
 		}
 	}
+
+	logging.Debug("AutoTagger: exiftool found no supported description or keyword fields for %s", filepath.Base(absPath))
 
 	return "", nil
 }
@@ -207,6 +227,14 @@ func runMetadataTool(ctx context.Context, absPath, toolPath string, timeout time
 
 	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+		logging.Debug(
+			"AutoTagger: running %s for %s (attempt %d/%d, timeout=%v)",
+			filepath.Base(toolPath),
+			filepath.Base(absPath),
+			attempt+1,
+			retryConfig.MaxRetries+1,
+			timeout,
+		)
 
 		// #nosec G204 -- absPath is from the indexed media library, validated above
 		cmd := exec.CommandContext(attemptCtx, toolPath, args...)
@@ -226,8 +254,10 @@ func runMetadataTool(ctx context.Context, absPath, toolPath string, timeout time
 
 		stdoutText := stdoutBuf.String()
 		stderrText := stderrBuf.String()
+		duration := time.Since(start)
 
 		if err == nil {
+			logging.Debug("AutoTagger: %s succeeded for %s in %v", filepath.Base(toolPath), filepath.Base(absPath), duration.Round(time.Millisecond))
 			return stdoutText, nil
 		}
 
