@@ -106,6 +106,13 @@ copy_media_source() {
 	cp -a "$TEST_MEDIA_SOURCE_DIR"/. "$MEDIA_DIR"/
 }
 
+prepare_mount_permissions() {
+	# The runtime images run as nobody, so bind-mounted host temp dirs must be
+	# readable/writable by a non-owner UID/GID inside the container.
+	chmod -R a+rX "$MEDIA_DIR"
+	chmod 0777 "$CACHE_DIR" "$DATABASE_DIR"
+}
+
 require_cmd docker
 require_cmd ffmpeg
 require_cmd exiftool
@@ -118,6 +125,7 @@ TEST_BASE_URL="http://127.0.0.1:${HOST_PORT}"
 mkdir -p "$MEDIA_DIR" "$CACHE_DIR" "$DATABASE_DIR"
 copy_media_source
 create_fixture
+prepare_mount_permissions
 
 echo "Starting Docker test server from image: $IMAGE_TAG"
 docker run -d \
