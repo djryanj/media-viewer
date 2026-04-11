@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const testBaseURL = process.env.TEST_BASE_URL || process.env.BASE_URL || 'http://localhost:8080';
+const failOnFlakyTests = ['1', 'true'].includes(
+    String(process.env.PLAYWRIGHT_FAIL_ON_FLAKY_TESTS || '').toLowerCase()
+);
 
 /**
  * Playwright configuration for E2E testing
@@ -27,6 +30,9 @@ export default defineConfig({
     // Retry on CI only
     retries: process.env.CI ? 2 : 0,
 
+    // Smoke lanes can opt into treating retries as failures.
+    failOnFlakyTests,
+
     // Opt out of parallel tests on CI
     workers: process.env.CI ? 1 : undefined,
 
@@ -36,7 +42,7 @@ export default defineConfig({
         ['html', { outputFolder: 'e2e/playwright-report' }],
         ['list'],
         // Add JSON reporter for CI
-        process.env.CI ? ['json', { outputFile: 'e2e/test-results.json' }] : null,
+        process.env.CI ? ['json', { outputFile: 'e2e/test-results/report.json' }] : null,
     ].filter(Boolean),
 
     // Shared settings for all projects
@@ -101,7 +107,7 @@ export default defineConfig({
     ],
 
     // Folder for test artifacts such as screenshots, videos, traces
-    outputDir: 'e2e/test-results/',
+    outputDir: 'e2e/test-results',
 
     // Run your local dev server before starting the tests
     // Uncomment if you want Playwright to start the server automatically

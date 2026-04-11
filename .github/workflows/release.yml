@@ -368,6 +368,13 @@ jobs:
                   path: ${{ env.TEST_SERVER_LOG }}
                   retention-days: 7
 
+            - name: Upload frontend integration results
+              if: always()
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              with:
+                  name: release-frontend-integration-test-results
+                  path: static/test-results/vitest-results.json
+
     test-frontend-e2e-smoke:
         name: Frontend Playwright Smoke
         runs-on: ubuntu-latest
@@ -449,7 +456,7 @@ jobs:
                   name: release-frontend-e2e-smoke-results
                   path: |
                       static/e2e/test-results/
-                      static/e2e/test-results.json
+                      static/e2e/test-results/report.json
 
             - name: Upload Playwright smoke report
               if: always()
@@ -533,7 +540,7 @@ jobs:
                   name: release-docker-runtime-playwright-results
                   path: |
                       static/e2e/test-results/
-                      static/e2e/test-results.json
+                      static/e2e/test-results/report.json
 
             - name: Upload Docker runtime Playwright report
               if: always()
@@ -617,7 +624,7 @@ jobs:
                   name: release-docker-runtime-playwright-results-nvidia
                   path: |
                       static/e2e/test-results/
-                      static/e2e/test-results.json
+                      static/e2e/test-results/report.json
 
             - name: Upload NVIDIA Docker runtime Playwright report
               if: always()

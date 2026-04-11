@@ -169,7 +169,7 @@ jobs:
                   name: frontend-e2e-performance-smoke-results
                   path: |
                       static/e2e/test-results/
-                      static/e2e/test-results.json
+                      static/e2e/test-results/report.json
 
             - name: Upload performance smoke report
               if: always()
@@ -267,7 +267,7 @@ jobs:
                   name: frontend-e2e-performance-soak-results
                   path: |
                       static/e2e/test-results/
-                      static/e2e/test-results.json
+                      static/e2e/test-results/report.json
 
             - name: Upload soak report
               if: always()
