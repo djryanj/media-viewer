@@ -120,7 +120,7 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: release-frontend-deps
-                  path: .
+                  path: ./static/node_modules
 
             - name: Run ESLint (JavaScript)
               working-directory: ./static
@@ -186,7 +186,7 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: release-frontend-deps
-                  path: .
+                  path: ./static/node_modules
 
             - name: Run frontend unit tests
               working-directory: ./static
@@ -310,7 +310,7 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: release-frontend-deps
-                  path: .
+                  path: ./static/node_modules
 
             - name: Download backend binary
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -374,7 +374,7 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: release-frontend-deps
-                  path: .
+                  path: ./static/node_modules
 
             - name: Install Playwright Chromium
               working-directory: ./static
@@ -463,7 +463,7 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: release-frontend-deps
-                  path: .
+                  path: ./static/node_modules
 
             - name: Install Playwright Chromium
               working-directory: ./static
@@ -542,7 +542,7 @@ jobs:
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
               with:
                   name: release-frontend-deps
-                  path: .
+                  path: ./static/node_modules
 
             - name: Install Playwright Chromium
               working-directory: ./static
