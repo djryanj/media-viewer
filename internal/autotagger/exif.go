@@ -68,7 +68,8 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 	}
 
 	desc, ffprobeErr := extractDescriptionViaFFprobe(ctx, absPath)
-	if ffprobeErr == nil {
+	switch {
+	case ffprobeErr == nil:
 		if desc != "" {
 			logging.Debug("AutoTagger: ffprobe returned metadata for %s", filepath.Base(absPath))
 			return desc, nil
@@ -78,9 +79,9 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 			return "", nil
 		}
 		logging.Debug("AutoTagger: ffprobe found no description/comment for %s; trying exiftool fallback", filepath.Base(absPath))
-	} else if !isImagePath(absPath) {
+	case !isImagePath(absPath):
 		return "", ffprobeErr
-	} else {
+	default:
 		logging.Debug("AutoTagger: ffprobe failed for still image %s; trying exiftool fallback: %v", filepath.Base(absPath), ffprobeErr)
 	}
 
