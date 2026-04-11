@@ -104,7 +104,7 @@ jobs:
     lint-frontend:
         name: Frontend Lint
         runs-on: ubuntu-latest
-      needs: prepare-frontend-deps
+        needs: prepare-frontend-deps
         steps:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -170,7 +170,7 @@ jobs:
     test-frontend-unit:
         name: Frontend Unit Tests
         runs-on: ubuntu-latest
-      needs: [lint-frontend, prepare-frontend-deps]
+        needs: [lint-frontend, prepare-frontend-deps]
         steps:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -289,7 +289,7 @@ jobs:
     test-frontend-integration:
         name: Frontend Integration Tests
         runs-on: ubuntu-latest
-      needs: [test-frontend-unit, build-binary, prepare-sample-media, prepare-frontend-deps]
+        needs: [test-frontend-unit, build-binary, prepare-sample-media, prepare-frontend-deps]
         steps:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -353,7 +353,7 @@ jobs:
     test-frontend-e2e-smoke:
         name: Frontend Playwright Smoke
         runs-on: ubuntu-latest
-      needs: [test-frontend-unit, build-binary, prepare-sample-media, prepare-frontend-deps]
+        needs: [test-frontend-unit, build-binary, prepare-sample-media, prepare-frontend-deps]
         steps:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
