@@ -10,7 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - fix(frontend): Tagging from the lightbox now shows the same recent tags and related tag suggestions as the main gallery tagging flow, so autocomplete help stays consistent no matter where you add tags. ([#502](https://github.com/djryanj/media-viewer/issues/502))
-- fix(backend): Auto-tagger runs are now more reliable on network-backed media storage, with better retry and fallback handling for embedded metadata on still images and cleaner progress logs during long scans. ([#504](https://github.com/djryanj/media-viewer/issues/504))
+- fix(backend): Auto-tagger runs are now more reliable on network-backed media storage. Still images now prefer `exiftool` for embedded metadata with `ffprobe` as fallback, runtime images validate that `exiftool` is actually available (it previously wasn't in many older image builds), and startup now automatically disables risky SQLite mmap behavior on unsafe Linux mounts such as NFS, SMB/CIFS, and WSL/9P to avoid storage-related indexing crashes. Progress logging during long scans is also cleaner. ([#504](https://github.com/djryanj/media-viewer/issues/504))
+
+## Changed
+
+- test(ci): CI and release now run Docker-backed smoke coverage against both the standard and NVIDIA images, combining the normal Chromium smoke flow with runtime metadata checks so regressions between local-host test runs and shipped containers are caught earlier. Frontend test setup is also prepared once and reused across jobs so these container checks start sooner and finish faster. ([#504](https://github.com/djryanj/media-viewer/issues/504))
 
 ## [0.17.1] - 04-09-2026
 

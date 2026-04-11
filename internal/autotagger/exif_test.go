@@ -3,6 +3,9 @@ package autotagger
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -138,5 +141,122 @@ func TestShouldRetryMetadataToolError(t *testing.T) {
 				t.Fatalf("shouldRetryMetadataToolError(%v, %q, %v) = %v, want %v", tt.err, tt.stderr, tt.timedOut, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExtractDescriptionFieldPrefersExiftoolForImages(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script PATH test is Unix-specific")
+	}
+
+	tempDir := t.TempDir()
+	binDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll binDir: %v", err)
+	}
+
+	exifCount := filepath.Join(tempDir, "exiftool.count")
+	ffprobeCount := filepath.Join(tempDir, "ffprobe.count")
+
+	writeTestScript(t, filepath.Join(binDir, "exiftool"), `#!/bin/sh
+set -eu
+printf x >> "$EXIFTOOL_COUNT_FILE"
+printf '%s
+' '[{"Description":"tags:alpha;"}]'
+`)
+	writeTestScript(t, filepath.Join(binDir, "ffprobe"), `#!/bin/sh
+set -eu
+printf x >> "$FFPROBE_COUNT_FILE"
+printf '%s
+' '{"format":{"tags":{"description":"tags:beta;"}}}'
+`)
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("EXIFTOOL_COUNT_FILE", exifCount)
+	t.Setenv("FFPROBE_COUNT_FILE", ffprobeCount)
+
+	mediaFile := filepath.Join(tempDir, "image.webp")
+	if err := os.WriteFile(mediaFile, []byte("stub"), 0o644); err != nil {
+		t.Fatalf("WriteFile mediaFile: %v", err)
+	}
+
+	desc, err := extractDescriptionField(context.Background(), mediaFile)
+	if err != nil {
+		t.Fatalf("extractDescriptionField: %v", err)
+	}
+	if desc != "tags:alpha;" {
+		t.Fatalf("extractDescriptionField() = %q, want %q", desc, "tags:alpha;")
+	}
+	assertCounterFileLen(t, exifCount, 1)
+	assertCounterFileLen(t, ffprobeCount, 0)
+}
+
+func TestExtractDescriptionFieldFallsBackToFFprobeAfterEmptyExiftool(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script PATH test is Unix-specific")
+	}
+
+	tempDir := t.TempDir()
+	binDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll binDir: %v", err)
+	}
+
+	exifCount := filepath.Join(tempDir, "exiftool.count")
+	ffprobeCount := filepath.Join(tempDir, "ffprobe.count")
+
+	writeTestScript(t, filepath.Join(binDir, "exiftool"), `#!/bin/sh
+set -eu
+printf x >> "$EXIFTOOL_COUNT_FILE"
+printf '%s
+' '[{}]'
+`)
+	writeTestScript(t, filepath.Join(binDir, "ffprobe"), `#!/bin/sh
+set -eu
+printf x >> "$FFPROBE_COUNT_FILE"
+printf '%s
+' '{"format":{"tags":{"description":"tags:beta;"}}}'
+`)
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("EXIFTOOL_COUNT_FILE", exifCount)
+	t.Setenv("FFPROBE_COUNT_FILE", ffprobeCount)
+
+	mediaFile := filepath.Join(tempDir, "image.webp")
+	if err := os.WriteFile(mediaFile, []byte("stub"), 0o644); err != nil {
+		t.Fatalf("WriteFile mediaFile: %v", err)
+	}
+
+	desc, err := extractDescriptionField(context.Background(), mediaFile)
+	if err != nil {
+		t.Fatalf("extractDescriptionField: %v", err)
+	}
+	if desc != "tags:beta;" {
+		t.Fatalf("extractDescriptionField() = %q, want %q", desc, "tags:beta;")
+	}
+	assertCounterFileLen(t, exifCount, 1)
+	assertCounterFileLen(t, ffprobeCount, 1)
+}
+
+func writeTestScript(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("WriteFile script %s: %v", path, err)
+	}
+}
+
+func assertCounterFileLen(t *testing.T, path string, want int) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if want == 0 {
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+	}
+	if err != nil {
+		t.Fatalf("ReadFile counter %s: %v", path, err)
+	}
+	if len(data) != want {
+		t.Fatalf("counter file %s length = %d, want %d", path, len(data), want)
 	}
 }

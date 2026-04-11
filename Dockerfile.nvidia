@@ -96,6 +96,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
     libvips42 \
     libimage-exiftool-perl \
     wget \
+    && exiftool -ver >/dev/null \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure ldconfig to find NVIDIA libraries mounted by Container Toolkit

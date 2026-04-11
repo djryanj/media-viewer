@@ -21,10 +21,9 @@
 //
 // # Metadata Extraction
 //
-// Metadata is extracted via ffprobe, which is already required by the
-// transcoder sub-system.  This avoids adding a new Go dependency and provides
-// broad format support including JPEG/PNG/TIFF/HEIC EXIF and GIF XMP
-// Application Extensions.
+// Metadata extraction prefers exiftool for still images because it surfaces
+// XMP/EXIF descriptions and keywords more reliably than ffprobe. ffprobe is
+// still used for video/container metadata and as a fallback for still images.
 //
 // # Scheduling
 //

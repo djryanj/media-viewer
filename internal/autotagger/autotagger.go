@@ -3,6 +3,7 @@ package autotagger
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -92,9 +93,24 @@ func (a *AutoTagger) Start() {
 		logging.Info("EXIF auto-tagging disabled")
 		return
 	}
+	logMetadataToolAvailability()
 	logging.Debug("AutoTagger: enabled for media dir %s", a.mediaDir)
 	logging.Info("EXIF auto-tagger started (interval: %v)", a.interval)
 	go a.loop()
+}
+
+func logMetadataToolAvailability() {
+	if exiftoolPath, err := exec.LookPath("exiftool"); err != nil {
+		logging.Warn("AutoTagger: exiftool not found in PATH; still-image metadata extraction will fall back to ffprobe only")
+	} else {
+		logging.Debug("AutoTagger: using exiftool at %s", exiftoolPath)
+	}
+
+	if ffprobePath, err := exec.LookPath("ffprobe"); err != nil {
+		logging.Warn("AutoTagger: ffprobe not found in PATH; video metadata extraction will fail and still-image fallback will be unavailable")
+	} else {
+		logging.Debug("AutoTagger: using ffprobe at %s", ffprobePath)
+	}
 }
 
 // TriggerRun launches an on-demand full (non-incremental) pass in the

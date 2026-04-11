@@ -31,9 +31,9 @@ type ffprobeOutput struct {
 }
 
 // isImagePath reports whether absPath has a still-image file extension.
-// ffprobe's image2 / mjpeg demuxer does not reliably surface EXIF/XMP
-// description fields for all real-world JPEG/TIFF/HEIC files; for those
-// formats we fall back to exiftool when ffprobe returns nothing.
+// Still-image metadata extraction prefers exiftool because ffprobe's image2 /
+// mjpeg demuxers do not reliably surface EXIF/XMP description and keyword
+// fields for real-world JPEG/TIFF/HEIC/WebP files.
 func isImagePath(absPath string) bool {
 	switch strings.ToLower(filepath.Ext(absPath)) {
 	case ".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".heif", ".avif", ".webp", ".png":
@@ -42,19 +42,21 @@ func isImagePath(absPath string) bool {
 	return false
 }
 
-// extractDescriptionField runs ffprobe on absPath and returns the raw value of
-// the description or comment field from the format-level tags map.  Returns an
-// empty string when no such field is present.  The lookup is case-insensitive
-// so that containers that capitalise the field name (e.g. "Description") are
-// handled correctly alongside the lowercase convention used by most encoders.
+// extractDescriptionField returns the raw metadata field from absPath that may
+// contain embedded tags. For still images it prefers exiftool and falls back to
+// ffprobe; for video and other non-image formats it uses ffprobe directly.
+// Returns an empty string when no supported field is present. The ffprobe
+// lookup is case-insensitive so that containers that capitalise the field name
+// (e.g. "Description") are handled correctly alongside the lowercase
+// convention used by most encoders.
 //
 // GIFs store metadata as XMP Application Extensions; ffprobe surfaces these
 // under the same format.tags map, so no special-casing is required.
 //
-// For still-image formats (JPEG, TIFF, HEIC, …) ffprobe's image2 demuxer does
-// not reliably surface XMP/EXIF description fields written by standard photo
-// tools such as Lightroom or Digikam.  When ffprobe returns no description,
-// the function falls back to exiftool for these formats.
+// For still-image formats (JPEG, TIFF, HEIC, WebP, …) exiftool is more
+// reliable at surfacing XMP/EXIF description and keyword fields written by
+// standard photo tools such as Lightroom or Digikam. ffprobe remains as a
+// fallback for image metadata it can expose that exiftool did not surface.
 func extractDescriptionField(ctx context.Context, absPath string) (string, error) {
 	if err := validateAbsPath(absPath); err != nil {
 		return "", err
@@ -67,53 +69,68 @@ func extractDescriptionField(ctx context.Context, absPath string) (string, error
 		return "", fmt.Errorf("file not accessible: %w", err)
 	}
 
+	if isImagePath(absPath) {
+		return extractStillImageDescription(ctx, absPath)
+	}
+
 	desc, ffprobeErr := extractDescriptionViaFFprobe(ctx, absPath)
-	switch {
-	case ffprobeErr == nil:
-		if desc != "" {
-			logging.Debug("AutoTagger: ffprobe returned metadata for %s", filepath.Base(absPath))
-			return desc, nil
-		}
-		if !isImagePath(absPath) {
-			logging.Debug("AutoTagger: ffprobe found no description/comment for %s", filepath.Base(absPath))
-			return "", nil
-		}
-		logging.Debug("AutoTagger: ffprobe found no description/comment for %s; trying exiftool fallback", filepath.Base(absPath))
-	case !isImagePath(absPath):
+	if ffprobeErr != nil {
 		return "", ffprobeErr
+	}
+	if desc != "" {
+		logging.Debug("AutoTagger: ffprobe returned metadata for %s", filepath.Base(absPath))
+		return desc, nil
+	}
+
+	logging.Debug("AutoTagger: ffprobe found no description/comment for %s", filepath.Base(absPath))
+
+	return "", nil
+}
+
+func extractStillImageDescription(ctx context.Context, absPath string) (string, error) {
+	desc, exifErr := extractDescriptionViaExiftool(ctx, absPath)
+	switch {
+	case exifErr == nil && desc != "":
+		logging.Debug("AutoTagger: exiftool returned metadata for %s", filepath.Base(absPath))
+		return desc, nil
+	case exifErr == nil:
+		logging.Debug("AutoTagger: exiftool found no usable metadata for %s; trying ffprobe fallback", filepath.Base(absPath))
+	case errors.Is(exifErr, errExiftoolUnavailable):
+		logging.Warn("AutoTagger: exiftool unavailable for %s; trying ffprobe fallback", filepath.Base(absPath))
 	default:
-		logging.Debug("AutoTagger: ffprobe failed for still image %s; trying exiftool fallback: %v", filepath.Base(absPath), ffprobeErr)
+		logging.Debug("AutoTagger: exiftool failed for still image %s; trying ffprobe fallback: %v", filepath.Base(absPath), exifErr)
 	}
 
-	fallbackDesc, fallbackErr := extractDescriptionViaExiftool(ctx, absPath)
-	if fallbackErr == nil {
-		if fallbackDesc == "" {
-			logging.Debug("AutoTagger: exiftool found no usable metadata for %s", filepath.Base(absPath))
-		} else {
-			logging.Debug("AutoTagger: exiftool returned metadata for %s", filepath.Base(absPath))
+	ffprobeDesc, ffprobeErr := extractDescriptionViaFFprobe(ctx, absPath)
+	if ffprobeErr == nil {
+		if ffprobeDesc != "" {
+			logging.Debug("AutoTagger: ffprobe returned fallback metadata for %s", filepath.Base(absPath))
+			return ffprobeDesc, nil
 		}
-		return fallbackDesc, nil
-	}
 
-	if errors.Is(fallbackErr, errExiftoolUnavailable) {
-		logging.Debug("AutoTagger: exiftool unavailable; no image fallback for %s", filepath.Base(absPath))
-		if ffprobeErr != nil {
-			return "", ffprobeErr
+		logging.Debug("AutoTagger: ffprobe fallback found no description/comment for %s", filepath.Base(absPath))
+		if exifErr != nil && !errors.Is(exifErr, errExiftoolUnavailable) {
+			return "", exifErr
 		}
 		return "", nil
 	}
 
-	if ffprobeErr != nil {
-		return "", fmt.Errorf(
-			"metadata extraction failed: %w",
-			errors.Join(
-				fmt.Errorf("ffprobe failed: %w", ffprobeErr),
-				fmt.Errorf("exiftool fallback failed: %w", fallbackErr),
-			),
-		)
+	if exifErr == nil {
+		logging.Debug("AutoTagger: ffprobe fallback failed for still image %s after exiftool found no usable metadata: %v", filepath.Base(absPath), ffprobeErr)
+		return "", nil
 	}
 
-	return "", fallbackErr
+	if errors.Is(exifErr, errExiftoolUnavailable) {
+		return "", ffprobeErr
+	}
+
+	return "", fmt.Errorf(
+		"metadata extraction failed: %w",
+		errors.Join(
+			fmt.Errorf("exiftool failed: %w", exifErr),
+			fmt.Errorf("ffprobe fallback failed: %w", ffprobeErr),
+		),
+	)
 }
 
 func extractDescriptionViaFFprobe(ctx context.Context, absPath string) (string, error) {
@@ -154,7 +171,8 @@ func extractDescriptionViaFFprobe(ctx context.Context, absPath string) (string, 
 }
 
 // extractDescriptionViaExiftool reads description/keyword fields from an image
-// file using exiftool.  It checks (in priority order):
+// file using exiftool. It is the primary extractor for still images and checks
+// (in priority order):
 //   - XMP Description
 //   - EXIF ImageDescription
 //   - IPTC Caption-Abstract

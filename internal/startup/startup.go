@@ -117,6 +117,7 @@ type rawConfig struct {
 	logHealthChecks       bool
 	metricsEnabled        bool
 	dbMmapDisabled        bool
+	dbMmapDisabledSet     bool
 	slowQueryThresholdMs  string
 	webAuthnRPID          string
 	webAuthnRPDisplayName string
@@ -125,6 +126,8 @@ type rawConfig struct {
 
 // loadRawConfig reads all environment variables into a rawConfig struct.
 func loadRawConfig() *rawConfig {
+	dbMmapDisabled, dbMmapDisabledSet := getEnvBoolWithSet("DB_MMAP_DISABLED", false)
+
 	return &rawConfig{
 		mediaDir:              getEnv("MEDIA_DIR", "/media"),
 		cacheDir:              getEnv("CACHE_DIR", "/cache"),
@@ -142,7 +145,8 @@ func loadRawConfig() *rawConfig {
 		logStaticFiles:        getEnvBool("LOG_STATIC_FILES", false),
 		logHealthChecks:       getEnvBool("LOG_HEALTH_CHECKS", true),
 		metricsEnabled:        getEnvBool("METRICS_ENABLED", true),
-		dbMmapDisabled:        getEnvBool("DB_MMAP_DISABLED", false),
+		dbMmapDisabled:        dbMmapDisabled,
+		dbMmapDisabledSet:     dbMmapDisabledSet,
 		slowQueryThresholdMs:  getEnv("SLOW_QUERY_THRESHOLD_MS", "100"),
 		webAuthnRPID:          getEnv("WEBAUTHN_RP_ID", ""),
 		webAuthnRPDisplayName: getEnv("WEBAUTHN_RP_DISPLAY_NAME", "Media Viewer"),
@@ -275,6 +279,27 @@ func parseWebAuthnConfig(rc *rawConfig) (enabled bool, origins []string) {
 	return true, origins
 }
 
+func resolveDBMmapDisabled(explicitValue, explicitSet, storageUnsafe bool, storageName string) (disabled bool, notice string) {
+	if explicitSet {
+		if !explicitValue && storageUnsafe {
+			return false, fmt.Sprintf(
+				"Database directory is on %s storage but DB_MMAP_DISABLED=false was set explicitly; SQLite mmap remains enabled and may SIGBUS",
+				storageName,
+			)
+		}
+		return explicitValue, ""
+	}
+
+	if storageUnsafe {
+		return true, fmt.Sprintf(
+			"Database directory is on %s storage; automatically enabling DB_MMAP_DISABLED to avoid SQLite SIGBUS",
+			storageName,
+		)
+	}
+
+	return false, ""
+}
+
 // resolveDirectories resolves all directory paths to absolute paths and
 // validates required directories. Returns the resolved paths or an error.
 func resolveDirectories(rc *rawConfig) (mediaDir, cacheDir, databaseDir string, err error) {
@@ -341,6 +366,20 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	storageUnsafe, storageName := detectUnsafeDBStorage(databaseDir)
+	dbMmapDisabled, dbMmapNotice := resolveDBMmapDisabled(
+		rc.dbMmapDisabled,
+		rc.dbMmapDisabledSet,
+		storageUnsafe,
+		storageName,
+	)
+	if dbMmapNotice != "" {
+		logging.Warn("  %s", dbMmapNotice)
+	}
+	if dbMmapDisabled != rc.dbMmapDisabled {
+		logging.Info("  Effective DB_MMAP_DISABLED: %v", dbMmapDisabled)
+	}
+
 	config := &Config{
 		MediaDir:              mediaDir,
 		CacheDir:              cacheDir,
@@ -361,7 +400,7 @@ func LoadConfig() (*Config, error) {
 		TranscodeDir:          filepath.Join(cacheDir, "transcoded"),
 		TranscoderLogDir:      rc.transcoderLogDir,
 		GPUAccel:              rc.gpuAccel,
-		DBMmapDisabled:        rc.dbMmapDisabled,
+		DBMmapDisabled:        dbMmapDisabled,
 		SlowQueryThresholdMs:  durations.slowQueryThresholdMs,
 		WebAuthnEnabled:       webAuthnEnabled,
 		WebAuthnRPID:          rc.webAuthnRPID,
@@ -813,6 +852,21 @@ func getEnvBool(key string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return parsed
+}
+
+func getEnvBoolWithSet(key string, defaultValue bool) (parsedValue, explicitlySet bool) {
+	envValue, exists := os.LookupEnv(key)
+	if !exists || envValue == "" {
+		return defaultValue, false
+	}
+
+	parsed, err := strconv.ParseBool(envValue)
+	if err != nil {
+		logging.Warn("Invalid boolean value for %s: %q, using default: %v", key, envValue, defaultValue)
+		return defaultValue, false
+	}
+
+	return parsed, true
 }
 
 // LogMemoryConfig logs the memory configuration

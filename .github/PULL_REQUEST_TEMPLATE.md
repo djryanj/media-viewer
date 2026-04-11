@@ -8,7 +8,7 @@
 
 - [ ] `feat`: New feature
 - [ ] `fix`: Bug fix
-- [ ] `docs`: Documentation only changes
+- [ ] `docs`: Documentation changes
 - [ ] `style`: Changes that don't affect code meaning (formatting, etc)
 - [ ] `refactor`: Code change that neither fixes a bug nor adds a feature
 - [ ] `perf`: Performance improvement
@@ -27,7 +27,7 @@
 - [ ] API/Handlers
 - [ ] Media Processing (thumbnails, transcoding)
 - [ ] Search/Indexing
-- [ ] Tags
+- [ ] Tags / AutoTagger
 - [ ] Favorites
 - [ ] Docker
 - [ ] Documentation

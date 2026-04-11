@@ -89,7 +89,8 @@ RUN apk add --no-cache \
     tzdata \
     sqlite \
     vips \
-    perl-image-exiftool \
+    exiftool \
+    && exiftool -ver >/dev/null \
     && rm -rf /var/cache/apk/*
 
 # Install VA-API support for x86_64/amd64 only (Intel/AMD GPU transcoding)

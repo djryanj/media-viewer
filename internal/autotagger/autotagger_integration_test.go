@@ -1015,12 +1015,12 @@ func TestProcessFilesJPEGIdempotentIntegration(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// exiftool fallback tests
+// exiftool image extraction tests
 //
-// extractDescriptionViaExiftool is the fallback for image files where ffprobe
-// returns no description.  These tests exercise it directly rather than via the
-// full ffprobe pipeline so they remain reliable regardless of which metadata
-// embedding strategy ffprobe happens to surface.
+// extractDescriptionViaExiftool is the preferred extractor for still-image
+// files. These tests exercise it directly rather than via the full fallback
+// pipeline so they remain reliable regardless of which metadata embedding
+// strategy ffprobe happens to surface.
 // ---------------------------------------------------------------------------
 
 // TestExtractDescriptionViaExiftoolIntegration verifies that
@@ -1041,7 +1041,7 @@ func TestExtractDescriptionViaExiftoolIntegration(t *testing.T) {
 		t.Fatalf("extractDescriptionViaExiftool: %v", err)
 	}
 	if desc == "" {
-		t.Fatal("expected non-empty description via exiftool fallback, got empty string")
+		t.Fatal("expected non-empty description via exiftool image extraction, got empty string")
 	}
 	tags := parseTagsFromDescription(desc)
 	if len(tags) != 2 {
@@ -1078,14 +1078,14 @@ func TestExtractDescriptionViaExiftoolNoMetadataIntegration(t *testing.T) {
 	}
 }
 
-// TestExtractTagsFromFileJPEGExiftoolFallbackIntegration verifies the code path
-// where ffprobe returns no description for a JPEG but exiftool can read the
-// metadata.  IPTC Keywords are not surfaced by ffprobe's image2 demuxer (they
+// TestExtractTagsFromFileJPEGExiftoolPreferredIntegration verifies the code
+// path where exiftool supplies JPEG metadata that ffprobe's image2 demuxer does
+// not surface. IPTC Keywords are not surfaced by ffprobe's image2 demuxer (they
 // arrive as format.tags["comment"] only when an EXIF/XMP field is written via
 // exiftool), so a JPEG with only IPTC Keywords / XMP Subject is the canonical
-// fixture for this scenario.  The fixture is self-contained and does not depend
+// fixture for this scenario. The fixture is self-contained and does not depend
 // on any files in sample-media/.
-func TestExtractTagsFromFileJPEGExiftoolFallbackIntegration(t *testing.T) {
+func TestExtractTagsFromFileJPEGExiftoolPreferredIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -1093,8 +1093,8 @@ func TestExtractTagsFromFileJPEGExiftoolFallbackIntegration(t *testing.T) {
 
 	mediaDir := t.TempDir()
 	filePath := filepath.Join(mediaDir, "fallback.jpg")
-	// IPTC Keywords / XMP Subject are invisible to ffprobe → exiftool fallback
-	// is the only path that can surface them.
+	// IPTC Keywords / XMP Subject are invisible to ffprobe, so exiftool should
+	// be the first and successful extractor for this file.
 	createJPEGWithIPTCKeywords(t, filePath, "nature", "landscape", "travel")
 
 	tags, err := extractTagsFromFile(context.Background(), filePath)
@@ -1102,7 +1102,7 @@ func TestExtractTagsFromFileJPEGExiftoolFallbackIntegration(t *testing.T) {
 		t.Fatalf("extractTagsFromFile: %v", err)
 	}
 	if len(tags) == 0 {
-		t.Fatal("expected tags via exiftool fallback, got none")
+		t.Fatal("expected tags via exiftool-preferred image extraction, got none")
 	}
 	tagSet := make(map[string]bool)
 	for _, tag := range tags {

@@ -10,6 +10,14 @@ Use these as project-level defaults when editing or testing this repository.
 ## Commands
 
 - Prefer repository `make` targets over direct `npm` commands when both exist; use the Makefile entry point unless there is a specific reason to call the underlying npm script directly.
+- For containerized browser smoke coverage, use `make frontend-test-e2e-runtime-smoke` or `make frontend-test-e2e-runtime-smoke-auto`; the Playwright-based runtime smoke lane is the maintained path, not ad hoc shell smoke scripts.
+
+## Autotagger And Metadata
+
+- Treat `internal/autotagger/exif.go` as the source of truth for metadata extraction order: `exiftool` is the primary extractor for still images, while `ffprobe` is the fallback for still images and the primary extractor for video/container metadata.
+- For runtime image changes, Alpine must install the `exiftool` package; `perl-image-exiftool` does not provide `/usr/bin/exiftool`. The Debian/NVIDIA image should continue using `libimage-exiftool-perl`.
+- AutoTagger metadata extraction on NFS/PVC-style storage should preflight file access with `filesystem.StatWithRetry` and retry transient extractor failures such as stale file handle, input/output error, resource temporarily unavailable, and deadline timeouts.
+- Keep WebP autotagger coverage exercised through XMP `Subject` metadata written with `exiftool`; that path has caught real still-image regressions.
 
 ## Changelog
 
@@ -25,12 +33,21 @@ Use these as project-level defaults when editing or testing this repository.
 - If a Playwright spec mutates shared backend state multiple times in one file, keep that file serial with `test.describe.configure({ mode: 'serial' })`.
 - Settings toggles often use visually hidden checkbox inputs. Assert visible rows, labels, or select state rather than requiring visible checkbox inputs.
 - Use `TEST_BASE_URL` for local/ephemeral server Playwright runs.
+- Docker/runtime smoke should validate behavior through the shipped container via `hack/run-with-docker-test-server.sh`, including real metadata extraction, rather than only checking host-backed binaries or startup health.
 
 ## Docs Screenshots And Visual Baselines
 
 - Docs screenshots live under `static/e2e/specs/workflows/` and write directly to `docs/images/`.
 - Visual regressions live under `static/e2e/specs/visual/` and compare deterministic JSON snapshots stored in `static/e2e/baselines/`.
 - Both lanes are Chromium-only. Keep screenshot and visual states deterministic with API seeding or explicit runtime state setup before capture.
+- For library docs playlist capture, do not assert that `#playlist-title` equals the playlist name. `Playlist.open()` sets the playlist name briefly, then `playCurrentVideo()` replaces it with the current media filename.
+- For playlist-load readiness in docs screenshots, prefer `window.Playlist.playlist.name` plus `#playlist-items li` count over sidebar visibility or header title text.
+- Focused rerun command for playlist docs screenshots: `make frontend-test-e2e-file-auto e2e/specs/workflows/library-docs-screenshots.spec.js`.
+
+## SQLite And Storage Safety
+
+- SQLite mmap is auto-disabled in startup when `DATABASE_DIR` resolves to detected unsafe Linux filesystems such as NFS, SMB/CIFS, or 9P/WSL. Preserve that behavior when changing startup or database initialization.
+- Explicit `DB_MMAP_DISABLED=true` or `false` still overrides the auto-detection path; keep that override behavior intact.
 
 ## UI And UX Guardrails
 
