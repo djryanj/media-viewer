@@ -143,6 +143,7 @@ func main() {
 	idx.SetPollInterval(config.PollInterval)
 
 	// Initialize EXIF auto-tagger
+	startup.LogAutoTaggerInit(config.ExifTaggingEnabled, config.ExifTagInterval)
 	autoTagger := autotagger.New(db, config.MediaDir, config.ExifTagInterval, config.ExifTaggingEnabled)
 
 	idx.SetOnIndexComplete(func() {
@@ -164,6 +165,9 @@ func main() {
 
 	// Start EXIF auto-tagger in background
 	autoTagger.Start()
+	if config.ExifTaggingEnabled {
+		startup.LogAutoTaggerStarted()
+	}
 
 	// Start metrics collector
 	metricsCollector := metrics.NewCollector(&dbStatsAdapter{db: db}, config.DatabasePath, 1*time.Minute)

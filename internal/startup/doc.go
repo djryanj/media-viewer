@@ -46,6 +46,7 @@
 //   - [LogDatabaseInit]: Database initialization timing
 //   - [LogTranscoderInit]: Transcoder setup and FFmpeg availability
 //   - [LogThumbnailInit]: Thumbnail generator configuration
+//   - [LogAutoTaggerInit]: Auto-tagger setup and metadata tool availability
 //   - [LogIndexerInit]: Indexer configuration and intervals
 //   - [LogHTTPRoutes]: Registered HTTP routes (debug level)
 //   - [LogServerStarted]: Server endpoints and startup duration

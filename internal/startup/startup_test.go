@@ -1099,6 +1099,19 @@ func TestLogThumbnailInitEnabled(_ *testing.T) {
 	LogThumbnailInit(true)
 }
 
+func TestLogAutoTaggerInitDisabled(_ *testing.T) {
+	LogAutoTaggerInit(false, 24*time.Hour)
+}
+
+func TestLogAutoTaggerInitEnabled(_ *testing.T) {
+	// Metadata tools may or may not be present; the function must not panic either way.
+	LogAutoTaggerInit(true, 24*time.Hour)
+}
+
+func TestLogAutoTaggerStarted(_ *testing.T) {
+	LogAutoTaggerStarted()
+}
+
 func TestLogIndexerInit(_ *testing.T) {
 	LogIndexerInit(30*time.Minute, 30*time.Second)
 }

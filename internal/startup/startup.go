@@ -515,6 +515,40 @@ func LogThumbnailInit(enabled bool) {
 	logging.Info("  libvips will be initialized for memory-efficient image processing")
 }
 
+// LogAutoTaggerInit logs auto-tagger initialization and required metadata tools.
+func LogAutoTaggerInit(enabled bool, interval time.Duration) {
+	logging.Info("")
+	logging.Info("------------------------------------------------------------")
+	logging.Info("AUTO-TAGGER INITIALIZATION")
+	logging.Info("------------------------------------------------------------")
+
+	if !enabled {
+		logging.Info("  EXIF auto-tagging disabled")
+		return
+	}
+
+	logging.Info("  Auto-tag interval: %v", interval)
+
+	if err := checkExiftool(); err != nil {
+		logging.Warn("  exiftool check failed: %v", err)
+		logging.Warn("  Still-image metadata extraction will fall back to ffprobe only")
+	} else {
+		logging.Info("  [OK] exiftool is available")
+	}
+
+	if err := checkFFprobe(); err != nil {
+		logging.Warn("  ffprobe check failed: %v", err)
+		logging.Warn("  Video metadata extraction will fail and still-image fallback will be unavailable")
+	} else {
+		logging.Info("  [OK] ffprobe is available")
+	}
+}
+
+// LogAutoTaggerStarted logs successful auto-tagger startup.
+func LogAutoTaggerStarted() {
+	logging.Info("  [OK] EXIF auto-tagger started")
+}
+
 // LogIndexerInit logs indexer initialization
 func LogIndexerInit(indexInterval, pollInterval time.Duration) {
 	logging.Info("")
@@ -815,7 +849,7 @@ func checkFFmpeg() error {
 	if err != nil {
 		return fmt.Errorf("ffmpeg not found in PATH")
 	}
-	logging.Debug("  FFmpeg path: %s", path)
+	logging.Debug("  ffmpeg path: %s", path)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -826,12 +860,55 @@ func checkFFmpeg() error {
 		return fmt.Errorf("failed to get ffmpeg version: %w", err)
 	}
 
-	lines := strings.Split(string(output), "\n")
-	if len(lines) > 0 {
-		logging.Debug("  FFmpeg version: %s", strings.TrimSpace(lines[0]))
+	logToolVersionLine("ffmpeg", output)
+	return nil
+}
+
+func checkFFprobe() error {
+	path, err := exec.LookPath("ffprobe")
+	if err != nil {
+		return fmt.Errorf("ffprobe not found in PATH")
+	}
+	logging.Debug("  ffprobe path: %s", path)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffprobe", "-version")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get ffprobe version: %w", err)
 	}
 
+	logToolVersionLine("ffprobe", output)
 	return nil
+}
+
+func checkExiftool() error {
+	path, err := exec.LookPath("exiftool")
+	if err != nil {
+		return fmt.Errorf("exiftool not found in PATH")
+	}
+	logging.Debug("  exiftool path: %s", path)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "exiftool", "-ver")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get exiftool version: %w", err)
+	}
+
+	logToolVersionLine("exiftool", output)
+	return nil
+}
+
+func logToolVersionLine(tool string, output []byte) {
+	lines := strings.Split(string(output), "\n")
+	if len(lines) > 0 {
+		logging.Debug("  %s version: %s", tool, strings.TrimSpace(lines[0]))
+	}
 }
 
 func getEnv(key, defaultValue string) string {

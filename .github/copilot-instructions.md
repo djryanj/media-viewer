@@ -49,6 +49,11 @@ Use these as project-level defaults when editing or testing this repository.
 - SQLite mmap is auto-disabled in startup when `DATABASE_DIR` resolves to detected unsafe Linux filesystems such as NFS, SMB/CIFS, or 9P/WSL. Preserve that behavior when changing startup or database initialization.
 - Explicit `DB_MMAP_DISABLED=true` or `false` still overrides the auto-detection path; keep that override behavior intact.
 
+## Startup Logging
+
+- Keep startup-time component initialization banners and required-tool availability logs centralized in `internal/startup` rather than emitting them from runtime component packages.
+- EXIF auto-tagger startup logging should follow the same pattern as transcoder and thumbnail initialization: `internal/startup` owns the initialization section and tool checks, while `internal/autotagger` keeps ongoing runtime/pass logs only.
+
 ## UI And UX Guardrails
 
 - Collections UX should follow the same patterns as tags/favorites instead of inventing separate one-off interaction models.

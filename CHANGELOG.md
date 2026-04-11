@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.3] - Unreleased
+
+### Fixed
+
+- fix(backend): Startup logs now report `exiftool` and `ffprobe` availability alongside the rest of the server's initialization checks, making it easier to confirm metadata extraction readiness in local and container deployments. The startup logging for these checks is also now centralized so component initialization output stays consistent. ([#507](https://github.com/djryanj/media-viewer/issues/507))
+
 ## [0.17.2] - 04-11-2026
 
 ### Fixed
