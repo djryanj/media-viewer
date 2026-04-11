@@ -368,9 +368,9 @@ jobs:
                   rm -rf ./static/node_modules
                   tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
 
-            - name: Run frontend unit tests
+            - name: Run frontend unit tests with coverage
               working-directory: ./static
-              run: npm run test:unit:only
+              run: npm run test:unit:coverage
 
             - name: Generate frontend unit coverage summary
               if: always()

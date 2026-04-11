@@ -820,21 +820,27 @@ const Tags = {
     },
 
     _getSuggestionOptions(options = {}) {
-        const allTags = Array.isArray(options.allTags)
-            ? options.allTags
-            : Array.isArray(this.allTags)
-              ? this.allTags
-              : [];
-        const relatedTagSuggestions = Array.isArray(options.relatedTagSuggestions)
-            ? options.relatedTagSuggestions
-            : Array.isArray(this.relatedTagSuggestions)
-              ? this.relatedTagSuggestions
-              : [];
-        const recentTagNames = Array.isArray(options.recentTagNames)
-            ? options.recentTagNames
-            : Array.isArray(this._recentTagNames)
-              ? this._recentTagNames
-              : [];
+        let allTags = [];
+        if (Array.isArray(options.allTags)) {
+            allTags = options.allTags;
+        } else if (Array.isArray(this.allTags)) {
+            allTags = this.allTags;
+        }
+
+        let relatedTagSuggestions = [];
+        if (Array.isArray(options.relatedTagSuggestions)) {
+            relatedTagSuggestions = options.relatedTagSuggestions;
+        } else if (Array.isArray(this.relatedTagSuggestions)) {
+            relatedTagSuggestions = this.relatedTagSuggestions;
+        }
+
+        let recentTagNames = [];
+        if (Array.isArray(options.recentTagNames)) {
+            recentTagNames = options.recentTagNames;
+        } else if (Array.isArray(this._recentTagNames)) {
+            recentTagNames = this._recentTagNames;
+        }
+
         const excludedTagNames = Array.isArray(options.excludedTagNames)
             ? options.excludedTagNames
             : this.getExcludedSuggestionTags();
