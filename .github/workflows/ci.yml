@@ -82,7 +82,7 @@ jobs:
 
             - name: Check if sample media cache exists
               id: cache-check
-              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -107,7 +107,7 @@ jobs:
 
             - name: Save sample media cache
               if: steps.cache-check.outputs.cache-hit != 'true'
-              uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -144,7 +144,7 @@ jobs:
               run: tar -czf frontend-deps.tgz -C static node_modules
 
             - name: Upload frontend dependency artifact
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: frontend-deps
                   path: frontend-deps.tgz
@@ -178,7 +178,7 @@ jobs:
                   make build
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -289,7 +289,7 @@ jobs:
                   make resetpw
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -330,7 +330,7 @@ jobs:
                   echo '```' >> $GITHUB_STEP_SUMMARY
             - name: Upload test results
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: unit-test-results
                   path: |
@@ -386,7 +386,7 @@ jobs:
                   fi
             - name: Upload frontend unit coverage
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: frontend-unit-test-results
                   path: static/coverage/
@@ -438,7 +438,7 @@ jobs:
                   echo '```' >> $GITHUB_STEP_SUMMARY
             - name: Upload coverage
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: integration-test-results
                   path: |
@@ -527,7 +527,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -550,7 +550,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: backend-server-logs
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -558,7 +558,7 @@ jobs:
 
             - name: Upload frontend integration results
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: frontend-integration-test-results
                   path: static/test-results/vitest-results.json
@@ -626,7 +626,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -650,7 +650,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: backend-server-logs-e2e-smoke
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -658,14 +658,14 @@ jobs:
 
             - name: Upload Playwright smoke results
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: frontend-e2e-smoke-results
                   path: static/e2e/test-results/
 
             - name: Upload Playwright smoke report
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: playwright-smoke-report
                   path: static/e2e/playwright-report/
@@ -722,13 +722,13 @@ jobs:
               run: npx playwright install --with-deps chromium
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
             - name: Build Docker image for smoke tests
-              uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+              uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
               with:
                   context: .
                   file: Dockerfile
@@ -752,7 +752,7 @@ jobs:
 
             - name: Upload Docker runtime Playwright results
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: docker-runtime-playwright-results
                   path: |
@@ -761,7 +761,7 @@ jobs:
 
             - name: Upload Docker runtime Playwright report
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: docker-runtime-playwright-report
                   path: static/e2e/playwright-report/
@@ -818,13 +818,13 @@ jobs:
               run: npx playwright install --with-deps chromium
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
             - name: Build NVIDIA Docker image for smoke tests
-              uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+              uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
               with:
                   context: .
                   file: Dockerfile.nvidia
@@ -848,7 +848,7 @@ jobs:
 
             - name: Upload NVIDIA Docker runtime Playwright results
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: docker-runtime-playwright-results-nvidia
                   path: |
@@ -857,7 +857,7 @@ jobs:
 
             - name: Upload NVIDIA Docker runtime Playwright report
               if: always()
-              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: docker-runtime-playwright-report-nvidia
                   path: static/e2e/playwright-report/
