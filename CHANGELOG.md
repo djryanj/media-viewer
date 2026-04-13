@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix(backend): Startup logs now report `exiftool` and `ffprobe` availability alongside the rest of the server's initialization checks, making it easier to confirm metadata extraction readiness in local and container deployments. The startup logging for these checks is also now centralized so component initialization output stays consistent. ([#507](https://github.com/djryanj/media-viewer/issues/507))
 
+### Changed
+
+- chore(deps): update github actions (major) ([#514](https://github.com/djryanj/media-viewer/pull/514))
+
 ## [0.17.2] - 04-11-2026
 
 ### Fixed
