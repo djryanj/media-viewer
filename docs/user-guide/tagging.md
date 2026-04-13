@@ -14,9 +14,14 @@ Tags are labels you assign to media items for organization and quick retrieval. 
 - Tags are shared across your entire library
 - Tags are case-sensitive ("Vacation" and "vacation" are different tags)
 
+Single-item tagging is split by input style:
+
+- **Desktop**: use the hover-revealed gallery tag button or the lightbox
+- **Touch**: use the lightbox for one item, or selection mode for bulk tagging
+
 ## Adding Tags
 
-### From the Gallery
+### From the Gallery (Desktop)
 
 1. Hover over an item to reveal the tag button (tag icon in the top-left corner)
 2. Click the tag button to open the tag manager
@@ -24,6 +29,12 @@ Tags are labels you assign to media items for organization and quick retrieval. 
 4. Press ++enter++ or click **Add**
 5. Repeat for additional tags
 6. Click outside the modal or press ++escape++ to close
+
+### On Touch Devices
+
+1. Tap an item to open it in the lightbox for single-item tagging
+2. Use the tag button in the lightbox for that item
+3. Long-press from the gallery when you want to tag multiple items at once
 
 ### From the Lightbox
 
@@ -84,9 +95,11 @@ When an item has more than 3 tags, a "+N" indicator appears:
 
 Selection mode allows you to tag multiple items at once.
 
+On touch devices, this is the primary tagging workflow from the gallery. The grid stays focused on tap-to-open and double-tap-to-favorite until you long-press to switch into selection mode.
+
 ### Entering Selection Mode
 
-- **Desktop**: Click the checkbox area on any gallery item
+- **Desktop**: Hover a gallery item and click the top-left checkbox
 - **Mobile**: Long-press any item
 
 ### Tagging Selected Items

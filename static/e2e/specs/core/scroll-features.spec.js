@@ -14,6 +14,8 @@
 
 import { test, expect } from '../../fixtures/index.js';
 
+const MAIN_GALLERY_MEDIA_SELECTOR = '#gallery .gallery-item.image, #gallery .gallery-item.video';
+
 // ---------------------------------------------------------------------------
 // Helper: navigate to the gallery root (or a path) and wait for items
 // ---------------------------------------------------------------------------
@@ -85,6 +87,40 @@ async function goToGallery(page, path = '') {
     }
 
     throw new Error(`Failed to load gallery view at ${url}`);
+}
+
+async function openGalleryItemInLightbox(page, itemLocator) {
+    const itemPath = await itemLocator.getAttribute('data-path');
+    return await page.evaluate(async (path) => {
+        const popover = document.getElementById('scroll-restore-popover');
+        const readState = () => ({
+            popoverHidden: popover?.classList.contains('hidden') ?? false,
+            popoverVisible: popover?.classList.contains('visible') ?? false,
+            lightboxHidden:
+                document.getElementById('lightbox')?.classList.contains('hidden') ?? true,
+        });
+
+        const mediaIndex = window.MediaApp?.getMediaIndex?.(path) ?? -1;
+        if (mediaIndex >= 0 && typeof window.Lightbox?.open === 'function') {
+            window.Lightbox.open(mediaIndex);
+            return { opened: true, ...readState() };
+        }
+
+        const item =
+            window.MediaApp?.state?.listing?.items?.find((entry) => entry.path === path) ||
+            window.MediaApp?.state?.mediaFiles?.find((entry) => entry.path === path);
+
+        if (!item || typeof window.Gallery?.handleSingleTap !== 'function') {
+            return { opened: false, ...readState() };
+        }
+
+        const result = window.Gallery.handleSingleTap(item);
+        if (result?.then) {
+            await result;
+        }
+
+        return { opened: true, ...readState() };
+    }, itemPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,12 +312,13 @@ test.describe('Scroll Restore Popover — structure @scroll @core', () => {
         await expect(popover).not.toBeVisible();
     });
 
-    test('popover has Go back button', async ({ page }) => {
+    test('popover has resume trigger', async ({ page }) => {
         const btn = page.locator('#scroll-restore-go');
         await expect(btn).toBeAttached();
+        await expect(btn).toContainText('Resume previous position');
     });
 
-    test('popover has Dismiss button', async ({ page }) => {
+    test('popover has dismiss control', async ({ page }) => {
         const btn = page.locator('#scroll-restore-dismiss');
         await expect(btn).toBeAttached();
     });
@@ -499,6 +536,49 @@ test.describe('Scroll Restore Popover — behaviour @scroll @core', () => {
         });
 
         await expect(popover).not.toBeVisible({ timeout: 3000 });
+    });
+
+    test('popover disappears immediately when opening the lightbox from the gallery', async ({
+        page,
+    }) => {
+        await goToGallery(page);
+
+        const mediaItems = page.locator(MAIN_GALLERY_MEDIA_SELECTOR);
+        if ((await mediaItems.count()) === 0) {
+            test.skip();
+            return;
+        }
+
+        const viewportHeight = await page.evaluate(() => window.innerHeight);
+        const currentPath = await page.evaluate(() => {
+            if (typeof MediaApp !== 'undefined') return MediaApp.state.currentPath;
+            return '';
+        });
+
+        await page.evaluate(
+            ({ path, scrollY }) => {
+                const key = 'media-viewer:scroll-positions';
+                const stored = JSON.parse(localStorage.getItem(key) || '{}');
+                stored[path] = { scrollY, timestamp: Date.now() };
+                localStorage.setItem(key, JSON.stringify(stored));
+            },
+            { path: currentPath, scrollY: viewportHeight + 300 }
+        );
+
+        await page.reload();
+        await page.waitForSelector('.gallery-item, .empty-state', { timeout: 15000 });
+
+        const popover = page.locator('#scroll-restore-popover');
+        await expect(popover).toBeVisible({ timeout: 5000 });
+
+        const openResult = await openGalleryItemInLightbox(page, mediaItems.first());
+        expect(openResult.opened).toBe(true);
+        expect(openResult.popoverHidden).toBe(true);
+        expect(openResult.popoverVisible).toBe(false);
+        expect(openResult.lightboxHidden).toBe(false);
+
+        await expect(page.locator('#lightbox')).toBeVisible({ timeout: 8000 });
+        await expect(popover).not.toBeVisible();
     });
 });
 

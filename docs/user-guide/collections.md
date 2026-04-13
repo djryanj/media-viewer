@@ -21,12 +21,27 @@ Collections let you save your own named groups of images and videos so you can c
 
 You can work with collections from several places in the app:
 
-- From gallery items, use the collect button to add the item to a collection or create a new one.
+- On desktop, hover a gallery item to reveal the collect button for quick single-item actions.
+- On touch devices, long-press to enter selection mode and use **Collect** in the bottom toolbar when you want to curate from the gallery.
 - From a collected item, the collections modal shows the collections that already contain that item first.
 - From the header, open **Collections** to browse and manage all collections for the current area of your library.
 - From the lightbox, use the collections drawer for quick actions without leaving full-screen viewing.
 
 These entry points are designed to stay consistent: browse is the primary action, while management actions such as reorder or remove stay grouped behind secondary controls.
+
+<div align="center">
+	<img src="../../images/selection-mobile-toolbar.png" alt="Mobile selection toolbar with the collect action available for selected items" width="420">
+	<p><em>On touch devices, collections move into the selection toolbar so gallery cards can stay focused on tap, double-tap, and long-press gestures.</em></p>
+</div>
+
+## Touch Workflow
+
+On touch devices, collections follow the same selection-first pattern as other bulk actions:
+
+1. **Tap** opens an item
+2. **Double-tap** toggles favorite
+3. **Long-press** enters selection mode
+4. Use **Collect** in the selection toolbar for gallery-based curation, or use the lightbox drawer for single-item work
 
 ## Creating Collections
 
@@ -34,6 +49,11 @@ You can create a collection in two common ways:
 
 1. Select one or more images or videos and create a collection from that selection.
 2. Open the collections manager and create an empty collection first, then add items over time.
+
+For gallery-based curation, that usually means:
+
+- **Desktop**: hover a card and use the inline collect button, or select several items first
+- **Touch**: long-press into selection mode, then tap **Collect** in the bottom toolbar
 
 When you type a collection name, Media Viewer checks whether that name is already in use. If the same name already exists where it would conflict, you will see that before saving.
 

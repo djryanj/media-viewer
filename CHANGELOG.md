@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.17.3] - Unreleased
+## [0.18.0] - Unreleased
+
+### Added
+
+- feat(frontend): Mobile gallery and lightbox touch interactions have been redesigned for clarity and focus. Gallery cards on touch devices no longer show persistent collection or selection icons — tapping opens media and long-pressing enters selection mode. The scroll-restore prompt is now a compact anchored chip alongside the scrubber rather than a heavy floating card. The lightbox consolidates all single-item actions (Favorite, Tags, Collections, Download, Autoplay, Loop) into a single labeled bottom-sheet drawer opened from one button in the top chrome, replacing scattered icon-only controls spread across screen edges. Navigation arrows stay hidden by default so media stays primary. ([#509](https://github.com/djryanj/media-viewer/issues/509))
 
 ### Fixed
 

@@ -31,6 +31,9 @@ describe('Lightbox Module', () => {
 
     beforeEach(async () => {
         vi.resetModules();
+        localStorage.clear();
+        document.documentElement.className = '';
+        window.history.replaceState({}, '', '/');
 
         document.body.innerHTML = `
             <div id="lightbox" class="hidden">
@@ -95,6 +98,10 @@ describe('Lightbox Module', () => {
             startConnectivityCheck: vi.fn(),
         };
 
+        globalThis.InfiniteScroll = {
+            dismissScrollRestorePopoverImmediately: vi.fn(),
+        };
+
         globalThis.Tags = {
             searchByTag: vi.fn(),
             refreshGalleryItemTags: vi.fn(),
@@ -121,6 +128,7 @@ describe('Lightbox Module', () => {
 
         globalThis.Collections = {
             _all: [],
+            isInCollection: vi.fn(() => false),
             getMemberships: vi.fn(() => []),
             getById: vi.fn(() => null),
             getSuggestedCollections: vi.fn(() => []),
@@ -1239,12 +1247,8 @@ describe('Lightbox Module', () => {
         });
 
         test('renderCollectionDrawer uses Browse as the primary row and hides secondary actions behind More', async () => {
-            const switchSpy = vi
-                .spyOn(Lightbox, 'switchToCollection')
-                .mockResolvedValue(undefined);
-            const reorderSpy = vi
-                .spyOn(Lightbox, 'openReorderPanel')
-                .mockResolvedValue(undefined);
+            const switchSpy = vi.spyOn(Lightbox, 'switchToCollection').mockResolvedValue(undefined);
+            const reorderSpy = vi.spyOn(Lightbox, 'openReorderPanel').mockResolvedValue(undefined);
             const manageSpy = vi.spyOn(Collections, 'openCollectionManager');
 
             Collections._all = [{ id: 1, name: 'Trip', itemCount: 3 }];
@@ -1257,9 +1261,8 @@ describe('Lightbox Module', () => {
                 type: 'image',
             });
 
-            const row = Lightbox.elements.collectionDrawerList.querySelector(
-                '.collection-drawer-item'
-            );
+            const row =
+                Lightbox.elements.collectionDrawerList.querySelector('.collection-drawer-item');
             const mainButton = row.querySelector('.collection-drawer-item-main');
             const moreButton = row.querySelector('.collection-drawer-more-btn');
             const actions = row.querySelector('.collection-drawer-item-actions');
@@ -1279,9 +1282,8 @@ describe('Lightbox Module', () => {
                 new MouseEvent('click', { bubbles: true, cancelable: true })
             );
 
-            const rerenderedRow = Lightbox.elements.collectionDrawerList.querySelector(
-                '.collection-drawer-item'
-            );
+            const rerenderedRow =
+                Lightbox.elements.collectionDrawerList.querySelector('.collection-drawer-item');
             expect(
                 rerenderedRow
                     .querySelector('.collection-drawer-more-btn')
@@ -2108,6 +2110,12 @@ describe('Lightbox Module', () => {
             expect(Lightbox.elements.lightbox.classList.contains('clock-always-visible')).toBe(
                 true
             );
+        });
+
+        test('show() dismisses the scroll-restore popover immediately', () => {
+            Lightbox.show();
+
+            expect(InfiniteScroll.dismissScrollRestorePopoverImmediately).toHaveBeenCalledOnce();
         });
 
         test('close() hides lightbox', () => {
@@ -2959,6 +2967,16 @@ describe('Lightbox Module', () => {
             });
         });
 
+        describe('openWithItemsNoHistory()', () => {
+            test('dismisses the scroll-restore popover immediately', () => {
+                Lightbox.openWithItemsNoHistory([{ path: 'a.jpg', type: 'image', tags: [] }], 0);
+
+                expect(
+                    InfiniteScroll.dismissScrollRestorePopoverImmediately
+                ).toHaveBeenCalledOnce();
+            });
+        });
+
         describe('close() with active collection context', () => {
             let rafSpy;
 
@@ -3058,6 +3076,93 @@ describe('Lightbox Module', () => {
                 Lightbox._switchedCollectionItems = [{ path: 'a.jpg', type: 'image', tags: [] }];
 
                 expect(() => Lightbox.close()).not.toThrow();
+            });
+        });
+
+        describe('mobile actions', () => {
+            beforeEach(() => {
+                Lightbox.createTagsDrawer();
+                Lightbox.createCollectionDrawer();
+                Lightbox.createMobileActions();
+            });
+
+            test('opens the mobile action drawer and pushes history state', () => {
+                const rafSpy = vi.fn((cb) => {
+                    cb();
+                    return 0;
+                });
+                vi.stubGlobal('requestAnimationFrame', rafSpy);
+
+                Lightbox.items = [
+                    { path: '/img1.jpg', name: 'img1.jpg', type: 'image', tags: ['sunset'] },
+                ];
+                Lightbox.currentIndex = 0;
+
+                Lightbox.openMobileActions();
+
+                expect(Lightbox.mobileActionsOpen).toBe(true);
+                expect(Lightbox.elements.mobileActionsDrawer.classList.contains('hidden')).toBe(
+                    false
+                );
+                expect(Lightbox.elements.mobileActionsDrawer.classList.contains('open')).toBe(true);
+                expect(Lightbox.elements.mobileActionsBtn.getAttribute('aria-expanded')).toBe(
+                    'true'
+                );
+                expect(HistoryManager.pushState).toHaveBeenCalledWith('lightbox-mobile-actions');
+
+                vi.unstubAllGlobals();
+            });
+
+            test('mirrors favorite, tag, collection, autoplay, and loop state', () => {
+                Collections.isInCollection = vi.fn(() => true);
+                Preferences.isVideoAutoplayEnabled = vi.fn(() => true);
+                Preferences.isMediaLoopEnabled = vi.fn(() => false);
+
+                const file = {
+                    path: '/video1.mp4',
+                    name: 'video1.mp4',
+                    type: 'video',
+                    isFavorite: true,
+                    tags: ['travel', 'night'],
+                };
+
+                Lightbox.items = [file];
+                Lightbox.currentIndex = 0;
+
+                Lightbox.updateMobileActions(file);
+
+                expect(Lightbox.elements.mobileActionFavoriteState.textContent).toBe('On');
+                expect(Lightbox.elements.mobileActionTagsState.textContent).toBe('2 tags');
+                expect(Lightbox.elements.mobileActionCollectionsState.textContent).toBe(
+                    'In collection'
+                );
+                expect(Lightbox.elements.mobileActionAutoplay.classList.contains('hidden')).toBe(
+                    false
+                );
+                expect(Lightbox.elements.mobileActionAutoplayState.textContent).toBe('On');
+                expect(Lightbox.elements.mobileActionLoop.classList.contains('hidden')).toBe(false);
+                expect(Lightbox.elements.mobileActionLoopState.textContent).toBe('Off');
+            });
+
+            test('renders the overflow trigger in the top chrome without a text label', () => {
+                expect(Lightbox.elements.mobileActionsBtn).toBeTruthy();
+                expect(Lightbox.elements.infoBar.contains(Lightbox.elements.mobileActionsBtn)).toBe(
+                    false
+                );
+                expect(Lightbox.elements.topControls).toBeTruthy();
+                expect(
+                    Lightbox.elements.topControls.contains(Lightbox.elements.mobileActionsBtn)
+                ).toBe(true);
+                expect(Lightbox.elements.topControls.contains(Lightbox.elements.closeBtn)).toBe(
+                    true
+                );
+                expect(
+                    Lightbox.elements.lightbox.contains(Lightbox.elements.mobileActionsBtn)
+                ).toBe(true);
+                expect(Lightbox.elements.mobileActionsBtn.textContent?.trim()).toBe('');
+                expect(Lightbox.elements.mobileActionsBtn.getAttribute('aria-label')).toBe(
+                    'More actions'
+                );
             });
         });
     });

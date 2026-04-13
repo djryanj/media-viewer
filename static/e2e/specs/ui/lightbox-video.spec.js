@@ -8,6 +8,12 @@ import { test, expect } from '../../fixtures/index.js';
 
 const MAIN_GALLERY_IMAGE_SELECTOR = '#gallery .gallery-item.image';
 const MAIN_GALLERY_VIDEO_SELECTOR = '#gallery .gallery-item.video';
+const COARSE_POINTER_PROJECTS = new Set([
+    'mobile-chrome',
+    'mobile-safari',
+    'tablet',
+    'android-firefox',
+]);
 
 function getLightbox(page) {
     return page.locator('#lightbox');
@@ -856,7 +862,14 @@ test.describe('Lightbox - Mobile Touch Gestures @lightbox @ui @mobile @touch', (
         }
     });
 
-    test('should keep the video toolbar aligned on mobile', async ({ page }) => {
+    test('should use the unified mobile action cluster on coarse-pointer devices', async ({
+        page,
+    }, testInfo) => {
+        test.skip(
+            !COARSE_POINTER_PROJECTS.has(testInfo.project.name),
+            'The unified action cluster only replaces inline toolbar controls on coarse-pointer projects.'
+        );
+
         await runVideoLightboxTest(page, async () => {
             if (await openFirstVideoInLightbox(page)) {
                 await setDeterministicVideoToolbarState(page, {
@@ -864,20 +877,63 @@ test.describe('Lightbox - Mobile Touch Gestures @lightbox @ui @mobile @touch', (
                     mediaLoop: false,
                 });
 
-                const toolbar = getLightboxToolbar(page);
-                await expect(toolbar).toBeVisible();
-                await expect(page.locator('#lightbox-autoplay')).toBeVisible();
-                await expect(page.locator('#lightbox-loop-toggle')).toBeVisible();
-                await expect(page.locator('#lightbox-collection')).toBeVisible();
+                await expect(page.locator('#lightbox-mobile-actions-btn')).toBeVisible();
+                await expect(page.locator('#lightbox-pin')).toBeHidden();
+                await expect(page.locator('#lightbox-tag')).toBeHidden();
+                await expect(page.locator('#lightbox-download')).toBeHidden();
+                await expect(page.locator('#lightbox-autoplay')).toBeHidden();
+                await expect(page.locator('#lightbox-loop-toggle')).toBeHidden();
+                await expect(page.locator('#lightbox-collection')).toBeHidden();
 
-                const layout = await getLightboxToolbarLayout(page);
-                assertLightboxToolbarLayout(layout, [
-                    'lightbox-pin',
-                    'lightbox-tag',
-                    'lightbox-autoplay',
-                    'lightbox-loop-toggle',
-                    'lightbox-collection',
-                ]);
+                await page.evaluate(() => {
+                    const lightbox = document.getElementById('lightbox');
+                    const clock = document.getElementById('lightbox-clock');
+                    if (!lightbox || !clock) return;
+
+                    lightbox.classList.add('clock-always-visible');
+                    clock.textContent = '19:07';
+                    clock.classList.remove('hidden');
+                });
+
+                const mobileActionsButton = page.locator('#lightbox-mobile-actions-btn');
+                const closeButton = page.locator('.lightbox-close');
+                const clock = page.locator('#lightbox-clock');
+                const mobileActionsIcon = mobileActionsButton.locator('svg, [data-lucide]');
+                const closeIcon = closeButton.locator('svg, [data-lucide]');
+
+                const mobileActionsBox = await mobileActionsButton.boundingBox();
+                const closeBox = await closeButton.boundingBox();
+                const clockBox = await clock.boundingBox();
+                const mobileActionsIconBox = await mobileActionsIcon.boundingBox();
+                const closeIconBox = await closeIcon.boundingBox();
+
+                expect(mobileActionsBox).not.toBeNull();
+                expect(closeBox).not.toBeNull();
+                expect(clockBox).not.toBeNull();
+                expect(mobileActionsIconBox).not.toBeNull();
+                expect(closeIconBox).not.toBeNull();
+
+                expect(Math.abs(mobileActionsBox.y - closeBox.y)).toBeLessThanOrEqual(1);
+                expect(Math.abs(mobileActionsBox.height - closeBox.height)).toBeLessThanOrEqual(1);
+                expect(Math.abs(mobileActionsIconBox.y - closeIconBox.y)).toBeLessThanOrEqual(1);
+                expect(
+                    Math.abs(mobileActionsIconBox.height - closeIconBox.height)
+                ).toBeLessThanOrEqual(1);
+                expect(mobileActionsBox.x + mobileActionsBox.width + 6).toBeLessThanOrEqual(
+                    closeBox.x
+                );
+                expect(clockBox.x + clockBox.width + 6).toBeLessThanOrEqual(mobileActionsBox.x);
+
+                await mobileActionsButton.click();
+
+                const drawer = page.locator('.lightbox-mobile-actions-drawer');
+                await expect(drawer).toBeVisible();
+                await expect(page.locator('#lightbox-mobile-action-favorite')).toBeVisible();
+                await expect(page.locator('#lightbox-mobile-action-tags')).toBeVisible();
+                await expect(page.locator('#lightbox-mobile-action-collections')).toBeVisible();
+                await expect(page.locator('#lightbox-mobile-action-download')).toBeVisible();
+                await expect(page.locator('#lightbox-mobile-action-autoplay')).toBeVisible();
+                await expect(page.locator('#lightbox-mobile-action-loop')).toBeVisible();
             }
         });
     });

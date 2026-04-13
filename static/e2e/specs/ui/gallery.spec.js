@@ -8,6 +8,38 @@ import { test, expect } from '../../fixtures/index.js';
 
 const MAIN_GALLERY_SELECTOR = '#gallery';
 const MAIN_GALLERY_ITEM_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item`;
+const MAIN_GALLERY_MEDIA_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item.image, ${MAIN_GALLERY_SELECTOR} .gallery-item.video`;
+const COARSE_POINTER_PROJECTS = new Set([
+    'mobile-chrome',
+    'mobile-safari',
+    'tablet',
+    'android-firefox',
+]);
+
+async function getControlStyles(itemLocator) {
+    return await itemLocator.evaluate((element) => {
+        const thumb = element.querySelector('.gallery-item-thumb');
+        const collectionButton = thumb?.querySelector('.collection-button');
+        const selectionCheckbox = thumb?.querySelector('.selection-checkbox');
+        const readStyles = (node) => {
+            if (!(node instanceof HTMLElement)) {
+                return null;
+            }
+
+            const style = window.getComputedStyle(node);
+            return {
+                display: style.display,
+                opacity: Number.parseFloat(style.opacity || '0'),
+                pointerEvents: style.pointerEvents,
+            };
+        };
+
+        return {
+            collectionButton: readStyles(collectionButton),
+            selectionCheckbox: readStyles(selectionCheckbox),
+        };
+    });
+}
 
 async function waitForFilteredGalleryTypes(page, allowedTypes) {
     await expect
@@ -374,7 +406,7 @@ test.describe('Gallery Selection Mode @gallery @ui @selection', () => {
                 isActive: window.ItemSelection.isActive === true,
                 isSelected: el.classList.contains('selected'),
                 className: el.className,
-                hasCheckboxes: document.querySelectorAll('#gallery .select-checkbox').length > 0,
+                hasCheckboxes: document.querySelectorAll('#gallery .selection-checkbox').length > 0,
             };
         });
 
@@ -527,6 +559,87 @@ test.describe('Gallery Responsive Behavior @gallery @ui @responsive @mobile', ()
 
         await expect(page.locator('#gallery')).toBeVisible();
         await expect(page.locator(MAIN_GALLERY_ITEM_SELECTOR).first()).toBeVisible();
+    });
+
+    test('keeps inline gallery controls hidden until hover on desktop projects', async ({
+        page,
+        loginHelpers,
+    }, testInfo) => {
+        test.skip(
+            COARSE_POINTER_PROJECTS.has(testInfo.project.name),
+            'Desktop hover regression is covered by fine-pointer projects only'
+        );
+
+        await loginHelpers.login(page);
+        const item = page.locator(MAIN_GALLERY_MEDIA_SELECTOR).first();
+        await expect(item).toBeVisible();
+
+        const initialStyles = await getControlStyles(item);
+        expect(initialStyles.collectionButton).toBeTruthy();
+        expect(initialStyles.selectionCheckbox).toBeTruthy();
+        expect(initialStyles.collectionButton.display).not.toBe('none');
+        expect(initialStyles.collectionButton.opacity).toBe(0);
+        expect(initialStyles.selectionCheckbox.opacity).toBe(0);
+        expect(initialStyles.selectionCheckbox.pointerEvents).toBe('none');
+
+        await item.locator('.gallery-item-thumb').hover();
+
+        await expect
+            .poll(async () => {
+                const styles = await getControlStyles(item);
+                return {
+                    collectionOpacity: styles.collectionButton?.opacity ?? 0,
+                    checkboxOpacity: styles.selectionCheckbox?.opacity ?? 0,
+                    checkboxPointerEvents: styles.selectionCheckbox?.pointerEvents ?? 'none',
+                };
+            })
+            .toEqual({
+                collectionOpacity: 1,
+                checkboxOpacity: 1,
+                checkboxPointerEvents: 'auto',
+            });
+    });
+
+    test('keeps collection and selection controls hidden until selection mode on touch projects', async ({
+        page,
+        loginHelpers,
+    }, testInfo) => {
+        test.skip(
+            !COARSE_POINTER_PROJECTS.has(testInfo.project.name),
+            'Touch control regression is covered by coarse-pointer projects only'
+        );
+
+        await loginHelpers.login(page);
+        const item = page.locator(MAIN_GALLERY_MEDIA_SELECTOR).first();
+        await expect(item).toBeVisible();
+
+        const initialStyles = await getControlStyles(item);
+        expect(initialStyles.collectionButton).toBeTruthy();
+        expect(initialStyles.selectionCheckbox).toBeTruthy();
+        expect(initialStyles.collectionButton.display).toBe('none');
+        expect(initialStyles.selectionCheckbox.opacity).toBe(0);
+        expect(initialStyles.selectionCheckbox.pointerEvents).toBe('none');
+
+        await item.evaluate((element) => {
+            window.ItemSelection?.enterSelectionMode?.(element);
+        });
+
+        await expect(page.locator('#selection-toolbar')).toBeVisible();
+
+        await expect
+            .poll(async () => {
+                const styles = await getControlStyles(item);
+                return {
+                    collectionDisplay: styles.collectionButton?.display ?? 'none',
+                    checkboxOpacity: styles.selectionCheckbox?.opacity ?? 0,
+                    checkboxPointerEvents: styles.selectionCheckbox?.pointerEvents ?? 'none',
+                };
+            })
+            .toEqual({
+                collectionDisplay: 'none',
+                checkboxOpacity: 1,
+                checkboxPointerEvents: 'auto',
+            });
     });
 });
 

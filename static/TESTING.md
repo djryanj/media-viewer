@@ -204,7 +204,7 @@ describe('Gallery Integration', () => {
 
 E2E tests simulate real user interactions in a browser.
 
-The default `npm run test:e2e` selection excludes performance specs and docs screenshot-generation specs. Regenerate docs screenshots only when needed with `npm run test:e2e:docs-screenshots`, or include them in the default selection with `PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1`. Visual regression coverage lives in `e2e/specs/visual`, compares deterministic DOM/style snapshots against committed JSON baselines in `e2e/baselines/tagging`, and runs separately via `npm run test:e2e:visual`. Refresh those baselines with `npm run test:e2e:visual:baselines`.
+The default `npm run test:e2e` selection excludes performance specs and docs screenshot-generation specs. Regenerate docs screenshots only when needed with `npm run test:e2e:docs-screenshots`, or include them in the default selection with `PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1`. Visual regression coverage lives in `e2e/specs/visual`, compares deterministic DOM/style snapshots against committed JSON baselines in `e2e/baselines/settings`, `e2e/baselines/tagging`, and `e2e/baselines/gallery`, and runs separately via `npm run test:e2e:visual`. That tagging baseline set now also covers the coarse-pointer lightbox top-controls cluster. Refresh those baselines with `npm run test:e2e:visual:baselines`.
 
 ```javascript
 import { test, expect } from '../fixtures/index.js';

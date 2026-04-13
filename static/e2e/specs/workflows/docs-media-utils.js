@@ -10,6 +10,25 @@ async function ensureParentDir(filePath) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
 }
 
+async function getVideoDurationMs(inputPath) {
+    const { stdout } = await execFileAsync('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'default=noprint_wrappers=1:nokey=1',
+        inputPath,
+    ]);
+
+    const durationSeconds = Number.parseFloat(String(stdout).trim());
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        return 0;
+    }
+
+    return Math.round(durationSeconds * 1000);
+}
+
 function buildFfmpegInputArgs(inputPath, trimStartMs = 0) {
     const args = [];
 
@@ -56,6 +75,24 @@ async function transcodeToGif(inputPath, outputPath, fps, scaleWidth, workingDir
         palettePath,
         '-lavfi',
         `fps=${fps},scale=${scaleWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5`,
+        outputPath,
+    ]);
+}
+
+async function extractVideoFrame(inputPath, outputPath, trimStartMs = 0) {
+    await ensureParentDir(outputPath);
+    const durationMs = await getVideoDurationMs(inputPath).catch(() => 0);
+    const seekMs =
+        trimStartMs > 0 ? trimStartMs : durationMs > 0 ? Math.max(0, durationMs - 500) : 0;
+
+    await execFileAsync('ffmpeg', [
+        '-y',
+        '-i',
+        inputPath,
+        '-ss',
+        `${seekMs / 1000}`,
+        '-frames:v',
+        '1',
         outputPath,
     ]);
 }
@@ -136,17 +173,43 @@ export async function captureDocsScreenshot(page, locator, screenshotPath, optio
         }, hiddenSelectors);
 
         try {
-            await locator.screenshot({ path: screenshotPath, scale: 'css' });
+            if (options.clipToLocator) {
+                const box = await locator.boundingBox();
+                if (!box) {
+                    throw new Error('Could not determine locator bounds for screenshot');
+                }
+
+                const padding = options.clipPadding ?? 4;
+                await page.screenshot({
+                    path: screenshotPath,
+                    scale: 'css',
+                    animations: 'disabled',
+                    clip: {
+                        x: Math.max(0, box.x - padding),
+                        y: Math.max(0, box.y - padding),
+                        width: Math.max(1, box.width + padding * 2),
+                        height: Math.max(1, box.height + padding * 2),
+                    },
+                });
+            } else {
+                await locator.screenshot({
+                    path: screenshotPath,
+                    scale: 'css',
+                    animations: 'disabled',
+                });
+            }
         } catch (error) {
             if (existingCheck) return;
             throw error;
         } finally {
-            await page.evaluate(() => {
-                document.querySelectorAll('[data-docs-hide]').forEach((el) => {
-                    el.style.removeProperty('visibility');
-                    delete el.dataset.docsHide;
-                });
-            });
+            await page
+                .evaluate(() => {
+                    document.querySelectorAll('[data-docs-hide]').forEach((el) => {
+                        el.style.removeProperty('visibility');
+                        delete el.dataset.docsHide;
+                    });
+                })
+                .catch(() => {});
         }
         return;
     }
@@ -412,25 +475,49 @@ export async function captureDocsScreenshot(page, locator, screenshotPath, optio
                     });
                 }
 
+                const waitForWithTimeout = (promiseFactory, timeoutMs = 5000) => {
+                    return Promise.race([
+                        promiseFactory(),
+                        new Promise((resolve) => {
+                            setTimeout(resolve, timeoutMs);
+                        }),
+                    ]);
+                };
+
                 const images = Array.from(document.images);
                 await Promise.all(
                     images.map((image) => {
+                        if (!image.getAttribute('src') && image.dataset.src) {
+                            image.setAttribute('src', image.dataset.src);
+                        }
+
                         if (image.complete) {
                             return Promise.resolve();
                         }
 
-                        return new Promise((resolve) => {
-                            image.addEventListener('load', resolve, { once: true });
-                            image.addEventListener('error', resolve, { once: true });
-                        });
+                        return waitForWithTimeout(
+                            () =>
+                                new Promise((resolve) => {
+                                    image.addEventListener('load', resolve, { once: true });
+                                    image.addEventListener('error', resolve, { once: true });
+                                })
+                        );
                     })
                 );
 
                 if (document.fonts?.ready) {
-                    await document.fonts.ready;
+                    await waitForWithTimeout(() => document.fonts.ready);
                 }
 
-                await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+                await waitForWithTimeout(
+                    () =>
+                        new Promise((resolve) => {
+                            setTimeout(resolve, 50);
+                        }),
+                    100
+                );
+
+                void root.getBoundingClientRect();
 
                 // Always compute a tight bounding box from visible descendants so that
                 // any empty space below (or around) the root element is excluded.
@@ -514,38 +601,27 @@ export async function captureDocsScreenshot(page, locator, screenshotPath, optio
             }
         );
 
-        const cdpSession = await page.context().newCDPSession(capturePage);
-
         try {
-            try {
-                const { data } = await Promise.race([
-                    cdpSession.send('Page.captureScreenshot', {
-                        format: 'png',
-                        fromSurface: true,
-                        captureBeyondViewport: true,
-                        clip: {
-                            x: clip.x,
-                            y: clip.y,
-                            width: clip.width,
-                            height: clip.height,
-                            scale: 1,
-                        },
-                    }),
-                    new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('CDP screenshot timed out')), 15000);
-                    }),
-                ]);
-
-                await fs.writeFile(screenshotPath, data, 'base64');
-            } catch (error) {
-                const hasExistingScreenshot = await existingScreenshotPromise;
-                if (hasExistingScreenshot) {
-                    return;
-                }
-                throw error;
+            if (options.preferIsolatedLocatorScreenshot) {
+                await capturePage.locator('#e2e-screenshot-root').screenshot({
+                    path: screenshotPath,
+                    scale: 'css',
+                    animations: 'disabled',
+                });
+            } else {
+                await capturePage.screenshot({
+                    path: screenshotPath,
+                    scale: 'css',
+                    animations: 'disabled',
+                    clip,
+                });
             }
-        } finally {
-            await cdpSession.detach();
+        } catch (error) {
+            const hasExistingScreenshot = await existingScreenshotPromise;
+            if (hasExistingScreenshot) {
+                return;
+            }
+            throw error;
         }
     } finally {
         await capturePage.close();
@@ -576,6 +652,103 @@ export async function captureAnimatedDocsMedia({
     }
 
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'media-viewer-docs-media-'));
+    const recordingsDir = path.join(tempRoot, 'recordings');
+    await fs.mkdir(recordingsDir, { recursive: true });
+
+    const storageState = await page.context().storageState();
+    const userAgent = await page.evaluate(() => navigator.userAgent);
+    const targetViewport = viewport ?? page.viewportSize() ?? { width: 1440, height: 1100 };
+    const baseURL = new URL('/', page.url()).href;
+
+    let webmPath;
+
+    try {
+        // Do not force colorScheme or reducedMotion: the app is dark-only and
+        // forcibly reducing motion suppresses the CSS transitions that make the
+        // animated output visually useful.  Use 'load' rather than
+        // 'domcontentloaded' so all scripts (Lightbox, settingsManager, etc.)
+        // are fully initialised before prepare/run begins.
+        const captureContext = await browser.newContext({
+            baseURL,
+            storageState,
+            viewport: targetViewport,
+            userAgent,
+            recordVideo: {
+                dir: recordingsDir,
+                size: targetViewport,
+            },
+        });
+
+        const capturePage = await captureContext.newPage();
+        const video = capturePage.video();
+
+        try {
+            await capturePage.goto(startPath);
+            await capturePage.waitForLoadState('load');
+
+            if (typeof prepare === 'function') {
+                await prepare(capturePage);
+            }
+
+            if (leadInMs > 0) {
+                await capturePage.waitForTimeout(leadInMs);
+            }
+
+            if (typeof run === 'function') {
+                await run(capturePage);
+            }
+
+            await capturePage.waitForTimeout(settleMs);
+        } finally {
+            await captureContext.close();
+        }
+
+        if (!video) {
+            throw new Error('Animated docs capture did not produce a Playwright video');
+        }
+
+        webmPath = await video.path();
+
+        if (outputMp4Path) {
+            await transcodeToMp4(webmPath, outputMp4Path, fps, trimStartMs);
+        }
+
+        if (outputGifPath) {
+            await transcodeToGif(
+                webmPath,
+                outputGifPath,
+                fps,
+                gifScaleWidth,
+                tempRoot,
+                trimStartMs
+            );
+        }
+    } finally {
+        await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+}
+
+export async function captureDocsVideoFrame({
+    page,
+    startPath = '/',
+    viewport,
+    outputPngPath,
+    trimStartMs = 0,
+    leadInMs = 0,
+    settleMs = 400,
+    prepare,
+    run,
+}) {
+    if (!outputPngPath) {
+        throw new Error('captureDocsVideoFrame requires an outputPngPath');
+    }
+
+    const browser = page.context().browser();
+    if (!browser) {
+        throw new Error('Docs frame capture requires a browser-backed Playwright context');
+    }
+
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'media-viewer-docs-frame-'));
     const recordingsDir = path.join(tempRoot, 'recordings');
     await fs.mkdir(recordingsDir, { recursive: true });
 
@@ -625,25 +798,11 @@ export async function captureAnimatedDocsMedia({
         }
 
         if (!video) {
-            throw new Error('Animated docs capture did not produce a Playwright video');
+            throw new Error('Docs frame capture did not produce a Playwright video');
         }
 
         webmPath = await video.path();
-
-        if (outputMp4Path) {
-            await transcodeToMp4(webmPath, outputMp4Path, fps, trimStartMs);
-        }
-
-        if (outputGifPath) {
-            await transcodeToGif(
-                webmPath,
-                outputGifPath,
-                fps,
-                gifScaleWidth,
-                tempRoot,
-                trimStartMs
-            );
-        }
+        await extractVideoFrame(webmPath, outputPngPath, trimStartMs);
     } finally {
         await fs.rm(tempRoot, { recursive: true, force: true });
     }

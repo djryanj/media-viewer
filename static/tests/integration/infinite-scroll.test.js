@@ -888,12 +888,13 @@ describe('InfiniteScroll Integration', () => {
             expect(popover.classList.contains('hidden')).toBe(true);
         });
 
-        it('should contain a go-back button', () => {
+        it('should contain a resume trigger', () => {
             const btn = document.getElementById('scroll-restore-go');
             expect(btn).not.toBeNull();
+            expect(btn.textContent).toContain('Resume previous position');
         });
 
-        it('should contain a dismiss button', () => {
+        it('should contain a dismiss control', () => {
             const btn = document.getElementById('scroll-restore-dismiss');
             expect(btn).not.toBeNull();
         });
