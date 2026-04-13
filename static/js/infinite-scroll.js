@@ -196,19 +196,25 @@ const InfiniteScroll = {
         const popover = document.createElement('div');
         popover.id = 'scroll-restore-popover';
         popover.className = 'scroll-restore-popover hidden';
+        popover.setAttribute('aria-live', 'polite');
         popover.innerHTML = `
-            <div class="scroll-restore-popover-body">
-                <i data-lucide="history" class="scroll-restore-icon"></i>
-                <span class="scroll-restore-label">Continue where you left off?</span>
-            </div>
-            <div class="scroll-restore-popover-actions">
-                <button id="scroll-restore-go" class="scroll-restore-btn-go">Yes!</button>
-                <button id="scroll-restore-dismiss" class="scroll-restore-btn-dismiss">Dismiss</button>
-            </div>
-            <div class="scroll-restore-progress-bar">
-                <div class="scroll-restore-progress-fill"></div>
-            </div>
-            <div class="scroll-restore-arrow" aria-hidden="true"></div>
+            <button id="scroll-restore-go" class="scroll-restore-popover-body" type="button">
+                <span class="scroll-restore-icon-wrap" aria-hidden="true">
+                    <i data-lucide="history" class="scroll-restore-icon"></i>
+                </span>
+                <span class="scroll-restore-copy">
+                    <span class="scroll-restore-title">Resume previous position</span>
+                    <span class="scroll-restore-detail">Tap to jump back near where you left off</span>
+                </span>
+            </button>
+            <button
+                id="scroll-restore-dismiss"
+                class="scroll-restore-btn-dismiss"
+                type="button"
+                aria-label="Dismiss resume prompt"
+            >
+                <i data-lucide="x"></i>
+            </button>
         `;
         document.body.appendChild(popover);
         this.elements.restorePopover = popover;
@@ -1053,10 +1059,6 @@ const InfiniteScroll = {
         clearTimeout(this._restorePopoverHideTimer);
         this._restorePopoverHideTimer = null;
 
-        // Reset the countdown bar so the animation replays fresh.
-        const bar = popover.querySelector('.scroll-restore-progress-bar');
-        if (bar) bar.innerHTML = '<div class="scroll-restore-progress-fill"></div>';
-
         // Remove hidden first so we can measure popover height for centering.
         popover.classList.remove('hidden');
 
@@ -1099,22 +1101,43 @@ const InfiniteScroll = {
         }, 8000);
     },
 
+    _finalizeScrollRestorePopoverHide() {
+        const popover = this.elements.restorePopover;
+        if (!popover) return;
+
+        popover.classList.add('hidden');
+        popover.classList.remove('scrubber-anchored');
+        popover.style.top = '';
+        popover.style.bottom = '';
+        this.elements.scrubber?.querySelector('.scroll-restore-marker')?.remove();
+    },
+
     hideScrollRestorePopover() {
         const popover = this.elements.restorePopover;
         if (!popover) return;
         popover.classList.remove('visible');
+        clearTimeout(this._restorePopoverHideTimer);
         // Remove the scrubber marker and anchoring once the fade-out finishes.
         // Store the timer so showScrollRestorePopover can cancel it if the
         // popover is re-shown before the 250 ms delay elapses.
         this._restorePopoverHideTimer = setTimeout(() => {
             this._restorePopoverHideTimer = null;
-            popover.classList.add('hidden');
-            popover.classList.remove('scrubber-anchored');
-            popover.style.top = '';
-            popover.style.bottom = '';
-            this.elements.scrubber?.querySelector('.scroll-restore-marker')?.remove();
+            this._finalizeScrollRestorePopoverHide();
         }, 250);
         clearTimeout(this._restorePopoverTimer);
+        this._restorePopoverTimer = null;
+    },
+
+    dismissScrollRestorePopoverImmediately() {
+        const popover = this.elements.restorePopover;
+        if (!popover) return;
+
+        clearTimeout(this._restorePopoverHideTimer);
+        clearTimeout(this._restorePopoverTimer);
+        this._restorePopoverHideTimer = null;
+        this._restorePopoverTimer = null;
+        popover.classList.remove('visible');
+        this._finalizeScrollRestorePopoverHide();
     },
 
     _restoreScrollNow() {

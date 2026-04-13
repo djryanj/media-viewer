@@ -378,6 +378,15 @@ describe('ItemSelection Module', () => {
             expect(ItemSelection.isActive).toBe(true);
         });
 
+        test('enables the injected checkbox visibility style', () => {
+            ItemSelection.enterSelectionMode();
+
+            const styleEl = document.getElementById('selection-checkboxes-visible');
+            expect(styleEl).toBeTruthy();
+            expect(styleEl.textContent).toContain('pointer-events: auto');
+            expect(styleEl.disabled).toBe(false);
+        });
+
         test('clears previous selections', () => {
             ItemSelection.selectedPaths.add('/old/path.jpg');
             ItemSelection.selectedData.set('/old/path.jpg', { name: 'old', type: 'image' });
@@ -420,6 +429,16 @@ describe('ItemSelection Module', () => {
             ItemSelection.isActive = true;
             ItemSelection.exitSelectionMode();
             expect(ItemSelection.isActive).toBe(false);
+        });
+
+        test('disables the injected checkbox visibility style', () => {
+            ItemSelection.enterSelectionMode();
+
+            const styleEl = document.getElementById('selection-checkboxes-visible');
+            ItemSelection.exitSelectionMode();
+
+            expect(styleEl).toBeTruthy();
+            expect(styleEl.disabled).toBe(true);
         });
 
         test('clears selectedPaths and selectedData', () => {

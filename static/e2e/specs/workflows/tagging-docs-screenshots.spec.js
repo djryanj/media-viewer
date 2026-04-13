@@ -1,5 +1,7 @@
 import path from 'node:path';
 
+import { devices } from '@playwright/test';
+
 import { test, expect } from '../../fixtures/index.js';
 import { captureDocsScreenshot } from './docs-media-utils.js';
 
@@ -12,11 +14,17 @@ const SCREENSHOTS = {
     mergeModal: path.join(DOCS_IMAGE_DIR, 'tagging-merge-modal.png'),
     lightboxDrawer: path.join(DOCS_IMAGE_DIR, 'tagging-lightbox-drawer.png'),
     lightboxVideoToolbar: path.join(DOCS_IMAGE_DIR, 'lightbox-video-toolbar.png'),
+    lightboxMobileTopControls: path.join(DOCS_IMAGE_DIR, 'lightbox-mobile-top-controls.png'),
     searchFilterModal: path.join(DOCS_IMAGE_DIR, 'tagging-search-filter-modal.png'),
     settingsManager: path.join(DOCS_IMAGE_DIR, 'tagging-manager-settings.png'),
 };
 
 const MAIN_GALLERY_MEDIA_SELECTOR = '#gallery .gallery-item.image, #gallery .gallery-item.video';
+const {
+    defaultBrowserType: _unusedDefaultBrowserType,
+    isMobile: _unusedIsMobile,
+    ...PIXEL_5_CONTEXT
+} = devices['Pixel 5'];
 
 const ITEM_OFFSETS = {
     suggestions: 0,
@@ -26,6 +34,8 @@ const ITEM_OFFSETS = {
     search: 0,
     settings: 0,
 };
+
+const CLEANUP_TIMEOUT = 1_000;
 
 test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @workflows', () => {
     test.describe.configure({ mode: 'serial' });
@@ -46,27 +56,6 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
                 locator,
                 path: await locator.getAttribute('data-path'),
                 name: (await locator.getAttribute('data-name')) || `item-${startIndex + index + 1}`,
-            });
-        }
-
-        return result;
-    }
-
-    async function getVideoItems(page, count = 1, startIndex = 0) {
-        const items = page.locator('#gallery .gallery-item.video');
-        await expect(items.first()).toBeVisible();
-
-        const total = await items.count();
-        expect(total).toBeGreaterThanOrEqual(startIndex + count);
-
-        const result = [];
-        for (let index = 0; index < count; index++) {
-            const locator = items.nth(startIndex + index);
-            result.push({
-                locator,
-                path: await locator.getAttribute('data-path'),
-                name:
-                    (await locator.getAttribute('data-name')) || `video-${startIndex + index + 1}`,
             });
         }
 
@@ -252,7 +241,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
             await page.evaluate(() => {
                 globalThis.Tags?.closeModal?.();
             });
-            await expect(tagModal).toBeHidden();
+            await tagModal.waitFor({ state: 'hidden', timeout: CLEANUP_TIMEOUT }).catch(() => {});
         }
 
         await clearSelection(page);
@@ -329,7 +318,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
 
                 globalThis.TagClipboard?.closePasteModalDirect?.();
             });
-            await expect(pasteModal).toBeHidden();
+            await pasteModal.waitFor({ state: 'hidden', timeout: CLEANUP_TIMEOUT }).catch(() => {});
         }
     }
 
@@ -343,7 +332,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
 
                 globalThis.Search?.hideResults?.();
             });
-            await expect(results).toBeHidden();
+            await results.waitFor({ state: 'hidden', timeout: CLEANUP_TIMEOUT }).catch(() => {});
         }
     }
 
@@ -353,7 +342,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
             await page.evaluate(() => {
                 window.settingsManager?.close();
             });
-            await expect(settingsModal).toHaveClass(/hidden/);
+            await expect(settingsModal).toHaveClass(/hidden/, { timeout: CLEANUP_TIMEOUT });
         }
     }
 
@@ -372,7 +361,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
 
                 globalThis.Lightbox?.close?.();
             });
-            await expect(lightbox).toBeHidden();
+            await lightbox.waitFor({ state: 'hidden', timeout: CLEANUP_TIMEOUT }).catch(() => {});
         }
     }
 
@@ -411,25 +400,208 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(page.locator('#lightbox')).toBeVisible();
     }
 
+    async function prepareLightboxVideoToolbarScreenshot(page, filePath) {
+        const prepared = await page.evaluate(async (targetPath) => {
+            const lightbox = globalThis.Lightbox;
+            if (!lightbox?.elements?.lightbox || !lightbox.elements.toolbar) {
+                return false;
+            }
+
+            let items = globalThis.MediaApp?.state?.mediaFiles ?? [];
+            let itemIndex = Array.isArray(items)
+                ? items.findIndex((item) => item?.path === targetPath)
+                : -1;
+
+            if (itemIndex < 0) {
+                const parentPath = targetPath.split('/').slice(0, -1).join('/');
+                const params = new URLSearchParams({
+                    path: parentPath,
+                    sort: globalThis.MediaApp?.state?.currentSort?.field ?? 'name',
+                    order: globalThis.MediaApp?.state?.currentSort?.order ?? 'asc',
+                    limit: '0',
+                });
+                const response = await fetch(`/api/media?${params.toString()}`);
+                if (!response.ok) {
+                    return false;
+                }
+
+                const data = await response.json();
+                items = data.items ?? [];
+                itemIndex = items.findIndex((item) => item?.path === targetPath);
+                if (itemIndex < 0) {
+                    return false;
+                }
+            }
+
+            const item = items[itemIndex];
+            if (!item) {
+                return false;
+            }
+
+            if (item.tags === undefined) {
+                item.tags = [];
+            }
+
+            lightbox.items = items;
+            lightbox.currentIndex = itemIndex;
+            lightbox.useAppMedia = true;
+
+            lightbox.hideLoading?.();
+            lightbox.elements.lightbox.classList.remove('hidden', 'ui-overlays-hidden');
+            lightbox.elements.lightbox.classList.add('video-mode');
+            document.body.style.overflow = 'hidden';
+
+            lightbox.elements.image?.classList.add('hidden');
+            lightbox.elements.toolbar?.classList.remove('hidden');
+            lightbox.elements.autoplayBtn?.classList.remove('hidden');
+            lightbox.elements.loopBtn?.classList.remove('hidden');
+
+            const video = lightbox.elements.video || document.getElementById('lightbox-video');
+            if (video instanceof HTMLVideoElement) {
+                video.pause();
+                video.removeAttribute('src');
+                video.classList.remove('hidden', 'loading');
+                video.style.opacity = '1';
+                video.style.background = 'linear-gradient(135deg, #0f172a, #1e293b 52%, #334155)';
+            }
+
+            const displayName = item.name || targetPath.split('/').pop() || 'video';
+            if (lightbox.elements.title) {
+                lightbox.elements.title.textContent = displayName;
+            }
+            if (lightbox.elements.counter) {
+                lightbox.elements.counter.textContent = `${itemIndex + 1} / ${items.length}`;
+            }
+
+            lightbox.updatePinButton?.(item);
+            lightbox.updateTagButton?.(item);
+            lightbox.updateTagSummary?.(item);
+            lightbox.updateCollectionButton?.(item);
+            lightbox.updateMobileActions?.(item);
+            lightbox.showUIOverlays?.();
+
+            return true;
+        }, filePath);
+
+        expect(prepared).toBe(true);
+        await expect(page.locator('#lightbox')).toBeVisible();
+    }
+
+    async function waitForLightboxVideoChrome(page, timeout = 4_000) {
+        await expect(page.locator('#lightbox')).toBeVisible({ timeout });
+        await expect(page.locator('#lightbox-toolbar')).toBeAttached({
+            timeout: Math.min(timeout, 1_000),
+        });
+
+        await page.evaluate(() => {
+            const lightbox = document.getElementById('lightbox');
+            const toolbar = document.getElementById('lightbox-toolbar');
+            const autoplay = document.getElementById('lightbox-autoplay');
+            const loopToggle = document.getElementById('lightbox-loop-toggle');
+            const loader = document.querySelector('.lightbox-loader');
+
+            globalThis.Lightbox?.hideLoading?.();
+            globalThis.Lightbox?.showUIOverlays?.();
+
+            lightbox?.classList.add('video-mode');
+            lightbox?.classList.remove('ui-overlays-hidden');
+            toolbar?.classList.remove('hidden');
+            autoplay?.classList.remove('hidden');
+            loopToggle?.classList.remove('hidden');
+            loader?.classList.add('hidden');
+        });
+
+        await expect
+            .poll(
+                async () => {
+                    return page.evaluate(() => {
+                        const lightbox = document.getElementById('lightbox');
+                        const toolbar = document.getElementById('lightbox-toolbar');
+                        const autoplay = document.getElementById('lightbox-autoplay');
+
+                        return (
+                            lightbox instanceof HTMLElement &&
+                            lightbox.classList.contains('video-mode') &&
+                            !lightbox.classList.contains('ui-overlays-hidden') &&
+                            toolbar instanceof HTMLElement &&
+                            getComputedStyle(toolbar).display !== 'none' &&
+                            getComputedStyle(toolbar).visibility !== 'hidden' &&
+                            autoplay instanceof HTMLElement &&
+                            !autoplay.classList.contains('hidden')
+                        );
+                    });
+                },
+                { timeout: Math.min(timeout, 1_500) }
+            )
+            .toBe(true);
+    }
+
+    async function stabilizeLightboxVideoForScreenshot(page) {
+        await page.evaluate(() => {
+            const lightbox = document.getElementById('lightbox');
+            const toolbar = document.getElementById('lightbox-toolbar');
+            const autoplay = document.getElementById('lightbox-autoplay');
+            const loopToggle = document.getElementById('lightbox-loop-toggle');
+            const video = document.getElementById('lightbox-video');
+            const loader = document.querySelector('.lightbox-loader');
+
+            globalThis.Lightbox?.hideLoading?.();
+            globalThis.Lightbox?.showUIOverlays?.();
+
+            lightbox?.classList.add('video-mode');
+            lightbox?.classList.remove('ui-overlays-hidden');
+            toolbar?.classList.remove('hidden');
+            autoplay?.classList.remove('hidden');
+            loopToggle?.classList.remove('hidden');
+            loader?.classList.add('hidden');
+
+            if (!(video instanceof HTMLVideoElement)) {
+                return;
+            }
+
+            video.classList.remove('hidden');
+            video.classList.remove('loading');
+            video.style.opacity = '1';
+            video.style.background = 'linear-gradient(135deg, #0f172a, #1e293b 52%, #334155)';
+
+            if (!video.paused) {
+                video.pause();
+            }
+        });
+    }
+
     test.afterEach(async ({ page }) => {
-        const searchTagModal = page.locator('.search-tag-modal');
-        if (
-            await page.evaluate(() => {
-                return globalThis.Search?.searchTagModal?.classList.contains('visible') ?? false;
-            })
-        ) {
-            await page.evaluate(() => {
-                globalThis.Search?.hideSearchTagModal?.();
-            });
-            await expect(searchTagModal).not.toHaveClass(/visible/);
+        if (page.isClosed()) {
+            return;
         }
 
-        await closePasteModal(page);
-        await closeTagModalAndClearSelection(page);
-        await closeSettings(page);
-        await closeSearchResults(page);
-        await closeLightbox(page);
-        await clearTagClipboard(page);
+        const searchTagModal = page.locator('.search-tag-modal');
+        try {
+            if (
+                await page.evaluate(() => {
+                    return (
+                        globalThis.Search?.searchTagModal?.classList.contains('visible') ?? false
+                    );
+                })
+            ) {
+                await page.evaluate(() => {
+                    globalThis.Search?.hideSearchTagModal?.();
+                });
+                await expect(searchTagModal).not.toHaveClass(/visible/, {
+                    timeout: CLEANUP_TIMEOUT,
+                });
+            }
+        } catch {
+            // Ignore teardown failures after timeout-driven aborts.
+            void 0;
+        }
+
+        await closePasteModal(page).catch(() => {});
+        await closeTagModalAndClearSelection(page).catch(() => {});
+        await closeSettings(page).catch(() => {});
+        await closeSearchResults(page).catch(() => {});
+        await closeLightbox(page).catch(() => {});
+        await clearTagClipboard(page).catch(() => {});
     });
 
     test.beforeEach(async ({ page, loginHelpers }, testInfo) => {
@@ -626,10 +798,12 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
     });
 
     test('captures lightbox video toolbar screenshot', async ({ page }) => {
-        const [videoItem] = await getVideoItems(page, 1, 0);
+        test.setTimeout(20_000);
 
-        await openLightboxForPath(page, videoItem.path);
-        await expect(page.locator('#lightbox')).toHaveClass(/video-mode/);
+        const [referenceItem] = await getTaggableItems(page, 1, ITEM_OFFSETS.lightbox);
+
+        await prepareLightboxVideoToolbarScreenshot(page, referenceItem.path);
+        await waitForLightboxVideoChrome(page);
 
         await setLightboxToolbarReferenceState(page, {
             videoAutoplay: true,
@@ -637,6 +811,7 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
             hasTags: true,
             inCollection: true,
         });
+        await stabilizeLightboxVideoForScreenshot(page);
 
         const toolbar = page.locator('#lightbox-toolbar');
         await expect(toolbar).toBeVisible();
@@ -645,6 +820,65 @@ test.describe('Tagging Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await expect(page.locator('#lightbox-collection')).toBeVisible();
 
         await captureDocsScreenshot(page, toolbar, SCREENSHOTS.lightboxVideoToolbar);
+    });
+
+    test.describe('Mobile Lightbox Docs Screenshots', () => {
+        test.use(PIXEL_5_CONTEXT);
+
+        test('captures mobile lightbox top-controls screenshot', async ({ page }) => {
+            test.setTimeout(20_000);
+
+            const [lightboxItem] = await getTaggableItems(page, 1, ITEM_OFFSETS.lightbox);
+
+            // Open the lightbox for real so the actual image is fetched and
+            // rendered instead of a synthetic placeholder.
+            await openLightboxForPath(page, lightboxItem.path);
+
+            // Wait for the blob fetch to complete — the image has .loading while
+            // the server is responding, which makes it 30% opacity / near-white.
+            await expect
+                .poll(
+                    async () =>
+                        page.evaluate(() => {
+                            const img = document.getElementById('lightbox-image');
+                            return (
+                                img instanceof HTMLImageElement &&
+                                !img.classList.contains('loading')
+                            );
+                        }),
+                    { timeout: 15_000 }
+                )
+                .toBe(true);
+
+            // Show overlays and prevent the auto-hide timer from firing before
+            // the screenshot is taken.
+            await page.evaluate(() => {
+                const lb = globalThis.Lightbox;
+                if (!lb) return;
+                if (lb.uiOverlaysTimeout) {
+                    clearTimeout(lb.uiOverlaysTimeout);
+                    lb.uiOverlaysTimeout = null;
+                }
+                lb.userHidOverlays = false;
+                lb.showUIOverlays?.();
+                document.getElementById('lightbox-top-controls')?.classList.remove('hidden');
+                document.getElementById('lightbox-mobile-actions-btn')?.classList.remove('hidden');
+                document.querySelector('.lightbox-close')?.classList.remove('hidden');
+            });
+
+            const topControls = page.locator('#lightbox-top-controls');
+            await expect(topControls).toBeVisible();
+            await expect(page.locator('#lightbox-mobile-actions-btn')).toBeVisible();
+            await expect(page.locator('.lightbox-close')).toBeVisible();
+
+            // Capture the full lightbox — the controls element has a
+            // semi-transparent background that requires the dark media behind it.
+            await captureDocsScreenshot(
+                page,
+                page.locator('#lightbox'),
+                SCREENSHOTS.lightboxMobileTopControls
+            );
+        });
     });
 
     test('captures search tag filter modal screenshot', async ({ page }) => {

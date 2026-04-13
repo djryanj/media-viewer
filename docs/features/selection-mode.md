@@ -1,16 +1,29 @@
 # Selection Mode
 
-Selection mode allows you to perform bulk operations on multiple items at once, including tagging, favoriting, and tag copy/paste operations.
+Selection mode is the bulk-action workspace for gallery items. Use it for tagging, favorites, collections, and tag copy/paste workflows across one or more items.
+
+On touch devices, selection mode is also the main way to act on items from the gallery without keeping extra controls pinned on every thumbnail.
+
+<div align="center">
+	<img src="../../images/selection-mobile-toolbar.png" alt="Mobile selection toolbar showing copy tags, tag, favorite, collect, and select-all actions" width="420">
+	<p><em>On touch devices, long-press opens selection mode and moves bulk actions into the bottom toolbar.</em></p>
+</div>
 
 ## Entering Selection Mode
 
 ### Desktop
 
-Click the checkbox area at the bottom of any gallery item. The checkbox area shows "Select" text on hover.
+Hover a gallery item and click the checkbox in the top-left corner.
 
 ### Mobile
 
 Long-press (touch and hold) any item for about half a second. A brief vibration confirms entry into selection mode.
+
+This keeps normal browsing gestures intact until you deliberately switch into a bulk-action workflow:
+
+- **Tap** still opens the item
+- **Double-tap** still toggles favorite
+- **Long-press** switches the gallery into selection mode
 
 ## Selection Interface
 
@@ -20,13 +33,14 @@ When selection mode is active:
 - Selected items show a checkmark overlay
 - Unselected items appear slightly dimmed
 - The selection count is displayed in the toolbar
+- On touch devices, bulk **Tag**, **Favorite**, and **Collect** actions live in this toolbar instead of staying visible on every gallery card
 
 ## Selecting Items
 
 ### Individual Selection
 
-- **Click/tap** any item to toggle its selection
-- **Click the checkbox** on desktop to toggle selection
+- Once selection mode is active, **click/tap** any item to toggle its selection
+- On desktop, clicking the top-left checkbox both enters selection mode and toggles that item
 
 ### Select All
 
@@ -105,11 +119,31 @@ Adds all selected items to favorites.
 - Items already in favorites are skipped
 - A confirmation shows how many items were added
 
+### Collect
+
+_Available when one or more images or videos are selected_
+
+Opens the collections workflow for the selected media.
+
+- Click **Collect** or press ++c++
+- Current memberships are shown first when they already exist
+- Recent collections and create-new actions stay in the same modal
+- On touch devices, this is the primary gallery entry point for collections
+
+### Remove From Current Collection
+
+_Available when you are browsing inside a collection and selected items belong to it_
+
+Removes selected items from the current collection without leaving collection view.
+
+- Click **Remove** in the toolbar
+- The current collection stays open so you can continue curating
+
 ## Exiting Selection Mode
 
 - Click the **X** button in the selection toolbar
 - Press ++escape++
-- Complete an action (tagging, favoriting, pasting)
+- Deselect the last remaining selected item
 
 ## Selection Mode Tips
 
@@ -118,7 +152,7 @@ Adds all selected items to favorites.
 1. Enter selection mode
 2. Select items that should share a tag
 3. Click **Tag** and add the common tag
-4. Selection mode exits automatically
+4. Continue selecting, tagging, or collecting until you are finished
 
 ### Copying Tags Between Items
 
@@ -144,4 +178,4 @@ On mobile, selection mode is optimized for touch:
 1. Long-press to enter selection mode
 2. Tap items to select/deselect
 3. Drag to select multiple items in a range (gallery freezes during drag to prevent scrolling)
-4. Use toolbar buttons for actions
+4. Use toolbar buttons for **Tag**, **Favorite**, **Collect**, and other bulk actions

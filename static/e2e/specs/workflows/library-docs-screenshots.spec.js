@@ -8,6 +8,7 @@ const DOCS_IMAGE_DIR = path.resolve(process.cwd(), '..', 'docs', 'images');
 const SCREENSHOTS = {
     favoritesStrip: path.join(DOCS_IMAGE_DIR, 'favorites-strip.png'),
     statsBar: path.join(DOCS_IMAGE_DIR, 'stats-bar.png'),
+    scrollRestorePrompt: path.join(DOCS_IMAGE_DIR, 'scroll-restore-prompt.png'),
     collectionsModal: path.join(DOCS_IMAGE_DIR, 'collections-modal.png'),
     collectionsPanel: path.join(DOCS_IMAGE_DIR, 'collections-panel.png'),
     collectionsDrawer: path.join(DOCS_IMAGE_DIR, 'collections-lightbox-drawer.png'),
@@ -143,11 +144,86 @@ async function findMultiItemPlaylist(page) {
         const playableItems = items.filter((item) => item?.exists);
 
         if (playableItems.length >= 2) {
-            return { entry, playlistName };
+            return { entry, playlistName, items: playableItems };
         }
     }
 
     throw new Error('No playlist with at least two playable items was found');
+}
+
+async function preparePlaylistTheaterModeScreenshot(page, playlistInfo) {
+    await page.goto(`/?path=${encodeURIComponent(parentPathFor(playlistInfo.entry.path))}`);
+    await waitForGallery(page);
+
+    const prepared = await page.evaluate(({ playlistName, items }) => {
+        const playlist = window.Playlist;
+        const modal = document.getElementById('player-modal');
+        const videoEl = document.getElementById('playlist-video');
+
+        if (
+            !playlist?.elements?.modal ||
+            !playlist.elements.items ||
+            !(modal instanceof HTMLElement) ||
+            !(videoEl instanceof HTMLVideoElement)
+        ) {
+            return false;
+        }
+
+        const safeItems = (items || [])
+            .filter((item) => item?.path)
+            .map((item) => ({
+                ...item,
+                exists: item.exists !== false,
+            }));
+        if (safeItems.length < 2) {
+            return false;
+        }
+
+        playlist.hideLoading?.();
+        playlist.playlist = {
+            name: playlistName,
+            items: safeItems,
+        };
+        playlist.currentIndex = 0;
+        playlist.playlistVisible = false;
+        playlist.isTheaterMode = true;
+        playlist.renderPlaylistItems();
+        playlist.updateNavigation?.();
+
+        const activeItem = safeItems[0];
+        const displayName =
+            playlist.getDisplayName?.(activeItem.name || activeItem.path) ||
+            activeItem.name ||
+            playlistName;
+
+        playlist.elements.title.textContent = displayName;
+        modal.classList.remove('hidden', 'landscape-mode', 'controls-visible', 'show-hint');
+        modal.classList.add('theater-mode');
+        document.body.style.overflow = 'hidden';
+
+        playlist.elements.sidebar?.classList.remove('visible');
+        playlist.elements.playlistToggle?.classList.remove('active');
+        playlist.elements.items.querySelectorAll('li').forEach((itemEl, index) => {
+            itemEl.classList.toggle('active', index === 0);
+        });
+
+        const loader = playlist.elements.loader || document.querySelector('.player-loader');
+        loader?.classList.add('hidden');
+
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        // Use a known-always-present sample image as the video poster so the
+        // player chrome renders over a real photo rather than a blank/gradient.
+        videoEl.poster = '/api/files/picsum_001.jpg';
+        videoEl.classList.remove('hidden', 'loading');
+        videoEl.style.opacity = '1';
+        videoEl.style.removeProperty('background');
+        videoEl.preload = 'none';
+
+        return true;
+    }, playlistInfo);
+
+    expect(prepared).toBe(true);
 }
 
 async function refreshFavoritesUi(page) {
@@ -165,6 +241,80 @@ async function waitForFavoriteStripItem(page, filePath, timeout = 8000) {
     await expect(page.locator('#favorites-section')).not.toHaveClass(/hidden/, { timeout });
     await expect(item).toBeVisible({ timeout });
     return item;
+}
+
+async function clearScrollRestorePromptReference(page) {
+    await page.evaluate(() => {
+        window.InfiniteScroll?.dismissScrollRestorePopoverImmediately?.();
+        window.localStorage.removeItem('media-viewer:scroll-positions');
+    });
+}
+
+async function prepareScrollRestorePromptScreenshot(page) {
+    await clearScrollRestorePromptReference(page);
+    await page.goto('/');
+    await waitForGallery(page);
+
+    const prepared = await page.evaluate(() => {
+        const scroll = window.InfiniteScroll;
+        const popover = document.getElementById('scroll-restore-popover');
+        const scrubber = document.getElementById('gallery-scrubber');
+        const spacer = document.getElementById('virtual-spacer');
+
+        if (
+            !scroll ||
+            !(popover instanceof HTMLElement) ||
+            !(scrubber instanceof HTMLElement) ||
+            !(spacer instanceof HTMLElement)
+        ) {
+            return false;
+        }
+
+        const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight;
+        if (scrollableHeight <= window.innerHeight * 0.5) {
+            spacer.style.height = `${Math.max(window.innerHeight, 960)}px`;
+        }
+
+        scrubber.style.transition = 'none';
+        popover.style.transition = 'none';
+        scroll.updateScrollScrubber();
+        scrubber.classList.remove('hidden');
+        scroll.showScrollRestorePopover(0.58);
+        clearTimeout(scroll._restorePopoverTimer);
+        clearTimeout(scroll._restorePopoverHideTimer);
+        scroll._restorePopoverTimer = null;
+        scroll._restorePopoverHideTimer = null;
+
+        // Force the screenshot-ready state without depending on requestAnimationFrame,
+        // which can stall in background/headless capture contexts.
+        popover.classList.add('visible');
+
+        const marker = scrubber.querySelector('.scroll-restore-marker');
+        if (!marker) {
+            return false;
+        }
+
+        return (
+            popover.classList.contains('visible') &&
+            popover.classList.contains('scrubber-anchored') &&
+            !scrubber.classList.contains('hidden') &&
+            Boolean(scrubber.querySelector('.scroll-restore-marker'))
+        );
+    });
+
+    expect(prepared).toBe(true);
+    await page.waitForTimeout(50);
+    await expect(page.locator('#scroll-restore-popover')).toBeVisible();
+}
+
+async function captureScrollRestorePromptScreenshot(page, screenshotPath) {
+    await prepareScrollRestorePromptScreenshot(page);
+    // Clip to the popover + scrubber area so the restored-scroll context is visible.
+    // Using the live page avoids the all-white frames that video-based capture produced.
+    await captureDocsScreenshot(page, page.locator('#scroll-restore-popover'), screenshotPath, {
+        clipToLocator: true,
+        clipPadding: 100,
+    });
 }
 
 async function openCollectionsPanel(page) {
@@ -237,7 +387,7 @@ async function openLightboxCollectionDrawer(page) {
     return drawer;
 }
 
-async function openPlaylistFromGallery(page, playlistEntry) {
+async function _openPlaylistFromGallery(page, playlistEntry) {
     const playlistPath = playlistEntry.path;
     const playlistName = displayNameFor(playlistEntry.name || playlistPath);
 
@@ -273,96 +423,74 @@ async function openPlaylistFromGallery(page, playlistEntry) {
         .toBeGreaterThan(0);
 }
 
-async function waitForPlaylistVideoFrame(page, timeout = 10_000) {
+async function _waitForPlaylistVideoFrame(page, timeout = 4_000) {
+    const modal = page.locator('#player-modal');
+    const container = modal.locator('.player-container');
     const video = page.locator('#playlist-video');
 
-    await expect(video).toBeVisible({ timeout });
+    await expect(modal).toBeVisible({ timeout });
+    await expect(container).toBeVisible({ timeout });
+    await expect(video).toBeAttached({ timeout: Math.min(timeout, 1_000) });
+
+    await page.evaluate(() => {
+        const playlist = window.Playlist;
+        const modalEl = document.getElementById('player-modal');
+        const loader = document.querySelector('.player-loader');
+        const videoEl = document.getElementById('playlist-video');
+
+        playlist?.hideLoading?.();
+        modalEl?.classList.add('theater-mode');
+        loader?.classList.add('hidden');
+
+        if (!(videoEl instanceof HTMLVideoElement)) {
+            return;
+        }
+
+        videoEl.classList.remove('hidden');
+        videoEl.classList.remove('loading');
+        videoEl.style.opacity = '1';
+        videoEl.style.background = 'linear-gradient(135deg, #1d3557, #457b9d 48%, #0f172a)';
+        videoEl.preload = 'metadata';
+
+        if (!videoEl.paused) {
+            videoEl.pause();
+        }
+    });
+
     await expect
         .poll(
             async () => {
                 return page.evaluate(() => {
+                    const modalEl = document.getElementById('player-modal');
                     const loader = document.querySelector('.player-loader');
-                    return !loader || loader.classList.contains('hidden');
-                });
-            },
-            { timeout }
-        )
-        .toBe(true);
+                    const videoEl = document.getElementById('playlist-video');
 
-    await expect
-        .poll(
-            async () => {
-                return video.evaluate((element) => {
                     return (
-                        element.readyState >= 2 &&
-                        !element.classList.contains('loading') &&
-                        Boolean(element.currentSrc) &&
-                        element.videoWidth > 0 &&
-                        element.videoHeight > 0
+                        modalEl instanceof HTMLElement &&
+                        !modalEl.classList.contains('hidden') &&
+                        modalEl.classList.contains('theater-mode') &&
+                        (!loader || loader.classList.contains('hidden')) &&
+                        videoEl instanceof HTMLVideoElement &&
+                        !videoEl.classList.contains('loading') &&
+                        !videoEl.classList.contains('hidden') &&
+                        videoEl.style.opacity === '1'
                     );
                 });
             },
-            { timeout }
+            { timeout: Math.min(timeout, 1_500) }
         )
         .toBe(true);
-
-    await page.evaluate(async () => {
-        const video = document.getElementById('playlist-video');
-        if (!(video instanceof HTMLVideoElement)) {
-            return;
-        }
-
-        const waitForEvent = (eventName, ms = 1_500) => {
-            return new Promise((resolve) => {
-                const timeoutId = window.setTimeout(resolve, ms);
-                video.addEventListener(
-                    eventName,
-                    () => {
-                        window.clearTimeout(timeoutId);
-                        resolve();
-                    },
-                    { once: true }
-                );
-            });
-        };
-
-        const hasFiniteDuration = Number.isFinite(video.duration) && video.duration > 0;
-        const targetTime = hasFiniteDuration
-            ? Math.min(2, Math.max(0.5, video.duration * 0.25))
-            : 1;
-
-        if (Math.abs(video.currentTime - targetTime) > 0.05) {
-            const seeked = waitForEvent('seeked');
-            try {
-                video.currentTime = targetTime;
-                await seeked;
-            } catch {
-                // Keep the current frame if the browser rejects the seek.
-            }
-        }
-
-        try {
-            const playing = video.play();
-            if (playing && typeof playing.then === 'function') {
-                await playing.catch(() => {});
-            }
-        } catch {
-            // If autoplay/play is blocked, the decoded seeked frame is still usable.
-        }
-
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-        if (!video.paused) {
-            video.pause();
-        }
-    });
 }
 
-async function closeOverlay(page, selector, closeFn) {
+async function closeOverlay(page, selector, closeFn, timeout = 1_000) {
+    if (page.isClosed()) {
+        return;
+    }
+
     const overlay = page.locator(selector);
     if (await overlay.isVisible().catch(() => false)) {
-        await closeFn();
-        await expect(overlay).toBeHidden();
+        await closeFn().catch(() => {});
+        await overlay.waitFor({ state: 'hidden', timeout }).catch(() => {});
     }
 }
 
@@ -385,6 +513,12 @@ test.describe('Library Docs Screenshots @docs @screenshots @docs-screenshots @wo
     });
 
     test.afterEach(async ({ page }) => {
+        if (page.isClosed()) {
+            return;
+        }
+
+        await clearScrollRestorePromptReference(page).catch(() => {});
+
         for (const id of createdCollectionIds.reverse()) {
             try {
                 await deleteCollection(page, id);
@@ -394,34 +528,34 @@ test.describe('Library Docs Screenshots @docs @screenshots @docs-screenshots @wo
         }
 
         for (const favoritePath of Object.values(FAVORITE_PATHS)) {
-            await apiUnfavorite(page, favoritePath);
+            await apiUnfavorite(page, favoritePath).catch(() => {});
         }
 
         await closeOverlay(page, '#collection-add-modal', async () => {
             await page.evaluate(() => {
                 window.Collections?.closeAddOrCreateModal?.();
             });
-        });
+        }).catch(() => {});
         await closeOverlay(page, '#collections-panel', async () => {
             await page.evaluate(() => {
                 window.Collections?.closeCollectionsPanel?.();
             });
-        });
+        }).catch(() => {});
         await closeOverlay(page, '.lightbox-collection-drawer', async () => {
             await page.evaluate(() => {
                 window.Lightbox?.closeCollectionDrawer?.();
             });
-        });
+        }).catch(() => {});
         await closeOverlay(page, '#lightbox', async () => {
             await page.evaluate(() => {
                 window.Lightbox?.close?.();
             });
-        });
+        }).catch(() => {});
         await closeOverlay(page, '#player-modal', async () => {
             await page.evaluate(() => {
                 window.Playlist?.close?.();
             });
-        });
+        }).catch(() => {});
     });
 
     test('captures favorites strip screenshot', async ({ page }) => {
@@ -466,23 +600,24 @@ test.describe('Library Docs Screenshots @docs @screenshots @docs-screenshots @wo
         await captureDocsScreenshot(page, page.locator('.stats-bar'), SCREENSHOTS.statsBar);
     });
 
+    test('captures scroll restore prompt screenshot', async ({ page }) => {
+        await captureScrollRestorePromptScreenshot(page, SCREENSHOTS.scrollRestorePrompt);
+    });
+
     test('captures playlist theater mode screenshot', async ({ page }) => {
+        test.setTimeout(20_000);
+
         const playlist = await findMultiItemPlaylist(page);
-        await openPlaylistFromGallery(page, playlist.entry);
+        await preparePlaylistTheaterModeScreenshot(page, playlist);
 
         const modal = page.locator('#player-modal');
         const container = modal.locator('.player-container');
 
-        const isTheaterMode = await modal.evaluate((element) => {
-            return element.classList.contains('theater-mode');
-        });
-
-        if (!isTheaterMode) {
-            await page.locator('#player-maximize').dispatchEvent('click');
-        }
-
         await expect(modal).toHaveClass(/theater-mode/);
-        await waitForPlaylistVideoFrame(page);
+
+        // Allow the poster image fetch to complete so the screenshot contains
+        // a real photo rather than a blank video area.
+        await page.waitForTimeout(600);
 
         await captureDocsScreenshot(page, container, SCREENSHOTS.playlistTheaterMode);
     });

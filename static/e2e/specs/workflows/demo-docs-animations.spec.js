@@ -25,6 +25,15 @@ const MAIN_GALLERY_MEDIA_SELECTOR = '#gallery .gallery-item.image, #gallery .gal
 
 async function waitForGallery(page) {
     await page.waitForSelector(`${MAIN_GALLERY_MEDIA_SELECTOR}:not(.skeleton)`, { timeout: 15000 });
+    // Ensure key app JS modules have finished their DOMContentLoaded init before
+    // the run() callback tries to call Lightbox.open(), settingsManager.open(), etc.
+    await page.waitForFunction(
+        () =>
+            typeof globalThis.MediaApp === 'object' &&
+            typeof globalThis.Lightbox === 'object' &&
+            typeof globalThis.settingsManager === 'object',
+        { timeout: 10_000 }
+    );
 }
 
 async function getMediaItems(page, count = 3, offset = 0) {
@@ -140,48 +149,39 @@ test.describe('Demo Docs Animations @docs @screenshots @docs-screenshots @workfl
                 await waitForGallery(capturePage);
             },
             run: async (capturePage) => {
-                const firstItemPath = await capturePage.evaluate(() => {
-                    const el = document.querySelector(
-                        '#gallery .gallery-item.image, #gallery .gallery-item.video'
-                    );
-                    return el?.dataset?.path ?? null;
-                });
-                expect(firstItemPath).toBeTruthy();
+                // Click directly via the thumb element so the gallery's own click
+                // handler opens the lightbox (same as a real user click, unlike a
+                // bare evaluate call which skips the compositor paint cycle).
+                const firstThumb = capturePage
+                    .locator(
+                        '#gallery .gallery-item.image .gallery-item-thumb,' +
+                            ' #gallery .gallery-item.video .gallery-item-thumb'
+                    )
+                    .first();
+                await expect(firstThumb).toBeVisible();
                 await capturePage.waitForTimeout(350);
+                await firstThumb.dispatchEvent('click');
 
-                const opened = await capturePage.evaluate(async (targetPath) => {
-                    const idx = globalThis.MediaApp?.getMediaIndex?.(targetPath) ?? -1;
-                    if (idx >= 0 && typeof globalThis.Lightbox?.open === 'function') {
-                        globalThis.Lightbox.open(idx);
-                        return true;
-                    }
-
-                    const parentPath = targetPath.split('/').slice(0, -1).join('/');
-                    const params = new URLSearchParams({
-                        path: parentPath,
-                        sort: globalThis.MediaApp?.state?.currentSort?.field ?? 'name',
-                        order: globalThis.MediaApp?.state?.currentSort?.order ?? 'asc',
-                        limit: '0',
-                    });
-                    const response = await fetch(`/api/media?${params.toString()}`);
-                    if (!response.ok || typeof globalThis.Lightbox?.openWithItems !== 'function') {
-                        return false;
-                    }
-
-                    const data = await response.json();
-                    const files = data.items ?? [];
-                    const itemIndex = files.findIndex((item) => item.path === targetPath);
-                    if (itemIndex < 0) {
-                        return false;
-                    }
-
-                    globalThis.Lightbox.openWithItems(files, itemIndex);
-                    return true;
-                }, firstItemPath);
-
-                expect(opened).toBe(true);
                 await expect(capturePage.locator('#lightbox')).toBeVisible({ timeout: 8000 });
-                await capturePage.waitForTimeout(900);
+
+                // The lightbox fetches the full-res image from the server; wait
+                // until the loading state clears so the captured frames are not
+                // white / blank.
+                await expect
+                    .poll(
+                        async () =>
+                            capturePage.evaluate(() => {
+                                const img = document.getElementById('lightbox-image');
+                                return (
+                                    img instanceof HTMLImageElement &&
+                                    !img.classList.contains('loading')
+                                );
+                            }),
+                        { timeout: 12_000 }
+                    )
+                    .toBe(true);
+
+                await capturePage.waitForTimeout(700);
                 await capturePage.evaluate(() => globalThis.Lightbox?.next?.());
                 await capturePage.waitForTimeout(900);
                 await capturePage.evaluate(() => globalThis.Lightbox?.close?.());
@@ -215,46 +215,35 @@ test.describe('Demo Docs Animations @docs @screenshots @docs-screenshots @workfl
                 });
                 await capturePage.waitForTimeout(350);
 
-                const mobileFirstPath = await capturePage.evaluate(() => {
-                    const el = document.querySelector(
-                        '#gallery .gallery-item.image, #gallery .gallery-item.video'
-                    );
-                    return el?.dataset?.path ?? null;
-                });
-                expect(mobileFirstPath).toBeTruthy();
+                // Use a real click on the thumb so the gallery's listener opens
+                // the lightbox and Playwright's compositor has a chance to paint.
+                const firstMobileThumb = capturePage
+                    .locator(
+                        '#gallery .gallery-item.image .gallery-item-thumb,' +
+                            ' #gallery .gallery-item.video .gallery-item-thumb'
+                    )
+                    .first();
+                await expect(firstMobileThumb).toBeVisible();
+                await firstMobileThumb.dispatchEvent('click');
 
-                const mobileOpened = await capturePage.evaluate(async (targetPath) => {
-                    const idx = globalThis.MediaApp?.getMediaIndex?.(targetPath) ?? -1;
-                    if (idx >= 0 && typeof globalThis.Lightbox?.open === 'function') {
-                        globalThis.Lightbox.open(idx);
-                        return true;
-                    }
-
-                    const parentPath = targetPath.split('/').slice(0, -1).join('/');
-                    const params = new URLSearchParams({
-                        path: parentPath,
-                        sort: globalThis.MediaApp?.state?.currentSort?.field ?? 'name',
-                        order: globalThis.MediaApp?.state?.currentSort?.order ?? 'asc',
-                        limit: '0',
-                    });
-                    const response = await fetch(`/api/media?${params.toString()}`);
-                    if (!response.ok || typeof globalThis.Lightbox?.openWithItems !== 'function') {
-                        return false;
-                    }
-
-                    const data = await response.json();
-                    const files = data.items ?? [];
-                    const itemIndex = files.findIndex((item) => item.path === targetPath);
-                    if (itemIndex < 0) {
-                        return false;
-                    }
-
-                    globalThis.Lightbox.openWithItems(files, itemIndex);
-                    return true;
-                }, mobileFirstPath);
-
-                expect(mobileOpened).toBe(true);
                 await expect(capturePage.locator('#lightbox')).toBeVisible({ timeout: 8000 });
+
+                // Wait for the full-res image to finish loading so frames are
+                // not white while the blob is still being fetched.
+                await expect
+                    .poll(
+                        async () =>
+                            capturePage.evaluate(() => {
+                                const img = document.getElementById('lightbox-image');
+                                return (
+                                    img instanceof HTMLImageElement &&
+                                    !img.classList.contains('loading')
+                                );
+                            }),
+                        { timeout: 12_000 }
+                    )
+                    .toBe(true);
+
                 await capturePage.waitForTimeout(950);
                 await capturePage.evaluate(() => globalThis.Lightbox?.close?.());
             },

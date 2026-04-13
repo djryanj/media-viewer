@@ -1,5 +1,7 @@
 import path from 'node:path';
 
+import { devices } from '@playwright/test';
+
 import { test, expect } from '../../fixtures/index.js';
 import {
     assertMatchesReferenceImage,
@@ -9,6 +11,7 @@ import {
 
 const VISUAL_BASELINE_DIR = path.resolve(process.cwd(), 'e2e', 'baselines', 'tagging');
 const MAIN_GALLERY_MEDIA_SELECTOR = '#gallery .gallery-item.image, #gallery .gallery-item.video';
+const { defaultBrowserType: _unusedDefaultBrowserType, ...PIXEL_5_CONTEXT } = devices['Pixel 5'];
 
 test.describe('Tagging Visual Regression @visual @workflows', () => {
     test.describe.configure({ mode: 'serial' });
@@ -241,16 +244,40 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
                 return;
             }
 
-            globalThis.Tags._recentTagNames = ['journal'];
-            globalThis.Lightbox.allTagSuggestions = [
+            const referenceAllTagSuggestions = [
                 { name: 'campfire', itemCount: 6 },
                 { name: 'night-hike', itemCount: 4 },
                 { name: 'journal', itemCount: 3 },
             ];
-            globalThis.Lightbox.drawerRelatedTagSuggestions = [
+            const referenceRelatedSuggestions = [
                 { name: 'campfire', itemCount: 6, relatedCount: 2 },
                 { name: 'night-hike', itemCount: 4, relatedCount: 1 },
             ];
+
+            globalThis.Tags._recentTagNames = ['journal'];
+            globalThis.Lightbox.allTagSuggestions = referenceAllTagSuggestions.map((tag) => ({
+                ...tag,
+            }));
+            globalThis.Lightbox.drawerRelatedTagSuggestions = referenceRelatedSuggestions.map(
+                (tag) => ({ ...tag })
+            );
+            globalThis.Lightbox.loadTagSuggestionsCache = async () => {
+                globalThis.Lightbox.allTagSuggestions = referenceAllTagSuggestions.map((tag) => ({
+                    ...tag,
+                }));
+            };
+            globalThis.Lightbox.refreshDrawerRelatedTagSuggestions = async () => {
+                globalThis.Lightbox.drawerRelatedTagSuggestions = referenceRelatedSuggestions.map(
+                    (tag) => ({ ...tag })
+                );
+                if (globalThis.Lightbox.tagsDrawerOpen) {
+                    globalThis.Lightbox.showDrawerSuggestions?.(
+                        globalThis.Lightbox.elements?.drawerTagInput?.value || ''
+                    );
+                }
+
+                return globalThis.Lightbox.drawerRelatedTagSuggestions;
+            };
 
             if (globalThis.Lightbox.elements?.drawerTagInput) {
                 globalThis.Lightbox.elements.drawerTagInput.value = '';
@@ -260,7 +287,13 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
             document.getElementById('lightbox-collection')?.classList.add('active');
         });
 
-        await expect(page.locator('.lightbox-tags-drawer .drawer-suggestion')).toHaveCount(3);
+        await expect
+            .poll(async () => {
+                return page
+                    .locator('.lightbox-tags-drawer .drawer-suggestion')
+                    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tag')));
+            })
+            .toEqual(['campfire', 'night-hike', 'journal']);
         await expect(page.locator('.lightbox-tags-drawer .drawer-tag-suggestions')).toContainText(
             'Suggested Next'
         );
@@ -391,6 +424,46 @@ test.describe('Tagging Visual Regression @visual @workflows', () => {
                 },
             }
         );
+    });
+
+    test.describe('Mobile Lightbox Chrome', () => {
+        test.use(PIXEL_5_CONTEXT);
+
+        test('matches mobile top-controls reference', async ({ page }, testInfo) => {
+            const [lightboxItem] = await getTaggableItems(page, 1, 0);
+
+            await openLightboxForPath(page, lightboxItem.path);
+            await page.evaluate(() => {
+                globalThis.Lightbox?.showUIOverlays?.();
+            });
+
+            const topControls = page.locator('#lightbox-top-controls');
+            await expect(topControls).toBeVisible();
+            await expect(page.locator('#lightbox-mobile-actions-btn')).toBeVisible();
+            await expect(page.locator('.lightbox-close')).toBeVisible();
+
+            await assertMatchesReference(
+                page,
+                topControls,
+                'tagging-lightbox-mobile-top-controls.png',
+                testInfo,
+                {
+                    snapshotOptions: {
+                        maxNodes: 12,
+                        styleKeys: [
+                            'display',
+                            'position',
+                            'background-color',
+                            'border-radius',
+                            'opacity',
+                            'gap',
+                            'align-items',
+                            'justify-content',
+                        ],
+                    },
+                }
+            );
+        });
     });
 
     test('matches tag manager reference', async ({ page }, testInfo) => {

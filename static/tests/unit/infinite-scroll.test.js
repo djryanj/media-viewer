@@ -847,6 +847,39 @@ describe('InfiniteScroll Module', () => {
         });
     });
 
+    describe('dismissScrollRestorePopoverImmediately()', () => {
+        test('does nothing when restorePopover element is null', () => {
+            InfiniteScroll.elements.restorePopover = null;
+
+            expect(() => InfiniteScroll.dismissScrollRestorePopoverImmediately()).not.toThrow();
+        });
+
+        test('hides the popover immediately and clears timers', () => {
+            vi.useFakeTimers();
+            const popover = document.createElement('div');
+            popover.classList.add('scroll-restore-popover', 'visible', 'scrubber-anchored');
+            const marker = document.createElement('div');
+            marker.className = 'scroll-restore-marker';
+            const scrubber = document.createElement('div');
+            scrubber.appendChild(marker);
+
+            InfiniteScroll.elements.restorePopover = popover;
+            InfiniteScroll.elements.scrubber = scrubber;
+            InfiniteScroll._restorePopoverHideTimer = setTimeout(() => {}, 250);
+            InfiniteScroll._restorePopoverTimer = setTimeout(() => {}, 8000);
+
+            InfiniteScroll.dismissScrollRestorePopoverImmediately();
+
+            expect(popover.classList.contains('visible')).toBe(false);
+            expect(popover.classList.contains('hidden')).toBe(true);
+            expect(popover.classList.contains('scrubber-anchored')).toBe(false);
+            expect(scrubber.querySelector('.scroll-restore-marker')).toBeNull();
+            expect(InfiniteScroll._restorePopoverHideTimer).toBeNull();
+            expect(InfiniteScroll._restorePopoverTimer).toBeNull();
+            vi.useRealTimers();
+        });
+    });
+
     describe('showScrollRestorePopover() — cancels stale hide timer', () => {
         function makePopover() {
             const popover = globalThis.document.createElement('div');

@@ -21,7 +21,8 @@ const ItemSelection = {
     _selectionOverlay: null,
 
     // <style> element injected into <head> when selection mode is active.
-    // Contains a single '.selection-checkbox { opacity: 1 }' rule so that
+    // Contains a single '.selection-checkbox { opacity: 1; pointer-events: auto }'
+    // rule so that
     // Firefox's invalidation only re-styles the ~6 600 matching elements rather
     // than walking the full ~68 000-node gallery subtree via CSS custom-property
     // inheritance.  Created once on first use and toggled via .disabled.
@@ -472,7 +473,8 @@ const ItemSelection = {
 
             // Frame 2: show all selection checkboxes.
             // Enabling a pre-created <style> element whose single rule is
-            // '.selection-checkbox { opacity: 1 }' causes Firefox to invalidate
+            // '.selection-checkbox { opacity: 1; pointer-events: auto }' causes
+            // Firefox to invalidate
             // only the ~6 600 elements that directly match that class selector.
             // This replaces the previous approach of setting a CSS custom property
             // on .gallery, which forced a full ~68 000-node subtree traversal
@@ -485,7 +487,7 @@ const ItemSelection = {
                 if (!this._cbStyleEl) {
                     const s = document.createElement('style');
                     s.id = 'selection-checkboxes-visible';
-                    s.textContent = '.selection-checkbox { opacity: 1 }';
+                    s.textContent = '.selection-checkbox { opacity: 1; pointer-events: auto }';
                     document.head.appendChild(s);
                     this._cbStyleEl = s;
                 } else {

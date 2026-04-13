@@ -42,15 +42,16 @@ Autoplay and loop shortcuts are available only when the current item is a video.
 
 When in selection mode:
 
-| Shortcut   | Action                            |
-| ---------- | --------------------------------- |
-| ++escape++ | Exit selection mode               |
-| ++ctrl+a++ | Select all items                  |
-| ++ctrl+c++ | Copy tags from selected item      |
-| ++ctrl+v++ | Paste tags to selected items      |
-| ++ctrl+m++ | Merge tags across selected items  |
-| ++t++      | Open tag modal for selected items |
-| ++f++      | Add selected items to favorites   |
+| Shortcut   | Action                              |
+| ---------- | ----------------------------------- |
+| ++escape++ | Exit selection mode                 |
+| ++ctrl+a++ | Select all items                    |
+| ++ctrl+c++ | Copy tags from selected item        |
+| ++ctrl+v++ | Paste tags to selected items        |
+| ++ctrl+m++ | Merge tags across selected items    |
+| ++t++      | Open tag modal for selected items   |
+| ++f++      | Add selected items to favorites     |
+| ++c++      | Open collections for selected items |
 
 ## Tag Modal Shortcuts
 
@@ -100,7 +101,7 @@ The ++escape++ key follows a logical hierarchy:
 
 ### Selection Mode Entry
 
-- **Desktop**: Click the checkbox area on any gallery item
+- **Desktop**: Hover a gallery item and click the top-left checkbox
 - **Mobile**: Long-press any item
 
 ### Quick Favorites

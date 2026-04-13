@@ -29,6 +29,11 @@ On desktop, each item displays:
 
 On mobile, items show a compact view with the name overlaid on the thumbnail.
 
+Quick actions are revealed differently by input style:
+
+- **Desktop**: hover exposes inline controls such as favorite, tag, download, and collect
+- **Touch**: the gallery stays focused on tap, double-tap, and long-press; use selection mode for bulk actions and the lightbox for single-item tag or collection work
+
 ## Navigation
 
 ### Opening Items
@@ -150,13 +155,24 @@ The gallery uses infinite scroll to load content as you browse. As you scroll do
 
 If infinite scroll is unavailable, pagination controls appear at the bottom of the gallery.
 
+### Resume Your Place
+
+When you come back to a long folder, Media Viewer can offer a compact resume chip beside the scrubber so you can jump back near the same part of the gallery.
+
+<div align="center">
+  <img src="../../images/scroll-restore-prompt.png" alt="Resume previous position prompt anchored beside the gallery scrubber" width="320">
+  <p><em>The resume chip stays lightweight and points back to your saved position on the scrubber.</em></p>
+</div>
+
+Tap <strong>Resume previous position</strong> to return near where you left off, or dismiss the chip to clear the saved checkpoint for that folder. The prompt is saved per folder, expires automatically after a week, and disappears as soon as you open an item in the lightbox.
+
 ## Mobile Considerations
 
 ### Touch Gestures
 
 - **Tap**: Open item
 - **Double-tap**: Toggle favorite
-- **Long-press**: Enter selection mode
+- **Long-press**: Enter selection mode and reveal bulk Tag, Favorite, and Collect actions
 - **Swipe** (in lightbox): Navigate between items
 
 ### Landscape Mode

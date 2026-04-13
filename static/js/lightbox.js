@@ -52,6 +52,7 @@ const Lightbox = {
     // Tags drawer state
     tagsDrawerOpen: false,
     collectionDrawerOpen: false,
+    mobileActionsOpen: false,
     _expandedCollectionDrawerId: null,
     _reorderDragState: null,
     drawerTouchStartY: 0,
@@ -84,6 +85,7 @@ const Lightbox = {
 
     init() {
         this.cacheElements();
+        this.createTopControls();
         this._initStaticIcons();
         this.videoControlsHeight = 0;
         this.createHotZones();
@@ -92,6 +94,7 @@ const Lightbox = {
         this.createLoopToggle();
         this.createCollectionDrawer();
         this.createTagsDrawer();
+        this.createMobileActions();
         this.bindEvents();
         this.bindZoomEvents();
 
@@ -121,11 +124,35 @@ const Lightbox = {
             prevBtn: document.querySelector('.lightbox-prev'),
             nextBtn: document.querySelector('.lightbox-next'),
             content: document.querySelector('.lightbox-content'),
+            infoBar: document.querySelector('.lightbox-info'),
+            topControls: document.getElementById('lightbox-top-controls'),
             toolbar: document.getElementById('lightbox-toolbar'),
             pinBtn: document.getElementById('lightbox-pin'),
             tagBtn: document.getElementById('lightbox-tag'),
             downloadBtn: document.getElementById('lightbox-download'),
         };
+    },
+
+    createTopControls() {
+        const lightbox = this.elements.lightbox;
+        const closeBtn = this.elements.closeBtn;
+        if (!lightbox || !closeBtn) return;
+
+        let container =
+            this.elements.topControls || document.getElementById('lightbox-top-controls');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'lightbox-top-controls';
+            container.id = 'lightbox-top-controls';
+            const insertParent = closeBtn.parentElement ?? lightbox;
+            insertParent.insertBefore(container, closeBtn);
+        }
+
+        if (closeBtn.parentElement !== container) {
+            container.appendChild(closeBtn);
+        }
+
+        this.elements.topControls = container;
     },
 
     /**
@@ -178,6 +205,7 @@ const Lightbox = {
         const isEnabled = Preferences.isVideoAutoplayEnabled();
         btn.classList.toggle('enabled', isEnabled);
         btn.title = isEnabled ? 'Autoplay ON (A)' : 'Autoplay OFF (A)';
+        this.updateMobileActions();
         // Icon visibility is controlled by CSS (.enabled toggles play-circle vs pause-circle).
         // No innerHTML mutation or lucide.createIcons() call needed.
     },
@@ -223,6 +251,7 @@ const Lightbox = {
         const isEnabled = Preferences.isMediaLoopEnabled();
         btn.classList.toggle('enabled', isEnabled);
         btn.title = isEnabled ? 'Loop ON (L)' : 'Loop OFF (L)';
+        this.updateMobileActions();
         // Icon visibility is controlled by CSS (.enabled toggles repeat vs repeat-1).
         // No innerHTML mutation or lucide.createIcons() call needed.
     },
@@ -377,7 +406,7 @@ const Lightbox = {
 
     createTagsDrawer() {
         // Create the tag summary line inside lightbox-info
-        const infoBar = this.elements.lightbox.querySelector('.lightbox-info');
+        const infoBar = this.elements.infoBar;
         if (infoBar) {
             const tagSummary = document.createElement('div');
             tagSummary.className = 'lightbox-tag-summary hidden';
@@ -584,6 +613,327 @@ const Lightbox = {
         lucide.createIcons();
     },
 
+    createMobileActions() {
+        if (this.elements.mobileActionsBtn) return;
+        const lightbox = this.elements.lightbox;
+        if (!lightbox) return;
+        this.createTopControls();
+        const topControls = this.elements.topControls;
+        if (!topControls) return;
+
+        const trigger = document.createElement('button');
+        trigger.className = 'lightbox-mobile-actions-btn';
+        trigger.id = 'lightbox-mobile-actions-btn';
+        trigger.type = 'button';
+        trigger.title = 'More actions';
+        trigger.setAttribute('aria-label', 'More actions');
+        trigger.setAttribute('aria-haspopup', 'dialog');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.innerHTML = '<i data-lucide="ellipsis"></i>';
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.mobileActionsOpen) {
+                this.closeMobileActionsWithHistory();
+            } else {
+                this.openMobileActions();
+            }
+        });
+        topControls.insertBefore(trigger, this.elements.closeBtn || null);
+        this.elements.mobileActionsBtn = trigger;
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'lightbox-mobile-actions-backdrop hidden';
+        backdrop.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeMobileActions();
+        });
+        this.elements.lightbox.appendChild(backdrop);
+        this.elements.mobileActionsBackdrop = backdrop;
+
+        const drawer = document.createElement('div');
+        drawer.className = 'lightbox-mobile-actions-drawer hidden';
+        drawer.innerHTML = `
+        <div class="drawer-handle-bar"><div class="drawer-handle"></div></div>
+        <div class="drawer-header">
+            <h3 class="drawer-title"><i data-lucide="ellipsis"></i> Actions</h3>
+            <button class="drawer-close lightbox-mobile-actions-close" title="Close"><i data-lucide="x"></i></button>
+        </div>
+        <div class="drawer-body lightbox-mobile-actions-body">
+            <div class="lightbox-mobile-actions-list">
+                <button class="lightbox-mobile-action" id="lightbox-mobile-action-favorite" type="button">
+                    <span class="lightbox-mobile-action-icon"><i data-lucide="star"></i></span>
+                    <span class="lightbox-mobile-action-copy">
+                        <span class="lightbox-mobile-action-label">Favorite</span>
+                        <span class="lightbox-mobile-action-state" id="lightbox-mobile-action-favorite-state"></span>
+                    </span>
+                </button>
+                <button class="lightbox-mobile-action" id="lightbox-mobile-action-tags" type="button">
+                    <span class="lightbox-mobile-action-icon"><i data-lucide="tag"></i></span>
+                    <span class="lightbox-mobile-action-copy">
+                        <span class="lightbox-mobile-action-label">Tags</span>
+                        <span class="lightbox-mobile-action-state" id="lightbox-mobile-action-tags-state"></span>
+                    </span>
+                </button>
+                <button class="lightbox-mobile-action" id="lightbox-mobile-action-collections" type="button">
+                    <span class="lightbox-mobile-action-icon"><i data-lucide="layers"></i></span>
+                    <span class="lightbox-mobile-action-copy">
+                        <span class="lightbox-mobile-action-label">Collections</span>
+                        <span class="lightbox-mobile-action-state" id="lightbox-mobile-action-collections-state"></span>
+                    </span>
+                </button>
+                <button class="lightbox-mobile-action" id="lightbox-mobile-action-download" type="button">
+                    <span class="lightbox-mobile-action-icon"><i data-lucide="download"></i></span>
+                    <span class="lightbox-mobile-action-copy">
+                        <span class="lightbox-mobile-action-label">Download</span>
+                        <span class="lightbox-mobile-action-state">Save original file</span>
+                    </span>
+                </button>
+                <button class="lightbox-mobile-action" id="lightbox-mobile-action-autoplay" type="button">
+                    <span class="lightbox-mobile-action-icon"><i data-lucide="play-circle"></i></span>
+                    <span class="lightbox-mobile-action-copy">
+                        <span class="lightbox-mobile-action-label">Autoplay</span>
+                        <span class="lightbox-mobile-action-state" id="lightbox-mobile-action-autoplay-state"></span>
+                    </span>
+                </button>
+                <button class="lightbox-mobile-action" id="lightbox-mobile-action-loop" type="button">
+                    <span class="lightbox-mobile-action-icon"><i data-lucide="repeat"></i></span>
+                    <span class="lightbox-mobile-action-copy">
+                        <span class="lightbox-mobile-action-label">Loop</span>
+                        <span class="lightbox-mobile-action-state" id="lightbox-mobile-action-loop-state"></span>
+                    </span>
+                </button>
+            </div>
+        </div>
+    `;
+
+        this.elements.lightbox.appendChild(drawer);
+        this.elements.mobileActionsDrawer = drawer;
+        this.elements.mobileActionFavorite = drawer.querySelector(
+            '#lightbox-mobile-action-favorite'
+        );
+        this.elements.mobileActionFavoriteState = drawer.querySelector(
+            '#lightbox-mobile-action-favorite-state'
+        );
+        this.elements.mobileActionTags = drawer.querySelector('#lightbox-mobile-action-tags');
+        this.elements.mobileActionTagsState = drawer.querySelector(
+            '#lightbox-mobile-action-tags-state'
+        );
+        this.elements.mobileActionCollections = drawer.querySelector(
+            '#lightbox-mobile-action-collections'
+        );
+        this.elements.mobileActionCollectionsState = drawer.querySelector(
+            '#lightbox-mobile-action-collections-state'
+        );
+        this.elements.mobileActionDownload = drawer.querySelector(
+            '#lightbox-mobile-action-download'
+        );
+        this.elements.mobileActionAutoplay = drawer.querySelector(
+            '#lightbox-mobile-action-autoplay'
+        );
+        this.elements.mobileActionAutoplayState = drawer.querySelector(
+            '#lightbox-mobile-action-autoplay-state'
+        );
+        this.elements.mobileActionLoop = drawer.querySelector('#lightbox-mobile-action-loop');
+        this.elements.mobileActionLoopState = drawer.querySelector(
+            '#lightbox-mobile-action-loop-state'
+        );
+
+        drawer.querySelector('.lightbox-mobile-actions-close')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeMobileActionsWithHistory();
+        });
+
+        this.elements.mobileActionFavorite?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.togglePin();
+        });
+        this.elements.mobileActionTags?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeMobileActions();
+            this.openTagsDrawer();
+        });
+        this.elements.mobileActionCollections?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeMobileActions();
+            this.openCollectionDrawer();
+        });
+        this.elements.mobileActionDownload?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeMobileActions();
+            this.downloadCurrent();
+        });
+        this.elements.mobileActionAutoplay?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleAutoplay();
+        });
+        this.elements.mobileActionLoop?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleLoop();
+        });
+
+        drawer.addEventListener('click', (e) => e.stopPropagation());
+        drawer.addEventListener(
+            'touchstart',
+            (e) => {
+                if (!e.target.closest('.drawer-handle-bar')) {
+                    e.stopPropagation();
+                }
+            },
+            { passive: true }
+        );
+        drawer.addEventListener(
+            'touchend',
+            (e) => {
+                e.stopPropagation();
+                this.lastTouchTime = Date.now();
+            },
+            { passive: true }
+        );
+
+        const handleBar = drawer.querySelector('.drawer-handle-bar');
+        this.bindDrawerSwipeDismiss(handleBar, drawer, () => this.closeMobileActions());
+        lucide.createIcons({ nodes: [trigger, drawer] });
+        this.updateMobileActions();
+    },
+
+    updateMobileActions(file = this.items[this.currentIndex]) {
+        if (!this.elements.mobileActionsBtn) return;
+
+        const unavailable = !file || file.type === 'folder';
+        this.elements.mobileActionsBtn.classList.toggle('hidden', unavailable);
+        this.elements.mobileActionsBtn.disabled = unavailable;
+
+        if (unavailable) {
+            if (this.mobileActionsOpen) {
+                this.closeMobileActions();
+            }
+            return;
+        }
+
+        const isPinned =
+            file.isFavorite ||
+            (typeof Favorites !== 'undefined' && typeof Favorites.isPinned === 'function'
+                ? Favorites.isPinned(file.path)
+                : false);
+        this.elements.mobileActionFavorite?.classList.toggle('active', isPinned);
+        if (this.elements.mobileActionFavoriteState) {
+            this.elements.mobileActionFavoriteState.textContent = isPinned ? 'On' : 'Off';
+        }
+
+        const tagCount = Array.isArray(file.tags) ? file.tags.length : 0;
+        this.elements.mobileActionTags?.classList.toggle('active', tagCount > 0);
+        if (this.elements.mobileActionTagsState) {
+            this.elements.mobileActionTagsState.textContent = tagCount
+                ? `${tagCount} tag${tagCount === 1 ? '' : 's'}`
+                : 'No tags';
+        }
+
+        const inCollection =
+            typeof Collections !== 'undefined' && typeof Collections.isInCollection === 'function'
+                ? Collections.isInCollection(file.path)
+                : false;
+        this.elements.mobileActionCollections?.classList.toggle('active', inCollection);
+        if (this.elements.mobileActionCollectionsState) {
+            this.elements.mobileActionCollectionsState.textContent = inCollection
+                ? 'In collection'
+                : 'Not in a collection';
+        }
+
+        const isVideo = file.type === 'video';
+        const showLoopButton = this.shouldShowLoopButton(file);
+        const autoplayEnabled =
+            typeof Preferences !== 'undefined' &&
+            typeof Preferences.isVideoAutoplayEnabled === 'function'
+                ? Preferences.isVideoAutoplayEnabled()
+                : false;
+        const loopEnabled =
+            typeof Preferences !== 'undefined' &&
+            typeof Preferences.isMediaLoopEnabled === 'function'
+                ? Preferences.isMediaLoopEnabled()
+                : false;
+
+        this.elements.mobileActionAutoplay?.classList.toggle('hidden', !isVideo);
+        this.elements.mobileActionAutoplay?.classList.toggle('active', autoplayEnabled);
+        if (this.elements.mobileActionAutoplayState) {
+            this.elements.mobileActionAutoplayState.textContent = autoplayEnabled ? 'On' : 'Off';
+        }
+
+        this.elements.mobileActionLoop?.classList.toggle('hidden', !showLoopButton);
+        this.elements.mobileActionLoop?.classList.toggle('active', loopEnabled);
+        if (this.elements.mobileActionLoopState) {
+            this.elements.mobileActionLoopState.textContent = loopEnabled ? 'On' : 'Off';
+        }
+    },
+
+    openMobileActions() {
+        if (this.mobileActionsOpen) return;
+
+        const file = this.items[this.currentIndex];
+        if (!file || file.type === 'folder') return;
+
+        if (this.tagsDrawerOpen) {
+            this.closeTagsDrawer();
+        }
+        if (this.collectionDrawerOpen) {
+            this.closeCollectionDrawer();
+        }
+
+        this.mobileActionsOpen = true;
+        this.updateMobileActions(file);
+        this.elements.mobileActionsDrawer.classList.remove('hidden');
+        this.elements.mobileActionsBackdrop.classList.remove('hidden');
+
+        requestAnimationFrame(() => {
+            this.elements.mobileActionsDrawer.classList.add('open');
+            this.elements.mobileActionsBackdrop.classList.add('open');
+        });
+
+        this.userHidOverlays = true;
+        this.showUIOverlays();
+        this.elements.mobileActionsBtn?.setAttribute('aria-expanded', 'true');
+
+        if (typeof HistoryManager !== 'undefined') {
+            HistoryManager.pushState('lightbox-mobile-actions');
+        }
+    },
+
+    closeMobileActions() {
+        if (!this.mobileActionsOpen) return;
+
+        this.mobileActionsOpen = false;
+        this.elements.mobileActionsDrawer.classList.remove('open');
+        this.elements.mobileActionsBackdrop.classList.remove('open');
+        this.elements.mobileActionsBtn?.setAttribute('aria-expanded', 'false');
+
+        setTimeout(() => {
+            if (!this.mobileActionsOpen) {
+                this.elements.mobileActionsDrawer.classList.add('hidden');
+                this.elements.mobileActionsBackdrop.classList.add('hidden');
+            }
+        }, 300);
+
+        this.userHidOverlays = false;
+        this.hideUIOverlaysDelayed();
+
+        if (
+            typeof HistoryManager !== 'undefined' &&
+            HistoryManager.hasState('lightbox-mobile-actions')
+        ) {
+            HistoryManager.removeState('lightbox-mobile-actions');
+        }
+    },
+
+    closeMobileActionsWithHistory() {
+        if (
+            typeof HistoryManager !== 'undefined' &&
+            HistoryManager.hasState('lightbox-mobile-actions')
+        ) {
+            history.back();
+        } else {
+            this.closeMobileActions();
+        }
+    },
+
     /**
      * Copy the current lightbox item's tags to the TagClipboard.
      */
@@ -788,6 +1138,9 @@ const Lightbox = {
 
     openTagsDrawer() {
         if (this.tagsDrawerOpen) return;
+        if (this.mobileActionsOpen) {
+            this.closeMobileActions();
+        }
         this.tagsDrawerOpen = true;
 
         const file = this.items[this.currentIndex];
@@ -1340,6 +1693,10 @@ const Lightbox = {
 
             if (e.target.matches('input, textarea, [contenteditable="true"]')) {
                 if (e.key === 'Escape') {
+                    if (this.mobileActionsOpen) {
+                        this.closeMobileActionsWithHistory();
+                        return;
+                    }
                     // Close drawer first if open
                     if (this.tagsDrawerOpen) {
                         if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
@@ -1360,17 +1717,31 @@ const Lightbox = {
 
             switch (e.key) {
                 case 'Escape':
-                    if (this.tagsDrawerOpen) {
+                    if (this.mobileActionsOpen) {
+                        this.closeMobileActionsWithHistory();
+                    } else if (this.tagsDrawerOpen) {
                         this.closeTagsDrawerWithHistory();
                     } else {
                         this.closeWithHistory();
                     }
                     break;
                 case 'ArrowLeft':
-                    if (!this.tagsDrawerOpen) this.prev();
+                    if (
+                        !this.tagsDrawerOpen &&
+                        !this.collectionDrawerOpen &&
+                        !this.mobileActionsOpen
+                    ) {
+                        this.prev();
+                    }
                     break;
                 case 'ArrowRight':
-                    if (!this.tagsDrawerOpen) this.next();
+                    if (
+                        !this.tagsDrawerOpen &&
+                        !this.collectionDrawerOpen &&
+                        !this.mobileActionsOpen
+                    ) {
+                        this.next();
+                    }
                     break;
                 case ' ':
                     if (this.elements.video && !this.elements.video.classList.contains('hidden')) {
@@ -1388,6 +1759,9 @@ const Lightbox = {
                     break;
                 case 't':
                 case 'T':
+                    if (this.mobileActionsOpen) {
+                        this.closeMobileActions();
+                    }
                     if (this.tagsDrawerOpen) {
                         this.closeTagsDrawerWithHistory();
                     } else {
@@ -1396,6 +1770,9 @@ const Lightbox = {
                     break;
                 case 'c':
                 case 'C':
+                    if (this.mobileActionsOpen) {
+                        this.closeMobileActions();
+                    }
                     if (this.collectionDrawerOpen) {
                         this.closeCollectionDrawerWithHistory();
                     } else {
@@ -1428,7 +1805,9 @@ const Lightbox = {
                 if (e.target.closest('.video-controls')) return;
                 if (e.target.closest('.lightbox-tags-drawer')) return;
                 if (e.target.closest('.lightbox-collection-drawer')) return;
+                if (e.target.closest('.lightbox-mobile-actions-drawer')) return;
                 if (e.target.closest('.lightbox-drawer-backdrop')) return;
+                if (e.target.closest('.lightbox-mobile-actions-backdrop')) return;
                 if (this.zoom.scale > 1 || e.touches.length > 1) return;
                 this.touchStartX = e.changedTouches[0].screenX;
                 this.touchStartY = e.changedTouches[0].screenY;
@@ -1447,6 +1826,7 @@ const Lightbox = {
                 if (e.target.closest('.video-controls')) return;
                 if (e.target.closest('.lightbox-tags-drawer')) return;
                 if (e.target.closest('.lightbox-collection-drawer')) return;
+                if (e.target.closest('.lightbox-mobile-actions-drawer')) return;
                 if (this.zoom.scale > 1 || this.zoom.isPinching || this.zoom.isPanning) return;
 
                 const touch = e.changedTouches[0];
@@ -1488,6 +1868,7 @@ const Lightbox = {
                 if (this.zoom.scale > 1) return;
                 if (e.target.closest('.lightbox-tags-drawer')) return;
                 if (e.target.closest('.lightbox-collection-drawer')) return;
+                if (e.target.closest('.lightbox-mobile-actions-drawer')) return;
 
                 if (this.swipeDownTracking) {
                     const rawDeltaY = e.changedTouches[0].screenY - this.touchStartY;
@@ -1561,7 +1942,8 @@ const Lightbox = {
         this.elements.lightbox.addEventListener('touchstart', (e) => {
             if (
                 !e.target.closest('.video-controls') &&
-                !e.target.closest('.lightbox-tags-drawer')
+                !e.target.closest('.lightbox-tags-drawer') &&
+                !e.target.closest('.lightbox-mobile-actions-drawer')
             ) {
                 uiTouchStartTime = Date.now();
                 this.lastTouchTime = Date.now();
@@ -1576,6 +1958,8 @@ const Lightbox = {
                 e.target.closest('input') ||
                 e.target.closest('.video-controls') ||
                 e.target.closest('.lightbox-tags-drawer') ||
+                e.target.closest('.lightbox-mobile-actions-drawer') ||
+                e.target.closest('.lightbox-mobile-actions-backdrop') ||
                 e.target.closest('.lightbox-drawer-backdrop') ||
                 e.target.closest('.lightbox-tag-summary') ||
                 e.target.closest('.lightbox-info') ||
@@ -1869,6 +2253,9 @@ const Lightbox = {
         this.items = items;
         this.currentIndex = index;
         this.clearPreloadCache();
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.dismissScrollRestorePopoverImmediately?.();
+        }
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
         this.uiOverlaysVisible = true;
@@ -1889,6 +2276,9 @@ const Lightbox = {
 
     show() {
         this.clearPreloadCache();
+        if (typeof InfiniteScroll !== 'undefined') {
+            InfiniteScroll.dismissScrollRestorePopoverImmediately?.();
+        }
         this.elements.lightbox.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
         this.uiOverlaysVisible = true;
@@ -1937,6 +2327,14 @@ const Lightbox = {
             this.elements.collectionDrawer?.classList.add('hidden');
             this.elements.collectionDrawerBackdrop?.classList.remove('open');
             this.elements.collectionDrawerBackdrop?.classList.add('hidden');
+        }
+        if (this.mobileActionsOpen) {
+            this.mobileActionsOpen = false;
+            this.elements.mobileActionsDrawer?.classList.remove('open');
+            this.elements.mobileActionsDrawer?.classList.add('hidden');
+            this.elements.mobileActionsBackdrop?.classList.remove('open');
+            this.elements.mobileActionsBackdrop?.classList.add('hidden');
+            this.elements.mobileActionsBtn?.setAttribute('aria-expanded', 'false');
         }
 
         this.elements.lightbox.classList.add('hidden');
@@ -2012,7 +2410,9 @@ const Lightbox = {
     },
 
     handleBackButton() {
-        if (this.tagsDrawerOpen) {
+        if (this.mobileActionsOpen) {
+            this.closeMobileActions();
+        } else if (this.tagsDrawerOpen) {
             this.closeTagsDrawer();
         } else if (this.zoom.scale > 1) {
             this.resetZoom();
@@ -2050,7 +2450,7 @@ const Lightbox = {
         }
         this.uiOverlaysTimeout = setTimeout(() => {
             // Don't auto-hide if drawer is open
-            if (!this.tagsDrawerOpen) {
+            if (!this.tagsDrawerOpen && !this.collectionDrawerOpen && !this.mobileActionsOpen) {
                 this.hideUIOverlays();
             }
             this.uiOverlaysTimeout = null;
@@ -2060,6 +2460,8 @@ const Lightbox = {
     prev() {
         if (this.items.length === 0) return;
         if (this.tagsDrawerOpen) this.closeTagsDrawer();
+        if (this.collectionDrawerOpen) this.closeCollectionDrawer();
+        if (this.mobileActionsOpen) this.closeMobileActions();
         this.currentIndex = (this.currentIndex - 1 + this.items.length) % this.items.length;
         this.showMedia();
         this.updateNavigation();
@@ -2068,6 +2470,8 @@ const Lightbox = {
     next() {
         if (this.items.length === 0) return;
         if (this.tagsDrawerOpen) this.closeTagsDrawer();
+        if (this.collectionDrawerOpen) this.closeCollectionDrawer();
+        if (this.mobileActionsOpen) this.closeMobileActions();
         this.currentIndex = (this.currentIndex + 1) % this.items.length;
         this.showMedia();
         this.updateNavigation();
@@ -2141,6 +2545,7 @@ const Lightbox = {
         this.updateTagButton(file);
         this.updateTagSummary(file);
         this.updateCollectionButton(file);
+        this.updateMobileActions(file);
 
         // Update drawer if it's open
         if (this.tagsDrawerOpen) {
@@ -2628,6 +3033,7 @@ const Lightbox = {
         this.elements.pinBtn.title = isPinned
             ? 'Remove from favorites (F)'
             : 'Add to favorites (F)';
+        this.updateMobileActions(file);
         // Icon (star SVG) was rendered once in _initStaticIcons().
         // Only the CSS class and title change — no DOM mutation, no lucide call.
     },
@@ -2854,14 +3260,21 @@ const Lightbox = {
         const isFolder = !file || file.type === 'folder';
         btn.classList.toggle('hidden', isFolder);
         if (!isFolder && typeof Collections !== 'undefined') {
-            const inCollection = Collections.isInCollection(file.path);
+            const inCollection =
+                typeof Collections.isInCollection === 'function'
+                    ? Collections.isInCollection(file.path)
+                    : false;
             btn.classList.toggle('active', inCollection);
             btn.title = inCollection ? 'Collections — in collection (C)' : 'Collections (C)';
         }
+        this.updateMobileActions(file);
     },
 
     openCollectionDrawer() {
         if (this.collectionDrawerOpen) return;
+        if (this.mobileActionsOpen) {
+            this.closeMobileActions();
+        }
 
         const file = this.items[this.currentIndex];
         if (!file || file.type === 'folder') return;
@@ -3576,6 +3989,7 @@ const Lightbox = {
         const hasTags = file.tags && file.tags.length > 0;
         this.elements.tagBtn.classList.toggle('has-tags', hasTags);
         this.elements.tagBtn.title = 'Manage tags (T)';
+        this.updateMobileActions(file);
         // Icon (tag SVG) was rendered once in _initStaticIcons().
         // Only the CSS class changes — no DOM mutation, no lucide call.
     },

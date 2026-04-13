@@ -31,10 +31,33 @@ async function waitForGallery(page) {
 
 async function openCollectionsModalForItem(page, itemLocator) {
     const button = itemLocator.locator('.collection-button');
+    const canUseInlineButton = await button.isVisible().catch(() => false);
 
-    await expect(button).toBeAttached();
+    if (canUseInlineButton) {
+        await button.dispatchEvent('click');
+    } else {
+        await itemLocator.evaluate((element) => {
+            if (typeof window.ItemSelection === 'undefined') {
+                throw new Error('ItemSelection is not available');
+            }
 
-    await button.dispatchEvent('click');
+            if (!window.ItemSelection.isActive) {
+                window.ItemSelection.enterSelectionMode(element);
+                return;
+            }
+
+            if (!window.ItemSelection.selectedPaths?.has(element.dataset.path)) {
+                window.ItemSelection.toggleItem(element);
+            }
+        });
+
+        await waitForSelectionState(page, 1);
+        await synchronizeSelectionToolbar(page);
+
+        const toolbarButton = page.locator('#selection-collection-btn');
+        await expect(toolbarButton).toBeVisible();
+        await toolbarButton.dispatchEvent('click');
+    }
 
     const modal = page.locator('#collection-add-modal');
     await expect(modal).toBeVisible();

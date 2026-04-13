@@ -36,9 +36,9 @@ When an item has more than 3 tags:
 
 Tags can be added from:
 
-- Tag modal (via tag button on item)
-- Lightbox (via tag button)
-- Selection mode (bulk tagging)
+- Gallery tag button on desktop (revealed on hover)
+- Lightbox tag button on desktop or touch
+- Selection mode toolbar for bulk tagging on desktop or touch
 
 ### Removing Tags
 
@@ -181,6 +181,8 @@ When viewing search results, tag interactions are search-focused:
 - This helps you refine your search without leaving the results view
 
 ## Bulk Tag Operations
+
+On touch devices, bulk tag operations are intentionally routed through selection mode. The gallery keeps tap and double-tap behavior for browsing until you long-press an item to reveal the selection toolbar.
 
 ### Adding Tags to Multiple Items
 
