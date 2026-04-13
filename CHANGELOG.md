@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - chore(deps): update github actions (major) ([#514](https://github.com/djryanj/media-viewer/pull/514))
+- fix(deps): update go modules ([#513](https://github.com/djryanj/media-viewer/pull/513))
 
 ## [0.17.2] - 04-11-2026
 
