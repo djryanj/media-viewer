@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update all non-major dependencies ([#511](https://github.com/djryanj/media-viewer/pull/511))
 - chore(deps): update dependency go to v1.26.2 ([#512](https://github.com/djryanj/media-viewer/pull/512))
 ### Added
 
