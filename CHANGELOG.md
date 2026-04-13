@@ -11,10 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - feat(frontend): Mobile gallery and lightbox touch interactions have been redesigned for clarity and focus. Gallery cards on touch devices no longer show persistent collection or selection icons — tapping opens media and long-pressing enters selection mode. The scroll-restore prompt is now a compact anchored chip alongside the scrubber rather than a heavy floating card. The lightbox consolidates all single-item actions (Favorite, Tags, Collections, Download, Autoplay, Loop) into a single labeled bottom-sheet drawer opened from one button in the top chrome, replacing scattered icon-only controls spread across screen edges. Navigation arrows stay hidden by default so media stays primary. ([#509](https://github.com/djryanj/media-viewer/issues/509))
 
-
-### Changed
-
-- fix(deps): update go modules ([#513](https://github.com/djryanj/media-viewer/pull/513))
 ### Fixed
 
 - fix(backend): Startup logs now report `exiftool` and `ffprobe` availability alongside the rest of the server's initialization checks, making it easier to confirm metadata extraction readiness in local and container deployments. The startup logging for these checks is also now centralized so component initialization output stays consistent. ([#507](https://github.com/djryanj/media-viewer/issues/507))
@@ -22,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - chore(deps): update github actions (major) ([#514](https://github.com/djryanj/media-viewer/pull/514))
+- fix(deps): update go modules ([#513](https://github.com/djryanj/media-viewer/pull/513))
 
 ## [0.17.2] - 04-11-2026
 
