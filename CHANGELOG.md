@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump actions/setup-node from 6.3.0 to 6.4.0 ([#523](https://github.com/djryanj/media-viewer/pull/523))
 - build(deps): bump github.com/mattn/go-sqlite3 from 1.14.42 to 1.14.44 ([#527](https://github.com/djryanj/media-viewer/pull/527))
 ### Added
 
