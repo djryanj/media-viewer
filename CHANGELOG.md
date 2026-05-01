@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.18.1] - unreleased
 
+
+### Changed
+
+- build(deps): bump github.com/mattn/go-sqlite3 from 1.14.42 to 1.14.44 ([#527](https://github.com/djryanj/media-viewer/pull/527))
 ### Added
 
 - feat(api): The auto-tagger now exposes a status endpoint so admin tooling and automated smoke coverage can tell when an on-demand pass is still running and when it last completed, instead of polling for tag changes blindly. ([#524](https://github.com/djryanj/media-viewer/issues/524))
