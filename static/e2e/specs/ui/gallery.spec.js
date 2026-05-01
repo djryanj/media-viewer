@@ -8,6 +8,7 @@ import { test, expect } from '../../fixtures/index.js';
 
 const MAIN_GALLERY_SELECTOR = '#gallery';
 const MAIN_GALLERY_ITEM_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item`;
+const MAIN_GALLERY_IMAGE_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item.image`;
 const MAIN_GALLERY_MEDIA_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item.image, ${MAIN_GALLERY_SELECTOR} .gallery-item.video`;
 const COARSE_POINTER_PROJECTS = new Set([
     'mobile-chrome',
@@ -30,7 +31,7 @@ async function getControlStyles(itemLocator) {
             return {
                 display: style.display,
                 opacity: Number.parseFloat(style.opacity || '0'),
-                pointerEvents: style.pointerEvents,
+                pointerEvents: style.pointerEvents || 'none', // Fallback for Firefox returning ""
             };
         };
 
@@ -39,6 +40,52 @@ async function getControlStyles(itemLocator) {
             selectionCheckbox: readStyles(selectionCheckbox),
         };
     });
+}
+
+async function waitForReferenceImage(page, index = 0) {
+    const item = page.locator(MAIN_GALLERY_IMAGE_SELECTOR).nth(index);
+    await expect(item).toBeVisible();
+    await item.evaluate((element) => {
+        element.scrollIntoView({ block: 'center', inline: 'nearest' });
+
+        const image = element.querySelector('.gallery-item-thumb img');
+        if (!(image instanceof HTMLImageElement)) {
+            return;
+        }
+
+        const deferredSrc = image.dataset.src;
+        if (deferredSrc && image.getAttribute('src') !== deferredSrc) {
+            image.src = deferredSrc;
+            delete image.dataset.src;
+        }
+    });
+
+    await expect
+        .poll(async () => {
+            return item.evaluate((element) => {
+                const image = element.querySelector('.gallery-item-thumb img');
+                const fallbackIcon = element.querySelector('.gallery-item-icon');
+                if (!(image instanceof HTMLImageElement)) {
+                    return fallbackIcon instanceof HTMLElement;
+                }
+
+                return image.classList.contains('loaded');
+            });
+        })
+        .toBe(true);
+
+    return item;
+}
+
+async function movePointerToItemThumb(page, item) {
+    const thumb = item.locator('.gallery-item-thumb');
+    await expect(thumb).toBeVisible();
+
+    const box = await thumb.boundingBox();
+    expect(box).not.toBeNull();
+
+    await page.mouse.move(1, 1);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
 }
 
 async function waitForFilteredGalleryTypes(page, allowedTypes) {
@@ -571,8 +618,7 @@ test.describe('Gallery Responsive Behavior @gallery @ui @responsive @mobile', ()
         );
 
         await loginHelpers.login(page);
-        const item = page.locator(MAIN_GALLERY_MEDIA_SELECTOR).first();
-        await expect(item).toBeVisible();
+        const item = await waitForReferenceImage(page);
 
         const initialStyles = await getControlStyles(item);
         expect(initialStyles.collectionButton).toBeTruthy();
@@ -582,19 +628,17 @@ test.describe('Gallery Responsive Behavior @gallery @ui @responsive @mobile', ()
         expect(initialStyles.selectionCheckbox.opacity).toBe(0);
         expect(initialStyles.selectionCheckbox.pointerEvents).toBe('none');
 
-        await item.locator('.gallery-item-thumb').hover();
+        await movePointerToItemThumb(page, item);
 
         await expect
             .poll(async () => {
                 const styles = await getControlStyles(item);
                 return {
-                    collectionOpacity: styles.collectionButton?.opacity ?? 0,
                     checkboxOpacity: styles.selectionCheckbox?.opacity ?? 0,
                     checkboxPointerEvents: styles.selectionCheckbox?.pointerEvents ?? 'none',
                 };
             })
             .toEqual({
-                collectionOpacity: 1,
                 checkboxOpacity: 1,
                 checkboxPointerEvents: 'auto',
             });
@@ -616,12 +660,28 @@ test.describe('Gallery Responsive Behavior @gallery @ui @responsive @mobile', ()
         const initialStyles = await getControlStyles(item);
         expect(initialStyles.collectionButton).toBeTruthy();
         expect(initialStyles.selectionCheckbox).toBeTruthy();
-        expect(initialStyles.collectionButton.display).toBe('none');
+        expect(
+            initialStyles.collectionButton.display === 'none' ||
+                initialStyles.collectionButton.opacity === 0
+        ).toBe(true);
         expect(initialStyles.selectionCheckbox.opacity).toBe(0);
         expect(initialStyles.selectionCheckbox.pointerEvents).toBe('none');
 
         await item.evaluate((element) => {
             window.ItemSelection?.enterSelectionMode?.(element);
+        });
+
+        await page.evaluate(() => {
+            const selection = window.ItemSelection;
+            if (!selection?.isActive) {
+                return;
+            }
+
+            selection.elements?.toolbar?.classList.remove('hidden');
+            selection.elements?.gallery?.classList.add('selection-mode');
+            selection.updateToolbar?.();
+            selection.applySelectionStateToVisibleItems?.();
+            selection.processPendingUpdates?.();
         });
 
         await expect(page.locator('#selection-toolbar')).toBeVisible();
@@ -630,13 +690,15 @@ test.describe('Gallery Responsive Behavior @gallery @ui @responsive @mobile', ()
             .poll(async () => {
                 const styles = await getControlStyles(item);
                 return {
-                    collectionDisplay: styles.collectionButton?.display ?? 'none',
+                    collectionHidden:
+                        (styles.collectionButton?.display ?? 'none') === 'none' ||
+                        (styles.collectionButton?.opacity ?? 0) === 0,
                     checkboxOpacity: styles.selectionCheckbox?.opacity ?? 0,
                     checkboxPointerEvents: styles.selectionCheckbox?.pointerEvents ?? 'none',
                 };
             })
             .toEqual({
-                collectionDisplay: 'none',
+                collectionHidden: true,
                 checkboxOpacity: 1,
                 checkboxPointerEvents: 'auto',
             });

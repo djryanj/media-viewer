@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"media-viewer/internal/autotagger"
 	"media-viewer/internal/database"
 	"media-viewer/internal/indexer"
 	"media-viewer/internal/media"
@@ -11,6 +12,7 @@ import (
 // AutoTagRunner can trigger an on-demand full auto-tagging pass.
 type AutoTagRunner interface {
 	TriggerRun()
+	Status() autotagger.Status
 }
 
 // Handlers contains all HTTP request handlers and their dependencies.

@@ -27,7 +27,49 @@ function normalizeSnapshotValue(value) {
     return value;
 }
 
-function findFirstDifference(actual, reference, path = 'root') {
+function normalizeSnapshotForComparison(snapshot, options = {}) {
+    const normalizedSnapshot = normalizeSnapshotValue(snapshot);
+    const ignoreNodeRectsById = new Set(options.ignoreNodeRectsById ?? []);
+    const ignoreStyleKeys = new Set(options.ignoreStyleKeys ?? []);
+
+    if (!ignoreNodeRectsById.size && !ignoreStyleKeys.size) {
+        return normalizedSnapshot;
+    }
+
+    if (!Array.isArray(normalizedSnapshot?.nodes)) {
+        return normalizedSnapshot;
+    }
+
+    return {
+        ...normalizedSnapshot,
+        nodes: normalizedSnapshot.nodes.map((node) => {
+            if (!node || typeof node !== 'object') {
+                return node;
+            }
+
+            let nextNode = node;
+
+            if (ignoreNodeRectsById.has(node.id)) {
+                nextNode = { ...nextNode };
+                delete nextNode.rect;
+            }
+
+            if (ignoreStyleKeys.size && nextNode.styles && typeof nextNode.styles === 'object') {
+                const filteredStyles = { ...nextNode.styles };
+                for (const key of ignoreStyleKeys) {
+                    delete filteredStyles[key];
+                }
+                nextNode = { ...nextNode, styles: filteredStyles };
+            }
+
+            return nextNode;
+        }),
+    };
+}
+
+function findFirstDifference(actual, reference, path = 'root', options = {}) {
+    const numericTolerance = options.numericTolerance ?? 0;
+
     if (typeof actual !== typeof reference) {
         return `${path}: type ${typeof actual} !== ${typeof reference}`;
     }
@@ -38,7 +80,12 @@ function findFirstDifference(actual, reference, path = 'root') {
         }
 
         for (let index = 0; index < actual.length; index += 1) {
-            const diff = findFirstDifference(actual[index], reference[index], `${path}[${index}]`);
+            const diff = findFirstDifference(
+                actual[index],
+                reference[index],
+                `${path}[${index}]`,
+                options
+            );
             if (diff) {
                 return diff;
             }
@@ -60,12 +107,27 @@ function findFirstDifference(actual, reference, path = 'root') {
                 return `${path}: missing key ${key} in reference`;
             }
 
-            const diff = findFirstDifference(actual[key], reference[key], `${path}.${key}`);
+            const diff = findFirstDifference(
+                actual[key],
+                reference[key],
+                `${path}.${key}`,
+                options
+            );
             if (diff) {
                 return diff;
             }
         }
 
+        return null;
+    }
+
+    if (
+        typeof actual === 'number' &&
+        typeof reference === 'number' &&
+        Number.isFinite(actual) &&
+        Number.isFinite(reference) &&
+        Math.abs(actual - reference) <= numericTolerance
+    ) {
         return null;
     }
 
@@ -263,7 +325,7 @@ async function readSnapshot(filePath) {
 }
 
 export async function assertMatchesReferenceImage(actualSnapshot, referencePath, options = {}) {
-    const normalizedActualSnapshot = normalizeSnapshotValue(actualSnapshot);
+    const normalizedActualSnapshot = normalizeSnapshotForComparison(actualSnapshot, options);
 
     if (process.env.VISUAL_UPDATE_BASELINES === '1') {
         await fs.mkdir(path.dirname(referencePath), { recursive: true });
@@ -271,9 +333,9 @@ export async function assertMatchesReferenceImage(actualSnapshot, referencePath,
         return;
     }
 
-    const reference = await readSnapshot(referencePath);
+    const reference = normalizeSnapshotForComparison(await readSnapshot(referencePath), options);
 
-    const diff = findFirstDifference(normalizedActualSnapshot, reference);
+    const diff = findFirstDifference(normalizedActualSnapshot, reference, 'root', options);
     if (diff) {
         throw new Error(`Visual regression snapshot mismatch for ${referencePath}: ${diff}`);
     }

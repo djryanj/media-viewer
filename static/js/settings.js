@@ -1287,7 +1287,8 @@ class SettingsManager {
         const clockToggle = document.getElementById('clock-enabled-toggle');
         if (!clockToggle) return;
 
-        const isEnabled = Preferences.toggleClock();
+        const isEnabled = !!clockToggle.checked;
+        Preferences.setClockEnabled(isEnabled);
 
         // Update always visible toggle state
         const clockAlwaysVisibleToggle = document.getElementById('clock-always-visible-toggle');

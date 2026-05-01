@@ -296,6 +296,10 @@ Tags are applied:
 2. **On a periodic timer** (`EXIF_TAG_INTERVAL`, default `24h`) — ensures all files are eventually processed even if they were not caught by an incremental pass
 3. **On demand** — use the **Run Auto-Tagger** button in **Settings → Cache** to trigger an immediate full pass
 
+If you need to monitor an on-demand pass from automation or external tooling,
+the API also exposes `GET /api/autotagger/status`, which reports whether a run
+is still in progress and when the last pass completed.
+
 <div align="center">
   <img src="../../images/settings-tab-cache.png" alt="Settings Cache tab showing the Run Auto-Tagger button among other cache actions" width="700">
   <p><em>The Cache tab in Settings lets you trigger an on-demand auto-tagger pass alongside other cache actions.</em></p>

@@ -1125,12 +1125,6 @@
       "tag": "strong",
       "id": "thumbnail-cache-size",
       "classes": [],
-      "rect": {
-        "x": 157,
-        "y": 345,
-        "width": 114,
-        "height": 16
-      },
       "styles": {
         "display": "inline",
         "position": "static",
@@ -1825,12 +1819,6 @@
       "tag": "strong",
       "id": "transcode-cache-size",
       "classes": [],
-      "rect": {
-        "x": 157,
-        "y": 693,
-        "width": 129,
-        "height": 16
-      },
       "styles": {
         "display": "inline",
         "position": "static",

@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"media-viewer/internal/autotagger"
 )
 
 // mockAutoTagRunner is a test double for the AutoTagRunner interface that
@@ -16,6 +18,10 @@ type mockAutoTagRunner struct {
 
 func (m *mockAutoTagRunner) TriggerRun() {
 	m.calls.Add(1)
+}
+
+func (m *mockAutoTagRunner) Status() autotagger.Status {
+	return autotagger.Status{}
 }
 
 // Verify mockAutoTagRunner satisfies the interface at compile time.
@@ -112,6 +118,53 @@ func TestRunAutoTagger(t *testing.T) {
 
 			if msg, ok := resp["message"].(string); !ok || msg == "" {
 				t.Errorf("expected non-empty message in response, got %v", resp)
+			}
+		})
+	}
+}
+
+func TestGetAutoTaggerStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		method     string
+		autoTagger AutoTagRunner
+		wantStatus int
+	}{
+		{
+			name:       "GET returns 200",
+			method:     http.MethodGet,
+			autoTagger: &mockAutoTagRunner{},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil autoTagger returns 503",
+			method:     http.MethodGet,
+			autoTagger: nil,
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:       "POST method not allowed",
+			method:     http.MethodPost,
+			autoTagger: &mockAutoTagRunner{},
+			wantStatus: http.StatusMethodNotAllowed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &Handlers{autoTagger: tt.autoTagger}
+
+			req := httptest.NewRequest(tt.method, "/api/autotagger/status", http.NoBody)
+			w := httptest.NewRecorder()
+
+			h.GetAutoTaggerStatus(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
 			}
 		})
 	}

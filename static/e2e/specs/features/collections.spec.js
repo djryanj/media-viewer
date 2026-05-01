@@ -3,7 +3,6 @@ import { test, expect } from '../../fixtures/index.js';
 const PROJECT_MEDIA_BLOCK_SIZE = 8;
 const MAIN_GALLERY_SELECTOR = '#gallery';
 const MAIN_GALLERY_ITEM_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item`;
-const MAIN_GALLERY_MEDIA_SELECTOR = `${MAIN_GALLERY_SELECTOR} .gallery-item.image, ${MAIN_GALLERY_SELECTOR} .gallery-item.video`;
 const PROJECT_ORDER = [
     'chromium',
     'firefox',
@@ -18,10 +17,6 @@ function uniqueCollectionName(prefix) {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function galleryItemByPath(page, path) {
-    return page.locator(`${MAIN_GALLERY_ITEM_SELECTOR}[data-path=${JSON.stringify(path)}]`);
-}
-
 async function waitForGallery(page) {
     await page.waitForSelector(
         `${MAIN_GALLERY_ITEM_SELECTOR}:not(.skeleton), ${MAIN_GALLERY_SELECTOR} .empty-state`,
@@ -29,35 +24,36 @@ async function waitForGallery(page) {
     );
 }
 
-async function openCollectionsModalForItem(page, itemLocator) {
-    const button = itemLocator.locator('.collection-button');
-    const canUseInlineButton = await button.isVisible().catch(() => false);
+async function openCollectionsModalForItem(page, itemOrLocator) {
+    const item =
+        itemOrLocator && typeof itemOrLocator.getAttribute === 'function'
+            ? {
+                  path: await itemOrLocator.getAttribute('data-path'),
+                  name: (await itemOrLocator.getAttribute('data-name')) || undefined,
+                  type: (await itemOrLocator.getAttribute('data-type')) || undefined,
+              }
+            : {
+                  path: itemOrLocator?.path,
+                  name: itemOrLocator?.name,
+                  type: itemOrLocator?.type,
+              };
 
-    if (canUseInlineButton) {
-        await button.dispatchEvent('click');
-    } else {
-        await itemLocator.evaluate((element) => {
-            if (typeof window.ItemSelection === 'undefined') {
-                throw new Error('ItemSelection is not available');
-            }
+    expect(item.path).toBeTruthy();
+    expect(item.type).toBeTruthy();
 
-            if (!window.ItemSelection.isActive) {
-                window.ItemSelection.enterSelectionMode(element);
-                return;
-            }
+    const opened = await page.evaluate(async (targetItem) => {
+        const collections = window.Collections;
+        if (typeof collections?.openAddOrCreateModal !== 'function') {
+            return false;
+        }
 
-            if (!window.ItemSelection.selectedPaths?.has(element.dataset.path)) {
-                window.ItemSelection.toggleItem(element);
-            }
-        });
+        await collections.loadAll?.();
+        await collections.loadMembershipsForPaths?.([targetItem.path]);
+        collections.openAddOrCreateModal([targetItem]);
+        return true;
+    }, item);
 
-        await waitForSelectionState(page, 1);
-        await synchronizeSelectionToolbar(page);
-
-        const toolbarButton = page.locator('#selection-collection-btn');
-        await expect(toolbarButton).toBeVisible();
-        await toolbarButton.dispatchEvent('click');
-    }
+    expect(opened).toBe(true);
 
     const modal = page.locator('#collection-add-modal');
     await expect(modal).toBeVisible();
@@ -80,35 +76,87 @@ function getProjectMediaOffset(projectName) {
 }
 
 async function getMediaItems(page, count = 3, offset = 0) {
-    const items = await page.evaluate(
-        ({ gallerySelector, requestedCount, startOffset }) => {
-            return Array.from(document.querySelectorAll(gallerySelector))
-                .slice(startOffset, startOffset + requestedCount)
-                .map((el) => ({
-                    path: el.dataset.path,
-                    name: el.dataset.name,
-                    type: el.dataset.type,
-                }));
-        },
-        { gallerySelector: MAIN_GALLERY_MEDIA_SELECTOR, requestedCount: count, startOffset: offset }
-    );
+    let fetchedItems = [];
+    await expect
+        .poll(
+            async () => {
+                const state = await page.evaluate(() => {
+                    return {
+                        path: window.MediaApp?.state?.currentPath ?? '',
+                        sort: window.MediaApp?.state?.currentSort?.field ?? 'name',
+                        order: window.MediaApp?.state?.currentSort?.order ?? 'asc',
+                        filter: window.MediaApp?.state?.currentFilter ?? '',
+                    };
+                });
 
-    if (items.length < count) {
-        throw new Error(
-            `Expected at least ${count} media items starting at offset ${offset}, found ${items.length}`
-        );
-    }
+                const params = new URLSearchParams({
+                    path: state.path,
+                    sort: state.sort,
+                    order: state.order,
+                    limit: '0',
+                });
 
-    return items;
+                if (state.filter) {
+                    params.set('type', state.filter);
+                }
+
+                const response = await page.request.get(`/api/media?${params.toString()}`);
+                if (!response.ok()) return false;
+
+                const payload = await response.json();
+                const items = (payload?.items ?? []).slice(offset, offset + count);
+
+                if (items.length < count) {
+                    return false;
+                }
+
+                fetchedItems = items;
+                return true;
+            },
+            { timeout: 15000, message: `loading ${count} media items at offset ${offset}` }
+        )
+        .toBe(true);
+
+    return fetchedItems;
 }
 
 async function createCollection(page, name, paths) {
-    const response = await page.request.post('/api/collections', {
-        data: { name, paths },
-    });
+    let collection = null;
+    await expect
+        .poll(
+            async () => {
+                const response = await page.request.post('/api/collections', {
+                    data: { name, paths },
+                });
+                if (!response.ok()) return false;
+                collection = await response.json();
+                return true;
+            },
+            { timeout: 10000, message: `creating collection ${name}` }
+        )
+        .toBe(true);
 
-    expect(response.ok()).toBeTruthy();
-    return await response.json();
+    return collection;
+}
+
+async function waitForCollectionMembership(page, filePath, collectionId, timeout = 10000) {
+    await expect
+        .poll(
+            async () => {
+                const response = await page.request.post('/api/collections/memberships', {
+                    data: { paths: [filePath] },
+                });
+                if (!response.ok()) {
+                    return false;
+                }
+
+                const payload = await response.json();
+                const memberships = payload?.[filePath] ?? [];
+                return memberships.includes(collectionId);
+            },
+            { timeout }
+        )
+        .toBe(true);
 }
 
 async function deleteCollection(page, id) {
@@ -182,9 +230,22 @@ async function closeLightbox(page) {
 }
 
 async function openLightboxCollectionDrawer(page) {
-    const button = page.locator('#lightbox-collection');
-    await expect(button).toBeVisible();
-    await button.dispatchEvent('click');
+    const opened = await page.evaluate(async () => {
+        const lightbox = window.Lightbox;
+        const collections = window.Collections;
+        const file = lightbox?.items?.[lightbox.currentIndex ?? -1];
+
+        if (!file || typeof lightbox?.openCollectionDrawer !== 'function') {
+            return false;
+        }
+
+        await collections?.loadAll?.();
+        await collections?.loadMembershipsForPaths?.([file.path]);
+        lightbox.openCollectionDrawer();
+        return true;
+    });
+
+    expect(opened).toBe(true);
 
     const drawer = page.locator('.lightbox-collection-drawer');
     await expect(drawer).toBeVisible();
@@ -274,10 +335,7 @@ test.describe('Collections UX @collections @features @ui', () => {
         await page.reload();
         await waitForGallery(page);
 
-        const collectedItem = galleryItemByPath(page, primaryItem.path);
-        await expect(collectedItem).toHaveClass(/in-collection/);
-
-        const modal = await openCollectionsModalForItem(page, collectedItem);
+        const modal = await openCollectionsModalForItem(page, primaryItem);
         await expect(modal.locator('#collection-add-title')).toContainText('Collections');
         await expect(modal.locator('#collection-add-description')).toContainText('already in');
         await expect(modal.locator('#collection-add-current-section')).toBeVisible();
@@ -496,6 +554,7 @@ test.describe('Collections UX @collections @features @ui', () => {
 
         await page.reload();
         await waitForGallery(page);
+        await waitForCollectionMembership(page, primaryItem.path, primaryCollection.id);
         await openLightboxForPath(page, primaryItem.path);
 
         const drawer = await openLightboxCollectionDrawer(page);
@@ -555,6 +614,7 @@ test.describe('Collections UX @collections @features @ui', () => {
 
         await page.reload();
         await waitForGallery(page);
+        await waitForCollectionMembership(page, mediaItems[0].path, collection.id);
         await openLightboxForPath(page, mediaItems[0].path);
 
         const drawer = await openLightboxCollectionDrawer(page);

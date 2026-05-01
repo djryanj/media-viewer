@@ -246,6 +246,7 @@ describe('SettingsManager Integration Tests', () => {
             getClockFormat: vi.fn(() => '24h'),
             isClockAlwaysVisible: vi.fn(() => false),
             toggleClock: vi.fn(() => true),
+            setClockEnabled: vi.fn(),
             setClockFormat: vi.fn(),
             setClockAlwaysVisible: vi.fn(),
             get: vi.fn((key) => {
@@ -878,7 +879,7 @@ describe('SettingsManager Integration Tests', () => {
         it('should handle clock toggle', () => {
             settingsManager.handleClockToggle();
 
-            expect(globalThis.Preferences.toggleClock).toHaveBeenCalled();
+            expect(globalThis.Preferences.setClockEnabled).toHaveBeenCalled();
             expect(globalThis.Clock.updateVisibility).toHaveBeenCalled();
         });
 

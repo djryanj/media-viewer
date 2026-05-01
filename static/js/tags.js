@@ -6,6 +6,7 @@ const Tags = {
     _recentTagNames: [],
     relatedTagSuggestions: [],
     _relatedSuggestionRequestId: 0,
+    pendingGalleryTagUpdates: new Map(),
 
     // Mobile soft-keyboard viewport handler (see _bindViewportResize)
     _viewportHandler: null,
@@ -18,6 +19,7 @@ const Tags = {
     // Store current tags for copy functionality
     currentTagsList: [], // Common tags (or all tags in single-item mode)
     allUniqueTags: [], // All unique tags across selected items (bulk mode only)
+    tagSources: null,
 
     init() {
         this._loadRecentTagNames();
@@ -302,6 +304,18 @@ const Tags = {
         return this.elements.tagModal && !this.elements.tagModal.classList.contains('hidden');
     },
 
+    isInteractionOverlayOpen() {
+        if (this.isModalOpen()) {
+            return true;
+        }
+
+        return (
+            typeof TagClipboard !== 'undefined' &&
+            typeof TagClipboard.isPasteModalOpen === 'function' &&
+            TagClipboard.isPasteModalOpen()
+        );
+    },
+
     /**
      * Copy tags to clipboard
      * @param {boolean} copyAll - If true, copy all unique tags; if false, copy common tags only
@@ -404,6 +418,147 @@ const Tags = {
         }
     },
 
+    _invalidateRelatedTagSuggestions() {
+        this._relatedSuggestionRequestId++;
+        this.relatedTagSuggestions = [];
+    },
+
+    _upsertAllTagsFromNames(tagNames) {
+        if (!Array.isArray(tagNames) || tagNames.length === 0) {
+            return;
+        }
+
+        if (!Array.isArray(this.allTags)) {
+            this.allTags = [];
+        }
+
+        const existingNames = new Set(this.allTags.map((tag) => this._normalizeTagName(tag.name)));
+        let added = false;
+
+        tagNames.forEach((tagName) => {
+            const trimmedTagName = String(tagName || '').trim();
+            const normalizedTagName = this._normalizeTagName(trimmedTagName);
+            if (!normalizedTagName || existingNames.has(normalizedTagName)) {
+                return;
+            }
+
+            existingNames.add(normalizedTagName);
+            this.allTags.push({
+                name: trimmedTagName,
+                itemCount: 1,
+            });
+            added = true;
+        });
+
+        if (!added) {
+            return;
+        }
+
+        this.allTags.sort((left, right) =>
+            left.name.localeCompare(right.name, undefined, {
+                sensitivity: 'base',
+                numeric: true,
+            })
+        );
+        this._reconcileRecentTagNames();
+    },
+
+    async _applySingleFileTags(tags, { refreshRelatedSuggestions = false } = {}) {
+        const nextTags = Array.isArray(tags) ? [...tags] : [];
+
+        this.currentTagsList = nextTags;
+        this.allUniqueTags = [...nextTags];
+        this.renderCurrentTags(nextTags);
+
+        if (refreshRelatedSuggestions) {
+            await this.refreshRelatedTagSuggestions();
+        } else {
+            this._invalidateRelatedTagSuggestions();
+        }
+
+        return nextTags;
+    },
+
+    async _applyBulkTagsByPath(tagsByPath, paths = this.bulkPaths, options = {}) {
+        const normalizedTagsByPath = {};
+        const tagSets = paths.map((path) => {
+            const tags = Array.isArray(tagsByPath?.[path]) ? [...tagsByPath[path]] : [];
+            normalizedTagsByPath[path] = tags;
+            return tags;
+        });
+
+        const commonTags = tagSets.reduce((common, tags, index) => {
+            if (index === 0) return new Set(tags);
+            return new Set([...common].filter((tag) => tags.includes(tag)));
+        }, new Set());
+
+        const allUniqueTags = new Set(tagSets.flat());
+
+        this.currentTagsList = Array.from(commonTags);
+        this.allUniqueTags = Array.from(allUniqueTags);
+
+        this.tagSources = new Map();
+        for (let i = 0; i < paths.length; i++) {
+            const tags = normalizedTagsByPath[paths[i]] || [];
+            tags.forEach((tag) => {
+                if (!this.tagSources.has(tag)) {
+                    this.tagSources.set(tag, []);
+                }
+                this.tagSources.get(tag).push(this.bulkNames[i] || paths[i]);
+            });
+        }
+
+        this.renderBulkTags(this.currentTagsList, this.allUniqueTags);
+
+        if (options.refreshRelatedSuggestions) {
+            await this.refreshRelatedTagSuggestions();
+        } else {
+            this._invalidateRelatedTagSuggestions();
+        }
+
+        return normalizedTagsByPath;
+    },
+
+    _queueGalleryTagUpdate(path, tags) {
+        if (!path) {
+            return;
+        }
+
+        this.pendingGalleryTagUpdates.set(path, Array.isArray(tags) ? [...tags] : []);
+    },
+
+    queueGalleryTagUpdates(paths, prefetchedTagsByPath = null) {
+        if (!Array.isArray(paths) || paths.length === 0) {
+            return;
+        }
+
+        paths.forEach((path) => {
+            const tags = prefetchedTagsByPath?.[path] || [];
+            this._queueGalleryTagUpdate(path, tags);
+        });
+    },
+
+    flushPendingGalleryTagUpdates() {
+        if (this.pendingGalleryTagUpdates.size === 0) {
+            return;
+        }
+
+        for (const [path, tags] of this.pendingGalleryTagUpdates.entries()) {
+            this.updateGalleryItemTagsDOM(path, tags);
+        }
+
+        this.pendingGalleryTagUpdates.clear();
+    },
+
+    _applyOrQueueGalleryTagUpdate(path, tags) {
+        if (this.isInteractionOverlayOpen()) {
+            this._queueGalleryTagUpdate(path, tags);
+            return;
+        }
+
+        this.updateGalleryItemTagsDOM(path, tags);
+    },
+
     async openModal(path, name) {
         this.isBulkMode = false;
         this.currentPath = path;
@@ -412,7 +567,9 @@ const Tags = {
         this.bulkNames = [];
         this.currentTagsList = [];
         this.allUniqueTags = [];
-        this.relatedTagSuggestions = [];
+        this.pendingGalleryTagUpdates.clear();
+        this._invalidateRelatedTagSuggestions();
+        this.tagSources = null;
 
         if (!this.elements.tagModal) return;
 
@@ -456,7 +613,9 @@ const Tags = {
         this.currentName = null;
         this.currentTagsList = [];
         this.allUniqueTags = [];
-        this.relatedTagSuggestions = [];
+        this.pendingGalleryTagUpdates.clear();
+        this._invalidateRelatedTagSuggestions();
+        this.tagSources = null;
 
         if (!this.elements.tagModal) return;
 
@@ -509,40 +668,14 @@ const Tags = {
             }
 
             const tagsByPath = await response.json();
-
-            const tagSets = paths.map((path) => tagsByPath[path] || []);
-
-            const commonTags = tagSets.reduce((common, tags, index) => {
-                if (index === 0) return new Set(tags);
-                return new Set([...common].filter((tag) => tags.includes(tag)));
-            }, new Set());
-
-            const allUniqueTags = new Set(tagSets.flat());
-
-            // Store for copy functionality
-            this.currentTagsList = Array.from(commonTags);
-            this.allUniqueTags = Array.from(allUniqueTags);
-
-            // Store tag sources for rendering
-            this.tagSources = new Map();
-            for (let i = 0; i < paths.length; i++) {
-                const tags = tagsByPath[paths[i]] || [];
-                tags.forEach((tag) => {
-                    if (!this.tagSources.has(tag)) {
-                        this.tagSources.set(tag, []);
-                    }
-                    this.tagSources.get(tag).push(this.bulkNames[i] || paths[i]);
-                });
-            }
-
-            this.renderBulkTags(Array.from(commonTags), Array.from(allUniqueTags));
-            await this.refreshRelatedTagSuggestions();
-            return tagsByPath;
+            return await this._applyBulkTagsByPath(tagsByPath, paths, {
+                refreshRelatedSuggestions: true,
+            });
         } catch (error) {
             console.error('Error loading bulk tags:', error);
             this.currentTagsList = [];
             this.allUniqueTags = [];
-            this.relatedTagSuggestions = [];
+            this._invalidateRelatedTagSuggestions();
             this.tagSources = new Map();
             this.renderBulkTags([], []);
             return null;
@@ -619,12 +752,9 @@ const Tags = {
             });
 
             if (response.ok) {
-                const _result = await response.json();
-
-                // Reload tags to reflect the change; reuse the returned tagsByPath map
-                // to avoid a second POST /api/tags/query round-trip.
-                const tagsByPath = await this.loadBulkTags(this.bulkPaths);
-                await this.loadAllTags();
+                const result = await response.json();
+                const tagsByPath = await this._applyBulkTagsByPath(result.tagsByPath || {});
+                this._upsertAllTagsFromNames([tagName]);
                 this.markTagRecent(tagName);
                 await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
                 this.showSuggestions(this.elements.tagInput?.value || '');
@@ -685,6 +815,7 @@ const Tags = {
             this.elements.tagModal.classList.add('hidden');
         }
         document.body.style.overflow = '';
+        this.flushPendingGalleryTagUpdates();
         this.currentPath = null;
         this.currentName = null;
         this.isBulkMode = false;
@@ -692,7 +823,7 @@ const Tags = {
         this.bulkNames = [];
         this.currentTagsList = [];
         this.allUniqueTags = [];
-        this.relatedTagSuggestions = [];
+        this._invalidateRelatedTagSuggestions();
         this.tagSources = null;
     },
 
@@ -709,16 +840,13 @@ const Tags = {
             const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
             if (response.ok) {
                 const tags = await response.json();
-                this.currentTagsList = tags || [];
-                this.allUniqueTags = tags || []; // Same as currentTagsList for single item
-                this.renderCurrentTags(tags);
-                await this.refreshRelatedTagSuggestions();
+                await this._applySingleFileTags(tags, { refreshRelatedSuggestions: true });
             }
         } catch (error) {
             console.error('Error loading file tags:', error);
             this.currentTagsList = [];
             this.allUniqueTags = [];
-            this.relatedTagSuggestions = [];
+            this._invalidateRelatedTagSuggestions();
         }
     },
 
@@ -1122,13 +1250,15 @@ const Tags = {
             });
 
             if (response.ok) {
-                await this.loadFileTags(this.currentPath);
-                await this.loadAllTags();
+                const result = await response.json();
+                const path = result.path || this.currentPath;
+                const tags = await this._applySingleFileTags(result.tags);
+                this._upsertAllTagsFromNames(tags);
                 this.markTagRecent(tagName);
-                // currentTagsList is freshly populated by loadFileTags(); update the
-                // gallery card directly instead of making a second GET /api/tags/file.
-                this.updateGalleryItemTagsDOM(this.currentPath, this.currentTagsList);
+                this._applyOrQueueGalleryTagUpdate(path, tags);
                 this.showSuggestions(this.elements.tagInput?.value || '');
+            } else {
+                throw new Error('Failed to add tag');
             }
         } catch (error) {
             console.error('Error adding tag:', error);
@@ -1150,10 +1280,8 @@ const Tags = {
 
             if (response.ok) {
                 const result = await response.json();
-                // Reuse the tagsByPath map already fetched by loadBulkTags() to
-                // update gallery cards without a second POST /api/tags/query.
-                const tagsByPath = await this.loadBulkTags(this.bulkPaths);
-                await this.loadAllTags();
+                const tagsByPath = await this._applyBulkTagsByPath(result.tagsByPath || {});
+                this._upsertAllTagsFromNames([tagName]);
                 this.markTagRecent(tagName);
                 await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
                 this.showSuggestions(this.elements.tagInput?.value || '');
@@ -1182,12 +1310,13 @@ const Tags = {
             });
 
             if (response.ok) {
-                await this.loadFileTags(this.currentPath);
-                await this.loadAllTags();
-                // currentTagsList is freshly populated by loadFileTags(); update the
-                // gallery card directly instead of making a second GET /api/tags/file.
-                this.updateGalleryItemTagsDOM(this.currentPath, this.currentTagsList);
+                const result = await response.json();
+                const path = result.path || this.currentPath;
+                const tags = await this._applySingleFileTags(result.tags);
+                this._applyOrQueueGalleryTagUpdate(path, tags);
                 this.showSuggestions(this.elements.tagInput?.value || '');
+            } else {
+                throw new Error('Failed to remove tag');
             }
         } catch (error) {
             console.error('Error removing tag:', error);
@@ -1209,10 +1338,7 @@ const Tags = {
 
             if (response.ok) {
                 const result = await response.json();
-                // Reuse the tagsByPath map already fetched by loadBulkTags() to
-                // update gallery cards without a second POST /api/tags/query.
-                const tagsByPath = await this.loadBulkTags(this.bulkPaths);
-                await this.loadAllTags();
+                const tagsByPath = await this._applyBulkTagsByPath(result.tagsByPath || {});
                 await this.batchRefreshGalleryItemTags(this.bulkPaths, tagsByPath);
                 this.showSuggestions(this.elements.tagInput?.value || '');
 
@@ -1252,7 +1378,7 @@ const Tags = {
         if (prefetchedTagsByPath) {
             for (const path of visiblePaths) {
                 const tags = prefetchedTagsByPath[path] || [];
-                this.updateGalleryItemTagsDOM(path, tags);
+                this._applyOrQueueGalleryTagUpdate(path, tags);
             }
             return;
         }
@@ -1273,7 +1399,7 @@ const Tags = {
 
             for (const path of visiblePaths) {
                 const tags = tagsByPath[path] || [];
-                this.updateGalleryItemTagsDOM(path, tags);
+                this._applyOrQueueGalleryTagUpdate(path, tags);
             }
         } catch (error) {
             console.error('Error batch refreshing tags:', error);
@@ -1324,7 +1450,8 @@ const Tags = {
                 }
                 this.renderTagsInContainer(desktopTagsContainer, tags, path, false);
             } else if (desktopTagsContainer) {
-                desktopTagsContainer.innerHTML = '';
+                delete desktopTagsContainer.dataset.allTags;
+                desktopTagsContainer.replaceChildren();
             }
         }
     },
@@ -1348,17 +1475,22 @@ const Tags = {
      * Render tags into a container element
      */
     renderTagsInContainer(container, tags, itemPath, isMobile) {
-        container.innerHTML = '';
-
         if (!tags || tags.length === 0) {
             delete container.dataset.allTags;
+            container.replaceChildren();
             return;
         }
 
-        container.dataset.allTags = JSON.stringify(tags);
+        const serializedTags = JSON.stringify(tags);
+        if (container.dataset.allTags === serializedTags) {
+            return;
+        }
+
+        container.dataset.allTags = serializedTags;
 
         const displayTags = tags.slice(0, 3);
         const moreCount = tags.length - 3;
+        const children = [];
 
         displayTags.forEach((tag) => {
             if (isMobile) {
@@ -1366,7 +1498,7 @@ const Tags = {
                 tagEl.className = 'item-tag';
                 tagEl.textContent = tag;
                 tagEl.dataset.tag = tag;
-                container.appendChild(tagEl);
+                children.push(tagEl);
             } else {
                 const tagEl = document.createElement('span');
                 tagEl.className = 'item-tag';
@@ -1390,7 +1522,7 @@ const Tags = {
                 tagText.title = `Search for "${tag}"`;
                 tagEl.appendChild(tagText);
 
-                container.appendChild(tagEl);
+                children.push(tagEl);
             }
         });
 
@@ -1399,8 +1531,10 @@ const Tags = {
             moreEl.className = 'item-tag more';
             moreEl.textContent = `+${moreCount}`;
             moreEl.title = 'Click to see all tags';
-            container.appendChild(moreEl);
+            children.push(moreEl);
         }
+
+        container.replaceChildren(...children);
     },
 
     escapeHtml(text) {

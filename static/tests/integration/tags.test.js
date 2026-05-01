@@ -170,6 +170,7 @@ describe('Tags Integration Tests', () => {
         // Mock TagClipboard
         const mockTagClipboard = {
             copyTagsDirect: vi.fn(),
+            isPasteModalOpen: vi.fn(() => false),
         };
 
         // Mock Lightbox
@@ -458,6 +459,24 @@ describe('Tags Integration Tests', () => {
 
             expect(globalThis.Lightbox.refreshCurrentItemTags).toHaveBeenCalled();
         });
+
+        it('should flush queued gallery tag updates', () => {
+            const flushSpy = vi
+                .spyOn(Tags, 'updateGalleryItemTagsDOM')
+                .mockImplementation(() => {});
+            Tags.pendingGalleryTagUpdates.set('/path.jpg', ['queued']);
+
+            Tags.closeModal();
+
+            expect(flushSpy).toHaveBeenCalledWith('/path.jpg', ['queued']);
+            expect(Tags.pendingGalleryTagUpdates.size).toBe(0);
+        });
+
+        it('should treat the paste modal as an active interaction overlay', () => {
+            globalThis.TagClipboard.isPasteModalOpen.mockReturnValue(true);
+
+            expect(Tags.isInteractionOverlayOpen()).toBe(true);
+        });
     });
 
     describe('Close Modal With History', () => {
@@ -572,7 +591,11 @@ describe('Tags Integration Tests', () => {
             Tags.currentPath = '/path/to/file.jpg';
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve([]),
+                json: () =>
+                    Promise.resolve({
+                        path: '/path/to/file.jpg',
+                        tags: ['newtag'],
+                    }),
             });
         });
 
@@ -588,20 +611,29 @@ describe('Tags Integration Tests', () => {
             );
         });
 
-        it('should reload file tags after adding', async () => {
-            const loadSpy = vi.spyOn(Tags, 'loadFileTags').mockResolvedValue();
+        it('should update current tags from the mutation response', async () => {
+            const applySpy = vi.spyOn(Tags, '_applySingleFileTags');
 
             await Tags.addTag('newtag');
 
-            expect(loadSpy).toHaveBeenCalledWith('/path/to/file.jpg');
+            expect(applySpy).toHaveBeenCalledWith(['newtag']);
+            expect(Tags.currentTagsList).toEqual(['newtag']);
         });
 
-        it('should reload all tags after adding', async () => {
+        it('should not reload all tags after adding', async () => {
             const loadAllSpy = vi.spyOn(Tags, 'loadAllTags').mockResolvedValue();
 
             await Tags.addTag('newtag');
 
-            expect(loadAllSpy).toHaveBeenCalled();
+            expect(loadAllSpy).not.toHaveBeenCalled();
+        });
+
+        it('should queue gallery updates while the modal is open', async () => {
+            mockElements['tag-modal'].classList.contains = vi.fn(() => false);
+
+            await Tags.addTag('newtag');
+
+            expect(Tags.pendingGalleryTagUpdates.get('/path/to/file.jpg')).toEqual(['newtag']);
         });
 
         it('should not add when no currentPath', async () => {
@@ -627,7 +659,11 @@ describe('Tags Integration Tests', () => {
             Tags.currentPath = '/path/to/file.jpg';
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve([]),
+                json: () =>
+                    Promise.resolve({
+                        path: '/path/to/file.jpg',
+                        tags: [],
+                    }),
             });
         });
 
@@ -643,12 +679,13 @@ describe('Tags Integration Tests', () => {
             );
         });
 
-        it('should reload file tags after removing', async () => {
-            const loadSpy = vi.spyOn(Tags, 'loadFileTags').mockResolvedValue();
+        it('should update current tags from the mutation response', async () => {
+            const applySpy = vi.spyOn(Tags, '_applySingleFileTags');
 
             await Tags.removeTag('oldtag');
 
-            expect(loadSpy).toHaveBeenCalledWith('/path/to/file.jpg');
+            expect(applySpy).toHaveBeenCalledWith([]);
+            expect(Tags.currentTagsList).toEqual([]);
         });
 
         it('should not remove when no currentPath', async () => {
@@ -675,7 +712,14 @@ describe('Tags Integration Tests', () => {
                 if (url === '/api/tags/bulk') {
                     return Promise.resolve({
                         ok: true,
-                        json: () => Promise.resolve({ success: 2 }),
+                        json: () =>
+                            Promise.resolve({
+                                success: 2,
+                                tagsByPath: {
+                                    '/path1.jpg': ['tag1', 'newtag'],
+                                    '/path2.jpg': ['tag1', 'newtag'],
+                                },
+                            }),
                     });
                 }
 
@@ -691,15 +735,7 @@ describe('Tags Integration Tests', () => {
                     json: () => Promise.resolve([]),
                 });
             });
-            // Mock fetchWithTimeout for loadBulkTags calls
-            globalThis.fetchWithTimeout.mockResolvedValue({
-                ok: true,
-                json: () =>
-                    Promise.resolve({
-                        '/path1.jpg': ['tag1'],
-                        '/path2.jpg': ['tag1'],
-                    }),
-            });
+            globalThis.fetchWithTimeout.mockReset();
         });
 
         it('should add tag to all items', async () => {
@@ -725,7 +761,36 @@ describe('Tags Integration Tests', () => {
             );
         });
 
+        it('should not reload all tags after bulk add', async () => {
+            const loadAllSpy = vi.spyOn(Tags, 'loadAllTags').mockResolvedValue();
+
+            await Tags.addBulkTag('newtag');
+
+            expect(loadAllSpy).not.toHaveBeenCalled();
+        });
+
         it('should remove tag from all items', async () => {
+            mockFetch.mockImplementationOnce((url) => {
+                if (url === '/api/tags/bulk') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                success: 2,
+                                tagsByPath: {
+                                    '/path1.jpg': ['tag1'],
+                                    '/path2.jpg': ['tag1'],
+                                },
+                            }),
+                    });
+                }
+
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([]),
+                });
+            });
+
             await Tags.removeBulkTag('oldtag');
 
             expect(mockFetch).toHaveBeenCalledWith(
@@ -741,6 +806,27 @@ describe('Tags Integration Tests', () => {
         });
 
         it('should show success toast after bulk remove', async () => {
+            mockFetch.mockImplementationOnce((url) => {
+                if (url === '/api/tags/bulk') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                success: 2,
+                                tagsByPath: {
+                                    '/path1.jpg': ['tag1'],
+                                    '/path2.jpg': ['tag1'],
+                                },
+                            }),
+                    });
+                }
+
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([]),
+                });
+            });
+
             await Tags.removeBulkTag('oldtag');
 
             expect(globalThis.Gallery.showToast).toHaveBeenCalledWith(
@@ -760,14 +846,30 @@ describe('Tags Integration Tests', () => {
         });
 
         it('should merge a partial tag to all items', async () => {
-            const loadSpy = vi.spyOn(Tags, 'loadBulkTags').mockResolvedValue({
-                '/path1.jpg': ['tag1', 'partial'],
-                '/path2.jpg': ['tag1', 'partial'],
-            });
             const loadAllSpy = vi.spyOn(Tags, 'loadAllTags').mockResolvedValue();
             const refreshSpy = vi.spyOn(Tags, 'batchRefreshGalleryItemTags').mockResolvedValue();
             const recentSpy = vi.spyOn(Tags, 'markTagRecent').mockImplementation(() => {});
             const showSpy = vi.spyOn(Tags, 'showSuggestions').mockImplementation(() => {});
+            mockFetch.mockImplementationOnce((url) => {
+                if (url === '/api/tags/bulk') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                success: 2,
+                                tagsByPath: {
+                                    '/path1.jpg': ['tag1', 'partial'],
+                                    '/path2.jpg': ['tag1', 'partial'],
+                                },
+                            }),
+                    });
+                }
+
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([]),
+                });
+            });
 
             await Tags.mergeTagToAll('partial');
 
@@ -781,8 +883,7 @@ describe('Tags Integration Tests', () => {
                     }),
                 })
             );
-            expect(loadSpy).toHaveBeenCalledWith(['/path1.jpg', '/path2.jpg']);
-            expect(loadAllSpy).toHaveBeenCalled();
+            expect(loadAllSpy).not.toHaveBeenCalled();
             expect(recentSpy).toHaveBeenCalledWith('partial');
             expect(refreshSpy).toHaveBeenCalledWith(['/path1.jpg', '/path2.jpg'], {
                 '/path1.jpg': ['tag1', 'partial'],

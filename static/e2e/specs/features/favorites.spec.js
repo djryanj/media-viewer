@@ -27,10 +27,17 @@ test.describe.configure({ mode: 'serial' });
  * @param {string} type   – "image" | "video" | "folder"
  */
 async function apiFavorite(page, path, name, type = 'image') {
-    const res = await page.request.post('/api/favorites', {
-        data: { path, name, type },
-    });
-    expect(res.ok(), `POST /api/favorites for "${path}" should succeed`).toBe(true);
+    await expect
+        .poll(
+            async () => {
+                const res = await page.request.post('/api/favorites', {
+                    data: { path, name, type },
+                });
+                return res.ok();
+            },
+            { timeout: 10000, message: `POST /api/favorites for "${path}" should succeed` }
+        )
+        .toBe(true);
 }
 
 /**
@@ -212,9 +219,9 @@ const PROJECT_PATHS = {
     },
     webkit: {
         rootPrimary: 'picsum_011.jpg',
-        subPrimary: 'New folder/picsum_011.jpg',
-        subSecondary: 'New folder/picsum_012.jpg',
-        otherFolder: 'folder (1)',
+        subPrimary: 'folder1/picsum_001.jpg',
+        subSecondary: 'folder1/picsum_002.jpg',
+        otherFolder: 'folder2',
     },
     'mobile-chrome': {
         rootPrimary: 'photo (1).jpg',
@@ -224,20 +231,20 @@ const PROJECT_PATHS = {
     },
     'mobile-safari': {
         rootPrimary: 'picsum_016.jpg',
-        subPrimary: 'New folder/picsum_016.jpg',
-        subSecondary: 'New folder/picsum_017.jpg',
+        subPrimary: 'folder1/picsum_003.jpg',
+        subSecondary: 'folder1/picsum_004.jpg',
         otherFolder: 'folder1',
     },
     tablet: {
         rootPrimary: 'picsum_021.jpg',
-        subPrimary: 'New folder/picsum_021.jpg',
-        subSecondary: 'New folder/picsum_022.jpg',
-        otherFolder: 'folder2',
+        subPrimary: 'folder2/picsum_006.jpg',
+        subSecondary: 'folder2/picsum_007.jpg',
+        otherFolder: 'folder (1)',
     },
     'android-firefox': {
         rootPrimary: 'picsum_026.jpg',
-        subPrimary: 'New folder/picsum_026.jpg',
-        subSecondary: 'New folder/picsum_027.jpg',
+        subPrimary: 'folder2/picsum_008.jpg',
+        subSecondary: 'folder2/picsum_009.jpg',
         otherFolder: 'folder with spaces',
     },
 };
@@ -467,7 +474,14 @@ test.describe('Favorites Strip – add/remove from subfolder @favorites @feature
         await loginHelpers.login(page);
 
         await page.goto(`/?path=${encodeURIComponent(parentPath(paths.subPrimary))}`);
-        await page.waitForSelector(SEL.galleryItem, { timeout: 15000 });
+
+        try {
+            await page.waitForSelector(SEL.galleryItem, { timeout: 15000 });
+        } catch (e) {
+            // Mobile Safari occasionally stalls on direct deep-link navigation; reload to recover the network state
+            await page.reload();
+            await page.waitForSelector(SEL.galleryItem, { timeout: 15000 });
+        }
 
         const targetItem = page.locator(`.gallery-item[data-path="${paths.subPrimary}"]`).first();
 

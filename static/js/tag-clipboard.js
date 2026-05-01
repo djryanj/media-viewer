@@ -644,6 +644,15 @@ const TagClipboard = {
         this.newlyAddedTags = [];
     },
 
+    isPasteModalOpen() {
+        const modal = document.getElementById('paste-tags-modal');
+        return !!modal && !modal.classList.contains('hidden');
+    },
+
+    shouldDeferGalleryRefresh() {
+        return typeof ItemSelection !== 'undefined' && ItemSelection.isActive;
+    },
+
     async confirmPaste(modal) {
         const destinationPaths = JSON.parse(modal.dataset.paths || '[]');
         const mode = modal.dataset.mode || 'paste';
@@ -672,11 +681,6 @@ const TagClipboard = {
             this.sourcePath &&
             newTags.length > 0;
 
-        modal.classList.add('hidden');
-        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('paste-tags-modal')) {
-            HistoryManager.removeState('paste-tags-modal');
-        }
-
         await this.executePaste(
             destinationPaths,
             existingTags,
@@ -685,82 +689,117 @@ const TagClipboard = {
             mode
         );
 
+        modal.classList.add('hidden');
+        if (typeof HistoryManager !== 'undefined' && HistoryManager.hasState('paste-tags-modal')) {
+            HistoryManager.removeState('paste-tags-modal');
+        }
+
+        if (
+            !this.shouldDeferGalleryRefresh() &&
+            typeof Tags !== 'undefined' &&
+            typeof Tags.flushPendingGalleryTagUpdates === 'function'
+        ) {
+            Tags.flushPendingGalleryTagUpdates();
+        }
+
         this.mergeItems = null;
         this.mergeTags = null;
         this.mergeTagSources = null;
         this.newlyAddedTags = [];
-
-        if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
-            ItemSelection.exitSelectionModeWithHistory();
-        }
     },
 
     async executePaste(destinationPaths, existingTags, newTags, includeSourceForNewTags, _mode) {
         let successCount = 0;
         let errorCount = 0;
         const allAffectedPaths = new Set(destinationPaths);
+        const tagsByPath = {};
 
-        // PERF: Send all existing tags in a single bulk request instead of
-        // one request per tag. The server handles the entire batch in one
-        // transaction, reducing N round trips to 1.
-        if (existingTags.length > 0) {
-            try {
-                const response = await fetch('/api/tags/bulk', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        paths: destinationPaths,
-                        tags: existingTags,
-                    }),
+        const mergeTagsByPath = (incomingTagsByPath) => {
+            if (!incomingTagsByPath || typeof incomingTagsByPath !== 'object') {
+                return;
+            }
+
+            Object.entries(incomingTagsByPath).forEach(([path, tags]) => {
+                tagsByPath[path] = Array.isArray(tags) ? [...tags] : [];
+            });
+        };
+
+        const operations = [];
+
+        if (includeSourceForNewTags) {
+            if (existingTags.length > 0) {
+                operations.push({
+                    paths: destinationPaths,
+                    tags: existingTags,
+                });
+            }
+
+            if (newTags.length > 0) {
+                const pathsForNewTags = [...destinationPaths];
+
+                if (this.sourcePath && !pathsForNewTags.includes(this.sourcePath)) {
+                    pathsForNewTags.push(this.sourcePath);
+                }
+
+                operations.push({
+                    paths: pathsForNewTags,
+                    tags: newTags,
                 });
 
-                if (response.ok) {
-                    const result = await response.json();
-                    successCount = result.success || 0;
-                } else {
-                    errorCount += existingTags.length;
+                if (this.sourcePath) {
+                    allAffectedPaths.add(this.sourcePath);
                 }
-            } catch (error) {
-                console.error('Error applying existing tags:', error);
-                errorCount += existingTags.length;
+            }
+        } else {
+            const combinedTags = [...existingTags, ...newTags];
+            if (combinedTags.length > 0) {
+                operations.push({
+                    paths: destinationPaths,
+                    tags: combinedTags,
+                });
             }
         }
 
-        if (newTags.length > 0) {
-            const pathsForNewTags = [...destinationPaths];
-
-            if (includeSourceForNewTags && this.sourcePath) {
-                if (!pathsForNewTags.includes(this.sourcePath)) {
-                    pathsForNewTags.push(this.sourcePath);
-                }
-                allAffectedPaths.add(this.sourcePath);
-            }
-
+        for (const operation of operations) {
             try {
                 const response = await fetch('/api/tags/bulk', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        paths: pathsForNewTags,
-                        tags: newTags,
+                        paths: operation.paths,
+                        tags: operation.tags,
                     }),
                 });
 
                 if (response.ok) {
                     const result = await response.json();
-                    successCount = Math.max(successCount, result.success || 0);
+                    successCount += result.success || 0;
+                    mergeTagsByPath(result.tagsByPath);
                 } else {
-                    errorCount += newTags.length;
+                    errorCount += operation.tags.length;
                 }
             } catch (error) {
-                console.error('Error applying new tags:', error);
-                errorCount += newTags.length;
+                console.error('Error applying tags:', error);
+                errorCount += operation.tags.length;
             }
         }
 
         if (typeof Tags !== 'undefined') {
-            await Tags.batchRefreshGalleryItemTags(Array.from(allAffectedPaths));
-            await Tags.loadAllTags();
+            if (typeof Tags._upsertAllTagsFromNames === 'function') {
+                Tags._upsertAllTagsFromNames([...existingTags, ...newTags]);
+            }
+
+            const affectedPaths = Array.from(allAffectedPaths);
+            const prefetchedTagsByPath = Object.keys(tagsByPath).length > 0 ? tagsByPath : null;
+
+            if (
+                this.shouldDeferGalleryRefresh() &&
+                typeof Tags.queueGalleryTagUpdates === 'function'
+            ) {
+                Tags.queueGalleryTagUpdates(affectedPaths, prefetchedTagsByPath);
+            } else {
+                await Tags.batchRefreshGalleryItemTags(affectedPaths, prefetchedTagsByPath);
+            }
         }
 
         const totalTags = existingTags.length + newTags.length;
@@ -781,6 +820,12 @@ const TagClipboard = {
         }
 
         Gallery.showToast(message);
+
+        return {
+            successCount,
+            errorCount,
+            tagsByPath,
+        };
     },
 
     escapeHtml(text) {

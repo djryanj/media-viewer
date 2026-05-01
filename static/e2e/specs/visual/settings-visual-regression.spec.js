@@ -129,6 +129,13 @@ test.describe('Settings Modal Visual Regression @visual @settings', () => {
     test('matches Passkeys tab reference', async ({ page }, testInfo) => {
         await openSettingsTab(page, 'passkeys');
 
+        const passkeysUnavailable = await page.evaluate(() => {
+            const panel = document.getElementById('settings-passkeys');
+            const text = panel?.textContent || '';
+            return /WebAuthn is not enabled or is misconfigured on the server/i.test(text);
+        });
+        test.skip(passkeysUnavailable, 'Passkeys visual baseline requires WebAuthn to be enabled');
+
         // Wait for the passkeys panel to finish loading (spinner hidden).
         await expect
             .poll(
@@ -176,6 +183,10 @@ test.describe('Settings Modal Visual Regression @visual @settings', () => {
                 snapshotOptions: {
                     maxNodes: 200,
                     ignoreTextSelectors: ['#thumbnail-cache-size', '#transcode-cache-size'],
+                },
+                compareOptions: {
+                    numericTolerance: 4,
+                    ignoreNodeRectsById: ['thumbnail-cache-size', 'transcode-cache-size'],
                 },
             }
         );

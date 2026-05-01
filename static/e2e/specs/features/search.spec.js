@@ -275,7 +275,16 @@ test.describe('Search @search @features', () => {
                 return url.searchParams.get('q') === query && url.searchParams.get('page') === '2';
             });
 
-            await page.locator(SEL.resultsLoadMore).click();
+            await page.locator(SEL.resultsLoadMore).evaluate((button) => {
+                button.scrollIntoView({ block: 'center' });
+                button.dispatchEvent(
+                    new MouseEvent('click', {
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true,
+                    })
+                );
+            });
             await secondPageResponse;
 
             await expect(page.locator(`${SEL.resultsGallery} .gallery-item`)).toHaveCount(

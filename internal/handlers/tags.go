@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,11 +41,69 @@ type BulkTagRequest struct {
 	Tags  []string `json:"tags,omitempty"`
 }
 
+// FileTagMutationResponse represents the response from a single-file tag mutation.
+type FileTagMutationResponse struct {
+	Status string   `json:"status"`
+	Path   string   `json:"path"`
+	Tags   []string `json:"tags"`
+}
+
 // BulkTagResponse represents the response from a bulk tag operation
 type BulkTagResponse struct {
-	Success int      `json:"success"`
-	Failed  int      `json:"failed"`
-	Errors  []string `json:"errors,omitempty"`
+	Success    int                 `json:"success"`
+	Failed     int                 `json:"failed"`
+	Errors     []string            `json:"errors,omitempty"`
+	TagsByPath map[string][]string `json:"tagsByPath,omitempty"`
+}
+
+func (h *Handlers) getFileTagsOrEmpty(ctx context.Context, path string) ([]string, error) {
+	tags, err := h.db.GetFileTags(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if tags == nil {
+		return []string{}, nil
+	}
+	return tags, nil
+}
+
+func (h *Handlers) getBatchFileTagsOrEmpty(ctx context.Context, paths []string) (map[string][]string, error) {
+	tagsByPath, err := h.db.GetBatchFileTags(ctx, paths)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]string, len(paths))
+	for _, path := range paths {
+		if tags, ok := tagsByPath[path]; ok && tags != nil {
+			result[path] = tags
+			continue
+		}
+		result[path] = []string{}
+	}
+
+	return result, nil
+}
+
+func buildBulkTagResponse(successCount int, errs []error, tagsByPath map[string][]string) BulkTagResponse {
+	response := BulkTagResponse{
+		Success:    successCount,
+		Failed:     len(errs),
+		TagsByPath: tagsByPath,
+	}
+
+	if len(errs) > 0 {
+		errStrings := make([]string, 0, min(len(errs), 10))
+		for i, e := range errs {
+			if i >= 10 {
+				break
+			}
+			errStrings = append(errStrings, e.Error())
+		}
+		response.Errors = errStrings
+	}
+
+	return response
 }
 
 // GetAllTags returns all tags
@@ -170,7 +229,14 @@ func (h *Handlers) AddTagToFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSONStatus(w, "ok")
+	tags, err := h.getFileTagsOrEmpty(ctx, req.Path)
+	if err != nil {
+		http.Error(w, "Failed to load updated tags", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, FileTagMutationResponse{Status: "ok", Path: req.Path, Tags: tags})
 }
 
 // RemoveTagFromFile removes a tag from a file
@@ -193,7 +259,14 @@ func (h *Handlers) RemoveTagFromFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSONStatus(w, "ok")
+	tags, err := h.getFileTagsOrEmpty(ctx, req.Path)
+	if err != nil {
+		http.Error(w, "Failed to load updated tags", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, FileTagMutationResponse{Status: "ok", Path: req.Path, Tags: tags})
 }
 
 // BulkAddTag adds one or more tags to multiple files in a single transaction.
@@ -236,24 +309,14 @@ func (h *Handlers) BulkAddTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := BulkTagResponse{
-		Success: successCount,
-		Failed:  len(errs),
-	}
-
-	if len(errs) > 0 {
-		errStrings := make([]string, 0, min(len(errs), 10))
-		for i, e := range errs {
-			if i >= 10 {
-				break
-			}
-			errStrings = append(errStrings, e.Error())
-		}
-		response.Errors = errStrings
+	tagsByPath, err := h.getBatchFileTagsOrEmpty(ctx, req.Paths)
+	if err != nil {
+		http.Error(w, "Failed to load updated tags", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, response)
+	writeJSON(w, buildBulkTagResponse(successCount, errs, tagsByPath))
 }
 
 // BulkRemoveTag removes one or more tags from multiple files in a single transaction.
@@ -289,24 +352,14 @@ func (h *Handlers) BulkRemoveTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := BulkTagResponse{
-		Success: successCount,
-		Failed:  len(errs),
-	}
-
-	if len(errs) > 0 {
-		errStrings := make([]string, 0, min(len(errs), 10))
-		for i, e := range errs {
-			if i >= 10 {
-				break
-			}
-			errStrings = append(errStrings, e.Error())
-		}
-		response.Errors = errStrings
+	tagsByPath, err := h.getBatchFileTagsOrEmpty(ctx, req.Paths)
+	if err != nil {
+		http.Error(w, "Failed to load updated tags", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, response)
+	writeJSON(w, buildBulkTagResponse(successCount, errs, tagsByPath))
 }
 
 // SetFileTags replaces all tags for a file
@@ -329,7 +382,14 @@ func (h *Handlers) SetFileTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSONStatus(w, "ok")
+	tags, err := h.getFileTagsOrEmpty(ctx, req.Path)
+	if err != nil {
+		http.Error(w, "Failed to load updated tags", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, FileTagMutationResponse{Status: "ok", Path: req.Path, Tags: tags})
 }
 
 // GetFilesByTag returns files with a specific tag

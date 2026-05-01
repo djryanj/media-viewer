@@ -817,6 +817,37 @@ describe('InfiniteScroll Integration', () => {
         });
     });
 
+    describe('Loaded Item Windowing', () => {
+        it('should keep the mounted gallery slice smaller than loadedItems', async () => {
+            Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+            InfiniteScroll.elements.gallery.getBoundingClientRect = () => ({ top: 0 });
+            vi.spyOn(InfiniteScroll, '_getGridGeometry').mockReturnValue({
+                cols: 4,
+                gap: 0,
+                itemSize: 100,
+                rowHeight: 100,
+            });
+
+            const initialData = {
+                items: Array.from({ length: 200 }, (_, i) => ({
+                    name: `file${i}.jpg`,
+                    path: `/test/file${i}.jpg`,
+                    type: 'image',
+                    exists: true,
+                })),
+                totalItems: 200,
+            };
+
+            await InfiniteScroll.startForDirectory('/test', initialData);
+
+            const galleryItems = document.querySelectorAll('.gallery-item:not(.skeleton)');
+            expect(galleryItems.length).toBeLessThan(200);
+            expect(
+                parseInt(InfiniteScroll.elements.gallery.style.paddingBottom, 10)
+            ).toBeGreaterThan(0);
+        });
+    });
+
     describe('Virtual Spacer — skeleton grid', () => {
         it('should populate .virtual-spacer-grid with skeleton items when unloaded > 0', async () => {
             const initialData = {

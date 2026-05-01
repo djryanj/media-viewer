@@ -25,8 +25,8 @@ const (
 
 var errAutoTaggerStopped = errors.New("autotagger stopped")
 
-// runStats tracks autotagger progress for the active or most recent run.
-type runStats struct {
+// RunStatus tracks autotagger progress for the active or most recent run.
+type RunStatus struct {
 	InProgress    bool      `json:"inProgress"`
 	StartedAt     time.Time `json:"startedAt,omitempty"`
 	LastCompleted time.Time `json:"lastCompleted,omitempty"`
@@ -39,6 +39,13 @@ type runStats struct {
 	Failed        int       `json:"failed"`
 	LastError     string    `json:"lastError,omitempty"`
 }
+
+// Status exposes the current or most recent autotagger run state.
+type Status struct {
+	Run RunStatus `json:"run"`
+}
+
+type runStats = RunStatus
 
 // AutoTagger applies tags derived from EXIF/XMP metadata to indexed media files.
 //
@@ -106,6 +113,15 @@ func (a *AutoTagger) TriggerRun() {
 // Stop shuts down the background loop.
 func (a *AutoTagger) Stop() {
 	close(a.stopChan)
+}
+
+// Status returns a snapshot of the current or most recent run state.
+func (a *AutoTagger) Status() Status {
+	a.runMu.RLock()
+	stats := a.runStats
+	a.runMu.RUnlock()
+
+	return Status{Run: stats}
 }
 
 // loop waits for the first index completion then runs incremental passes on

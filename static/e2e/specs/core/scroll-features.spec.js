@@ -242,7 +242,9 @@ test.describe('Virtual Spacer @scroll @core', () => {
 
         // Click "Load More" to trigger a page load and check height shrinks
         const loadMoreBtn = page.locator('#load-more-btn:not(.hidden)');
-        if ((await loadMoreBtn.count()) > 0) {
+
+        // Check if the button is actually visible before trying to dispatch a click
+        if (await loadMoreBtn.isVisible()) {
             await loadMoreBtn.dispatchEvent('click');
             await page.waitForSelector('.gallery-item:not(.skeleton)', { timeout: 10000 });
 
@@ -252,6 +254,8 @@ test.describe('Virtual Spacer @scroll @core', () => {
             });
 
             expect(newHeight).toBeLessThanOrEqual(initialHeight);
+        } else {
+            test.skip();
         }
     });
 

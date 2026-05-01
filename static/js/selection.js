@@ -445,6 +445,14 @@ const ItemSelection = {
             this.selectItem(initialElement);
         }
 
+        if (this.elements.toolbar) {
+            this.elements.toolbar.classList.remove('hidden');
+        }
+        if (this.elements.statsBar) {
+            this.elements.statsBar.classList.add('selection-hidden');
+        }
+        this.updateToolbar();
+
         // Frame 1: inject overlay, toggle class, show toolbar.
         // These are all cheap operations (no descendant CSS rules on
         // .gallery.selection-mode, small element subtrees for toolbar/stats-bar).
@@ -464,12 +472,6 @@ const ItemSelection = {
             //    min-height media query; on desktop it matches no descendant
             //    rules so the style traversal cost is near-zero.
             this.elements.gallery.classList.add('selection-mode');
-
-            this.elements.toolbar.classList.remove('hidden');
-            if (this.elements.statsBar) {
-                this.elements.statsBar.classList.add('selection-hidden');
-            }
-            this.updateToolbar();
 
             // Frame 2: show all selection checkboxes.
             // Enabling a pre-created <style> element whose single rule is
@@ -522,6 +524,11 @@ const ItemSelection = {
             if (!el) return;
             el.classList.remove('selected');
             el.style.zIndex = ''; // clear inline z-index set by processPendingUpdates
+            const checkboxContainer = el.querySelector('.selection-checkbox');
+            if (checkboxContainer instanceof HTMLElement) {
+                checkboxContainer.style.opacity = '';
+                checkboxContainer.style.pointerEvents = '';
+            }
             const cb = el.querySelector('.select-checkbox');
             if (cb) cb.checked = false;
         });
@@ -555,6 +562,13 @@ const ItemSelection = {
             this.elements.statsBar.classList.remove('selection-hidden');
         }
         this.elements.toolbar.classList.add('hidden');
+
+        if (
+            typeof Tags !== 'undefined' &&
+            typeof Tags.flushPendingGalleryTagUpdates === 'function'
+        ) {
+            Tags.flushPendingGalleryTagUpdates();
+        }
     },
 
     exitSelectionModeWithHistory() {
@@ -597,6 +611,11 @@ const ItemSelection = {
         const path = item.dataset.path;
         if (this.selectedPaths.has(path)) {
             item.classList.add('selected');
+            const checkboxContainer = item.querySelector('.selection-checkbox');
+            if (checkboxContainer instanceof HTMLElement) {
+                checkboxContainer.style.opacity = '1';
+                checkboxContainer.style.pointerEvents = 'auto';
+            }
         }
     },
 
@@ -615,6 +634,11 @@ const ItemSelection = {
             if (this.selectedPaths.has(path)) {
                 item.classList.add('selected');
                 item.style.zIndex = '2'; // keep in sync with processPendingUpdates
+                const checkboxContainer = item.querySelector('.selection-checkbox');
+                if (checkboxContainer instanceof HTMLElement) {
+                    checkboxContainer.style.opacity = '1';
+                    checkboxContainer.style.pointerEvents = 'auto';
+                }
             }
         });
     },
@@ -759,6 +783,11 @@ const ItemSelection = {
                 // div.  Set inline rather than via a CSS descendant rule to avoid
                 // the .gallery.selection-mode .gallery-item traversal cost.
                 element.style.zIndex = isSelected ? '2' : '';
+                const checkboxContainer = element.querySelector('.selection-checkbox');
+                if (checkboxContainer instanceof HTMLElement) {
+                    checkboxContainer.style.opacity = isSelected ? '1' : '';
+                    checkboxContainer.style.pointerEvents = isSelected ? 'auto' : '';
+                }
                 const checkbox = element.querySelector('.select-checkbox');
                 if (checkbox) {
                     checkbox.checked = isSelected;
@@ -913,6 +942,11 @@ const ItemSelection = {
             );
             if (element) {
                 element.classList.remove('selected');
+                const checkboxContainer = element.querySelector('.selection-checkbox');
+                if (checkboxContainer instanceof HTMLElement) {
+                    checkboxContainer.style.opacity = '';
+                    checkboxContainer.style.pointerEvents = '';
+                }
             }
         });
 

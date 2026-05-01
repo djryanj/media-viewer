@@ -3,33 +3,109 @@ name: Auto Changelog for Bots
 on:
     pull_request:
         types: [opened, reopened]
+    issue_comment:
+        types: [created]
+    workflow_dispatch:
+        inputs:
+            pr_number:
+                description: PR number to update CHANGELOG.md for
+                required: true
+                type: string
 
 permissions:
     contents: write
+    issues: write
     pull-requests: read
 
 jobs:
     update-changelog:
         name: Update Changelog
-        # Only run for bot PRs
-        if: |
-            github.event.pull_request.user.login == 'dependabot[bot]' ||
-            github.event.pull_request.user.login == 'github-actions[bot]' ||
-            github.event.pull_request.user.login == 'renovate[bot]'
         runs-on: ubuntu-latest
         steps:
+            - name: Resolve PR context
+              id: pr_context
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+              env:
+                  INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+              with:
+                  script: |
+                      const botLogins = new Set([
+                        'dependabot[bot]',
+                        'github-actions[bot]',
+                        'renovate[bot]',
+                      ]);
+
+                      let prNumber = null;
+
+                      if (context.eventName === 'pull_request') {
+                        prNumber = context.payload.pull_request?.number;
+                      } else if (context.eventName === 'issue_comment') {
+                        if (!context.payload.issue?.pull_request) {
+                          core.info('Comment is not on a pull request; skipping.');
+                          core.setOutput('should_run', 'false');
+                          return;
+                        }
+
+                        const commentBody = (context.payload.comment?.body || '').trim();
+                        if (!/^\/auto-changelog\b/i.test(commentBody)) {
+                          core.info('Comment does not request auto-changelog; skipping.');
+                          core.setOutput('should_run', 'false');
+                          return;
+                        }
+
+                        prNumber = context.payload.issue.number;
+                      } else if (context.eventName === 'workflow_dispatch') {
+                        const rawPrNumber = (process.env.INPUT_PR_NUMBER || '').trim();
+                        prNumber = Number.parseInt(rawPrNumber, 10);
+                        if (!Number.isInteger(prNumber) || prNumber <= 0) {
+                          core.setFailed(`Invalid PR number: ${rawPrNumber || '<empty>'}`);
+                          return;
+                        }
+                      }
+
+                      if (!prNumber) {
+                        core.info('No pull request number resolved; skipping.');
+                        core.setOutput('should_run', 'false');
+                        return;
+                      }
+
+                      const { data: pr } = await github.rest.pulls.get({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        pull_number: prNumber,
+                      });
+
+                      if (!botLogins.has(pr.user.login)) {
+                        core.info(`PR #${prNumber} is owned by ${pr.user.login}, not a configured bot; skipping.`);
+                        core.setOutput('should_run', 'false');
+                        return;
+                      }
+
+                      core.setOutput('should_run', 'true');
+                      core.setOutput('pr_number', String(pr.number));
+                      core.setOutput('pr_title', pr.title);
+                      core.setOutput('pr_url', pr.html_url);
+                      core.setOutput('head_ref', pr.head.ref);
+                      core.setOutput('head_repo', pr.head.repo.full_name);
+
+            - name: Skip unsupported run
+              if: steps.pr_context.outputs.should_run != 'true'
+              run: echo "Skipping auto-changelog for this event or PR"
+
             - name: Checkout PR branch
+              if: steps.pr_context.outputs.should_run == 'true'
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
               with:
-                  ref: ${{ github.event.pull_request.head.ref }}
-                  repository: ${{ github.event.pull_request.head.repo.full_name }}
+                  ref: ${{ steps.pr_context.outputs.head_ref }}
+                  repository: ${{ steps.pr_context.outputs.head_repo }}
                   token: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Update CHANGELOG.md
+              if: steps.pr_context.outputs.should_run == 'true'
               env:
-                  PR_TITLE: ${{ github.event.pull_request.title }}
-                  PR_NUMBER: ${{ github.event.pull_request.number }}
-                  PR_URL: ${{ github.event.pull_request.html_url }}
+                  PR_TITLE: ${{ steps.pr_context.outputs.pr_title }}
+                  PR_NUMBER: ${{ steps.pr_context.outputs.pr_number }}
+                  PR_URL: ${{ steps.pr_context.outputs.pr_url }}
               run: |
                   set -e
 
@@ -122,6 +198,7 @@ jobs:
                   echo "Successfully added entry to CHANGELOG.md"
 
             - name: Check for changes
+              if: steps.pr_context.outputs.should_run == 'true'
               id: check_changes
               run: |
                   if git diff --quiet CHANGELOG.md; then
@@ -131,22 +208,22 @@ jobs:
                   fi
 
             - name: Commit changes
-              if: steps.check_changes.outputs.changed == 'true'
+              if: steps.pr_context.outputs.should_run == 'true' && steps.check_changes.outputs.changed == 'true'
               run: |
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
                   git add CHANGELOG.md
-                  git commit -m "docs: update CHANGELOG.md for PR #${{ github.event.pull_request.number }}"
+                  git commit -m "docs: update CHANGELOG.md for PR #${{ steps.pr_context.outputs.pr_number }}"
                   git push
 
             - name: Comment on PR
-              if: steps.check_changes.outputs.changed == 'true'
+              if: steps.pr_context.outputs.should_run == 'true' && steps.check_changes.outputs.changed == 'true'
               uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
               with:
                   script: |
                       await github.rest.issues.createComment({
                           owner: context.repo.owner,
                           repo: context.repo.repo,
-                          issue_number: context.issue.number,
+                          issue_number: Number('${{ steps.pr_context.outputs.pr_number }}'),
                           body: 'CHANGELOG.md has been automatically updated with this PR.'
                       });

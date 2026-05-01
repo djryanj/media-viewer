@@ -46,9 +46,7 @@ const TagTooltip = {
                 const itemPath = tooltipTag?.dataset.path;
 
                 if (tagName && itemPath && typeof Tags !== 'undefined') {
-                    Tags.removeTagFromItem(itemPath, tagName);
-                    // Refresh tooltip after removal
-                    setTimeout(() => {
+                    void Promise.resolve(Tags.removeTagFromItem(itemPath, tagName)).finally(() => {
                         if (this.currentTarget) {
                             const galleryItem = this.currentTarget.closest('.gallery-item');
                             if (!galleryItem) {
@@ -62,7 +60,7 @@ const TagTooltip = {
                                 this.hide();
                             }
                         }
-                    }, 100);
+                    });
                 }
                 return;
             }

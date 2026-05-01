@@ -1741,7 +1741,7 @@ describe('Lightbox Module', () => {
         });
 
         test('wrapped executePaste calls original', async () => {
-            const originalSpy = vi.fn(() => Promise.resolve());
+            const originalSpy = vi.fn(() => Promise.resolve({ tagsByPath: {} }));
             TagClipboard.executePaste = originalSpy;
 
             Lightbox._pasteRefreshHooked = false;
@@ -1759,7 +1759,9 @@ describe('Lightbox Module', () => {
         });
 
         test('wrapped executePaste triggers refresh when pending', async () => {
-            TagClipboard.executePaste = vi.fn(() => Promise.resolve());
+            TagClipboard.executePaste = vi.fn(() =>
+                Promise.resolve({ tagsByPath: { '/photo.jpg': ['from-bulk'] } })
+            );
             Lightbox._pasteRefreshHooked = false;
             Lightbox._pendingPasteRefresh = '/photo.jpg';
 
@@ -1770,12 +1772,12 @@ describe('Lightbox Module', () => {
             Lightbox._ensurePasteRefreshHook();
             await TagClipboard.executePaste([], [], [], false, 'paste');
 
-            expect(refreshSpy).toHaveBeenCalledWith('/photo.jpg');
+            expect(refreshSpy).toHaveBeenCalledWith('/photo.jpg', ['from-bulk']);
             expect(Lightbox._pendingPasteRefresh).toBeNull();
         });
 
         test('wrapped executePaste skips refresh when no pending path', async () => {
-            TagClipboard.executePaste = vi.fn(() => Promise.resolve());
+            TagClipboard.executePaste = vi.fn(() => Promise.resolve({ tagsByPath: {} }));
             Lightbox._pasteRefreshHooked = false;
             Lightbox._pendingPasteRefresh = null;
 
@@ -1838,6 +1840,18 @@ describe('Lightbox Module', () => {
             await Lightbox._refreshTagsAfterPaste('/photo.jpg');
 
             expect(Tags.updateGalleryItemTagsDOM).toHaveBeenCalledWith('/photo.jpg', ['a', 'b']);
+        });
+
+        test('uses prefetched tags without fetching again', async () => {
+            globalThis.fetch = vi.fn();
+
+            Lightbox.items = [{ path: '/photo.jpg', name: 'photo.jpg', type: 'image', tags: [] }];
+            Lightbox.currentIndex = 0;
+
+            await Lightbox._refreshTagsAfterPaste('/photo.jpg', ['prefetched']);
+
+            expect(globalThis.fetch).not.toHaveBeenCalled();
+            expect(Lightbox.items[0].tags).toEqual(['prefetched']);
         });
 
         test('re-renders drawer if open', async () => {

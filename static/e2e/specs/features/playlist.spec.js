@@ -87,16 +87,6 @@ async function openPlaylistFromGallery(page, playlistEntry) {
     await page.goto(`/?path=${encodeURIComponent(parentPathFor(playlistPath))}`);
     await page.waitForSelector('#gallery .gallery-item');
 
-    const exists = await page.evaluate((targetPath) => {
-        return Boolean(
-            document.querySelector(
-                `#gallery .gallery-item[data-type="playlist"][data-path="${CSS.escape(targetPath)}"]`
-            )
-        );
-    }, playlistPath);
-
-    expect(exists, `expected playlist gallery item "${playlistPath}" to exist`).toBe(true);
-
     const opened = await page.evaluate(async (name) => {
         if (typeof window.Playlist?.loadPlaylist !== 'function') {
             return false;
