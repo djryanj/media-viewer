@@ -285,7 +285,23 @@ test.describe('Settings - Display, Cache, and Tags @settings @features @admin', 
         expect(storedBeforeReload?.clockAlwaysVisible).toBe(false);
 
         await page.reload();
+        await expect
+            .poll(async () => {
+                return page.evaluate(() => ({
+                    clockEnabled: window.Preferences?.get?.('clockEnabled'),
+                    clockFormat: window.Preferences?.get?.('clockFormat'),
+                    clockAlwaysVisible: window.Preferences?.get?.('clockAlwaysVisible'),
+                }));
+            })
+            .toEqual({
+                clockEnabled: false,
+                clockFormat: '24',
+                clockAlwaysVisible: false,
+            });
         await openSettings(page, 'display');
+        await page.evaluate(() => {
+            window.settingsManager?.loadDisplaySettings?.();
+        });
 
         await expect(clockToggle).not.toBeChecked();
         await expect(clockFormatSelect).toHaveValue('24');

@@ -561,6 +561,19 @@ func TestAddTagToFileIntegration(t *testing.T) {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
 
+	var response FileTagMutationResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Path != "photo.jpg" {
+		t.Errorf("expected response path photo.jpg, got %q", response.Path)
+	}
+
+	if len(response.Tags) != 1 || response.Tags[0] != "vacation" {
+		t.Errorf("expected response tags [vacation], got %v", response.Tags)
+	}
+
 	// Verify tag was added
 	ctx := httptest.NewRequest(http.MethodGet, "/", http.NoBody).Context()
 	tags, err := h.db.GetFileTags(ctx, "photo.jpg")
@@ -640,6 +653,19 @@ func TestRemoveTagFromFileIntegration(t *testing.T) {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
 
+	var response FileTagMutationResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Path != "photo.jpg" {
+		t.Errorf("expected response path photo.jpg, got %q", response.Path)
+	}
+
+	if len(response.Tags) != 0 {
+		t.Errorf("expected empty response tags, got %v", response.Tags)
+	}
+
 	// Verify tag was removed
 	tags, err := h.db.GetFileTags(ctx, "photo.jpg")
 	if err != nil {
@@ -695,6 +721,18 @@ func TestBulkAddTagIntegration(t *testing.T) {
 	if response.Errors != nil {
 		t.Errorf("expected nil errors, got %v", response.Errors)
 	}
+
+	if got := response.TagsByPath["photo1.jpg"]; len(got) != 1 || got[0] != "vacation" {
+		t.Errorf("expected photo1.jpg tags [vacation], got %v", got)
+	}
+
+	if got := response.TagsByPath["photo2.jpg"]; len(got) != 1 || got[0] != "vacation" {
+		t.Errorf("expected photo2.jpg tags [vacation], got %v", got)
+	}
+
+	if got := response.TagsByPath["photo3.jpg"]; len(got) != 1 || got[0] != "vacation" {
+		t.Errorf("expected photo3.jpg tags [vacation], got %v", got)
+	}
 }
 
 // TestBulkAddTagPartialFailureIntegration tests bulk add with some failures
@@ -730,6 +768,14 @@ func TestBulkAddTagPartialFailureIntegration(t *testing.T) {
 
 	if response.Success < 1 {
 		t.Errorf("expected at least 1 successful, got %d", response.Success)
+	}
+
+	if _, ok := response.TagsByPath["photo1.jpg"]; !ok {
+		t.Errorf("expected tagsByPath to include photo1.jpg")
+	}
+
+	if _, ok := response.TagsByPath["nonexistent.jpg"]; !ok {
+		t.Errorf("expected tagsByPath to include nonexistent.jpg")
 	}
 }
 
@@ -780,6 +826,14 @@ func TestBulkRemoveTagIntegration(t *testing.T) {
 	if response.Failed != 0 {
 		t.Errorf("expected 0 failed, got %d", response.Failed)
 	}
+
+	if got := response.TagsByPath["photo1.jpg"]; len(got) != 0 {
+		t.Errorf("expected photo1.jpg tags to be empty, got %v", got)
+	}
+
+	if got := response.TagsByPath["photo2.jpg"]; len(got) != 0 {
+		t.Errorf("expected photo2.jpg tags to be empty, got %v", got)
+	}
 }
 
 // TestSetFileTagsIntegration tests replacing all tags for a file
@@ -810,6 +864,19 @@ func TestSetFileTagsIntegration(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response FileTagMutationResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Path != "photo.jpg" {
+		t.Errorf("expected response path photo.jpg, got %q", response.Path)
+	}
+
+	if len(response.Tags) != 2 {
+		t.Errorf("expected 2 response tags, got %d", len(response.Tags))
 	}
 
 	// Verify tags were replaced

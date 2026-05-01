@@ -5,8 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.18.0] - 04-13-2026
+## [0.18.1] - unreleased
 
+### Added
+
+- feat(api): The auto-tagger now exposes a status endpoint so admin tooling and automated smoke coverage can tell when an on-demand pass is still running and when it last completed, instead of polling for tag changes blindly. ([#524](https://github.com/djryanj/media-viewer/issues/524))
+
+### Fixed
+
+- fix(frontend): Tagging and pasting tags deep into very large galleries is now much faster and uses less browser memory. Tag writes now reuse updated tag data returned by the server instead of triggering extra follow-up reloads, background gallery tag-chip updates are deferred out of the hot path, and the infinite gallery now keeps only a bounded visible slice of loaded items mounted so deep positions no longer force the browser to repaint and retain thousands of off-screen cards at once. ([#524](https://github.com/djryanj/media-viewer/issues/524))
+
+## [0.18.0] - 04-13-2026
 
 ### Changed
 

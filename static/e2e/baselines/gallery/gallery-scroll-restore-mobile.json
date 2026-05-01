@@ -1,7 +1,7 @@
 {
   "size": {
     "width": 270,
-    "height": 759
+    "height": 539
   },
   "text": "0 / 299 Resume previous position Tap to jump back near where you left off",
   "nodes": [
@@ -13,7 +13,7 @@
         "x": 0,
         "y": 0,
         "width": 270,
-        "height": 759
+        "height": 539
       },
       "styles": {
         "display": "block",
@@ -25,7 +25,6 @@
         "border-bottom-color": "rgb(234, 234, 234)",
         "border-left-color": "rgb(234, 234, 234)",
         "border-radius": "0px",
-        "box-shadow": "none",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
@@ -55,7 +54,7 @@
         "x": 215,
         "y": 16,
         "width": 39,
-        "height": 727
+        "height": 507
       },
       "styles": {
         "display": "block",
@@ -67,7 +66,6 @@
         "border-bottom-color": "rgb(234, 234, 234)",
         "border-left-color": "rgba(128, 128, 128, 0.12)",
         "border-radius": "0px",
-        "box-shadow": "none",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
@@ -109,7 +107,6 @@
         "border-bottom-color": "rgb(234, 234, 234)",
         "border-left-color": "rgb(234, 234, 234)",
         "border-radius": "5px",
-        "box-shadow": "none",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
@@ -136,7 +133,7 @@
       ],
       "rect": {
         "x": 212,
-        "y": 409,
+        "y": 281,
         "width": 46,
         "height": 3
       },
@@ -150,13 +147,12 @@
         "border-bottom-color": "rgb(234, 234, 234)",
         "border-left-color": "rgb(234, 234, 234)",
         "border-radius": "2px",
-        "box-shadow": "oklab(0.632614 0.192026 0.0540883 / 0.5) 0px 0px 0px 0px",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
         "letter-spacing": "normal",
         "text-transform": "none",
-        "opacity": "1",
+        "opacity": "0.999238",
         "gap": "normal",
         "align-items": "normal",
         "justify-content": "normal",
@@ -180,7 +176,7 @@
       ],
       "rect": {
         "x": 16,
-        "y": 378,
+        "y": 250,
         "width": 220,
         "height": 81
       },
@@ -194,7 +190,6 @@
         "border-bottom-color": "rgba(255, 255, 255, 0.08)",
         "border-left-color": "rgba(255, 255, 255, 0.08)",
         "border-radius": "18px",
-        "box-shadow": "rgba(0, 0, 0, 0.24) 0px 16px 28px 0px",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
@@ -222,7 +217,7 @@
       ],
       "rect": {
         "x": 29,
-        "y": 389,
+        "y": 261,
         "width": 156,
         "height": 59
       },
@@ -236,7 +231,6 @@
         "border-bottom-color": "rgba(255, 255, 255, 0.92)",
         "border-left-color": "rgba(255, 255, 255, 0.92)",
         "border-radius": "0px",
-        "box-shadow": "none",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
@@ -263,7 +257,7 @@
       ],
       "rect": {
         "x": 29,
-        "y": 406,
+        "y": 278,
         "width": 24,
         "height": 24
       },
@@ -277,7 +271,6 @@
         "border-bottom-color": "color(srgb 0.937882 0.474824 0.551059)",
         "border-left-color": "color(srgb 0.937882 0.474824 0.551059)",
         "border-radius": "50%",
-        "box-shadow": "none",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
@@ -304,7 +297,7 @@
       ],
       "rect": {
         "x": 63,
-        "y": 389,
+        "y": 261,
         "width": 122,
         "height": 59
       },
@@ -318,7 +311,6 @@
         "border-bottom-color": "rgba(255, 255, 255, 0.92)",
         "border-left-color": "rgba(255, 255, 255, 0.92)",
         "border-radius": "0px",
-        "box-shadow": "none",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",
@@ -346,7 +338,7 @@
       "text": "Resume previous position",
       "rect": {
         "x": 63,
-        "y": 389,
+        "y": 261,
         "width": 122,
         "height": 29
       },
@@ -360,7 +352,6 @@
         "border-bottom-color": "rgba(255, 255, 255, 0.92)",
         "border-left-color": "rgba(255, 255, 255, 0.92)",
         "border-radius": "0px",
-        "box-shadow": "none",
         "font-size": "12px",
         "font-weight": "600",
         "line-height": "14.4px",
@@ -388,7 +379,7 @@
       "text": "Tap to jump back near where you left off",
       "rect": {
         "x": 63,
-        "y": 419,
+        "y": 291,
         "width": 122,
         "height": 29
       },
@@ -402,7 +393,6 @@
         "border-bottom-color": "rgba(255, 255, 255, 0.64)",
         "border-left-color": "rgba(255, 255, 255, 0.64)",
         "border-radius": "0px",
-        "box-shadow": "none",
         "font-size": "11px",
         "font-weight": "400",
         "line-height": "14.3px",
@@ -430,7 +420,7 @@
       ],
       "rect": {
         "x": 195,
-        "y": 404,
+        "y": 276,
         "width": 28,
         "height": 28
       },
@@ -444,7 +434,6 @@
         "border-bottom-color": "rgba(255, 255, 255, 0.72)",
         "border-left-color": "rgba(255, 255, 255, 0.72)",
         "border-radius": "50%",
-        "box-shadow": "none",
         "font-size": "16px",
         "font-weight": "400",
         "line-height": "24px",

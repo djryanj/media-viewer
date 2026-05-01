@@ -1123,6 +1123,11 @@ select:focus {
         opacity: 100%;
     }
 
+    .gallery-item-thumb:hover .selection-checkbox {
+        opacity: 100%;
+        pointer-events: auto;
+    }
+
     .collection-button {
         width: 32px;
         height: 32px;
@@ -7591,13 +7596,6 @@ select:focus {
 .selection-checkbox [data-lucide],
 .selection-checkbox svg {
     pointer-events: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-    .gallery-item-thumb:hover .selection-checkbox {
-        opacity: 100%;
-        pointer-events: auto;
-    }
 }
 
 /* ===========================================

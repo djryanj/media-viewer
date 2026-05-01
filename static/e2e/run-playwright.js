@@ -11,6 +11,10 @@ if (!process.env.PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS) {
     grepInvert.push('@docs-screenshots');
 }
 
+if (!process.env.PLAYWRIGHT_INCLUDE_DOCKER_RUNTIME) {
+    grepInvert.push('@docker-runtime');
+}
+
 if (grepInvert.length > 0 && !playwrightArgs.includes('--grep-invert')) {
     playwrightArgs.push('--grep-invert', grepInvert.join('|'));
 }

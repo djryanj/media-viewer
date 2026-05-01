@@ -75,6 +75,11 @@ describe('ItemSelection Module', () => {
         // Also set on window for code that doesn't use globalThis
         window.TagClipboard = globalThis.TagClipboard;
 
+        globalThis.Tags = {
+            flushPendingGalleryTagUpdates: vi.fn(),
+        };
+        window.Tags = globalThis.Tags;
+
         // Create mock toolbar elements before eval so init() can find them if it runs
         const mockToolbar = document.createElement('div');
         mockToolbar.id = 'selection-toolbar';
@@ -479,6 +484,14 @@ describe('ItemSelection Module', () => {
             ItemSelection.exitSelectionMode();
 
             expect(gallery.classList.contains('selection-mode')).toBe(hadClass);
+        });
+
+        test('flushes queued tag updates after exiting selection mode', () => {
+            ItemSelection.isActive = true;
+
+            ItemSelection.exitSelectionMode();
+
+            expect(globalThis.Tags.flushPendingGalleryTagUpdates).toHaveBeenCalled();
         });
     });
 

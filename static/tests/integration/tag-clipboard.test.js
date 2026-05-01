@@ -189,7 +189,10 @@ describe('TagClipboard Integration Tests', () => {
         const mockTags = {
             allTags: [],
             batchRefreshGalleryItemTags: vi.fn().mockResolvedValue(),
+            flushPendingGalleryTagUpdates: vi.fn(),
             loadAllTags: vi.fn().mockResolvedValue(),
+            queueGalleryTagUpdates: vi.fn(),
+            _upsertAllTagsFromNames: vi.fn(),
         };
 
         // Mock ItemSelection
@@ -779,11 +782,100 @@ describe('TagClipboard Integration Tests', () => {
         });
     });
 
+    describe('Confirm Paste', () => {
+        it('should keep selection mode active after a successful paste', async () => {
+            const executeSpy = vi.spyOn(TagClipboard, 'executePaste').mockResolvedValue({
+                successCount: 1,
+                errorCount: 0,
+                tagsByPath: { '/dest1': ['tag1'] },
+            });
+            globalThis.ItemSelection.isActive = true;
+
+            const modal = {
+                dataset: {
+                    paths: JSON.stringify(['/dest1']),
+                    mode: 'paste',
+                },
+                classList: { add: vi.fn() },
+                querySelectorAll: vi.fn(() => [{ dataset: { tag: 'tag1' } }]),
+                querySelector: vi.fn(() => ({ checked: false })),
+            };
+
+            await TagClipboard.confirmPaste(modal);
+
+            expect(executeSpy).toHaveBeenCalledWith(['/dest1'], ['tag1'], [], false, 'paste');
+            expect(globalThis.ItemSelection.exitSelectionModeWithHistory).not.toHaveBeenCalled();
+        });
+
+        it('should hide the modal and flush queued gallery updates after non-selection paste completes', async () => {
+            let resolvePaste;
+            const executeSpy = vi.spyOn(TagClipboard, 'executePaste').mockImplementation(
+                () =>
+                    new Promise((resolve) => {
+                        resolvePaste = () =>
+                            resolve({
+                                successCount: 1,
+                                errorCount: 0,
+                                tagsByPath: { '/dest1': ['tag1'] },
+                            });
+                    })
+            );
+            globalThis.HistoryManager.hasState = vi.fn(() => true);
+
+            const modal = {
+                dataset: {
+                    paths: JSON.stringify(['/dest1']),
+                    mode: 'paste',
+                },
+                classList: { add: vi.fn() },
+                querySelectorAll: vi.fn(() => [{ dataset: { tag: 'tag1' } }]),
+                querySelector: vi.fn(() => ({ checked: false })),
+            };
+
+            const confirmPromise = TagClipboard.confirmPaste(modal);
+
+            expect(executeSpy).toHaveBeenCalledWith(['/dest1'], ['tag1'], [], false, 'paste');
+            expect(modal.classList.add).not.toHaveBeenCalledWith('hidden');
+            expect(globalThis.Tags.flushPendingGalleryTagUpdates).not.toHaveBeenCalled();
+
+            resolvePaste();
+            await confirmPromise;
+
+            expect(modal.classList.add).toHaveBeenCalledWith('hidden');
+            expect(globalThis.HistoryManager.removeState).toHaveBeenCalledWith('paste-tags-modal');
+            expect(globalThis.Tags.flushPendingGalleryTagUpdates).toHaveBeenCalled();
+        });
+
+        it('should not flush queued gallery updates while selection mode stays active', async () => {
+            vi.spyOn(TagClipboard, 'executePaste').mockResolvedValue({
+                successCount: 1,
+                errorCount: 0,
+                tagsByPath: { '/dest1': ['tag1'] },
+            });
+            globalThis.ItemSelection.isActive = true;
+
+            const modal = {
+                dataset: {
+                    paths: JSON.stringify(['/dest1']),
+                    mode: 'paste',
+                },
+                classList: { add: vi.fn() },
+                querySelectorAll: vi.fn(() => [{ dataset: { tag: 'tag1' } }]),
+                querySelector: vi.fn(() => ({ checked: false })),
+            };
+
+            await TagClipboard.confirmPaste(modal);
+
+            expect(globalThis.Tags.flushPendingGalleryTagUpdates).not.toHaveBeenCalled();
+        });
+    });
+
     describe('Execute Paste', () => {
         it('should apply all existing tags in a single bulk request', async () => {
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 2 }),
+                json: () =>
+                    Promise.resolve({ success: 2, tagsByPath: { '/dest1': ['tag1', 'tag2'] } }),
             });
 
             await TagClipboard.executePaste(
@@ -807,7 +899,7 @@ describe('TagClipboard Integration Tests', () => {
         it('should apply new tags to destinations only', async () => {
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 1 }),
+                json: () => Promise.resolve({ success: 1, tagsByPath: { '/dest1': ['newtag'] } }),
             });
 
             await TagClipboard.executePaste(['/dest1'], [], ['newtag'], false, 'paste');
@@ -825,7 +917,11 @@ describe('TagClipboard Integration Tests', () => {
 
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 2 }),
+                json: () =>
+                    Promise.resolve({
+                        success: 2,
+                        tagsByPath: { '/dest1': ['newtag'], '/source': ['newtag'] },
+                    }),
             });
 
             await TagClipboard.executePaste(['/dest1'], [], ['newtag'], true, 'paste');
@@ -838,10 +934,14 @@ describe('TagClipboard Integration Tests', () => {
             );
         });
 
-        it('should send separate requests for existing and new tags', async () => {
+        it('should combine existing and new tags into one request when source is unchanged', async () => {
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 1 }),
+                json: () =>
+                    Promise.resolve({
+                        success: 1,
+                        tagsByPath: { '/dest1': ['existing1', 'existing2', 'new1'] },
+                    }),
             });
 
             await TagClipboard.executePaste(
@@ -852,28 +952,45 @@ describe('TagClipboard Integration Tests', () => {
                 'paste'
             );
 
-            // Should make exactly 2 fetch calls: one for existing, one for new
+            expect(mockFetch).toHaveBeenCalledTimes(1);
+
+            expect(mockFetch).toHaveBeenCalledWith(
+                '/api/tags/bulk',
+                expect.objectContaining({
+                    body: JSON.stringify({
+                        paths: ['/dest1'],
+                        tags: ['existing1', 'existing2', 'new1'],
+                    }),
+                })
+            );
+        });
+
+        it('should keep separate requests when new tags also apply to source', async () => {
+            TagClipboard.sourcePath = '/source';
+            mockFetch
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: () =>
+                        Promise.resolve({ success: 1, tagsByPath: { '/dest1': ['existing1'] } }),
+                })
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: () =>
+                        Promise.resolve({
+                            success: 2,
+                            tagsByPath: { '/dest1': ['existing1', 'new1'], '/source': ['new1'] },
+                        }),
+                });
+
+            await TagClipboard.executePaste(['/dest1'], ['existing1'], ['new1'], true, 'paste');
+
             expect(mockFetch).toHaveBeenCalledTimes(2);
-
-            expect(mockFetch).toHaveBeenCalledWith(
-                '/api/tags/bulk',
-                expect.objectContaining({
-                    body: JSON.stringify({ paths: ['/dest1'], tags: ['existing1', 'existing2'] }),
-                })
-            );
-
-            expect(mockFetch).toHaveBeenCalledWith(
-                '/api/tags/bulk',
-                expect.objectContaining({
-                    body: JSON.stringify({ paths: ['/dest1'], tags: ['new1'] }),
-                })
-            );
         });
 
         it('should not call fetch when no existing tags', async () => {
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 1 }),
+                json: () => Promise.resolve({ success: 1, tagsByPath: { '/dest1': ['new1'] } }),
             });
 
             await TagClipboard.executePaste(['/dest1'], [], ['new1'], false, 'paste');
@@ -885,7 +1002,8 @@ describe('TagClipboard Integration Tests', () => {
         it('should not call fetch when no new tags', async () => {
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 1 }),
+                json: () =>
+                    Promise.resolve({ success: 1, tagsByPath: { '/dest1': ['existing1'] } }),
             });
 
             await TagClipboard.executePaste(['/dest1'], ['existing1'], [], false, 'paste');
@@ -897,19 +1015,51 @@ describe('TagClipboard Integration Tests', () => {
         it('should refresh gallery items after paste', async () => {
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 1 }),
+                json: () => Promise.resolve({ success: 1, tagsByPath: { '/dest1': ['tag1'] } }),
             });
 
             await TagClipboard.executePaste(['/dest1'], ['tag1'], [], false, 'paste');
 
-            expect(globalThis.Tags.batchRefreshGalleryItemTags).toHaveBeenCalled();
-            expect(globalThis.Tags.loadAllTags).toHaveBeenCalled();
+            expect(globalThis.Tags.batchRefreshGalleryItemTags).toHaveBeenCalledWith(['/dest1'], {
+                '/dest1': ['tag1'],
+            });
+            expect(globalThis.Tags.loadAllTags).not.toHaveBeenCalled();
+        });
+
+        it('should defer gallery item refresh while selection mode is active', async () => {
+            globalThis.ItemSelection.isActive = true;
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 1, tagsByPath: { '/dest1': ['tag1'] } }),
+            });
+
+            await TagClipboard.executePaste(['/dest1'], ['tag1'], [], false, 'paste');
+
+            expect(globalThis.Tags.queueGalleryTagUpdates).toHaveBeenCalledWith(['/dest1'], {
+                '/dest1': ['tag1'],
+            });
+            expect(globalThis.Tags.batchRefreshGalleryItemTags).not.toHaveBeenCalled();
+        });
+
+        it('should upsert tags into the in-memory tag list after paste', async () => {
+            mockFetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ success: 1, tagsByPath: { '/dest1': ['tag1'] } }),
+            });
+
+            await TagClipboard.executePaste(['/dest1'], ['tag1'], ['new1'], false, 'paste');
+
+            expect(globalThis.Tags._upsertAllTagsFromNames).toHaveBeenCalledWith(['tag1', 'new1']);
         });
 
         it('should show success toast', async () => {
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 2 }),
+                json: () =>
+                    Promise.resolve({
+                        success: 2,
+                        tagsByPath: { '/dest1': ['tag1'], '/dest2': ['tag1'] },
+                    }),
             });
 
             await TagClipboard.executePaste(['/dest1', '/dest2'], ['tag1'], [], false, 'paste');
@@ -934,7 +1084,11 @@ describe('TagClipboard Integration Tests', () => {
 
             mockFetch.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({ success: 2 }),
+                json: () =>
+                    Promise.resolve({
+                        success: 2,
+                        tagsByPath: { '/dest1': ['newtag'], '/source': ['newtag'] },
+                    }),
             });
 
             await TagClipboard.executePaste(['/dest1'], [], ['newtag'], true, 'paste');

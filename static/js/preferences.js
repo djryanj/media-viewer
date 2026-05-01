@@ -211,6 +211,14 @@ const Preferences = {
     },
 
     /**
+     * Set clock enabled preference
+     * @param {boolean} value
+     */
+    setClockEnabled(value) {
+        this.set('clockEnabled', !!value);
+    },
+
+    /**
      * Get clock format preference
      * @returns {string} '12' or '24'
      */

@@ -395,6 +395,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	// Cache management
 	api.HandleFunc("/transcode/clear", h.ClearTranscodeCache).Methods("POST")
 	api.HandleFunc("/autotagger/run", h.RunAutoTagger).Methods("POST")
+	api.HandleFunc("/autotagger/status", h.GetAutoTaggerStatus).Methods("GET")
 
 	// Static files
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))

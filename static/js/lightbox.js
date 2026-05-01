@@ -90,6 +90,16 @@ const Lightbox = {
         this.videoControlsHeight = 0;
         this.createHotZones();
         this.createLoadingIndicator();
+
+        // Remove any stray desktop toolbar buttons on coarse pointer devices
+        const isCoarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (isCoarsePointer) {
+            const strayAutoplay = document.getElementById('lightbox-autoplay');
+            if (strayAutoplay) strayAutoplay.remove();
+            const strayLoop = document.getElementById('lightbox-loop-toggle');
+            if (strayLoop) strayLoop.remove();
+        }
+
         this.createAutoplayToggle();
         this.createLoopToggle();
         this.createCollectionDrawer();
@@ -173,12 +183,21 @@ const Lightbox = {
     },
 
     createAutoplayToggle() {
+        // Only create and attach the button if not coarse pointer (desktop)
+        const isCoarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (isCoarsePointer) {
+            this.elements.autoplayBtn = null;
+            // Remove any stray button from toolbar if present
+            if (this.elements.toolbar) {
+                const stray = this.elements.toolbar.querySelector('#lightbox-autoplay');
+                if (stray) stray.remove();
+            }
+            return;
+        }
         const toggle = document.createElement('button');
         toggle.className = 'lightbox-autoplay hidden';
         toggle.id = 'lightbox-autoplay';
         toggle.title = 'Toggle video autoplay (A)';
-        // Pre-render both icon states once; CSS + .enabled class selects the
-        // visible icon so updateAutoplayButton() never touches the DOM again.
         toggle.innerHTML = [
             '<i data-lucide="play-circle" class="icon-autoplay-on"></i>',
             '<i data-lucide="pause-circle" class="icon-autoplay-off"></i>',
@@ -191,10 +210,7 @@ const Lightbox = {
 
         if (this.elements.toolbar) {
             this.elements.toolbar.appendChild(toggle);
-        } else {
-            this.elements.lightbox.appendChild(toggle);
         }
-
         this.elements.autoplayBtn = toggle;
         lucide.createIcons({ nodes: [toggle] });
         this.updateAutoplayButton();
@@ -219,12 +235,21 @@ const Lightbox = {
     },
 
     createLoopToggle() {
+        // Only create and attach the button if not coarse pointer (desktop)
+        const isCoarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (isCoarsePointer) {
+            this.elements.loopBtn = null;
+            // Remove any stray button from toolbar if present
+            if (this.elements.toolbar) {
+                const stray = this.elements.toolbar.querySelector('#lightbox-loop-toggle');
+                if (stray) stray.remove();
+            }
+            return;
+        }
         const toggle = document.createElement('button');
         toggle.className = 'lightbox-loop-toggle hidden';
         toggle.id = 'lightbox-loop-toggle';
         toggle.title = 'Toggle loop (L)';
-        // Pre-render both icon states once; CSS + .enabled class selects the
-        // visible icon so updateLoopButton() never touches the DOM again.
         toggle.innerHTML = [
             '<i data-lucide="repeat" class="icon-loop-on"></i>',
             '<i data-lucide="repeat-1" class="icon-loop-off"></i>',
@@ -237,10 +262,7 @@ const Lightbox = {
 
         if (this.elements.toolbar) {
             this.elements.toolbar.appendChild(toggle);
-        } else {
-            this.elements.lightbox.appendChild(toggle);
         }
-
         this.elements.loopBtn = toggle;
         lucide.createIcons({ nodes: [toggle] });
         this.updateLoopButton();
@@ -1006,15 +1028,17 @@ const Lightbox = {
 
         const originalExecutePaste = TagClipboard.executePaste.bind(TagClipboard);
         TagClipboard.executePaste = async (...args) => {
-            await originalExecutePaste(...args);
+            const result = await originalExecutePaste(...args);
 
             // After paste completes, refresh the current lightbox item's tags
             if (this._pendingPasteRefresh) {
                 const refreshPath = this._pendingPasteRefresh;
                 this._pendingPasteRefresh = null;
 
-                await this._refreshTagsAfterPaste(refreshPath);
+                await this._refreshTagsAfterPaste(refreshPath, result?.tagsByPath?.[refreshPath]);
             }
+
+            return result;
         };
     },
 
@@ -1022,12 +1046,16 @@ const Lightbox = {
      * Refresh tags for the given path after a paste/merge operation.
      * Updates the lightbox item data, drawer, summary, and gallery.
      */
-    async _refreshTagsAfterPaste(path) {
+    async _refreshTagsAfterPaste(path, prefetchedTags = null) {
         try {
-            const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
-            if (!response.ok) return;
+            let tags = Array.isArray(prefetchedTags) ? [...prefetchedTags] : null;
 
-            const tags = await response.json();
+            if (!tags) {
+                const response = await fetch(`/api/tags/file?path=${encodeURIComponent(path)}`);
+                if (!response.ok) return;
+
+                tags = await response.json();
+            }
 
             // Update the item in our items array
             const file = this.items[this.currentIndex];
@@ -2489,7 +2517,6 @@ const Lightbox = {
 
     abortCurrentLoad() {
         this.currentLoadId++;
-        // Tear down the active player (including any hls.js instance).
         this.videoPlayer?.unload();
         const video = this.elements.video;
         if (video && !video.paused) video.pause();
@@ -2497,8 +2524,17 @@ const Lightbox = {
             video.removeAttribute('src');
             video.load();
         }
+        // Clear loading classes so a subsequent load starts clean
+        if (video) {
+            video.classList.remove('loading');
+        }
         const image = this.elements.image;
-        if (image) image.removeAttribute('src');
+        if (image) {
+            image.removeAttribute('src');
+            image.classList.remove('loading');
+        }
+        this.elements.loader?.classList.add('hidden');
+        this.loading = false;
     },
 
     showLoading() {

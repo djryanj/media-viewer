@@ -349,6 +349,32 @@ describe('InfiniteScroll Module', () => {
         });
     });
 
+    describe('_scrollToLoadedItem()', () => {
+        test('computes scroll position when the target item is not mounted', () => {
+            const scrollSpy = vi.spyOn(globalThis.window, 'scrollTo').mockImplementation(() => {});
+            InfiniteScroll.elements.gallery = globalThis.document.getElementById('gallery');
+            InfiniteScroll.elements.gallery.getBoundingClientRect = () => ({ top: 200 });
+            InfiniteScroll.state.loadedItems = Array.from({ length: 200 }, (_, i) => ({
+                path: `/img${i}.jpg`,
+            }));
+            InfiniteScroll._galleryItemsByPath = new Map();
+            InfiniteScroll._getGridGeometry = vi.fn(() => ({
+                cols: 4,
+                gap: 0,
+                itemSize: 100,
+                rowHeight: 100,
+            }));
+            Object.defineProperty(globalThis.window, 'scrollY', {
+                value: 5000,
+                configurable: true,
+            });
+
+            InfiniteScroll._scrollToLoadedItem(101);
+
+            expect(scrollSpy).toHaveBeenCalledWith({ top: 7692, behavior: 'instant' });
+        });
+    });
+
     describe('updateStats()', () => {
         beforeEach(() => {
             InfiniteScroll.elements.statsInfo = globalThis.document.getElementById('stats-info');
@@ -1549,6 +1575,7 @@ describe('InfiniteScroll Module', () => {
         });
 
         test('renderItems() populates the map with path→element entries', () => {
+            InfiniteScroll.state.loadedItems = [...items];
             InfiniteScroll.renderItems(items);
 
             expect(InfiniteScroll._galleryItemsByPath.size).toBe(2);
@@ -1557,6 +1584,7 @@ describe('InfiniteScroll Module', () => {
         });
 
         test('map entry points to the correct DOM element for the given path', () => {
+            InfiniteScroll.state.loadedItems = [...items];
             InfiniteScroll.renderItems(items);
 
             const el = InfiniteScroll._galleryItemsByPath.get('/img1.jpg');
@@ -1567,6 +1595,7 @@ describe('InfiniteScroll Module', () => {
 
         test('renderItems() with append=false clears stale entries before populating', () => {
             InfiniteScroll._galleryItemsByPath.set('/old.jpg', document.createElement('div'));
+            InfiniteScroll.state.loadedItems = [...items];
 
             InfiniteScroll.renderItems(items, false);
 
@@ -1575,20 +1604,22 @@ describe('InfiniteScroll Module', () => {
         });
 
         test('renderItems() with append=true adds to existing map entries', () => {
-            InfiniteScroll.renderItems(items, false);
             InfiniteScroll.state.loadedItems = [...items];
+            InfiniteScroll.renderItems(items, false);
 
             const extra = [{ path: '/img3.jpg', name: 'img3.jpg', type: 'image' }];
+            InfiniteScroll.state.loadedItems = [...items, ...extra];
             InfiniteScroll.renderItems(extra, true);
 
             expect(InfiniteScroll._galleryItemsByPath.size).toBe(3);
             expect(InfiniteScroll._galleryItemsByPath.has('/img3.jpg')).toBe(true);
         });
 
-        test('renderItems() with append=true preserves existing map entries', () => {
-            InfiniteScroll.renderItems(items, false);
+        test('renderItems() with append=true preserves existing mounted map entries', () => {
             InfiniteScroll.state.loadedItems = [...items];
+            InfiniteScroll.renderItems(items, false);
             const extra = [{ path: '/img3.jpg', name: 'img3.jpg', type: 'image' }];
+            InfiniteScroll.state.loadedItems = [...items, ...extra];
 
             InfiniteScroll.renderItems(extra, true);
 
@@ -1617,7 +1648,7 @@ describe('InfiniteScroll Module', () => {
         });
 
         test('renderItems() calls lucide.createIcons scoped to new elements only', () => {
-            InfiniteScroll.state.loadedItems = [];
+            InfiniteScroll.state.loadedItems = [...items];
             globalThis.lucide.createIcons.mockClear();
 
             InfiniteScroll.renderItems(items, false);
@@ -1634,7 +1665,7 @@ describe('InfiniteScroll Module', () => {
             expect(scopedCall).toBeTruthy();
         });
 
-        test('renderItems() scoped lucide call contains only newly added elements', () => {
+        test('renderItems() scoped lucide call is limited to the mounted render window', () => {
             // Pre-populate with one item so the gallery already has DOM nodes
             InfiniteScroll.state.loadedItems = [{ path: '/img0.jpg' }];
             InfiniteScroll.renderItems(
@@ -1651,8 +1682,7 @@ describe('InfiniteScroll Module', () => {
             const calls = globalThis.lucide.createIcons.mock.calls;
             const scopedCall = calls.find((args) => Array.isArray(args[0]?.nodes));
             expect(scopedCall).toBeTruthy();
-            // nodes should contain only the one new element, not existing ones
-            expect(scopedCall[0].nodes).toHaveLength(1);
+            expect(scopedCall[0].nodes).toHaveLength(2);
         });
 
         test('renderItems() with append=false clears _cachedGridGeometry', () => {

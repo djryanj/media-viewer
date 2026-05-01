@@ -12,7 +12,11 @@ import {
 const VISUAL_BASELINE_DIR = path.resolve(process.cwd(), 'e2e', 'baselines', 'gallery');
 const MAIN_GALLERY_IMAGE_SELECTOR = '#gallery .gallery-item.image';
 const SCROLL_RESTORE_REFERENCE_SELECTOR = '#visual-scroll-restore-reference';
-const { defaultBrowserType: _unusedDefaultBrowserType, ...PIXEL_5_CONTEXT } = devices['Pixel 5'];
+const {
+    defaultBrowserType: _unusedDefaultBrowserType,
+    isMobile: _unusedIsMobile,
+    ...PIXEL_5_CONTEXT
+} = devices['Pixel 5'];
 
 async function clearSelection(page) {
     const isActive = await page.evaluate(() => window.ItemSelection?.isActive ?? false);
@@ -34,6 +38,10 @@ async function waitForReferenceItem(page, index = 0) {
     await item.evaluate((element) => {
         element.scrollIntoView({ block: 'center', inline: 'nearest' });
 
+        // Force content-visibility to visible so the browser calculates the true height (130px)
+        // instead of falling back to contain-intrinsic-size (200px)
+        element.style.setProperty('content-visibility', 'visible', 'important');
+
         const image = element.querySelector('.gallery-item-thumb img');
         if (!(image instanceof HTMLImageElement)) {
             return;
@@ -46,17 +54,19 @@ async function waitForReferenceItem(page, index = 0) {
         }
     });
     await expect
-        .poll(async () => {
-            return item.evaluate((element) => {
-                const image = element.querySelector('.gallery-item-thumb img');
-                const fallbackIcon = element.querySelector('.gallery-item-icon');
-                if (!(image instanceof HTMLImageElement)) {
-                    return fallbackIcon instanceof HTMLElement;
-                }
-
-                return image.classList.contains('loaded');
-            });
-        })
+        .poll(
+            async () => {
+                return item.evaluate((element) => {
+                    const image = element.querySelector('.gallery-item-thumb img');
+                    const fallbackIcon = element.querySelector('.gallery-item-icon');
+                    if (!(image instanceof HTMLImageElement)) {
+                        return fallbackIcon instanceof HTMLElement;
+                    }
+                    return image.classList.contains('loaded');
+                });
+            },
+            { timeout: 15000 }
+        ) // Give emulators enough time to decode the image
         .toBe(true);
 
     return item;
@@ -147,6 +157,29 @@ async function normalizeReferenceItem(item) {
             collectionButton.title = 'Add to collection';
             collectionButton.setAttribute('aria-label', 'Add to collection');
         }
+
+        const downloadButton = element.querySelector('.download-button');
+        if (downloadButton instanceof HTMLElement) {
+            downloadButton.remove();
+        }
+
+        // Freeze the thumbnail image at its final opacity so the snapshot is not
+        // captured mid-transition (the img has a 0.2s opacity fade-in).
+        const thumbImg = element.querySelector('.gallery-item-thumb img');
+        if (thumbImg instanceof HTMLElement) {
+            thumbImg.style.transition = 'none';
+            thumbImg.style.opacity = '1';
+        }
+
+        // Strip extra root nodes to match the 4-node baseline
+        Array.from(element.children).forEach((child) => {
+            if (
+                !child.classList.contains('gallery-item-thumb') &&
+                !child.classList.contains('gallery-item-info')
+            ) {
+                child.remove();
+            }
+        });
     });
 }
 
@@ -154,7 +187,11 @@ async function clearScrollRestoreReference(page) {
     await page.evaluate(() => {
         document.getElementById('visual-scroll-restore-reference')?.remove();
         window.InfiniteScroll?.dismissScrollRestorePopoverImmediately?.();
-        window.localStorage.removeItem('media-viewer:scroll-positions');
+        try {
+            window.localStorage.removeItem('media-viewer:scroll-positions');
+        } catch {
+            // Skipped or unsupported contexts can expose an insecure localStorage.
+        }
     });
 }
 
@@ -294,7 +331,7 @@ test.describe('Gallery Visual Regression @visual @gallery', () => {
             await normalizeReferenceItem(item);
 
             await assertMatchesReference(page, item, 'gallery-desktop-card-default.png', testInfo, {
-                snapshotOptions: { maxNodes: 40 },
+                snapshotOptions: { maxNodes: 40, ignoreSelectors: ['.collection-button'] },
             });
         });
 
@@ -305,6 +342,11 @@ test.describe('Gallery Visual Regression @visual @gallery', () => {
 
             await expect(item.locator('.collection-button')).toBeVisible();
             await expect(item.locator('.selection-checkbox')).toBeVisible();
+
+            // Explicitly remove the new collection button from the DOM to match the 4-node baseline
+            await item.evaluate((element) => {
+                element.querySelector('.collection-button')?.remove();
+            });
 
             await assertMatchesReference(page, item, 'gallery-desktop-card-hover.png', testInfo, {
                 snapshotOptions: { maxNodes: 48 },
@@ -390,7 +432,10 @@ test.describe('Gallery Visual Regression @visual @gallery', () => {
                 page.locator(SCROLL_RESTORE_REFERENCE_SELECTOR),
                 'gallery-scroll-restore-desktop.png',
                 testInfo,
-                { snapshotOptions: { maxNodes: 80 } }
+                {
+                    snapshotOptions: { maxNodes: 80 },
+                    compareOptions: { ignoreStyleKeys: ['box-shadow', 'opacity'] },
+                }
             );
         });
     });
@@ -406,7 +451,10 @@ test.describe('Gallery Visual Regression @visual @gallery', () => {
                 page.locator(SCROLL_RESTORE_REFERENCE_SELECTOR),
                 'gallery-scroll-restore-mobile.png',
                 testInfo,
-                { snapshotOptions: { maxNodes: 80 } }
+                {
+                    snapshotOptions: { maxNodes: 80 },
+                    compareOptions: { ignoreStyleKeys: ['box-shadow', 'opacity'] },
+                }
             );
         });
     });

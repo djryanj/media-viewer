@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"media-viewer/internal/autotagger"
 	"media-viewer/internal/database"
 	"media-viewer/internal/indexer"
 	"media-viewer/internal/media"
@@ -24,6 +25,10 @@ type stubAutoTagRunner struct {
 
 func (s *stubAutoTagRunner) TriggerRun() {
 	s.calls.Add(1)
+}
+
+func (s *stubAutoTagRunner) Status() autotagger.Status {
+	return autotagger.Status{}
 }
 
 // setupAutoTaggerIntegrationTest creates a real *Handlers wired with a
@@ -123,6 +128,25 @@ func TestRunAutoTaggerIntegration(t *testing.T) {
 
 		if w.Code != http.StatusMethodNotAllowed {
 			t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+		}
+	})
+
+	t.Run("GET status returns 200", func(t *testing.T) {
+		h, _, cleanup := setupAutoTaggerIntegrationTest(t)
+		defer cleanup()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/autotagger/status", http.NoBody)
+		w := httptest.NewRecorder()
+
+		h.GetAutoTaggerStatus(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		var resp autotagger.Status
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
 		}
 	})
 }

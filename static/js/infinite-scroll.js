@@ -26,6 +26,7 @@ const InfiniteScroll = {
         batchSize: 100,
         rootMargin: '1200px',
         skeletonCount: 12,
+        renderOverscanRows: 6,
     },
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -65,6 +66,9 @@ const InfiniteScroll = {
     // Path → DOM element map for O(1) gallery item lookups (used by Lightbox
     // to read tag data without a full DOM querySelector scan).
     _galleryItemsByPath: new Map(),
+    _renderWindowStart: 0,
+    _renderWindowEnd: 0,
+    _renderWindowRAF: null,
 
     // ── Elements ─────────────────────────────────────────────────────────────
     elements: {},
@@ -320,11 +324,22 @@ const InfiniteScroll = {
         this._isScrubbing = false;
         this._scrubFraction = 0;
         this._cachedGridGeometry = null;
+        this._renderWindowStart = 0;
+        this._renderWindowEnd = 0;
         this._galleryItemsByPath.clear();
         clearTimeout(this._catchUpTimer);
         clearTimeout(this._saveScrollTimer);
+        if (this._renderWindowRAF !== null) {
+            cancelAnimationFrame(this._renderWindowRAF);
+            this._renderWindowRAF = null;
+        }
         this._isCollectionView = false;
         document.documentElement.classList.remove('catchup-active', 'custom-scrubber-active');
+        if (this.elements.gallery) {
+            this.elements.gallery.replaceChildren();
+            this.elements.gallery.style.paddingTop = '0px';
+            this.elements.gallery.style.paddingBottom = '0px';
+        }
         if (this.elements.virtualSpacer) {
             this.elements.virtualSpacer.style.height = '0px';
             const grid = this.elements.virtualSpacer.querySelector('.virtual-spacer-grid');
@@ -387,9 +402,10 @@ const InfiniteScroll = {
         // Stable grouped sort: [items before] + [collection items in order,
         // but only those already loaded] + [remaining non-collection items].
         const reordered = [];
+        const loadedPaths = new Set(loaded.map((item) => item.path));
         for (let i = 0; i < insertionPoint; i++) reordered.push(loaded[i]);
         for (const item of collectionItems) {
-            if (this._galleryItemsByPath.has(item.path)) reordered.push(item);
+            if (loadedPaths.has(item.path)) reordered.push(item);
         }
         for (let i = insertionPoint; i < loaded.length; i++) {
             if (!collectionPaths.has(loaded[i].path)) reordered.push(loaded[i]);
@@ -473,6 +489,131 @@ const InfiniteScroll = {
         grid.style.top = `${offsetIntoSpacer}px`;
     },
 
+    _getRenderWindowRange() {
+        const loadedCount = this.state.loadedItems.length;
+        if (loadedCount === 0) {
+            return { startIndex: 0, endIndex: 0 };
+        }
+
+        const { cols, rowHeight } = this._getGridGeometry();
+        const safeCols = Math.max(1, cols);
+        const safeRowHeight = Math.max(1, rowHeight);
+        const viewportRows = Math.max(1, Math.ceil(window.innerHeight / safeRowHeight));
+        const overscanRows = Math.max(1, this.config.renderOverscanRows || 1);
+        const galleryTop = this.elements.gallery.getBoundingClientRect().top + window.scrollY;
+        const scrollOffset = Math.max(0, window.scrollY - galleryTop);
+        const firstVisibleRow = Math.max(0, Math.floor(scrollOffset / safeRowHeight));
+        const startRow = Math.max(0, firstVisibleRow - overscanRows);
+        const endRow = firstVisibleRow + viewportRows + overscanRows;
+
+        return {
+            startIndex: Math.min(loadedCount, startRow * safeCols),
+            endIndex: Math.min(loadedCount, endRow * safeCols),
+        };
+    },
+
+    _renderLoadedWindow(force = false) {
+        const gallery = this.elements.gallery;
+        if (!gallery) return;
+
+        const loadedCount = this.state.loadedItems.length;
+        if (loadedCount === 0) {
+            gallery.style.paddingTop = '0px';
+            gallery.style.paddingBottom = '0px';
+            this._galleryItemsByPath.clear();
+            this._renderWindowStart = 0;
+            this._renderWindowEnd = 0;
+            return;
+        }
+
+        const { startIndex, endIndex } = this._getRenderWindowRange();
+        if (
+            !force &&
+            startIndex === this._renderWindowStart &&
+            endIndex === this._renderWindowEnd
+        ) {
+            return;
+        }
+
+        this._renderWindowStart = startIndex;
+        this._renderWindowEnd = endIndex;
+
+        const { cols, rowHeight } = this._getGridGeometry();
+        const safeCols = Math.max(1, cols);
+        const topRows = Math.floor(startIndex / safeCols);
+        const bottomRows = Math.ceil((loadedCount - endIndex) / safeCols);
+        const visibleItems = this.state.loadedItems.slice(startIndex, endIndex);
+
+        gallery.style.paddingTop = `${topRows * rowHeight}px`;
+        gallery.style.paddingBottom = `${Math.max(0, bottomRows * rowHeight)}px`;
+
+        const fragment = document.createDocumentFragment();
+        const createdElements = [];
+        visibleItems.forEach((item, i) => {
+            const absoluteIndex = startIndex + i;
+            const element = Gallery.createGalleryItem(item);
+            element.dataset.index = absoluteIndex;
+            if (
+                typeof ItemSelection !== 'undefined' &&
+                ItemSelection.isActive &&
+                ItemSelection.selectedPaths.has(item.path)
+            ) {
+                element.classList.add('selected');
+            }
+            fragment.appendChild(element);
+            createdElements.push({ path: item.path, element });
+        });
+
+        gallery.replaceChildren(fragment);
+        this._galleryItemsByPath.clear();
+        for (const { path, element } of createdElements) {
+            this._galleryItemsByPath.set(path, element);
+        }
+
+        lucide.createIcons({ nodes: createdElements.map((c) => c.element) });
+
+        if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
+            createdElements.forEach(({ element }) => {
+                if (!element.classList.contains('skeleton')) {
+                    ItemSelection.applySelectionState(element);
+                }
+            });
+        }
+    },
+
+    scheduleRenderWindowUpdate(force = false) {
+        if (this._renderWindowRAF !== null) {
+            cancelAnimationFrame(this._renderWindowRAF);
+        }
+
+        this._renderWindowRAF = requestAnimationFrame(() => {
+            this._renderWindowRAF = null;
+            this._renderLoadedWindow(force);
+        });
+    },
+
+    _getLoadedItemScrollTop(index) {
+        const absoluteIndex = Math.max(0, index);
+        const { cols, rowHeight } = this._getGridGeometry();
+        const galleryTop = this.elements.gallery.getBoundingClientRect().top + window.scrollY;
+        const rowIndex = Math.floor(absoluteIndex / Math.max(1, cols));
+        return Math.max(0, galleryTop + rowIndex * rowHeight - 8);
+    },
+
+    _scrollToLoadedItem(itemNumber) {
+        if (itemNumber <= 1) {
+            window.scrollTo({ top: 0, behavior: 'instant' });
+            return;
+        }
+
+        const targetPath = this.state.loadedItems[itemNumber - 1]?.path;
+        const targetEl = targetPath ? this._galleryItemsByPath.get(targetPath) : null;
+        const top = targetEl
+            ? Math.max(0, targetEl.getBoundingClientRect().top + window.scrollY - 8)
+            : this._getLoadedItemScrollTop(itemNumber - 1);
+        window.scrollTo({ top, behavior: 'instant' });
+    },
+
     // ─────────────────────────────────────────────────────────────────────────
     // Custom scrubber
     // ─────────────────────────────────────────────────────────────────────────
@@ -554,23 +695,7 @@ const InfiniteScroll = {
         if (targetItem <= loaded) {
             // Fraction 0 / item 1 → absolute top of the page so the header and
             // favorites bar are fully visible, not just the first gallery row.
-            if (targetItem <= 1) {
-                window.scrollTo({ top: 0, behavior: 'instant' });
-                this.checkAndFillViewport();
-                return;
-            }
-            // Target is already in the DOM — scroll directly to it
-            const gallery = this.elements.gallery;
-            const targetEl = gallery?.children[targetItem - 1];
-            if (targetEl) {
-                window.scrollTo({
-                    top: Math.max(0, targetEl.getBoundingClientRect().top + window.scrollY - 8),
-                    behavior: 'instant',
-                });
-            } else {
-                const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-                window.scrollTo({ top: Math.round(fraction * maxScroll), behavior: 'instant' });
-            }
+            this._scrollToLoadedItem(targetItem);
             this.checkAndFillViewport();
             return;
         }
@@ -706,17 +831,7 @@ const InfiniteScroll = {
                 this.updateVirtualSpacer();
 
                 if (!this.state.loadFailed) {
-                    const gallery = this.elements.gallery;
-                    const targetEl = gallery?.children[this._catchUpTarget - 1];
-                    if (targetEl) {
-                        window.scrollTo({
-                            top: Math.max(
-                                0,
-                                targetEl.getBoundingClientRect().top + window.scrollY - 8
-                            ),
-                            behavior: 'instant',
-                        });
-                    }
+                    this._scrollToLoadedItem(this._catchUpTarget);
                 }
 
                 document.documentElement.classList.remove('catchup-active');
@@ -857,7 +972,6 @@ const InfiniteScroll = {
     renderItems(items, append = false) {
         const gallery = this.elements.gallery;
         if (!append) {
-            gallery.innerHTML = '';
             // New gallery contents invalidate both the geometry cache and the
             // path-to-element lookup map.
             this._cachedGridGeometry = null;
@@ -866,6 +980,8 @@ const InfiniteScroll = {
 
         if (!items || items.length === 0) {
             if (!append) {
+                gallery.style.paddingTop = '0px';
+                gallery.style.paddingBottom = '0px';
                 gallery.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon"><i data-lucide="folder-open"></i></div>
@@ -876,36 +992,7 @@ const InfiniteScroll = {
             return;
         }
 
-        const fragment = document.createDocumentFragment();
-        const startIndex = append ? this.state.loadedItems.length - items.length : 0;
-        const createdElements = [];
-        items.forEach((item, i) => {
-            const element = Gallery.createGalleryItem(item);
-            element.dataset.index = startIndex + i;
-            if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
-                if (ItemSelection.selectedPaths.has(item.path)) element.classList.add('selected');
-            }
-            fragment.appendChild(element);
-            createdElements.push({ path: item.path, element });
-        });
-        gallery.appendChild(fragment);
-
-        // Populate the path-to-element map for fast tag lookups.
-        for (const { path, element } of createdElements) {
-            this._galleryItemsByPath.set(path, element);
-        }
-
-        // Scope createIcons to the newly added elements only — an unscoped call
-        // scans every [data-lucide] in the document, which becomes O(n) work on
-        // each batch append as the gallery grows.
-        lucide.createIcons({ nodes: createdElements.map((c) => c.element) });
-
-        if (typeof ItemSelection !== 'undefined' && ItemSelection.isActive) {
-            const newItems = Array.from(gallery.children).slice(-items.length);
-            newItems.forEach((el) => {
-                if (!el.classList.contains('skeleton')) ItemSelection.applySelectionState(el);
-            });
-        }
+        this._renderLoadedWindow(true);
     },
 
     async updateMediaFiles() {
@@ -1179,6 +1266,7 @@ const InfiniteScroll = {
         window.addEventListener(
             'scroll',
             () => {
+                this.scheduleRenderWindowUpdate();
                 this.updateScrollScrubber();
                 this.updateSpacerGridPosition();
                 if (!this.state.isCatchingUp) {
@@ -1198,6 +1286,7 @@ const InfiniteScroll = {
                 clearTimeout(resizeTimer);
                 resizeTimer = setTimeout(() => {
                     this._positionScrubber();
+                    this.scheduleRenderWindowUpdate(true);
                     this.updateVirtualSpacer();
                     this.updateScrollScrubber();
                 }, 200);

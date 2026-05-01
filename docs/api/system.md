@@ -75,6 +75,44 @@ Starts an on-demand full EXIF auto-tagging pass in the background.
 }
 ```
 
+## Auto-Tagger Status
+
+```http
+GET /api/autotagger/status
+```
+
+Returns the current or most recent EXIF auto-tagging run state. This is useful
+for admin tooling, automation, and smoke tests that need to wait for an
+on-demand run to actually finish instead of polling tags blindly.
+
+### Response
+
+```json
+{
+    "run": {
+        "inProgress": false,
+        "startedAt": "2026-04-23T11:15:02Z",
+        "lastCompleted": "2026-04-23T11:15:09Z",
+        "currentFile": "",
+        "isIncremental": false,
+        "totalFiles": 412,
+        "processed": 412,
+        "tagged": 37,
+        "skipped": 375,
+        "failed": 0,
+        "lastError": ""
+    }
+}
+```
+
+Field notes:
+
+- `inProgress` is `true` while a pass is actively running.
+- `lastCompleted` updates when the most recent successful or failed pass finishes.
+- `currentFile` is populated only while a pass is active.
+- `isIncremental` distinguishes background incremental passes from full on-demand runs.
+- `tagged`, `skipped`, and `failed` describe the most recent run totals.
+
 ## Clear Transcode Cache
 
 ```http

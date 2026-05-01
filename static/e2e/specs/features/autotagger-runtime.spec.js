@@ -11,9 +11,17 @@ const EXPECTED_TAGS = (process.env.AUTOTAGGER_RUNTIME_EXPECTED_TAGS || 'travel,m
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean);
+const SEARCH_SEL = {
+    input: '#search-input',
+    results: '#search-results',
+    resultsInput: '#search-results-input',
+    resultsGallery: '#search-results-gallery',
+};
+const FIXTURE_BASENAME = FIXTURE_NAME.split('/').filter(Boolean).pop() || FIXTURE_NAME;
 
 async function openSettings(page, tab = 'cache') {
     await page.goto('/');
+    await expect(page.locator('#settings-btn')).toBeVisible();
     await page.evaluate((tabName) => {
         window.settingsManager?.open(tabName);
     }, tab);
@@ -22,13 +30,64 @@ async function openSettings(page, tab = 'cache') {
     await expect(page.locator(`#settings-${tab}`)).toHaveClass(/active/);
 }
 
-async function waitForFixtureItem(page) {
-    const item = page.locator(`#gallery .gallery-item[data-name="${FIXTURE_NAME}"]`).first();
-    await expect(item).toBeVisible({ timeout: 30000 });
-    return item;
+async function triggerReindex(page) {
+    await openSettings(page, 'cache');
+    await page.evaluate(async () => {
+        await window.settingsManager?.reindexMedia?.();
+    });
+    await expect(page.locator('#cache-success')).toBeVisible({ timeout: 10000 });
 }
 
-async function waitForAutoTaggedFile(page) {
+async function waitForFixtureIndexed(page, timeout = 120000) {
+    await expect
+        .poll(
+            async () => {
+                const response = await page.request.get(
+                    '/api/media?path=&sort=name&order=asc&limit=0'
+                );
+                if (!response.ok()) {
+                    return false;
+                }
+
+                const payload = await response.json();
+                const items = payload?.items ?? payload?.data?.items ?? [];
+                return items.some((item) => {
+                    const itemPath = item?.path || '';
+                    const itemName = item?.name || '';
+                    return (
+                        itemPath === FIXTURE_NAME ||
+                        itemName === FIXTURE_BASENAME ||
+                        itemPath.endsWith(`/${FIXTURE_NAME}`) ||
+                        itemPath.endsWith(`/${FIXTURE_BASENAME}`)
+                    );
+                });
+            },
+            { timeout }
+        )
+        .toBe(true);
+}
+
+async function getAutoTaggerStatus(page) {
+    const response = await page.request.get('/api/autotagger/status');
+    expect(response.ok()).toBeTruthy();
+    return await response.json();
+}
+
+async function waitForAutoTaggerCompletion(page, previousLastCompleted = 0, timeout = 180000) {
+    await expect
+        .poll(
+            async () => {
+                const status = await getAutoTaggerStatus(page);
+                const run = status?.run ?? {};
+                const lastCompleted = run.lastCompleted ? Date.parse(run.lastCompleted) : 0;
+                return !run.inProgress && lastCompleted > previousLastCompleted;
+            },
+            { timeout }
+        )
+        .toBe(true);
+}
+
+async function waitForAutoTaggedFile(page, timeout = 180000) {
     const expectedTags = [...EXPECTED_TAGS].sort();
 
     await expect
@@ -44,50 +103,85 @@ async function waitForAutoTaggedFile(page) {
                 const tags = await response.json();
                 return [...tags].sort();
             },
-            { timeout: 60000 }
+            { timeout }
         )
         .toEqual(expectedTags);
 }
 
-async function openTagModalForItem(page, item) {
-    await item.evaluate((element) => {
-        if (typeof window.ItemSelection === 'undefined') {
-            throw new Error('ItemSelection is not available');
+async function performSearch(page, query) {
+    const responsePromise = page.waitForResponse((response) => {
+        if (!response.url().includes('/api/search?')) {
+            return false;
         }
 
-        window.ItemSelection.enterSelectionMode(element);
+        const url = new URL(response.url());
+        return url.searchParams.get('q') === query;
     });
 
+    await page.locator(SEARCH_SEL.input).fill(query);
+    await page.keyboard.press('Enter');
+    await responsePromise;
+
+    await expect(page.locator(SEARCH_SEL.results)).toBeVisible();
+    await expect(page.locator(SEARCH_SEL.resultsInput)).toHaveValue(query);
+}
+
+async function waitForSearchHit(page, query, expectedPath, timeout = 120000) {
     await expect
-        .poll(async () => page.evaluate(() => window.ItemSelection?.selectedPaths?.size ?? 0))
-        .toBe(1);
+        .poll(
+            async () => {
+                const response = await page.request.get(
+                    `/api/search?q=${encodeURIComponent(query)}&page=1&pageSize=50`
+                );
+                if (!response.ok()) {
+                    return false;
+                }
 
-    await page.evaluate(() => {
-        window.ItemSelection?.openBulkTagModal?.();
-    });
-    await expect(page.locator('#tag-modal')).toBeVisible();
+                const payload = await response.json();
+                const items = payload?.items ?? payload?.data?.items ?? [];
+                return items.some((item) => item.path === expectedPath);
+            },
+            { timeout }
+        )
+        .toBe(true);
 }
 
 test.describe('Autotagger Runtime Smoke @autotagger @docker-runtime', () => {
     test('should extract metadata tags from the Docker runtime image and surface them in the UI', async ({
         page,
         loginHelpers,
-    }) => {
+    }, testInfo) => {
+        test.setTimeout(240000);
+        test.skip(
+            testInfo.project.name !== 'chromium',
+            'Docker runtime smoke is covered in chromium only.'
+        );
+
         await loginHelpers.login(page);
-        await waitForFixtureItem(page);
+        await triggerReindex(page);
+        await waitForFixtureIndexed(page);
+
+        const previousStatus = await getAutoTaggerStatus(page);
+        const previousLastCompleted = previousStatus?.run?.lastCompleted
+            ? Date.parse(previousStatus.run.lastCompleted)
+            : 0;
 
         await openSettings(page, 'cache');
-        await page.locator('#run-autotagger-btn').click();
+        await page.evaluate(async () => {
+            await window.settingsManager?.runAutoTagger?.();
+        });
         await expect(page.locator('#cache-success')).toBeVisible({ timeout: 10000 });
 
+        await waitForAutoTaggerCompletion(page, previousLastCompleted);
         await waitForAutoTaggedFile(page);
+        await waitForSearchHit(page, `tag:${EXPECTED_TAGS[0]}`, FIXTURE_NAME);
 
         await page.goto('/');
-        const refreshedItem = await waitForFixtureItem(page);
-        await openTagModalForItem(page, refreshedItem);
-
-        for (const tag of EXPECTED_TAGS) {
-            await expect(page.locator('#current-tags')).toContainText(tag);
-        }
+        await performSearch(page, `tag:${EXPECTED_TAGS[0]}`);
+        await expect(
+            page.locator(
+                `${SEARCH_SEL.resultsGallery} .gallery-item[data-path=${JSON.stringify(FIXTURE_NAME)}]`
+            )
+        ).toBeVisible({ timeout: 30000 });
     });
 });
