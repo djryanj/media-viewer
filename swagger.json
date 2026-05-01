@@ -2632,6 +2632,77 @@
                 }
             }
         },
+        "/api/autotagger/status": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get EXIF auto-tagger status",
+                "description": "Returns the current or most recent EXIF auto-tagging run state, including whether a run is in progress and when the last run completed.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Auto-tagger status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "run": {
+                                            "type": "object",
+                                            "properties": {
+                                                "inProgress": {
+                                                    "type": "boolean"
+                                                },
+                                                "startedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "lastCompleted": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "currentFile": {
+                                                    "type": "string"
+                                                },
+                                                "isIncremental": {
+                                                    "type": "boolean"
+                                                },
+                                                "totalFiles": {
+                                                    "type": "integer"
+                                                },
+                                                "processed": {
+                                                    "type": "integer"
+                                                },
+                                                "tagged": {
+                                                    "type": "integer"
+                                                },
+                                                "skipped": {
+                                                    "type": "integer"
+                                                },
+                                                "failed": {
+                                                    "type": "integer"
+                                                },
+                                                "lastError": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Auto-tagger not configured"
+                    }
+                }
+            }
+        },
         "/api/reindex": {
             "post": {
                 "tags": [
