@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update node.js to v24.15.0 ([#520](https://github.com/djryanj/media-viewer/pull/520))
 - build(deps): bump github.com/go-webauthn/webauthn from 0.16.4 to 0.17.0 ([#521](https://github.com/djryanj/media-viewer/pull/521))
 - build(deps): bump renovatebot/github-action from 46.1.9 to 46.1.12 ([#522](https://github.com/djryanj/media-viewer/pull/522))
 - build(deps): bump actions/setup-node from 6.3.0 to 6.4.0 ([#523](https://github.com/djryanj/media-viewer/pull/523))
