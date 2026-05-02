@@ -19,18 +19,24 @@ type CompressionConfig struct {
 	CompressibleTypes []string
 }
 
+// Common MIME types used for compression matching.
+const (
+	compressibleTextHTML        = "text/html"
+	compressibleApplicationJSON = "application/json"
+)
+
 // DefaultCompressionConfig returns sensible defaults for compression
 func DefaultCompressionConfig() CompressionConfig {
 	return CompressionConfig{
 		MinSize: 1024, // 1KB minimum
 		Level:   gzip.DefaultCompression,
 		CompressibleTypes: []string{
-			"text/html",
+			compressibleTextHTML,
 			"text/css",
 			"text/plain",
 			"text/javascript",
 			"text/xml",
-			"application/json",
+			compressibleApplicationJSON,
 			"application/javascript",
 			"application/xml",
 			"application/xhtml+xml",

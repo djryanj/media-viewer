@@ -25,8 +25,8 @@ func (h *Handlers) RunAutoTagger(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]interface{}{
-		"success": true,
-		"message": "Auto-tagger run started",
+		responseKeySuccess: true,
+		responseKeyMessage: "Auto-tagger run started",
 	})
 }
 

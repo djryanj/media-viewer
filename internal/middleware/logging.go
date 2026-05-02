@@ -8,6 +8,16 @@ import (
 	"time"
 )
 
+// Health check and static asset path/extension constants.
+const (
+	pathHealth  = "/health"
+	pathHealthz = "/healthz"
+	pathLivez   = "/livez"
+	pathReadyz  = "/readyz"
+	extCSS      = ".css"
+	extJS       = ".js"
+)
+
 // ResponseWriter wrapper to capture status code and bytes written
 type responseWriter struct {
 	http.ResponseWriter
@@ -58,7 +68,7 @@ type LoggingConfig struct {
 func DefaultLoggingConfig() LoggingConfig {
 	return LoggingConfig{
 		SkipPaths:       []string{},
-		SkipExtensions:  []string{".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+		SkipExtensions:  []string{extCSS, extJS, ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
 		LogStaticFiles:  false,
 		LogHealthChecks: true,
 	}
@@ -79,10 +89,10 @@ func NewW3CLogger(config LoggingConfig, serviceName string) *W3CLogger {
 }
 
 var healthCheckPaths = map[string]bool{
-	"/health":  true,
-	"/healthz": true,
-	"/livez":   true,
-	"/readyz":  true,
+	pathHealth:  true,
+	pathHealthz: true,
+	pathLivez:   true,
+	pathReadyz:  true,
 }
 
 // sanitizeLogField removes control characters that could be used for log injection.

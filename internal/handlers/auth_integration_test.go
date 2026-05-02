@@ -1108,3 +1108,176 @@ func TestAuthMiddlewareDoesNotExtendSessionForNonAPIRequestsIntegration(t *testi
 		t.Errorf("expected no Set-Cookie header for non-API request, but got: %s", setCookie)
 	}
 }
+
+// =============================================================================
+// Cookie Security Attribute Tests
+// =============================================================================
+
+// assertSecureCookie is a test helper that verifies all required security
+// attributes are present on a named Set-Cookie response header value.
+func assertSecureCookie(t *testing.T, label string, cookies []*http.Cookie) {
+	t.Helper()
+	var c *http.Cookie
+	for _, ck := range cookies {
+		if ck.Name == SessionCookieName {
+			c = ck
+			break
+		}
+	}
+	if c == nil {
+		t.Errorf("%s: %s cookie not found in response", label, SessionCookieName)
+		return
+	}
+	if !c.HttpOnly {
+		t.Errorf("%s: expected HttpOnly=true", label)
+	}
+	if !c.Secure {
+		t.Errorf("%s: expected Secure=true", label)
+	}
+	if c.SameSite != http.SameSiteStrictMode {
+		t.Errorf("%s: expected SameSite=Strict, got %v", label, c.SameSite)
+	}
+	if c.Path != "/" {
+		t.Errorf("%s: expected Path=/, got %q", label, c.Path)
+	}
+}
+
+func TestLoginCookieSecurityAttributesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	h.db.CreateUser(ctx, "password123")
+
+	body, _ := json.Marshal(LoginRequest{Password: "password123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.Login(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", w.Code)
+	}
+	assertSecureCookie(t, "Login", w.Result().Cookies())
+}
+
+func TestLogoutCookieSecurityAttributesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	h.db.CreateUser(ctx, "password123")
+	user, _ := h.db.ValidatePassword(ctx, "password123")
+	session, _ := h.db.CreateSession(ctx, user.ID)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.Token})
+	w := httptest.NewRecorder()
+	h.Logout(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("logout failed: %d", w.Code)
+	}
+	assertSecureCookie(t, "Logout", w.Result().Cookies())
+}
+
+func TestCheckAuthInvalidSessionCookieSecurityAttributesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/check", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "invalid-token"})
+	w := httptest.NewRecorder()
+	h.CheckAuth(w, req)
+
+	// CheckAuth returns 200 with authenticated=false; the clearing cookie must be secure.
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	assertSecureCookie(t, "CheckAuth(invalid)", w.Result().Cookies())
+}
+
+func TestKeepaliveCookieSecurityAttributesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	h.db.CreateUser(ctx, "password123")
+	user, _ := h.db.ValidatePassword(ctx, "password123")
+	session, _ := h.db.CreateSession(ctx, user.ID)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/keepalive", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.Token})
+	w := httptest.NewRecorder()
+	h.Keepalive(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("keepalive failed: %d", w.Code)
+	}
+	assertSecureCookie(t, "Keepalive", w.Result().Cookies())
+}
+
+func TestAuthMiddlewareExtendSessionCookieSecurityAttributesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	h.db.CreateUser(ctx, "password123")
+	user, _ := h.db.ValidatePassword(ctx, "password123")
+	session, _ := h.db.CreateSession(ctx, user.ID)
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	// API path triggers session extension and sets a new cookie.
+	req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.Token})
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	assertSecureCookie(t, "AuthMiddleware(extend)", w.Result().Cookies())
+}
+
+func TestAuthMiddlewareInvalidSessionCookieSecurityAttributesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	middleware := h.AuthMiddleware(nextHandler)
+
+	// API path with invalid session — middleware clears the cookie.
+	req := httptest.NewRequest(http.MethodGet, "/api/files", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "invalid-token"})
+	w := httptest.NewRecorder()
+	middleware.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+	assertSecureCookie(t, "AuthMiddleware(invalid)", w.Result().Cookies())
+}

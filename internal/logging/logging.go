@@ -22,6 +22,15 @@ const (
 	LevelError
 )
 
+// Log level name constants used to parse the LOG_LEVEL environment variable.
+const (
+	logLevelDebug   = "debug"
+	logLevelInfo    = "info"
+	logLevelWarn    = "warn"
+	logLevelWarning = "warning"
+	logLevelError   = "error"
+)
+
 var (
 	currentLevel LogLevel
 	levelOnce    sync.Once
@@ -42,13 +51,13 @@ func initLevel() {
 		// Check LOG_LEVEL environment variable
 		levelStr := strings.ToLower(os.Getenv("LOG_LEVEL"))
 		switch levelStr {
-		case "debug":
+		case logLevelDebug:
 			currentLevel = LevelDebug
-		case "info":
+		case logLevelInfo:
 			currentLevel = LevelInfo
-		case "warn", "warning":
+		case logLevelWarn, logLevelWarning:
 			currentLevel = LevelWarn
-		case "error":
+		case logLevelError:
 			currentLevel = LevelError
 		default:
 			// Default to Info level (no debug logs)
@@ -115,13 +124,13 @@ func Println(args ...interface{}) {
 func (l LogLevel) String() string {
 	switch l {
 	case LevelDebug:
-		return "debug"
+		return logLevelDebug
 	case LevelInfo:
-		return "info"
+		return logLevelInfo
 	case LevelWarn:
-		return "warn"
+		return logLevelWarn
 	case LevelError:
-		return "error"
+		return logLevelError
 	default:
 		return fmt.Sprintf("unknown(%d)", l)
 	}

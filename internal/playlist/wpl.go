@@ -42,6 +42,12 @@ type PlaylistItem struct {
 	MediaType string `json:"mediaType,omitempty"`
 }
 
+const (
+	mediaTypeVideo   = "video"
+	mediaTypeAudio   = "audio"
+	mediaTypeUnknown = "unknown"
+)
+
 // ParseWPL parses a Windows Playlist file.
 // ctx is checked before and after the file read so callers can cancel promptly
 // on client disconnect without waiting for slow filesystem I/O to fully complete.
@@ -300,10 +306,10 @@ func getMediaType(filename string) string {
 	}
 
 	if videoExts[ext] {
-		return "video"
+		return mediaTypeVideo
 	}
 	if audioExts[ext] {
-		return "audio"
+		return mediaTypeAudio
 	}
-	return "unknown"
+	return mediaTypeUnknown
 }

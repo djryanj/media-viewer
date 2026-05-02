@@ -9,6 +9,11 @@ import (
 	"media-viewer/internal/metrics"
 )
 
+const (
+	pathMetrics     = "/metrics"
+	apiStreamPrefix = "/api/stream/"
+)
+
 // responseWriter wraps http.ResponseWriter to capture status code and first byte timing
 type metricsResponseWriter struct {
 	http.ResponseWriter
@@ -72,7 +77,7 @@ type MetricsConfig struct {
 // DefaultMetricsConfig returns the default metrics configuration
 func DefaultMetricsConfig() MetricsConfig {
 	return MetricsConfig{
-		SkipPaths: []string{"/metrics", "/health", "/healthz", "/livez", "/readyz"},
+		SkipPaths: []string{pathMetrics, pathHealth, pathHealthz, pathLivez, pathReadyz},
 	}
 }
 
@@ -119,7 +124,7 @@ func Metrics(config MetricsConfig) func(http.Handler) http.Handler {
 // For these endpoints, we measure time to first byte instead of total duration
 func isStreamingPath(path string) bool {
 	streamingPrefixes := []string{
-		"/api/stream/",
+		apiStreamPrefix,
 	}
 
 	for _, prefix := range streamingPrefixes {
@@ -138,7 +143,7 @@ func normalizePath(path string) string {
 	wildcardPrefixes := []string{
 		"/api/files/",
 		"/api/thumbnails/",
-		"/api/stream/",
+		apiStreamPrefix,
 		"/api/stream-info/",
 		"/api/playlists/",
 		"/js/",

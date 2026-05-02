@@ -126,6 +126,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  session.ExpiresAt,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -158,6 +159,7 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -195,6 +197,8 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			Expires:  time.Unix(0, 0),
 			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
 		})
 
 		// Invalid session - return setup status
@@ -222,7 +226,7 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 
 		// Allow auth endpoints without authentication
 		if strings.HasPrefix(r.URL.Path, "/api/auth/") ||
-			r.URL.Path == "/login.html" ||
+			r.URL.Path == loginHTMLPath ||
 			r.URL.Path == "/css/login.css" ||
 			r.URL.Path == "/js/login.js" ||
 			r.URL.Path == "/js/webauthn.js" ||
@@ -247,7 +251,7 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			} else {
-				http.Redirect(w, r, "/login.html", http.StatusFound)
+				http.Redirect(w, r, loginHTMLPath, http.StatusFound)
 			}
 			return
 		}
@@ -262,12 +266,14 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 				Path:     "/",
 				Expires:  time.Unix(0, 0),
 				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteStrictMode,
 			})
 
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			} else {
-				http.Redirect(w, r, "/login.html", http.StatusFound)
+				http.Redirect(w, r, loginHTMLPath, http.StatusFound)
 			}
 			return
 		}
@@ -287,6 +293,7 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 					Path:     "/",
 					Expires:  time.Now().Add(database.GetSessionDuration()),
 					HttpOnly: true,
+					Secure:   true,
 					SameSite: http.SameSiteStrictMode,
 				})
 			}
@@ -372,12 +379,13 @@ func (h *Handlers) Keepalive(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  time.Now().Add(database.GetSessionDuration()),
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"success":   true,
-		"expiresIn": int(database.GetSessionDuration().Seconds()),
+		responseKeySuccess: true,
+		"expiresIn":        int(database.GetSessionDuration().Seconds()),
 	})
 }

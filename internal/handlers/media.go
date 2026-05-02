@@ -711,8 +711,8 @@ func (h *Handlers) TriggerReindex(w http.ResponseWriter, _ *http.Request) {
 	if h.indexer.IsIndexing() {
 		w.Header().Set("Content-Type", "application/json")
 		writeJSON(w, map[string]string{
-			"status":  "already_running",
-			"message": "Indexing is already in progress",
+			responseKeyStatus:  statusAlreadyRunning,
+			responseKeyMessage: "Indexing is already in progress",
 		})
 		return
 	}
@@ -724,8 +724,8 @@ func (h *Handlers) TriggerReindex(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]string{
-		"status":  "started",
-		"message": "Re-indexing started",
+		responseKeyStatus:  responseStatusStarted,
+		responseKeyMessage: "Re-indexing started",
 	})
 }
 
@@ -777,8 +777,8 @@ func (h *Handlers) InvalidateThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]string{
-		"status":  "ok",
-		"message": fmt.Sprintf("Thumbnail invalidated for %s", filePath),
+		responseKeyStatus:  responseStatusOK,
+		responseKeyMessage: fmt.Sprintf("Thumbnail invalidated for %s", filePath),
 	})
 }
 
@@ -800,9 +800,9 @@ func (h *Handlers) InvalidateAllThumbnails(w http.ResponseWriter, _ *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"status":  "ok",
-		"message": "All thumbnails invalidated",
-		"count":   count,
+		responseKeyStatus:  responseStatusOK,
+		responseKeyMessage: "All thumbnails invalidated",
+		"count":            count,
 	})
 }
 
@@ -817,8 +817,8 @@ func (h *Handlers) RebuildAllThumbnails(w http.ResponseWriter, _ *http.Request) 
 	if h.thumbGen.IsGenerating() {
 		w.Header().Set("Content-Type", "application/json")
 		writeJSON(w, map[string]string{
-			"status":  "already_running",
-			"message": "Thumbnail generation is already in progress",
+			responseKeyStatus:  statusAlreadyRunning,
+			responseKeyMessage: "Thumbnail generation is already in progress",
 		})
 		return
 	}
@@ -831,8 +831,8 @@ func (h *Handlers) RebuildAllThumbnails(w http.ResponseWriter, _ *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]string{
-		"status":  "started",
-		"message": "Thumbnail rebuild started in background",
+		responseKeyStatus:  responseStatusStarted,
+		responseKeyMessage: "Thumbnail rebuild started in background",
 	})
 }
 
@@ -841,7 +841,7 @@ func (h *Handlers) GetThumbnailStatus(w http.ResponseWriter, _ *http.Request) {
 	if !h.thumbGen.IsEnabled() {
 		w.Header().Set("Content-Type", "application/json")
 		writeJSON(w, map[string]interface{}{
-			"enabled": false,
+			responseKeyEnabled: false,
 		})
 		return
 	}

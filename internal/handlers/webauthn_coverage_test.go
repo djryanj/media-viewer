@@ -951,3 +951,83 @@ func TestWebAuthnRegistrationWithValidSessionValidatesSession(t *testing.T) {
 		t.Logf("Got status %d, this is expected as full WebAuthn flow needs crypto", w.Code)
 	}
 }
+
+// =============================================================================
+// WebAuthn Cookie Security Tests
+//
+// Note: FinishWebAuthnLogin (the only handler that sets a session cookie in the
+// WebAuthn flow) requires a complete FIDO2 credential exchange, which is not
+// feasible in a unit test without a software authenticator.  The tests below
+// verify that error paths do NOT set a session cookie, and document that the
+// success-path cookie (set via http.SetCookie in webauthn.go) carries the same
+// Secure/HttpOnly/SameSite attributes as all other session cookies.
+// =============================================================================
+
+// TestFinishWebAuthnLoginErrorPathsSetNoCookie verifies that every error branch
+// of FinishWebAuthnLogin does not set a session cookie.
+func TestFinishWebAuthnLoginErrorPathsSetNoCookie(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+	}{
+		{
+			name:       "invalid JSON",
+			body:       `{invalid`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "unknown session ID",
+			body:       `{"sessionId":"no-such-session","credential":{}}`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, cleanup := setupWebAuthnCoverageTest(t, true)
+			defer cleanup()
+
+			req := httptest.NewRequest(http.MethodPost, "/api/webauthn/login/finish",
+				bytes.NewReader([]byte(tt.body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			h.FinishWebAuthnLogin(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
+			}
+
+			for _, ck := range w.Result().Cookies() {
+				if ck.Name == SessionCookieName {
+					t.Errorf("error path %q must not set %s cookie", tt.name, SessionCookieName)
+				}
+			}
+		})
+	}
+}
+
+// TestFinishWebAuthnLoginNotConfiguredSetsNoCookie verifies that a disabled
+// WebAuthn configuration also produces no session cookie.
+func TestFinishWebAuthnLoginNotConfiguredSetsNoCookie(t *testing.T) {
+	h, cleanup := setupWebAuthnCoverageTest(t, false)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webauthn/login/finish",
+		bytes.NewReader([]byte(`{"sessionId":"x","credential":{}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.FinishWebAuthnLogin(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == SessionCookieName {
+			t.Errorf("disabled WebAuthn must not set %s cookie", SessionCookieName)
+		}
+	}
+}

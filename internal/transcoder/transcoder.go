@@ -80,17 +80,32 @@ type VideoInfo struct {
 	NeedsTranscode bool    `json:"needsTranscode"`
 }
 
+// Codec, container, encoder, and filter constants.
+const (
+	codecH264         = "h264"
+	codecVP8          = "vp8"
+	codecVP9          = "vp9"
+	containerMP4      = "mp4"
+	containerWebM     = "webm"
+	encoderH264NVENC  = "h264_nvenc"
+	encoderH264VAAPI  = "h264_vaapi"
+	encoderH264VT     = "h264_videotoolbox"
+	filterVAAPI       = "format=nv12,hwupload"
+	transcoderUnknown = "unknown"
+	labelCPULibx264   = " [CPU: libx264]"
+)
+
 var compatibleCodecs = map[string]bool{
-	"h264": true,
-	"vp8":  true,
-	"vp9":  true,
-	"av1":  true,
+	codecH264: true,
+	codecVP8:  true,
+	codecVP9:  true,
+	"av1":     true,
 }
 
 var compatibleContainers = map[string]bool{
-	"mp4":  true,
-	"webm": true,
-	"ogg":  true,
+	containerMP4:  true,
+	containerWebM: true,
+	"ogg":         true,
 }
 
 // New creates a new Transcoder instance with the specified GPU acceleration mode.
@@ -886,7 +901,7 @@ func (t *Transcoder) getEncoderInfo(targetWidth int, info *VideoInfo, needsReenc
 	case modeGPU:
 		return fmt.Sprintf(" [GPU: %s/%s]", t.gpuAccel, t.gpuEncoder)
 	case modeCPU:
-		return " [CPU: libx264]"
+		return labelCPULibx264
 	default:
 		return ""
 	}
@@ -1138,7 +1153,7 @@ func (t *Transcoder) buildFFmpegArgsWithOptions(inputPath, outputPath string, ta
 		args = append(args, "-movflags", "frag_keyframe+empty_moov")
 	}
 
-	args = append(args, "-f", "mp4", outputPath)
+	args = append(args, "-f", containerMP4, outputPath)
 	return args
 }
 
@@ -1184,7 +1199,7 @@ func (t *Transcoder) isGPUError(stderrOutput string) bool {
 	// VA-API (Intel/AMD) errors
 	vaapiErrors := []string{
 		"libva",
-		"vaapi",
+		string(GPUAccelVAAPI),
 		"/dev/dri",
 		"no va display found",
 		"failed to initialize vaapi",
@@ -1195,7 +1210,7 @@ func (t *Transcoder) isGPUError(stderrOutput string) bool {
 
 	// VideoToolbox (Apple) errors
 	videotoolboxErrors := []string{
-		"videotoolbox",
+		string(GPUAccelVideoToolbox),
 		"kvtcouldnotfindvideoencoder",
 		"coremedia",
 		"vt session",
@@ -1623,19 +1638,19 @@ func (t *Transcoder) detectGPU() {
 			accel   GPUAccel
 			encoder string
 			filter  string
-		}{{GPUAccelNVIDIA, "h264_nvenc", ""}}
+		}{{GPUAccelNVIDIA, encoderH264NVENC, ""}}
 	case GPUAccelVAAPI:
 		encodersToTry = []struct {
 			accel   GPUAccel
 			encoder string
 			filter  string
-		}{{GPUAccelVAAPI, "h264_vaapi", "format=nv12,hwupload"}}
+		}{{GPUAccelVAAPI, encoderH264VAAPI, filterVAAPI}}
 	case GPUAccelVideoToolbox:
 		encodersToTry = []struct {
 			accel   GPUAccel
 			encoder string
 			filter  string
-		}{{GPUAccelVideoToolbox, "h264_videotoolbox", ""}}
+		}{{GPUAccelVideoToolbox, encoderH264VT, ""}}
 	case GPUAccelAuto:
 		// Try in order: NVIDIA, VA-API, VideoToolbox
 		encodersToTry = []struct {
@@ -1643,9 +1658,9 @@ func (t *Transcoder) detectGPU() {
 			encoder string
 			filter  string
 		}{
-			{GPUAccelNVIDIA, "h264_nvenc", ""},
-			{GPUAccelVAAPI, "h264_vaapi", "format=nv12,hwupload"},
-			{GPUAccelVideoToolbox, "h264_videotoolbox", ""},
+			{GPUAccelNVIDIA, encoderH264NVENC, ""},
+			{GPUAccelVAAPI, encoderH264VAAPI, filterVAAPI},
+			{GPUAccelVideoToolbox, encoderH264VT, ""},
 		}
 	default:
 		logging.Warn("Unknown GPU acceleration mode: %s, falling back to CPU", t.gpuAccel)
@@ -2020,7 +2035,7 @@ func sanitizeLogFileName(baseName string) string {
 	}
 	result := sanitized.String()
 	if result == "" || result == "." || result == ".." {
-		return "unknown"
+		return transcoderUnknown
 	}
 	return result
 }
