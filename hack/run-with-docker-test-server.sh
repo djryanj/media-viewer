@@ -120,7 +120,7 @@ require_cmd curl
 require_cmd python3
 
 HOST_PORT="${HOST_PORT:-$(find_free_port)}"
-TEST_BASE_URL="http://127.0.0.1:${HOST_PORT}"
+TEST_BASE_URL="http://localhost:${HOST_PORT}"
 
 mkdir -p "$MEDIA_DIR" "$CACHE_DIR" "$DATABASE_DIR"
 copy_media_source

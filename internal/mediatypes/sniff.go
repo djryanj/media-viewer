@@ -51,7 +51,7 @@ func SniffFileType(path string) (FileType, string, bool) {
 	}
 
 	if isGIFHeader(buf[:]) {
-		return FileTypeVideo, "video/mp4", true
+		return FileTypeVideo, MimeVideoMP4, true
 	}
 
 	return FileTypeOther, "", false

@@ -1194,9 +1194,11 @@ describe('Tags Integration Tests', () => {
             expect(addSpy).toHaveBeenCalled();
         });
 
-        it('should hide suggestions and reset index on Escape when suggestions are showing', () => {
+        it('should close the modal on Escape regardless of suggestion visibility', () => {
+            // Suggestions visible
             mockElements['tag-suggestions'].classList.contains = vi.fn(() => false);
             Tags.highlightedSuggestionIndex = 1;
+            const closeSpy = vi.spyOn(Tags, 'closeModalWithHistory').mockImplementation(() => {});
 
             keydownHandler({
                 key: 'Escape',
@@ -1204,8 +1206,7 @@ describe('Tags Integration Tests', () => {
                 stopPropagation: vi.fn(),
             });
 
-            expect(mockElements['tag-suggestions'].classList.add).toHaveBeenCalledWith('hidden');
-            expect(Tags.highlightedSuggestionIndex).toBe(-1);
+            expect(closeSpy).toHaveBeenCalledOnce();
         });
 
         it('should toggle active class correctly via updateSuggestionHighlight', () => {

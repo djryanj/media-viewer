@@ -95,7 +95,7 @@ func (h *Handlers) LivenessCheck(w http.ResponseWriter, r *http.Request) {
 	// For HEAD requests, only send headers (no body)
 	if r.Method != http.MethodHead {
 		writeJSON(w, map[string]string{
-			"status": "alive",
+			responseKeyStatus: statusAlive,
 		})
 	}
 }
@@ -106,12 +106,12 @@ func (h *Handlers) ReadinessCheck(w http.ResponseWriter, _ *http.Request) {
 	if h.indexer.IsReady() {
 		w.WriteHeader(http.StatusOK)
 		writeJSON(w, map[string]string{
-			"status": "ready",
+			responseKeyStatus: statusReady,
 		})
 	} else {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		writeJSON(w, map[string]string{
-			"status": "not_ready",
+			responseKeyStatus: statusNotReady,
 		})
 	}
 }

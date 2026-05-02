@@ -313,7 +313,7 @@ func (d *Database) prepareStatements(ctx context.Context) error {
 	}
 
 	// Prepare the 16 listDir variants: 4 sort expressions × 2 directions × 2 filter states.
-	sortExprs := []string{NameCollationStr, "f.mod_time", "f.size", "f.type"}
+	sortExprs := []string{NameCollationStr, sortColumnModTime, sortColumnSize, sortColumnType}
 	sortDirStrs := []string{SortAscStr, SortDescStr}
 	for fi, withFilter := range []bool{false, true} {
 		for si, col := range sortExprs {

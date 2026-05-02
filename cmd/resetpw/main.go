@@ -21,6 +21,8 @@ const (
 	defaultTimeout = 30 * time.Second
 	// Default database directory path
 	defaultDatabaseDir = "/database"
+	commandReset       = "reset"
+	commandStatus      = "status"
 )
 
 func main() {
@@ -68,11 +70,11 @@ func main() {
 	}()
 
 	switch command {
-	case "reset":
+	case commandReset:
 		if !resetPassword(ctx, db) {
 			os.Exit(1)
 		}
-	case "status":
+	case commandStatus:
 		showStatus(ctx, db)
 	default:
 		// Sanitize command input using allowlist to break taint chain

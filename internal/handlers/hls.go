@@ -76,8 +76,8 @@ func (h *Handlers) CreateHLSSession(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]string{
-		"sessionId":   session.ID,
-		"playlistUrl": "/api/hls/" + session.ID + "/playlist.m3u8",
+		responseKeySessionID: session.ID,
+		"playlistUrl":        "/api/hls/" + session.ID + "/playlist.m3u8",
 	})
 }
 

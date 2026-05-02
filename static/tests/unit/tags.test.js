@@ -1257,6 +1257,146 @@ describe('Tags Module', () => {
         });
     });
 
+    describe('Escape key — always closes the modal', () => {
+        function fireKeydown(target, key) {
+            const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+            target.dispatchEvent(event);
+            return event;
+        }
+
+        beforeEach(() => {
+            // Open the modal so handlers are active
+            Tags.elements.tagModal.classList.remove('hidden');
+        });
+
+        test('Escape on the tag input closes the modal even when suggestions are visible', () => {
+            const closeSpy = vi.spyOn(Tags, 'closeModalWithHistory');
+            // Make suggestions visible to confirm the two-step behaviour is gone
+            Tags.elements.tagSuggestions.classList.remove('hidden');
+
+            const event = fireKeydown(Tags.elements.tagInput, 'Escape');
+
+            expect(closeSpy).toHaveBeenCalledOnce();
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        test('Escape on the tag input closes the modal when suggestions are hidden', () => {
+            const closeSpy = vi.spyOn(Tags, 'closeModalWithHistory');
+            Tags.elements.tagSuggestions.classList.add('hidden');
+
+            fireKeydown(Tags.elements.tagInput, 'Escape');
+
+            expect(closeSpy).toHaveBeenCalledOnce();
+        });
+
+        test('Escape on the modal backdrop closes the modal', () => {
+            const closeSpy = vi.spyOn(Tags, 'closeModalWithHistory');
+
+            const event = fireKeydown(Tags.elements.tagModal, 'Escape');
+
+            expect(closeSpy).toHaveBeenCalledOnce();
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        test('non-Escape keys on the modal do not trigger close', () => {
+            const closeSpy = vi.spyOn(Tags, 'closeModalWithHistory');
+
+            fireKeydown(Tags.elements.tagModal, 'Enter');
+            fireKeydown(Tags.elements.tagModal, 'Tab');
+
+            expect(closeSpy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Focus trap — keeps focus inside the modal while open', () => {
+        beforeEach(() => {
+            // Open the modal so the trap is active
+            Tags.elements.tagModal.classList.remove('hidden');
+        });
+
+        test('refocuses tag input when focus moves to an element outside the modal', () => {
+            const focusSpy = vi.spyOn(Tags.elements.tagInput, 'focus');
+
+            // Simulate focus landing on an element outside the modal
+            const outside = document.createElement('button');
+            document.body.appendChild(outside);
+            const focusinEvent = new FocusEvent('focusin', { bubbles: true });
+            Object.defineProperty(focusinEvent, 'target', { value: outside });
+            document.dispatchEvent(focusinEvent);
+
+            expect(focusSpy).toHaveBeenCalledOnce();
+        });
+
+        test('does not steal focus when focus moves to an element inside the modal', () => {
+            const focusSpy = vi.spyOn(Tags.elements.tagInput, 'focus');
+
+            const inside = document.createElement('button');
+            Tags.elements.tagModal.appendChild(inside);
+            const focusinEvent = new FocusEvent('focusin', { bubbles: true });
+            Object.defineProperty(focusinEvent, 'target', { value: inside });
+            document.dispatchEvent(focusinEvent);
+
+            expect(focusSpy).not.toHaveBeenCalled();
+        });
+
+        test('does not steal focus when the modal is closed', () => {
+            Tags.elements.tagModal.classList.add('hidden');
+            const focusSpy = vi.spyOn(Tags.elements.tagInput, 'focus');
+
+            const outside = document.createElement('button');
+            document.body.appendChild(outside);
+            const focusinEvent = new FocusEvent('focusin', { bubbles: true });
+            Object.defineProperty(focusinEvent, 'target', { value: outside });
+            document.dispatchEvent(focusinEvent);
+
+            expect(focusSpy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('isModalOpen() — modal state gate for other modules', () => {
+        test('returns false when tag modal has hidden class', () => {
+            Tags.elements.tagModal.classList.add('hidden');
+            expect(Tags.isModalOpen()).toBe(false);
+        });
+
+        test('returns true when tag modal does not have hidden class', () => {
+            Tags.elements.tagModal.classList.remove('hidden');
+            expect(Tags.isModalOpen()).toBe(true);
+        });
+
+        test('hotkey copy handler does not fire when modal is closed', () => {
+            Tags.elements.tagModal.classList.add('hidden');
+            const copySpy = vi.spyOn(Tags, 'copyTagsToClipboard');
+            Tags.currentTagsList = ['tag1'];
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'c',
+                ctrlKey: true,
+                bubbles: true,
+                cancelable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(copySpy).not.toHaveBeenCalled();
+        });
+
+        test('hotkey copy handler fires when modal is open', () => {
+            Tags.elements.tagModal.classList.remove('hidden');
+            Tags.currentTagsList = ['tag1'];
+            const copySpy = vi.spyOn(Tags, 'copyTagsToClipboard').mockImplementation(() => {});
+
+            const event = new KeyboardEvent('keydown', {
+                key: 'c',
+                ctrlKey: true,
+                bubbles: true,
+                cancelable: true,
+            });
+            document.dispatchEvent(event);
+
+            expect(copySpy).toHaveBeenCalledOnce();
+        });
+    });
+
     describe('closeModal() — viewport cleanup', () => {
         beforeEach(() => {
             // Simulate a bound handler so closeModal has something to clean up

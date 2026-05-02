@@ -1393,21 +1393,6 @@ test.describe('Keyboard Shortcuts @keyboard @shortcuts @accessibility', () => {
         await page.waitForSelector('.gallery-item');
     });
 
-    test('should show keyboard shortcuts help', async ({ page }) => {
-        // Press ? or F1 to show shortcuts
-        await page.keyboard.press('?');
-        await page.waitForTimeout(300);
-
-        // Help dialog should appear
-        const helpDialog = page.locator(
-            '.shortcuts, .help-dialog, [role="dialog"]:has-text("Keyboard")'
-        );
-
-        if ((await helpDialog.count()) > 0) {
-            await expect(helpDialog).toBeVisible();
-        }
-    });
-
     test('should focus search with / key', async ({ page }) => {
         await page.keyboard.press('/');
 
@@ -1416,5 +1401,138 @@ test.describe('Keyboard Shortcuts @keyboard @shortcuts @accessibility', () => {
         if ((await searchInput.count()) > 0) {
             await expect(searchInput).toBeFocused();
         }
+    });
+});
+
+test.describe('Tagging keyboard and focus behaviour @tags @keyboard @accessibility', () => {
+    test.beforeEach(async ({ page, loginHelpers }) => {
+        await loginHelpers.login(page);
+        await page.waitForSelector('.gallery-item');
+    });
+
+    test('Escape closes the tag modal when suggestions are visible', async ({ page }) => {
+        const [targetItem] = await getTaggableItems(page, 1, 0);
+        await openTagModalForSingleSelection(page, targetItem.locator);
+
+        // Type something to surface suggestions
+        await page.locator('#tag-input').fill('a');
+        // Wait for suggestions to appear (or skip if none shown)
+        await page.waitForTimeout(200);
+
+        await page.keyboard.press('Escape');
+
+        await expect(page.locator('#tag-modal')).toBeHidden({ timeout: 3000 });
+
+        await clearSelection(page);
+    });
+
+    test('Escape closes the tag modal when no suggestions are visible', async ({ page }) => {
+        const [targetItem] = await getTaggableItems(page, 1, 0);
+        await openTagModalForSingleSelection(page, targetItem.locator);
+
+        // Clear any suggestions
+        await page.evaluate(() => {
+            document.getElementById('tag-suggestions')?.classList.add('hidden');
+        });
+
+        await page.keyboard.press('Escape');
+
+        await expect(page.locator('#tag-modal')).toBeHidden({ timeout: 3000 });
+
+        await clearSelection(page);
+    });
+
+    test('global / hotkey does not steal focus while tag modal is open', async ({ page }) => {
+        const [targetItem] = await getTaggableItems(page, 1, 0);
+        await openTagModalForSingleSelection(page, targetItem.locator);
+
+        const tagInput = page.locator('#tag-input');
+        await expect(tagInput).toBeFocused();
+
+        // Press the global search shortcut — focus must stay in the modal
+        await page.keyboard.press('/');
+
+        await expect(tagInput).toBeFocused();
+        await expect(page.locator('#tag-modal')).toBeVisible();
+
+        await closeTagModalAndClearSelection(page);
+    });
+
+    test('focus cannot escape the tag modal to an element outside it', async ({ page }) => {
+        const [targetItem] = await getTaggableItems(page, 1, 0);
+        await openTagModalForSingleSelection(page, targetItem.locator);
+
+        // Programmatically move focus to a gallery item outside the modal
+        await page.evaluate(() => {
+            const galleryItem = document.querySelector('#gallery .gallery-item');
+            if (galleryItem instanceof HTMLElement) {
+                galleryItem.setAttribute('tabindex', '-1');
+                galleryItem.focus();
+            }
+        });
+
+        // Focus should have been returned to the tag input by the focus trap
+        await expect(page.locator('#tag-input')).toBeFocused({ timeout: 1000 });
+
+        await closeTagModalAndClearSelection(page);
+    });
+
+    test('Escape closes the lightbox drawer tag input', async ({ page }) => {
+        const [targetItem] = await getTaggableItems(page, 1, 0);
+        await openLightboxForPath(page, targetItem.path);
+
+        await page.evaluate(() => {
+            globalThis.Lightbox?.openTagsDrawer?.();
+        });
+
+        const drawer = page.locator('.lightbox-tags-drawer');
+        const drawerInput = drawer.locator('.drawer-tag-input');
+        await expect(drawer).toBeVisible({ timeout: 3000 });
+
+        // Focus the input and press Escape
+        await drawerInput.click();
+        await page.keyboard.press('Escape');
+
+        await expect(drawer).toBeHidden({ timeout: 3000 });
+
+        await closeLightbox(page);
+    });
+
+    test('lightbox hotkeys do not fire while gallery tag modal is open', async ({ page }) => {
+        const [targetItem] = await getTaggableItems(page, 1, 0);
+
+        // Open the lightbox so its keydown handler is active
+        await openLightboxForPath(page, targetItem.path);
+
+        // Open the gallery tag modal on top (e.g. from a selection context)
+        await page.evaluate(() => {
+            globalThis.Tags?.openModal?.('/test/path.jpg', 'path.jpg');
+        });
+        await expect(page.locator('#tag-modal')).toBeVisible({ timeout: 3000 });
+
+        // Record lightbox state before keypresses
+        const indexBefore = await page.evaluate(() => globalThis.Lightbox?.currentIndex ?? 0);
+
+        // ArrowLeft/Right should not navigate while tag modal is open
+        await page.keyboard.press('ArrowLeft');
+        await page.keyboard.press('ArrowRight');
+
+        const indexAfter = await page.evaluate(() => globalThis.Lightbox?.currentIndex ?? 0);
+        expect(indexAfter).toBe(indexBefore);
+
+        // 'f' should not toggle favorite
+        const pinBefore = await page.evaluate(() => {
+            const item = globalThis.Lightbox?.items?.[globalThis.Lightbox?.currentIndex ?? 0];
+            return item?.is_favorite ?? false;
+        });
+        await page.keyboard.press('f');
+        const pinAfter = await page.evaluate(() => {
+            const item = globalThis.Lightbox?.items?.[globalThis.Lightbox?.currentIndex ?? 0];
+            return item?.is_favorite ?? false;
+        });
+        expect(pinAfter).toBe(pinBefore);
+
+        await page.evaluate(() => globalThis.Tags?.closeModal?.());
+        await closeLightbox(page);
     });
 });

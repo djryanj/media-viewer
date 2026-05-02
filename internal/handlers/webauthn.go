@@ -171,10 +171,10 @@ func (h *Handlers) WebAuthnAvailable(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"available":      available,
-		"enabled":        webAuthnEnabled,
-		"hasCredentials": hasCredentials,
-		"configError":    configError,
+		responseKeyAvailable: available,
+		responseKeyEnabled:   webAuthnEnabled,
+		"hasCredentials":     hasCredentials,
+		"configError":        configError,
 	})
 }
 
@@ -254,8 +254,8 @@ func (h *Handlers) BeginWebAuthnRegistration(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"options":   options,
-		"sessionId": sessionID,
+		"options":            options,
+		responseKeySessionID: sessionID,
 	})
 }
 
@@ -338,8 +338,8 @@ func (h *Handlers) FinishWebAuthnRegistration(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"success": true,
-		"message": "Passkey registered successfully",
+		responseKeySuccess: true,
+		responseKeyMessage: "Passkey registered successfully",
 	})
 }
 
@@ -393,8 +393,8 @@ func (h *Handlers) BeginWebAuthnLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"options":   options,
-		"sessionId": sessionID,
+		"options":            options,
+		responseKeySessionID: sessionID,
 	})
 }
 
@@ -469,6 +469,7 @@ func (h *Handlers) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  authSession.ExpiresAt,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -573,7 +574,7 @@ func (h *Handlers) DeletePasskey(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
-		"success": true,
+		responseKeySuccess: true,
 	})
 }
 

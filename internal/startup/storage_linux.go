@@ -13,6 +13,8 @@ const (
 	dbFSTypeCIFS = int64(0xFF534D42)
 	dbFSTypeNFS  = int64(0x6969)
 	dbFSTypeSMB  = int64(0x517B)
+	storageNFS   = "NFS"
+	storage9PWSL = "9P/WSL"
 )
 
 func detectUnsafeDBStorage(path string) (unsafe bool, storageName string) {
@@ -33,13 +35,13 @@ func detectUnsafeDBStorage(path string) (unsafe bool, storageName string) {
 func classifyUnsafeDBFilesystemType(fsType int64) (unsafe bool, storageName string) {
 	switch fsType {
 	case dbFSTypeNFS:
-		return true, "NFS"
+		return true, storageNFS
 	case dbFSTypeSMB:
 		return true, "SMB"
 	case dbFSTypeCIFS:
 		return true, "CIFS"
 	case dbFSType9P:
-		return true, "9P/WSL"
+		return true, storage9PWSL
 	default:
 		return false, ""
 	}

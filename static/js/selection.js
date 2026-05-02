@@ -158,6 +158,7 @@ const ItemSelection = {
         document.addEventListener('keydown', (e) => {
             if (!this.isActive) return;
             if (e.target.matches('input, textarea')) return;
+            if (typeof Tags !== 'undefined' && Tags.isModalOpen()) return;
 
             if (e.key === 'Escape') {
                 this.exitSelectionModeWithHistory();

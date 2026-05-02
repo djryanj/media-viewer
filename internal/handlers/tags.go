@@ -521,10 +521,10 @@ func (h *Handlers) RenameTagEverywhere(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"status":        "ok",
-		"affectedFiles": count,
-		"oldName":       tagName,
-		"newName":       req.NewName,
+		responseKeyStatus:  responseStatusOK,
+		"affectedFiles":    count,
+		"oldName":          tagName,
+		responseKeyNewName: req.NewName,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -549,9 +549,9 @@ func (h *Handlers) DeleteTagEverywhere(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"status":        "ok",
-		"affectedFiles": count,
-		"tagName":       tagName,
+		responseKeyStatus: responseStatusOK,
+		"affectedFiles":   count,
+		"tagName":         tagName,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

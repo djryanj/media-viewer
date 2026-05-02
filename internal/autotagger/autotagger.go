@@ -448,6 +448,14 @@ func filterTaggableFiles(files []database.MediaFile) []database.MediaFile {
 	return filtered
 }
 
+const (
+	autoTagStatusTotal     = "total"
+	autoTagStatusProcessed = "processed"
+	autoTagStatusTagged    = "tagged"
+	autoTagStatusSkipped   = "skipped"
+	autoTagStatusFailed    = "failed"
+)
+
 func (a *AutoTagger) setTotalFiles(total int) {
 	a.runMu.Lock()
 	a.runStats.TotalFiles = total
@@ -466,11 +474,11 @@ func (a *AutoTagger) recordOutcome(outcome string) {
 	a.runMu.Lock()
 	a.runStats.Processed++
 	switch outcome {
-	case "tagged":
+	case autoTagStatusTagged:
 		a.runStats.Tagged++
-	case "skipped":
+	case autoTagStatusSkipped:
 		a.runStats.Skipped++
-	case "failed":
+	case autoTagStatusFailed:
 		a.runStats.Failed++
 	}
 	stats := a.runStats
@@ -511,23 +519,23 @@ func (a *AutoTagger) logStillRunning(startTime time.Time, incremental bool) {
 }
 
 func (a *AutoTagger) updateCurrentRunMetrics(stats runStats) {
-	metrics.ExifTagCurrentRunFiles.WithLabelValues("total").Set(float64(stats.TotalFiles))
-	metrics.ExifTagCurrentRunFiles.WithLabelValues("processed").Set(float64(stats.Processed))
-	metrics.ExifTagCurrentRunFiles.WithLabelValues("tagged").Set(float64(stats.Tagged))
-	metrics.ExifTagCurrentRunFiles.WithLabelValues("skipped").Set(float64(stats.Skipped))
-	metrics.ExifTagCurrentRunFiles.WithLabelValues("failed").Set(float64(stats.Failed))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues(autoTagStatusTotal).Set(float64(stats.TotalFiles))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues(autoTagStatusProcessed).Set(float64(stats.Processed))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues(autoTagStatusTagged).Set(float64(stats.Tagged))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues(autoTagStatusSkipped).Set(float64(stats.Skipped))
+	metrics.ExifTagCurrentRunFiles.WithLabelValues(autoTagStatusFailed).Set(float64(stats.Failed))
 }
 
 func (a *AutoTagger) resetCurrentRunMetrics() {
-	for _, status := range []string{"total", "processed", "tagged", "skipped", "failed"} {
+	for _, status := range []string{autoTagStatusTotal, autoTagStatusProcessed, autoTagStatusTagged, autoTagStatusSkipped, autoTagStatusFailed} {
 		metrics.ExifTagCurrentRunFiles.WithLabelValues(status).Set(0)
 	}
 }
 
 func (a *AutoTagger) updateLastRunMetrics(stats runStats) {
-	metrics.ExifTagLastRunFiles.WithLabelValues("total").Set(float64(stats.TotalFiles))
-	metrics.ExifTagLastRunFiles.WithLabelValues("processed").Set(float64(stats.Processed))
-	metrics.ExifTagLastRunFiles.WithLabelValues("tagged").Set(float64(stats.Tagged))
-	metrics.ExifTagLastRunFiles.WithLabelValues("skipped").Set(float64(stats.Skipped))
-	metrics.ExifTagLastRunFiles.WithLabelValues("failed").Set(float64(stats.Failed))
+	metrics.ExifTagLastRunFiles.WithLabelValues(autoTagStatusTotal).Set(float64(stats.TotalFiles))
+	metrics.ExifTagLastRunFiles.WithLabelValues(autoTagStatusProcessed).Set(float64(stats.Processed))
+	metrics.ExifTagLastRunFiles.WithLabelValues(autoTagStatusTagged).Set(float64(stats.Tagged))
+	metrics.ExifTagLastRunFiles.WithLabelValues(autoTagStatusSkipped).Set(float64(stats.Skipped))
+	metrics.ExifTagLastRunFiles.WithLabelValues(autoTagStatusFailed).Set(float64(stats.Failed))
 }
