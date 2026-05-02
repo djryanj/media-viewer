@@ -972,24 +972,10 @@ describe('Lightbox Integration', () => {
             expect(addSpy).toHaveBeenCalled();
         });
 
-        it('should hide suggestions and reset index on Escape when suggestions are visible', () => {
+        it('should close the drawer on Escape regardless of suggestion visibility', () => {
             Lightbox.showDrawerSuggestions('va');
             Lightbox.drawerHighlightedIndex = 1;
-
-            const event = new KeyboardEvent('keydown', {
-                key: 'Escape',
-                bubbles: true,
-                cancelable: true,
-            });
-            Lightbox.elements.drawerTagInput.dispatchEvent(event);
-
-            expect(Lightbox.elements.drawerSuggestions.classList.contains('hidden')).toBe(true);
-            expect(Lightbox.drawerHighlightedIndex).toBe(-1);
-        });
-
-        it('should close drawer on Escape when suggestions are already hidden', () => {
-            Lightbox.elements.drawerSuggestions.classList.add('hidden');
-            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawer');
+            const closeSpy = vi.spyOn(Lightbox, 'closeTagsDrawerWithHistory');
 
             const event = new KeyboardEvent('keydown', {
                 key: 'Escape',

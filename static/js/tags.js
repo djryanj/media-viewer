@@ -130,12 +130,7 @@ const Tags = {
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (!this.elements.tagSuggestions.classList.contains('hidden')) {
-                        this.elements.tagSuggestions.classList.add('hidden');
-                        this.highlightedSuggestionIndex = -1;
-                    } else {
-                        this.closeModalWithHistory();
-                    }
+                    this.closeModalWithHistory();
                 }
             });
         }
@@ -168,7 +163,7 @@ const Tags = {
 
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
                 // Don't intercept if user is selecting text in input
-                if (e.target.matches('input, textarea') && window.getSelection().toString()) {
+                if (e.target?.matches?.('input, textarea') && window.getSelection().toString()) {
                     return;
                 }
 
@@ -191,6 +186,27 @@ const Tags = {
                     }
                 }
             }
+        });
+
+        // Escape pressed while focus is on a non-input element inside the modal
+        // (e.g. a tag chip button). The tagInput's own handler covers the focused-input
+        // case via stopPropagation, so this only fires for other modal children.
+        if (this.elements.tagModal) {
+            this.elements.tagModal.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.closeModalWithHistory();
+            });
+        }
+
+        // Focus trap: while the tag modal is open, keep keyboard focus inside it
+        // so that global gallery hotkeys (selection, search, etc.) cannot fire via
+        // a non-input focus target.
+        document.addEventListener('focusin', (e) => {
+            if (!this.isModalOpen()) return;
+            if (this.elements.tagModal?.contains(e.target)) return;
+            this.elements.tagInput?.focus();
         });
     },
 

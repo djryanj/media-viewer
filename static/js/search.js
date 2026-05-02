@@ -112,6 +112,10 @@ const Search = {
                 return;
             }
 
+            if (typeof Tags !== 'undefined' && Tags.isModalOpen()) {
+                return;
+            }
+
             if ((e.ctrlKey && e.key === 'k') || e.key === '/') {
                 e.preventDefault();
                 // Focus the appropriate search input based on context

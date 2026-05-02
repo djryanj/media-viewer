@@ -5,11 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.18.1] - unreleased
-
+## [0.18.1] - Unreleased
 
 ### Changed
 
+- chore(deps): bump Go version to 1.26.2
 - chore(deps): update all non-major dependencies ([#517](https://github.com/djryanj/media-viewer/pull/517))
 - chore(deps): update github actions ([#519](https://github.com/djryanj/media-viewer/pull/519))
 - chore(deps): update node.js to v24.15.0 ([#520](https://github.com/djryanj/media-viewer/pull/520))
@@ -17,12 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - build(deps): bump renovatebot/github-action from 46.1.9 to 46.1.12 ([#522](https://github.com/djryanj/media-viewer/pull/522))
 - build(deps): bump actions/setup-node from 6.3.0 to 6.4.0 ([#523](https://github.com/djryanj/media-viewer/pull/523))
 - build(deps): bump github.com/mattn/go-sqlite3 from 1.14.42 to 1.14.44 ([#527](https://github.com/djryanj/media-viewer/pull/527))
+
 ### Added
 
 - feat(api): The auto-tagger now exposes a status endpoint so admin tooling and automated smoke coverage can tell when an on-demand pass is still running and when it last completed, instead of polling for tag changes blindly. ([#524](https://github.com/djryanj/media-viewer/issues/524))
 
 ### Fixed
 
+- fix(frontend): Pressing Escape while the tag modal or lightbox tag drawer is open now always closes it immediately, even when the suggestions list is visible. Previously, Escape would only close the suggestions on the first press and required a second press to close the modal itself. ([#525](https://github.com/djryanj/media-viewer/issues/525))
+- fix(frontend): Keyboard focus is now trapped inside the tag modal so that gallery hotkeys (selection mode, search shortcuts, lightbox navigation, favorites) cannot be accidentally triggered while tagging. ([#525](https://github.com/djryanj/media-viewer/issues/525))
 - fix(frontend): Tagging and pasting tags deep into very large galleries is now much faster and uses less browser memory. Tag writes now reuse updated tag data returned by the server instead of triggering extra follow-up reloads, background gallery tag-chip updates are deferred out of the hot path, and the infinite gallery now keeps only a bounded visible slice of loaded items mounted so deep positions no longer force the browser to repaint and retain thousands of off-screen cards at once. ([#524](https://github.com/djryanj/media-viewer/issues/524))
 
 ## [0.18.0] - 04-13-2026

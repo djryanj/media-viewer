@@ -87,6 +87,7 @@ describe('ItemSelection Integration', () => {
 
         globalThis.Tags = {
             openBulkModal: vi.fn(),
+            isModalOpen: vi.fn(() => false),
         };
         _Tags = globalThis.Tags;
 

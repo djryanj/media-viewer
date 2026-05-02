@@ -569,12 +569,7 @@ const Lightbox = {
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
-                if (!this.elements.drawerSuggestions.classList.contains('hidden')) {
-                    this.elements.drawerSuggestions.classList.add('hidden');
-                    this.drawerHighlightedIndex = -1;
-                } else {
-                    this.closeTagsDrawer();
-                }
+                this.closeTagsDrawerWithHistory();
             }
         });
 
@@ -814,7 +809,7 @@ const Lightbox = {
 
         const handleBar = drawer.querySelector('.drawer-handle-bar');
         this.bindDrawerSwipeDismiss(handleBar, drawer, () => this.closeMobileActions());
-        lucide.createIcons({ nodes: [trigger, drawer] });
+        lucide.createIcons();
         this.updateMobileActions();
     },
 
@@ -1743,6 +1738,12 @@ const Lightbox = {
                 return;
             }
 
+            // While the gallery tag modal is open, let its own handlers manage
+            // all keyboard input — do not fire lightbox hotkeys.
+            if (typeof Tags !== 'undefined' && Tags.isModalOpen()) {
+                return;
+            }
+
             switch (e.key) {
                 case 'Escape':
                     if (this.mobileActionsOpen) {
@@ -1772,7 +1773,13 @@ const Lightbox = {
                     }
                     break;
                 case ' ':
-                    if (this.elements.video && !this.elements.video.classList.contains('hidden')) {
+                    if (
+                        !this.tagsDrawerOpen &&
+                        !this.collectionDrawerOpen &&
+                        !this.mobileActionsOpen &&
+                        this.elements.video &&
+                        !this.elements.video.classList.contains('hidden')
+                    ) {
                         e.preventDefault();
                         if (this.elements.video.paused) {
                             this.elements.video.play();
@@ -1783,6 +1790,8 @@ const Lightbox = {
                     break;
                 case 'f':
                 case 'F':
+                    if (this.tagsDrawerOpen || this.collectionDrawerOpen || this.mobileActionsOpen)
+                        break;
                     this.togglePin();
                     break;
                 case 't':
@@ -1809,19 +1818,34 @@ const Lightbox = {
                     break;
                 case 'a':
                 case 'A':
-                    if (!this.elements.autoplayBtn?.classList.contains('hidden')) {
+                    if (
+                        !this.tagsDrawerOpen &&
+                        !this.collectionDrawerOpen &&
+                        !this.mobileActionsOpen &&
+                        !this.elements.autoplayBtn?.classList.contains('hidden')
+                    ) {
                         this.toggleAutoplay();
                     }
                     break;
                 case 'l':
                 case 'L':
-                    if (!this.elements.loopBtn?.classList.contains('hidden')) {
+                    if (
+                        !this.tagsDrawerOpen &&
+                        !this.collectionDrawerOpen &&
+                        !this.mobileActionsOpen &&
+                        !this.elements.loopBtn?.classList.contains('hidden')
+                    ) {
                         this.toggleLoop();
                     }
                     break;
                 case 'd':
                 case 'D':
-                    this.downloadCurrent();
+                    if (
+                        !this.tagsDrawerOpen &&
+                        !this.collectionDrawerOpen &&
+                        !this.mobileActionsOpen
+                    )
+                        this.downloadCurrent();
                     break;
             }
         });
