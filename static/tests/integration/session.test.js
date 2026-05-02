@@ -41,8 +41,17 @@ describe('Authentication API', () => {
         if (authStatus.setupRequired) {
             _wasSetupRequired = true;
             const result = await setupPassword(TEST_CONFIG.TEST_USER.password);
-            expect(result.success).toBe(true);
-            expect(result.status).toBeLessThan(400);
+
+            if (result.success) {
+                expect(result.status).toBeLessThan(400);
+            } else {
+                // Another parallel test suite may complete setup between the
+                // initial auth check and this request.
+                expect(result.status).toBe(403);
+            }
+
+            const updatedAuthStatus = await checkAuth();
+            expect(updatedAuthStatus.setupRequired).toBe(false);
         }
     });
 

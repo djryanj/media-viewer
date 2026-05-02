@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - build(deps): bump renovatebot/github-action from 46.1.9 to 46.1.12 ([#522](https://github.com/djryanj/media-viewer/pull/522))
 - build(deps): bump actions/setup-node from 6.3.0 to 6.4.0 ([#523](https://github.com/djryanj/media-viewer/pull/523))
 - build(deps): bump github.com/mattn/go-sqlite3 from 1.14.42 to 1.14.44 ([#527](https://github.com/djryanj/media-viewer/pull/527))
+- ci: The `lint`, `test-unit`, `test-integration`, `test-race`, `lint-frontend`, `test-frontend-unit`, `test-frontend-integration`, and `test-frontend-e2e-smoke` CI jobs now all run when `.golangci.yml`, `ci.yml`, or `.devcontainer/**` changes (new `ci_config` path filter). Previously, a Renovate bump of the golangci-lint version in `ci.yml` ([#519](https://github.com/djryanj/media-viewer/pull/519)) silently skipped the lint job entirely because only workflow files changed — surfacing 57 latent lint warnings during the next PR which didn't have any Go changes at all ([#530](https://github.com/djryanj/media-viewer/pull/530)). The Renovate config now also has a custom manager for `devcontainer.json`'s `golangciLintVersion` field and the `# renovate:` annotation is added to `ci.yml` so that future golangci-lint version bumps are grouped across `ci.yml`, `devcontainer.json`, and `post-create.sh` in a single PR rather than drifting independently. ([#531](https://github.com/djryanj/media-viewer/issues/531))
 
 ### Added
 
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(frontend): Pressing Escape while the tag modal or lightbox tag drawer is open now always closes it immediately, even when the suggestions list is visible. Previously, Escape would only close the suggestions on the first press and required a second press to close the modal itself. ([#525](https://github.com/djryanj/media-viewer/issues/525))
 - fix(frontend): Keyboard focus is now trapped inside the tag modal so that gallery hotkeys (selection mode, search shortcuts, lightbox navigation, favorites) cannot be accidentally triggered while tagging. ([#525](https://github.com/djryanj/media-viewer/issues/525))
 - fix(frontend): Tagging and pasting tags deep into very large galleries is now much faster and uses less browser memory. Tag writes now reuse updated tag data returned by the server instead of triggering extra follow-up reloads, background gallery tag-chip updates are deferred out of the hot path, and the infinite gallery now keeps only a bounded visible slice of loaded items mounted so deep positions no longer force the browser to repaint and retain thousands of off-screen cards at once. ([#524](https://github.com/djryanj/media-viewer/issues/524))
+- fix(backend): A number of latent lint warnings silently introduced by golangci-lint v2.12.0 (bumped by [#519](https://github.com/djryanj/media-viewer/pull/519)) are now resolved. 7 `gosec G124` warnings are fixed by adding the missing `Secure: true` field to all session cookie writes in the auth and WebAuthn handlers. ([#531](https://github.com/djryanj/media-viewer/pull/531))
 
 ## [0.18.0] - 04-13-2026
 

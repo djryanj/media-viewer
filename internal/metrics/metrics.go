@@ -5,6 +5,22 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Prometheus metric label name constants.
+const (
+	labelStatus    = "status"
+	labelOperation = "operation"
+	labelType      = "type"
+	labelCommit    = "commit"
+	labelVolume    = "volume"
+)
+
+// Common label value constants shared across metric initialization and callers.
+const (
+	labelValCache   = "cache"
+	labelValReaddir = "readdir"
+	labelValImage   = "image"
+)
+
 // HTTP metrics
 var (
 	HTTPRequestsTotal = promauto.NewCounterVec(
@@ -12,7 +28,7 @@ var (
 			Name: "media_viewer_http_requests_total",
 			Help: "Total number of HTTP requests",
 		},
-		[]string{"method", "path", "status"},
+		[]string{"method", "path", labelStatus},
 	)
 
 	HTTPRequestDuration = promauto.NewHistogramVec(
@@ -39,7 +55,7 @@ var (
 			Name: "media_viewer_db_queries_total",
 			Help: "Total number of database queries",
 		},
-		[]string{"operation", "status"},
+		[]string{labelOperation, labelStatus},
 	)
 
 	DBQueryDuration = promauto.NewHistogramVec(
@@ -48,7 +64,7 @@ var (
 			Help:    "Database query duration in seconds",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 		},
-		[]string{"operation"},
+		[]string{labelOperation},
 	)
 
 	DBConnectionsOpen = promauto.NewGauge(
@@ -115,7 +131,7 @@ var (
 			Name: "media_viewer_db_wal_pages",
 			Help: "WAL page counts from the most recent checkpoint (log=total WAL pages, checkpointed=pages written to main db, busy=pages left behind due to active readers)",
 		},
-		[]string{"type"}, // "log", "checkpointed", "busy"
+		[]string{labelType}, // "log", "checkpointed", "busy"
 	)
 
 	// DBWALCheckpointBlockedTotal counts how often any checkpoint completed
@@ -252,7 +268,7 @@ var (
 			Name: "media_viewer_thumbnail_generations_total",
 			Help: "Total number of thumbnail generations",
 		},
-		[]string{"type", "status"},
+		[]string{labelType, labelStatus},
 	)
 
 	ThumbnailGenerationDuration = promauto.NewHistogramVec(
@@ -261,7 +277,7 @@ var (
 			Help:    "Thumbnail generation duration in seconds",
 			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		},
-		[]string{"type"},
+		[]string{labelType},
 	)
 
 	ThumbnailCacheHits = promauto.NewCounter(
@@ -304,7 +320,7 @@ var (
 			Name: "media_viewer_thumbnail_generation_batches_total",
 			Help: "Total number of thumbnail generation batches completed",
 		},
-		[]string{"type"}, // "full" or "manual"
+		[]string{labelType}, // "full" or "manual"
 	)
 
 	ThumbnailGenerationLastDuration = promauto.NewGauge(
@@ -326,7 +342,7 @@ var (
 			Name: "media_viewer_thumbnail_generation_files",
 			Help: "Number of files in the last generation run by status",
 		},
-		[]string{"status"}, // "generated", "skipped", "failed"
+		[]string{labelStatus}, // "generated", "skipped", "failed"
 	)
 )
 
@@ -337,7 +353,7 @@ var (
 			Name: "media_viewer_media_files_total",
 			Help: "Total number of media files by type",
 		},
-		[]string{"type"},
+		[]string{labelType},
 	)
 
 	MediaFoldersTotal = promauto.NewGauge(
@@ -362,7 +378,7 @@ var (
 			Name: "media_viewer_transcoder_jobs_total",
 			Help: "Total number of transcoding jobs",
 		},
-		[]string{"status"},
+		[]string{labelStatus},
 	)
 
 	TranscoderJobDuration = promauto.NewHistogram(
@@ -395,7 +411,7 @@ var (
 			Name: "media_viewer_auth_attempts_total",
 			Help: "Total number of authentication attempts",
 		},
-		[]string{"status"},
+		[]string{labelStatus},
 	)
 
 	ActiveSessions = promauto.NewGauge(
@@ -413,7 +429,7 @@ var (
 			Name: "media_viewer_app_info",
 			Help: "Application information",
 		},
-		[]string{"version", "commit", "go_version"},
+		[]string{"version", labelCommit, "go_version"},
 	)
 )
 
@@ -517,7 +533,7 @@ var (
 			Help:    "Duration of filesystem operations by directory and operation type",
 			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 		},
-		[]string{"directory", "operation"}, // directory: media/cache/database, operation: read/write/stat/readdir
+		[]string{"directory", labelOperation}, // directory: media/cache/database, operation: read/write/stat/readdir
 	)
 
 	FilesystemOperationErrors = promauto.NewCounterVec(
@@ -525,7 +541,7 @@ var (
 			Name: "media_viewer_filesystem_operation_errors_total",
 			Help: "Total number of filesystem operation errors by directory and operation",
 		},
-		[]string{"directory", "operation"},
+		[]string{"directory", labelOperation},
 	)
 )
 
@@ -536,7 +552,7 @@ var (
 			Name: "media_viewer_filesystem_retry_attempts_total",
 			Help: "Total number of filesystem retry attempts by operation and volume",
 		},
-		[]string{"operation", "volume"}, // operation: stat/open, volume: media/cache/database/root/tmp/unknown
+		[]string{labelOperation, labelVolume}, // operation: stat/open, volume: media/cache/database/root/tmp/unknown
 	)
 
 	FilesystemRetrySuccess = promauto.NewCounterVec(
@@ -544,7 +560,7 @@ var (
 			Name: "media_viewer_filesystem_retry_success_total",
 			Help: "Total number of successful filesystem retries by operation and volume",
 		},
-		[]string{"operation", "volume"},
+		[]string{labelOperation, labelVolume},
 	)
 
 	FilesystemRetryFailures = promauto.NewCounterVec(
@@ -552,7 +568,7 @@ var (
 			Name: "media_viewer_filesystem_retry_failures_total",
 			Help: "Total number of failed filesystem retries (exhausted all attempts) by operation and volume",
 		},
-		[]string{"operation", "volume"},
+		[]string{labelOperation, labelVolume},
 	)
 
 	FilesystemStaleErrors = promauto.NewCounterVec(
@@ -560,7 +576,7 @@ var (
 			Name: "media_viewer_filesystem_estale_errors_total",
 			Help: "Total number of ESTALE (stale file handle) errors encountered by operation and volume",
 		},
-		[]string{"operation", "volume"},
+		[]string{labelOperation, labelVolume},
 	)
 
 	FilesystemRetryDuration = promauto.NewHistogramVec(
@@ -569,7 +585,7 @@ var (
 			Help:    "Duration of filesystem operations including retries",
 			Buckets: []float64{0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5},
 		},
-		[]string{"operation", "volume"},
+		[]string{labelOperation, labelVolume},
 	)
 )
 
@@ -615,7 +631,7 @@ var (
 			// Buckets from 1MB to 500MB
 			Buckets: []float64{1e6, 5e6, 10e6, 25e6, 50e6, 100e6, 250e6, 500e6},
 		},
-		[]string{"type"}, // image/video/folder
+		[]string{labelType}, // image/video/folder
 	)
 
 	ThumbnailGenerationDurationDetailed = promauto.NewHistogramVec(
@@ -625,7 +641,7 @@ var (
 			// Buckets from 1ms to 60s
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60},
 		},
-		[]string{"type", "phase"}, // phase: decode/resize/encode/cache
+		[]string{labelType, "phase"}, // phase: decode/resize/encode/cache
 	)
 
 	ThumbnailFFmpegDuration = promauto.NewHistogramVec(
@@ -662,7 +678,7 @@ var (
 			Help:    "Database transaction duration by type",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10},
 		},
-		[]string{"type"}, // batch_insert/batch_update/cleanup
+		[]string{labelType}, // batch_insert/batch_update/cleanup
 	)
 
 	DBRowsAffected = promauto.NewHistogramVec(
@@ -671,7 +687,7 @@ var (
 			Help:    "Number of rows affected by database operations",
 			Buckets: []float64{1, 10, 50, 100, 500, 1000, 5000, 10000},
 		},
-		[]string{"operation"},
+		[]string{labelOperation},
 	)
 )
 
@@ -760,7 +776,7 @@ var (
 			Name: "media_viewer_exif_tag_runs_total",
 			Help: "Total number of EXIF auto-tagging passes completed",
 		},
-		[]string{"type"}, // "full" or "incremental"
+		[]string{labelType}, // "full" or "incremental"
 	)
 
 	ExifTagRunning = promauto.NewGauge(
@@ -775,7 +791,7 @@ var (
 			Name: "media_viewer_exif_tag_files_total",
 			Help: "Total number of files processed by the EXIF auto-tagger by outcome",
 		},
-		[]string{"status"}, // "tagged", "skipped", "failed"
+		[]string{labelStatus}, // "tagged", "skipped", "failed"
 	)
 
 	ExifTagCurrentRunFiles = promauto.NewGaugeVec(
@@ -783,7 +799,7 @@ var (
 			Name: "media_viewer_exif_tag_current_run_files",
 			Help: "Number of files in the currently running EXIF auto-tagging pass by status",
 		},
-		[]string{"status"}, // "total", "processed", "tagged", "skipped", "failed"
+		[]string{labelStatus}, // "total", "processed", "tagged", "skipped", "failed"
 	)
 
 	ExifTagLastRunFiles = promauto.NewGaugeVec(
@@ -791,7 +807,7 @@ var (
 			Name: "media_viewer_exif_tag_last_run_files",
 			Help: "Number of files in the last EXIF auto-tagging pass by status",
 		},
-		[]string{"status"}, // "total", "processed", "tagged", "skipped", "failed"
+		[]string{labelStatus}, // "total", "processed", "tagged", "skipped", "failed"
 	)
 
 	ExifTagRunDuration = promauto.NewHistogramVec(
@@ -800,7 +816,7 @@ var (
 			Help:    "Distribution of EXIF auto-tagging pass durations",
 			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800},
 		},
-		[]string{"type"}, // "full" or "incremental"
+		[]string{labelType}, // "full" or "incremental"
 	)
 
 	ExifTagLastRunDuration = promauto.NewGauge(

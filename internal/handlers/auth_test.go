@@ -289,7 +289,7 @@ func (h *mockHandlersAuth) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    session.Token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		Expires:  session.ExpiresAt,
 	})
@@ -320,7 +320,7 @@ func (h *mockHandlersAuth) Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})
@@ -936,6 +936,9 @@ func TestSessionCookieSecurityAttributesMock(t *testing.T) {
 
 	if !sessionCookie.HttpOnly {
 		t.Error("Expected HttpOnly=true")
+	}
+	if !sessionCookie.Secure {
+		t.Error("Expected Secure=true")
 	}
 	if sessionCookie.Path != "/" {
 		t.Errorf("Expected Path=/, got %s", sessionCookie.Path)

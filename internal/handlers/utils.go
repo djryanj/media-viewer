@@ -7,6 +7,24 @@ import (
 	"media-viewer/internal/logging"
 )
 
+const (
+	responseKeyStatus     = "status"
+	responseKeySuccess    = "success"
+	responseKeyMessage    = "message"
+	responseKeySessionID  = "sessionId"
+	responseKeyEnabled    = "enabled"
+	responseKeyAvailable  = "available"
+	responseKeyNewName    = "newName"
+	responseKeyFreedBytes = "freedBytes"
+	responseStatusOK      = "ok"
+	responseStatusStarted = "started"
+	statusAlreadyRunning  = "already_running"
+	statusAlive           = "alive"
+	statusReady           = "ready"
+	statusNotReady        = "not_ready"
+	loginHTMLPath         = "/login.html"
+)
+
 // writeJSON encodes v as JSON and writes it to the response writer.
 // Any encoding or write errors are logged since we typically cannot
 // recover from them in an HTTP handler context.
@@ -27,5 +45,5 @@ func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 // writeJSONStatus writes a simple status response as JSON.
 func writeJSONStatus(w http.ResponseWriter, status string) {
 	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, map[string]string{"status": status})
+	writeJSON(w, map[string]string{responseKeyStatus: status})
 }

@@ -38,75 +38,75 @@ const (
 	SortDesc SortOrder = "desc"
 )
 
-// ImageExtensions maps file extensions to whether they are supported image formats.
+// ImageExtensions maps supported image file extensions to a fast lookup set.
 var ImageExtensions = map[string]bool{
-	".jpg":  true,
-	".jpeg": true,
-	".png":  true,
-	".gif":  true,
-	".bmp":  true,
-	".webp": true,
-	".svg":  true,
-	".ico":  true,
-	".tiff": true,
-	".tif":  true,
-	".heic": true,
-	".heif": true,
+	jpegExt:     true,
+	jpegExtLong: true,
+	pngExt:      true,
+	gifExt:      true,
+	bmpExt:      true,
+	webpExt:     true,
+	svgExt:      true,
+	icoExt:      true,
+	tiffExt:     true,
+	tifExt:      true,
+	heicExt:     true,
+	heifExt:     true,
 }
 
 // VideoExtensions maps file extensions to whether they are supported video formats.
 var VideoExtensions = map[string]bool{
-	".mp4":  true,
-	".mkv":  true,
-	".avi":  true,
-	".mov":  true,
-	".wmv":  true,
-	".flv":  true,
-	".webm": true,
-	".m4v":  true,
-	".mpeg": true,
-	".mpg":  true,
-	".3gp":  true,
-	".ts":   true,
+	mp4Ext:  true,
+	mkvExt:  true,
+	aviExt:  true,
+	movExt:  true,
+	wmvExt:  true,
+	flvExt:  true,
+	webmExt: true,
+	m4vExt:  true,
+	mpegExt: true,
+	mpgExt:  true,
+	gp3Ext:  true,
+	tsExt:   true,
 }
 
 // PlaylistExtensions maps file extensions to whether they are supported playlist formats.
 var PlaylistExtensions = map[string]bool{
-	".wpl": true,
+	wplExt: true,
 }
 
 // MimeTypes maps file extensions to their MIME types.
 var MimeTypes = map[string]string{
 	// Images
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".png":  "image/png",
-	".gif":  "image/gif",
-	".bmp":  "image/bmp",
-	".webp": "image/webp",
-	".svg":  "image/svg+xml",
-	".ico":  "image/x-icon",
-	".tiff": "image/tiff",
-	".tif":  "image/tiff",
-	".heic": "image/heic",
-	".heif": "image/heif",
+	jpegExt:     mimeJPEG,
+	jpegExtLong: mimeJPEG,
+	pngExt:      mimePNG,
+	gifExt:      mimeGIF,
+	bmpExt:      "image/bmp",
+	webpExt:     "image/webp",
+	svgExt:      "image/svg+xml",
+	icoExt:      "image/x-icon",
+	tiffExt:     "image/tiff",
+	tifExt:      "image/tiff",
+	heicExt:     "image/heic",
+	heifExt:     "image/heif",
 
 	// Videos
-	".mp4":  "video/mp4",
-	".mkv":  "video/x-matroska",
-	".avi":  "video/x-msvideo",
-	".mov":  "video/quicktime",
-	".wmv":  "video/x-ms-wmv",
-	".flv":  "video/x-flv",
-	".webm": "video/webm",
-	".m4v":  "video/x-m4v",
-	".mpeg": "video/mpeg",
-	".mpg":  "video/mpeg",
-	".3gp":  "video/3gpp",
-	".ts":   "video/mp2t",
+	mp4Ext:  mimeMP4,
+	mkvExt:  "video/x-matroska",
+	aviExt:  "video/x-msvideo",
+	movExt:  "video/quicktime",
+	wmvExt:  "video/x-ms-wmv",
+	flvExt:  "video/x-flv",
+	webmExt: mimeWEBM,
+	m4vExt:  "video/x-m4v",
+	mpegExt: "video/mpeg",
+	mpgExt:  "video/mpeg",
+	gp3Ext:  "video/3gpp",
+	tsExt:   "video/mp2t",
 
 	// Playlists
-	".wpl": "application/vnd.ms-wpl",
+	wplExt: "application/vnd.ms-wpl",
 }
 
 // GetFileType returns the FileType for a given file extension.
@@ -132,7 +132,7 @@ func GetMimeType(ext string) string {
 	if mime, ok := MimeTypes[ext]; ok {
 		return mime
 	}
-	return "application/octet-stream"
+	return mimeFallback
 }
 
 // IsMediaFile returns true if the extension represents a supported media file.

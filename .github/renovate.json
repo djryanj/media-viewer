@@ -23,6 +23,19 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "golangci-lint version in devcontainer.json feature config",
+      "managerFilePatterns": [
+        "/^\\.devcontainer/devcontainer\\.json$/"
+      ],
+      "matchStrings": [
+        "// renovate: datasource=github-releases depName=golangci/golangci-lint\\s+\"golangciLintVersion\":\\s*\"(?<currentValue>[\\d\\.]+)\""
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
       "description": "golangci-lint in devcontainer post-create script",
       "managerFilePatterns": [
         "/^\\.devcontainer/post-create\\.sh$/"
@@ -106,10 +119,8 @@
       "groupName": "golangci-lint",
       "groupSlug": "golangci-lint",
       "matchPackageNames": [
-        "github.com/golangci/golangci-lint"
-      ],
-      "matchManagers": [
-        "custom.regex"
+        "github.com/golangci/golangci-lint",
+        "golangci/golangci-lint"
       ]
     },
     {

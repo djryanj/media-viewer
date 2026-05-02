@@ -41,6 +41,16 @@ const (
 	FilterTypeClause = " AND f.type = ?"
 	// TagPrefix is the prefix used for tag search queries.
 	TagPrefix = "tag:"
+	// TagExcludePrefix is the prefix used for excluded tag search queries.
+	TagExcludePrefix = "-tag:"
+	// sortFieldModTime is the canonical DB field name for modification-time sorting.
+	sortFieldModTime = "mod_time"
+	// sortColumnModTime is the qualified SQL expression for modification-time sorting.
+	sortColumnModTime = "f.mod_time"
+	// sortColumnSize is the qualified SQL expression for size sorting.
+	sortColumnSize = "f.size"
+	// sortColumnType is the qualified SQL expression for type sorting.
+	sortColumnType = "f.type"
 	// rootDirName is the display name used for the root media directory.
 	rootDirName = "Media"
 )
@@ -182,9 +192,9 @@ func (d *Database) fetchDirectoryItems(ctx context.Context, opts ListOptions) ([
 	//   3 = type
 	sortIdx := 0
 	switch getSortColumn(opts.SortField) {
-	case "mod_time":
+	case sortFieldModTime:
 		sortIdx = 1
-	case "size":
+	case string(SortBySize):
 		sortIdx = 2
 	case string(SortByType):
 		sortIdx = 3
@@ -233,9 +243,9 @@ func getSortColumn(field SortField) string {
 	case SortByName:
 		return NameCollation
 	case SortByDate:
-		return "mod_time"
+		return sortFieldModTime
 	case SortBySize:
-		return "size"
+		return string(SortBySize)
 	case SortByType:
 		return string(SortByType)
 	default:
@@ -956,7 +966,7 @@ func (d *Database) getTagSuggestionsForExclusion(ctx context.Context, query stri
 		prefix := TagPrefix
 		suggestionType := TagSuggestionType
 		if isExclusion {
-			prefix = "-tag:"
+			prefix = TagExcludePrefix
 			suggestionType = TagExcludeSuggestionType
 		}
 
@@ -1140,10 +1150,10 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 
 	// Validate against allowlists
 	allowedColumns := map[string]bool{
-		NameCollationStr: true,
-		"f.mod_time":     true,
-		"f.size":         true,
-		"f.type":         true,
+		NameCollationStr:  true,
+		sortColumnModTime: true,
+		sortColumnSize:    true,
+		sortColumnType:    true,
 	}
 	allowedSortDirs := map[string]bool{
 		SortAscStr:  true,
@@ -1251,10 +1261,10 @@ func (d *Database) GetMediaInDirectoryPaged(ctx context.Context, parentPath stri
 	}
 
 	allowedColumns := map[string]bool{
-		NameCollationStr: true,
-		"f.mod_time":     true,
-		"f.size":         true,
-		"f.type":         true,
+		NameCollationStr:  true,
+		sortColumnModTime: true,
+		sortColumnSize:    true,
+		sortColumnType:    true,
 	}
 	allowedSortDirs := map[string]bool{SortAscStr: true, SortDescStr: true}
 	if !allowedColumns[sortColumn] {

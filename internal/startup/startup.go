@@ -963,7 +963,7 @@ func LogMemoryConfig(memConfig MemoryConfig) {
 	case "GOMEMLIMIT":
 		logging.Info("  Source:              GOMEMLIMIT environment variable")
 		logging.Info("  GOMEMLIMIT:          %s", formatBytesStartup(memConfig.GoMemLimit))
-	case "MEMORY_LIMIT":
+	case memoryLimitSource:
 		logging.Info("  Source:              MEMORY_LIMIT (Kubernetes Downward API)")
 		logging.Info("  Container Limit:     %s", formatBytesStartup(memConfig.ContainerLimit))
 		logging.Info("  Memory Ratio:        %.1f%%", memConfig.Ratio*100)
@@ -980,6 +980,8 @@ type MemoryConfig struct {
 	GoMemLimit     int64
 	Ratio          float64
 }
+
+const memoryLimitSource = "MEMORY_LIMIT"
 
 // formatBytesStartup formats bytes into human-readable string
 func formatBytesStartup(b int64) string {

@@ -1963,26 +1963,26 @@ func validateFilePath(filePath string) error {
 func detectImageFormat(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
-	case ".jpg", ".jpeg":
+	case jpegExt, jpegExtLong:
 		return formatJPEG
-	case ".png":
+	case pngExt:
 		return formatPNG
-	case ".gif":
+	case gifExt:
 		return "gif"
-	case ".webp":
+	case webpExt:
 		return "webp"
-	case ".bmp":
+	case bmpExt:
 		return "bmp"
-	case ".tiff", ".tif":
-		return "tiff"
-	case ".heic", ".heif":
-		return "heic"
+	case tiffExt, tifExt:
+		return formatTIFF
+	case heicExt, heifExt:
+		return formatHEIC
 	case ".avif":
 		return "avif"
-	case ".svg":
+	case svgExt:
 		return "svg"
 	default:
-		return "unknown"
+		return formatUnknown
 	}
 }
 
