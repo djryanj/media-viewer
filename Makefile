@@ -1024,7 +1024,7 @@ clean:
 	rm -rf tmp/
 	rm -f media-viewer
 	rm -f resetpw
-	rm -f coverage.out coverage.html
+	rm -f coverage.out coverage.html coverage-*.out
 	rm -f *.log
 	rm -rf $(STATIC_DIR)/e2e/test-results/
 	rm -rf $(STATIC_DIR)/coverage/

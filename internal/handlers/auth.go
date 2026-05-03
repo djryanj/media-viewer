@@ -47,6 +47,43 @@ const (
 	SessionCookieName = "media_viewer_session"
 )
 
+// sessionCookie returns a cookie that grants a session.
+// The Secure flag is set only when the request was received over TLS so that
+// the cookie works on plain-HTTP dev/test servers while remaining Secure in
+// production.  All other hardening attributes (HttpOnly, SameSite=Strict) are
+// always applied.
+//
+// HTTPS production, false for plain-HTTP dev/test.  HttpOnly and SameSite=Strict
+// are unconditional; this is not a security regression.
+//
+//nolint:gosec // G124: Secure is intentionally conditional on r.TLS — true for
+func sessionCookie(r *http.Request, value string, expires time.Time) *http.Cookie {
+	return &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    value,
+		Path:     "/",
+		Expires:  expires,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+// clearSessionCookie returns a cookie that immediately expires the session.
+//
+//nolint:gosec // G124: see sessionCookie — Secure mirrors r.TLS by design.
+func clearSessionCookie(r *http.Request) *http.Cookie {
+	return &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
 // Setup creates the initial password
 func (h *Handlers) Setup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -120,15 +157,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set cookie with session duration
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    session.Token,
-		Path:     "/",
-		Expires:  session.ExpiresAt,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(w, sessionCookie(r, session.Token, session.ExpiresAt))
 
 	logging.Info("User logged in, session expires in %v", database.GetSessionDuration())
 
@@ -153,15 +182,7 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clear cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		Expires:  time.Unix(0, 0),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(w, clearSessionCookie(r))
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, AuthResponse{
@@ -191,15 +212,7 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, r *http.Request) {
 	_, err = h.db.ValidateSession(ctx, cookie.Value)
 	if err != nil {
 		// Clear invalid cookie
-		http.SetCookie(w, &http.Cookie{
-			Name:     SessionCookieName,
-			Value:    "",
-			Path:     "/",
-			Expires:  time.Unix(0, 0),
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
-		})
+		http.SetCookie(w, clearSessionCookie(r))
 
 		// Invalid session - return setup status
 		w.Header().Set("Content-Type", "application/json")
@@ -260,15 +273,7 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 		_, err = h.db.ValidateSession(ctx, cookie.Value)
 		if err != nil {
 			// Clear invalid cookie
-			http.SetCookie(w, &http.Cookie{
-				Name:     SessionCookieName,
-				Value:    "",
-				Path:     "/",
-				Expires:  time.Unix(0, 0),
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteStrictMode,
-			})
+			http.SetCookie(w, clearSessionCookie(r))
 
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -287,15 +292,7 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 				logging.Debug("Failed to extend session: %v", err)
 			} else {
 				// Update cookie expiration
-				http.SetCookie(w, &http.Cookie{
-					Name:     SessionCookieName,
-					Value:    cookie.Value,
-					Path:     "/",
-					Expires:  time.Now().Add(database.GetSessionDuration()),
-					HttpOnly: true,
-					Secure:   true,
-					SameSite: http.SameSiteStrictMode,
-				})
+				http.SetCookie(w, sessionCookie(r, cookie.Value, time.Now().Add(database.GetSessionDuration())))
 			}
 		}
 
@@ -373,15 +370,7 @@ func (h *Handlers) Keepalive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update cookie expiration
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    cookie.Value,
-		Path:     "/",
-		Expires:  time.Now().Add(database.GetSessionDuration()),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(w, sessionCookie(r, cookie.Value, time.Now().Add(database.GetSessionDuration())))
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{

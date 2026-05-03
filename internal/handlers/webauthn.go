@@ -463,15 +463,7 @@ func (h *Handlers) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    authSession.Token,
-		Path:     "/",
-		Expires:  authSession.ExpiresAt,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(w, sessionCookie(r, authSession.Token, authSession.ExpiresAt))
 
 	logging.Info("User authenticated via passkey")
 

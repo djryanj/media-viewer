@@ -2452,17 +2452,14 @@ func TestRunGenerationFullTotalFilesIntegration(t *testing.T) {
 func deleteTestFile(ctx context.Context, t *testing.T, db *database.Database, keepFiles []database.MediaFile) {
 	t.Helper()
 
-	// Wait so the next second boundary is crossed — the re-upserted files
-	// will get an updated_at that is strictly greater than the originals.
-	time.Sleep(1100 * time.Millisecond)
-
-	// Cutoff: anything not re-upserted after this point is stale.
-	// SQLite stores updated_at as integer seconds via strftime('%s','now').
-	// After sleeping 1.1s, time.Now() truncated to whole seconds is strictly
-	// greater than the original insert timestamp. The previous value of
-	// time.Now().Add(-500ms) could truncate to the SAME second as the
-	// original inserts, causing DeleteMissingFiles to find nothing to delete.
-	cutoff := time.Now()
+	// Cutoff is set 1 second into the future from now.  Any row that existed
+	// before this call has updated_at <= time.Now().Unix(), which is strictly
+	// less than (time.Now() + 1s).Unix() = cutoff.Unix().  The re-upserted
+	// keep-files are stamped with cutoff.Unix(), so they are NOT less than
+	// the cutoff and survive the delete.  No sleep is needed because the
+	// arithmetic guarantees cutoff.Unix() > any previously written updated_at
+	// regardless of second-boundary alignment.
+	cutoff := time.Now().Add(1 * time.Second)
 
 	batch, err := db.BeginBatch(ctx)
 	if err != nil {

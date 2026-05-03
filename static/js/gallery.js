@@ -1,3 +1,5 @@
+/* global InfiniteScrollSearch */
+
 const Gallery = {
     doubleTapDelay: 300,
     desktopClickDelay: 150,
@@ -476,6 +478,32 @@ const Gallery = {
         if (item.type === 'folder') {
             MediaApp.navigateTo(item.path);
         } else if (item.type === 'image' || item.type === 'video') {
+            // When the search results panel is visible the tap originated from a
+            // search result card.  Open the lightbox scoped to the full loaded
+            // search result set so that prev/next stays within those results
+            // instead of falling back to the current directory.
+            if (
+                typeof Search !== 'undefined' &&
+                !Search.elements.results?.classList.contains('hidden')
+            ) {
+                let searchItems = null;
+                if (
+                    typeof InfiniteScrollSearch !== 'undefined' &&
+                    InfiniteScrollSearch.state.loadedItems.length > 0
+                ) {
+                    searchItems = InfiniteScrollSearch.state.loadedItems;
+                } else if (Search.results?.items?.length > 0) {
+                    searchItems = Search.results.items;
+                }
+                if (searchItems) {
+                    const searchIndex = searchItems.findIndex((f) => f.path === item.path);
+                    if (searchIndex >= 0) {
+                        Lightbox.openWithItems(searchItems, searchIndex);
+                        return;
+                    }
+                }
+            }
+
             const index = MediaApp.getMediaIndex(item.path);
             if (index >= 0) {
                 Lightbox.open(index);

@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -1115,7 +1116,9 @@ func TestAuthMiddlewareDoesNotExtendSessionForNonAPIRequestsIntegration(t *testi
 
 // assertSecureCookie is a test helper that verifies all required security
 // attributes are present on a named Set-Cookie response header value.
-func assertSecureCookie(t *testing.T, label string, cookies []*http.Cookie) {
+// wantSecure should be true when the request was made over TLS (r.TLS != nil)
+// and false for plain-HTTP requests, since Secure is set conditionally.
+func assertSecureCookie(t *testing.T, label string, cookies []*http.Cookie, wantSecure bool) {
 	t.Helper()
 	var c *http.Cookie
 	for _, ck := range cookies {
@@ -1131,8 +1134,8 @@ func assertSecureCookie(t *testing.T, label string, cookies []*http.Cookie) {
 	if !c.HttpOnly {
 		t.Errorf("%s: expected HttpOnly=true", label)
 	}
-	if !c.Secure {
-		t.Errorf("%s: expected Secure=true", label)
+	if c.Secure != wantSecure {
+		t.Errorf("%s: expected Secure=%v, got %v", label, wantSecure, c.Secure)
 	}
 	if c.SameSite != http.SameSiteStrictMode {
 		t.Errorf("%s: expected SameSite=Strict, got %v", label, c.SameSite)
@@ -1161,7 +1164,8 @@ func TestLoginCookieSecurityAttributesIntegration(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("login failed: %d", w.Code)
 	}
-	assertSecureCookie(t, "Login", w.Result().Cookies())
+	// Plain-HTTP request (r.TLS == nil) → Secure must be false.
+	assertSecureCookie(t, "Login", w.Result().Cookies(), false)
 }
 
 func TestLogoutCookieSecurityAttributesIntegration(t *testing.T) {
@@ -1184,7 +1188,7 @@ func TestLogoutCookieSecurityAttributesIntegration(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("logout failed: %d", w.Code)
 	}
-	assertSecureCookie(t, "Logout", w.Result().Cookies())
+	assertSecureCookie(t, "Logout", w.Result().Cookies(), false)
 }
 
 func TestCheckAuthInvalidSessionCookieSecurityAttributesIntegration(t *testing.T) {
@@ -1199,11 +1203,12 @@ func TestCheckAuthInvalidSessionCookieSecurityAttributesIntegration(t *testing.T
 	w := httptest.NewRecorder()
 	h.CheckAuth(w, req)
 
-	// CheckAuth returns 200 with authenticated=false; the clearing cookie must be secure.
+	// CheckAuth returns 200 with authenticated=false; the clearing cookie must carry the
+	// correct Secure value for the connection type (false for plain HTTP).
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	assertSecureCookie(t, "CheckAuth(invalid)", w.Result().Cookies())
+	assertSecureCookie(t, "CheckAuth(invalid)", w.Result().Cookies(), false)
 }
 
 func TestKeepaliveCookieSecurityAttributesIntegration(t *testing.T) {
@@ -1226,7 +1231,7 @@ func TestKeepaliveCookieSecurityAttributesIntegration(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("keepalive failed: %d", w.Code)
 	}
-	assertSecureCookie(t, "Keepalive", w.Result().Cookies())
+	assertSecureCookie(t, "Keepalive", w.Result().Cookies(), false)
 }
 
 func TestAuthMiddlewareExtendSessionCookieSecurityAttributesIntegration(t *testing.T) {
@@ -1255,7 +1260,7 @@ func TestAuthMiddlewareExtendSessionCookieSecurityAttributesIntegration(t *testi
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	assertSecureCookie(t, "AuthMiddleware(extend)", w.Result().Cookies())
+	assertSecureCookie(t, "AuthMiddleware(extend)", w.Result().Cookies(), false)
 }
 
 func TestAuthMiddlewareInvalidSessionCookieSecurityAttributesIntegration(t *testing.T) {
@@ -1279,5 +1284,31 @@ func TestAuthMiddlewareInvalidSessionCookieSecurityAttributesIntegration(t *test
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
 	}
-	assertSecureCookie(t, "AuthMiddleware(invalid)", w.Result().Cookies())
+	assertSecureCookie(t, "AuthMiddleware(invalid)", w.Result().Cookies(), false)
+}
+
+// TestLoginCookieSecureOverTLSIntegration verifies that the Secure flag IS set
+// when the request arrives over TLS (r.TLS != nil), covering the production path.
+func TestLoginCookieSecureOverTLSIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h, cleanup := setupAuthIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	h.db.CreateUser(ctx, "password123")
+
+	body, _ := json.Marshal(LoginRequest{Password: "password123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	// Simulate a TLS connection so the handler sets Secure=true.
+	req.TLS = &tls.ConnectionState{}
+	w := httptest.NewRecorder()
+	h.Login(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", w.Code)
+	}
+	assertSecureCookie(t, "Login(TLS)", w.Result().Cookies(), true)
 }
