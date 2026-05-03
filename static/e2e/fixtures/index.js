@@ -12,6 +12,104 @@ export const TEST_USER = {
     password: 'testpass123',
 };
 
+async function waitForBrowserAuthentication(page, timeoutMs = 5000) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+        if (page.isClosed()) {
+            return false;
+        }
+
+        if (!page.url().includes('/login.html')) {
+            // Fast-path: if the gallery container is already visible the browser
+            // has a valid authenticated session — the app redirects to /login.html
+            // when unauthenticated, so a visible #gallery means we're logged in.
+            const hasGallery = await page
+                .locator('#gallery')
+                .isVisible()
+                .catch(() => false);
+            if (hasGallery) {
+                return true;
+            }
+
+            try {
+                const authenticated = await page.evaluate(async () => {
+                    try {
+                        const response = await fetch('/api/auth/check', {
+                            credentials: 'same-origin',
+                            cache: 'no-store',
+                        });
+
+                        if (!response.ok) {
+                            return false;
+                        }
+
+                        const authState = await response.json();
+                        return authState.authenticated === true;
+                    } catch {
+                        return false;
+                    }
+                });
+
+                if (authenticated) {
+                    return true;
+                }
+            } catch {
+                // Retry until the page context is ready.
+            }
+        }
+
+        await page.waitForTimeout(100);
+    }
+
+    return false;
+}
+
+function getSessionCookieHeader(response) {
+    if (typeof response.headersArray === 'function') {
+        const header = response
+            .headersArray()
+            .find((entry) => entry.name.toLowerCase() === 'set-cookie');
+        return header?.value ?? null;
+    }
+
+    return response.headers()['set-cookie'] ?? null;
+}
+
+async function syncSessionCookieToBrowser(page, response) {
+    const setCookie = getSessionCookieHeader(response);
+    if (!setCookie) {
+        return false;
+    }
+
+    const [cookiePair] = setCookie.split(';');
+    const separatorIndex = cookiePair.indexOf('=');
+    if (separatorIndex <= 0) {
+        return false;
+    }
+
+    const name = cookiePair.slice(0, separatorIndex).trim();
+    const value = cookiePair.slice(separatorIndex + 1).trim();
+    if (!name || !value) {
+        return false;
+    }
+
+    const loginURL = new URL(response.url());
+    await page.context().addCookies([
+        {
+            name,
+            value,
+            domain: loginURL.hostname,
+            path: '/',
+            httpOnly: true,
+            secure: loginURL.protocol === 'https:',
+            sameSite: 'Strict',
+        },
+    ]);
+
+    return true;
+}
+
 /**
  * Login helper fixture
  */
@@ -59,11 +157,59 @@ const loginHelpers = {
 
         // Now navigate to the app — the session cookie is already set
         await page.goto('/');
+        await page.waitForLoadState('domcontentloaded');
 
         if (page.url().includes('/login.html')) {
-            await page.waitForTimeout(250);
-            await page.goto('/');
+            const cookieSynced = await syncSessionCookieToBrowser(page, response);
+            if (cookieSynced) {
+                await page.goto('/');
+                await page.waitForLoadState('domcontentloaded');
+            }
         }
+
+        let browserAuthenticated = await waitForBrowserAuthentication(page, 1500);
+
+        const loginFormVisible = await page
+            .locator('#login-form:not(.hidden), #password, #login-submit')
+            .first()
+            .isVisible()
+            .catch(() => false);
+
+        if (!browserAuthenticated || page.url().includes('/login.html') || loginFormVisible) {
+            if (!page.url().includes('/login.html')) {
+                await page.goto('/login.html');
+                await page.waitForLoadState('domcontentloaded');
+            }
+
+            await page.waitForSelector('#password', { state: 'visible', timeout: 5000 });
+            await page.locator('#password').fill(password);
+            await page.locator('#login-submit').click();
+
+            await Promise.race([
+                page.waitForURL((url) => !url.pathname.endsWith('/login.html'), {
+                    timeout: 5000,
+                }),
+                page.waitForSelector('#gallery', { timeout: 5000 }),
+            ]).catch(() => {});
+
+            if (page.url().includes('/login.html')) {
+                const loginError = await page
+                    .locator('#login-error:not(.hidden)')
+                    .textContent()
+                    .catch(() => '');
+                if (loginError?.trim()) {
+                    throw new Error(`Browser login fallback failed: ${loginError.trim()}`);
+                }
+            }
+
+            browserAuthenticated = await waitForBrowserAuthentication(page, 5000);
+        }
+
+        if (!browserAuthenticated) {
+            throw new Error('Browser login did not establish an authenticated session');
+        }
+
+        await page.waitForSelector('#gallery');
     },
 
     /**

@@ -1216,6 +1216,86 @@ describe('Gallery Module', () => {
             expect(globalThis.Lightbox.open).toHaveBeenCalledWith(0);
         });
 
+        test('opens lightbox with loaded search results when search results are visible', () => {
+            const searchItems = [
+                { type: 'image', path: 'search-a.jpg' },
+                { type: 'image', path: 'search-b.jpg' },
+                { type: 'image', path: 'search-c.jpg' },
+            ];
+            const results = document.createElement('div');
+
+            globalThis.MediaApp.currentMedia = [
+                { type: 'image', path: 'folder-a.jpg' },
+                { type: 'image', path: 'search-b.jpg' },
+                { type: 'image', path: 'folder-c.jpg' },
+            ];
+            globalThis.Search = {
+                elements: { results },
+                results: { items: [{ type: 'image', path: 'stale-result.jpg' }] },
+            };
+            globalThis.InfiniteScrollSearch = {
+                state: { loadedItems: searchItems },
+            };
+
+            Gallery.handleSingleTap({ name: 'search-b.jpg', path: 'search-b.jpg', type: 'image' });
+
+            expect(globalThis.Lightbox.openWithItems).toHaveBeenCalledWith(searchItems, 1);
+            expect(globalThis.Lightbox.open).not.toHaveBeenCalled();
+        });
+
+        test('falls back to search results items when infinite scroll search has not loaded items', () => {
+            const searchItems = [
+                { type: 'image', path: 'query-a.jpg' },
+                { type: 'image', path: 'query-b.jpg' },
+            ];
+            const results = document.createElement('div');
+
+            globalThis.Search = {
+                elements: { results },
+                results: { items: searchItems },
+            };
+            globalThis.InfiniteScrollSearch = {
+                state: { loadedItems: [] },
+            };
+
+            Gallery.handleSingleTap({ name: 'query-b.jpg', path: 'query-b.jpg', type: 'image' });
+
+            expect(globalThis.Lightbox.openWithItems).toHaveBeenCalledWith(searchItems, 1);
+            expect(globalThis.Lightbox.open).not.toHaveBeenCalled();
+        });
+
+        test('uses current media lightbox navigation when search results are hidden', () => {
+            const results = document.createElement('div');
+            results.classList.add('hidden');
+
+            globalThis.MediaApp.currentMedia = [
+                { type: 'image', path: 'folder-a.jpg' },
+                { type: 'image', path: 'folder-b.jpg' },
+            ];
+            globalThis.Search = {
+                elements: { results },
+                results: {
+                    items: [
+                        { type: 'image', path: 'folder-b.jpg' },
+                        { type: 'image', path: 'search-only.jpg' },
+                    ],
+                },
+            };
+            globalThis.InfiniteScrollSearch = {
+                state: {
+                    loadedItems: [
+                        { type: 'image', path: 'search-only.jpg' },
+                        { type: 'image', path: 'folder-b.jpg' },
+                    ],
+                },
+            };
+
+            Gallery.handleSingleTap({ name: 'folder-b.jpg', path: 'folder-b.jpg', type: 'image' });
+
+            expect(globalThis.Lightbox.open).toHaveBeenCalledWith(1);
+            expect(globalThis.Lightbox.openWithItems).not.toHaveBeenCalled();
+        });
+
         test('loads playlist', () => {
             globalThis.Playlist = {
                 loadPlaylist: vi.fn(),

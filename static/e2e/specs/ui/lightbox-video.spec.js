@@ -789,9 +789,9 @@ test.describe('Video Player @video @ui @player', () => {
             // Wait for video element to have a source, with retries
             const video = getLightboxVideo(page);
             try {
-                await expect(video).toBeVisible({ timeout: 12000 });
+                await expect(video).toBeVisible({ timeout: 8000 });
             } catch {
-                const html = await page.content();
+                const html = await page.content().catch(() => '(content unavailable)');
                 console.error('Lightbox video element not visible. Page HTML:', html);
                 throw new Error('Lightbox video element not visible after retries.');
             }
@@ -934,9 +934,9 @@ test.describe('Video Player @video @ui @player', () => {
             // Wait for video element to have a source, with retries
             const video = getLightboxVideo(page);
             try {
-                await expect(video).toBeVisible({ timeout: 12000 });
+                await expect(video).toBeVisible({ timeout: 8000 });
             } catch {
-                const html = await page.content();
+                const html = await page.content().catch(() => '(content unavailable)');
                 console.error('Lightbox video element not visible. Page HTML:', html);
                 throw new Error('Lightbox video element not visible after retries.');
             }
@@ -999,9 +999,9 @@ test.describe('Video Player @video @ui @player', () => {
             // Wait for video element to have a source, with retries
             const video = getLightboxVideo(page);
             try {
-                await expect(video).toBeVisible({ timeout: 12000 });
+                await expect(video).toBeVisible({ timeout: 8000 });
             } catch {
-                const html = await page.content();
+                const html = await page.content().catch(() => '(content unavailable)');
                 console.error('Lightbox video element not visible. Page HTML:', html);
                 throw new Error('Lightbox video element not visible after retries.');
             }
