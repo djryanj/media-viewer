@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	github.com/davidbyttow/govips/v2 v2.18.0
 	github.com/disintegration/imaging v1.6.2
-	github.com/go-webauthn/webauthn v0.17.0
+	github.com/go-webauthn/webauthn v0.17.2
 	github.com/gorilla/mux v1.8.1
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/prometheus/client_golang v1.23.2
