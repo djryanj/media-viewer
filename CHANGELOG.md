@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update all non-major dependencies ([#535](https://github.com/djryanj/media-viewer/pull/535))
 - chore(deps): bump Go version to 1.26.2
 - chore(deps): update all non-major dependencies ([#517](https://github.com/djryanj/media-viewer/pull/517))
 - chore(deps): update github actions ([#519](https://github.com/djryanj/media-viewer/pull/519))
