@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- fix(deps): update module github.com/go-webauthn/webauthn to v0.17.2 ([#538](https://github.com/djryanj/media-viewer/pull/538))
 - chore(deps): bump Go version to 1.26.2
 - chore(deps): update all non-major dependencies ([#517](https://github.com/djryanj/media-viewer/pull/517))
 - chore(deps): update github actions ([#519](https://github.com/djryanj/media-viewer/pull/519))
