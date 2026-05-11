@@ -5,7 +5,7 @@
     "features": {
         "ghcr.io/devcontainers/features/go:1": {
             // renovate: datasource=golang-version depName=go
-            "version": "1.26.2",
+            "version": "1.26.3",
             // renovate: datasource=github-releases depName=golangci/golangci-lint
             "golangciLintVersion": "2.12.0"
         },
