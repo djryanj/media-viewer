@@ -205,6 +205,33 @@ describe('InfiniteScroll Module', () => {
         });
     });
 
+    describe('_shouldWindowLoadedItems()', () => {
+        test('returns false below the minimum item threshold', () => {
+            InfiniteScroll.state.loadedItems = Array.from({ length: 200 }, (_, i) => ({
+                path: `/img${i}.jpg`,
+            }));
+
+            expect(InfiniteScroll._shouldWindowLoadedItems()).toBe(false);
+        });
+
+        test('returns false on coarse-pointer devices', () => {
+            InfiniteScroll.state.loadedItems = Array.from({ length: 5000 }, (_, i) => ({
+                path: `/img${i}.jpg`,
+            }));
+            Object.defineProperty(window, 'matchMedia', {
+                configurable: true,
+                value: vi.fn((query) => ({
+                    matches: query === '(pointer: coarse)',
+                    media: query,
+                    addEventListener: vi.fn(),
+                    removeEventListener: vi.fn(),
+                })),
+            });
+
+            expect(InfiniteScroll._shouldWindowLoadedItems()).toBe(false);
+        });
+    });
+
     describe('Cache operations - saveToCache()', () => {
         test('saves state to cache', () => {
             InfiniteScroll.state.loadedItems = [
@@ -372,6 +399,38 @@ describe('InfiniteScroll Module', () => {
             InfiniteScroll._scrollToLoadedItem(101);
 
             expect(scrollSpy).toHaveBeenCalledWith({ top: 7692, behavior: 'instant' });
+        });
+    });
+
+    describe('_jumpToLoadedItem()', () => {
+        test('forces a render-window update after scrolling to a loaded item', () => {
+            const scrollSpy = vi
+                .spyOn(InfiniteScroll, '_scrollToLoadedItem')
+                .mockImplementation(() => {});
+            const renderSpy = vi
+                .spyOn(InfiniteScroll, 'scheduleRenderWindowUpdate')
+                .mockImplementation(() => {});
+            const fillSpy = vi
+                .spyOn(InfiniteScroll, 'checkAndFillViewport')
+                .mockImplementation(() => {});
+
+            InfiniteScroll._jumpToLoadedItem(125);
+
+            expect(scrollSpy).toHaveBeenCalledWith(125);
+            expect(renderSpy).toHaveBeenCalledWith(true);
+            expect(fillSpy).not.toHaveBeenCalled();
+        });
+
+        test('optionally refills the viewport after a jump', () => {
+            vi.spyOn(InfiniteScroll, '_scrollToLoadedItem').mockImplementation(() => {});
+            vi.spyOn(InfiniteScroll, 'scheduleRenderWindowUpdate').mockImplementation(() => {});
+            const fillSpy = vi
+                .spyOn(InfiniteScroll, 'checkAndFillViewport')
+                .mockImplementation(() => {});
+
+            InfiniteScroll._jumpToLoadedItem(125, { refillViewport: true });
+
+            expect(fillSpy).toHaveBeenCalled();
         });
     });
 
@@ -1417,8 +1476,12 @@ describe('InfiniteScroll Module', () => {
             const fillSpy = vi
                 .spyOn(InfiniteScroll, 'checkAndFillViewport')
                 .mockImplementation(() => {});
+            const jumpSpy = vi
+                .spyOn(InfiniteScroll, 'scheduleRenderWindowUpdate')
+                .mockImplementation(() => {});
             InfiniteScroll._onScrubberRelease();
             expect(fillSpy).toHaveBeenCalled();
+            expect(jumpSpy).toHaveBeenCalledWith(true);
         });
 
         test('schedules _parallelCatchUp when target item is far ahead of loaded count', () => {
@@ -1439,6 +1502,46 @@ describe('InfiniteScroll Module', () => {
             vi.spyOn(InfiniteScroll, '_parallelCatchUp').mockResolvedValue(undefined);
             InfiniteScroll._onScrubberRelease();
             expect(clearSpy).toHaveBeenCalledWith(999);
+        });
+    });
+
+    describe('loadMore()', () => {
+        test('continues with offset fetches when catch-up stops mid-page', async () => {
+            InfiniteScroll.state.isLoading = false;
+            InfiniteScroll.state.hasMore = true;
+            InfiniteScroll.state.totalItems = 299;
+            InfiniteScroll.state.currentPage = 3;
+            InfiniteScroll.state.loadedItems = Array.from({ length: 235 }, (_, i) => ({
+                path: `/img${i}.jpg`,
+            }));
+            InfiniteScroll._resumeLoadMoreFromOffset = true;
+            InfiniteScroll.config.batchSize = 100;
+
+            const offsetItems = Array.from({ length: 64 }, (_, i) => ({
+                path: `/img${235 + i}.jpg`,
+            }));
+
+            const fetchOffsetSpy = vi.spyOn(InfiniteScroll, '_fetchOffset').mockResolvedValue({
+                items: offsetItems,
+                totalItems: 299,
+            });
+            const fetchPageSpy = vi.spyOn(InfiniteScroll, '_fetchPage').mockResolvedValue(null);
+
+            vi.spyOn(InfiniteScroll, 'showSkeletons').mockImplementation(() => {});
+            vi.spyOn(InfiniteScroll, 'hideSkeletons').mockImplementation(() => {});
+            vi.spyOn(InfiniteScroll, 'updateLoadMoreVisibility').mockImplementation(() => {});
+            vi.spyOn(InfiniteScroll, 'updateStats').mockImplementation(() => {});
+            vi.spyOn(InfiniteScroll, 'updateVirtualSpacer').mockImplementation(() => {});
+            vi.spyOn(InfiniteScroll, 'updateScrollScrubber').mockImplementation(() => {});
+            vi.spyOn(InfiniteScroll, 'renderItems').mockImplementation(() => {});
+
+            await InfiniteScroll.loadMore();
+
+            expect(fetchOffsetSpy).toHaveBeenCalledWith(235, 100);
+            expect(fetchPageSpy).not.toHaveBeenCalled();
+            expect(InfiniteScroll.state.loadedItems).toHaveLength(299);
+            expect(InfiniteScroll.state.hasMore).toBe(false);
+            expect(InfiniteScroll.state.currentPage).toBe(3);
         });
     });
 

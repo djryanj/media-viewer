@@ -818,6 +818,33 @@ describe('InfiniteScroll Integration', () => {
     });
 
     describe('Loaded Item Windowing', () => {
+        it('does not window medium galleries by default', async () => {
+            Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+            InfiniteScroll.elements.gallery.getBoundingClientRect = () => ({ top: 0 });
+            vi.spyOn(InfiniteScroll, '_getGridGeometry').mockReturnValue({
+                cols: 4,
+                gap: 0,
+                itemSize: 100,
+                rowHeight: 100,
+            });
+
+            const initialData = {
+                items: Array.from({ length: 200 }, (_, i) => ({
+                    name: `file${i}.jpg`,
+                    path: `/test/file${i}.jpg`,
+                    type: 'image',
+                    exists: true,
+                })),
+                totalItems: 200,
+            };
+
+            await InfiniteScroll.startForDirectory('/test', initialData);
+
+            const galleryItems = document.querySelectorAll('.gallery-item:not(.skeleton)');
+            expect(galleryItems.length).toBe(200);
+            expect(InfiniteScroll.elements.gallery.style.paddingBottom).toBe('0px');
+        });
+
         it('should keep the mounted gallery slice smaller than loadedItems', async () => {
             Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
             InfiniteScroll.elements.gallery.getBoundingClientRect = () => ({ top: 0 });
@@ -837,6 +864,8 @@ describe('InfiniteScroll Integration', () => {
                 })),
                 totalItems: 200,
             };
+
+            InfiniteScroll.config.renderWindowMinItems = 1;
 
             await InfiniteScroll.startForDirectory('/test', initialData);
 
