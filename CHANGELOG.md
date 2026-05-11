@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.2] - Unreleased
+
+### Fixed
+
+- fix(frontend): Large library browsing is stable again after the recent gallery windowing changes in v0.18.1. Desktop scrolling no longer flickers, touch scrolling no longer snaps back toward the top, and scrubber jumps now reliably load the requested position instead of stalling partway through the library. ([#542](https://github.com/djryanj/media-viewer/issues/542))
+
 ## [0.18.1] - 05-03-2026
 
 ### Changed

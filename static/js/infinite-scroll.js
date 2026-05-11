@@ -27,6 +27,7 @@ const InfiniteScroll = {
         rootMargin: '1200px',
         skeletonCount: 12,
         renderOverscanRows: 6,
+        renderWindowMinItems: 1200,
     },
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ const InfiniteScroll = {
     _restorePopoverTimer: null, // auto-dismiss timer for restore popover
     _restorePopoverHideTimer: null, // 250 ms fade-out delay timer (tracked so it can be cancelled)
     _saveScrollTimer: null, // debounce timer for persistent position save
+    _resumeLoadMoreFromOffset: false, // continue loading from exact offset after mid-page catch-up
     // Set to true while the gallery is showing a static collection view.
     // Prevents saveToCache() from persisting collection items as directory cache.
     _isCollectionView: false,
@@ -298,6 +300,7 @@ const InfiniteScroll = {
         this.state.currentPage = cached.currentPage;
         this.state.hasMore = mergedItems.length < initialData.totalItems;
         this.state.loadedItems = mergedItems;
+        this._resumeLoadMoreFromOffset = cached.resumeLoadMoreFromOffset === true;
         this.renderItems(mergedItems, false);
 
         if (savedScrollPosition !== null) {
@@ -323,6 +326,7 @@ const InfiniteScroll = {
         this._catchUpTarget = 0;
         this._isScrubbing = false;
         this._scrubFraction = 0;
+        this._resumeLoadMoreFromOffset = false;
         this._cachedGridGeometry = null;
         this._renderWindowStart = 0;
         this._renderWindowEnd = 0;
@@ -489,10 +493,35 @@ const InfiniteScroll = {
         grid.style.top = `${offsetIntoSpacer}px`;
     },
 
-    _getRenderWindowRange() {
+    _hasCoarsePointer() {
+        if (typeof window.matchMedia === 'function') {
+            try {
+                if (window.matchMedia('(pointer: coarse)').matches) {
+                    return true;
+                }
+            } catch {
+                // Ignore unsupported media queries and fall through.
+            }
+        }
+
+        return navigator.maxTouchPoints > 0;
+    },
+
+    _shouldWindowLoadedItems() {
+        return (
+            this.state.loadedItems.length >= this.config.renderWindowMinItems &&
+            !this._hasCoarsePointer()
+        );
+    },
+
+    _getRenderWindowRange(force = false) {
         const loadedCount = this.state.loadedItems.length;
         if (loadedCount === 0) {
             return { startIndex: 0, endIndex: 0 };
+        }
+
+        if (!this._shouldWindowLoadedItems()) {
+            return { startIndex: 0, endIndex: loadedCount };
         }
 
         const { cols, rowHeight } = this._getGridGeometry();
@@ -503,6 +532,24 @@ const InfiniteScroll = {
         const galleryTop = this.elements.gallery.getBoundingClientRect().top + window.scrollY;
         const scrollOffset = Math.max(0, window.scrollY - galleryTop);
         const firstVisibleRow = Math.max(0, Math.floor(scrollOffset / safeRowHeight));
+
+        if (!force && this._renderWindowEnd > this._renderWindowStart) {
+            const currentStartRow = Math.floor(this._renderWindowStart / safeCols);
+            const currentEndRow = Math.ceil(this._renderWindowEnd / safeCols);
+            const hysteresisRows = Math.max(1, Math.floor(overscanRows / 2));
+            const visibleEndRow = firstVisibleRow + viewportRows;
+
+            if (
+                firstVisibleRow >= currentStartRow + hysteresisRows &&
+                visibleEndRow <= currentEndRow - hysteresisRows
+            ) {
+                return {
+                    startIndex: this._renderWindowStart,
+                    endIndex: this._renderWindowEnd,
+                };
+            }
+        }
+
         const startRow = Math.max(0, firstVisibleRow - overscanRows);
         const endRow = firstVisibleRow + viewportRows + overscanRows;
 
@@ -526,7 +573,7 @@ const InfiniteScroll = {
             return;
         }
 
-        const { startIndex, endIndex } = this._getRenderWindowRange();
+        const { startIndex, endIndex } = this._getRenderWindowRange(force);
         if (
             !force &&
             startIndex === this._renderWindowStart &&
@@ -614,6 +661,16 @@ const InfiniteScroll = {
         window.scrollTo({ top, behavior: 'instant' });
     },
 
+    _jumpToLoadedItem(itemNumber, { refillViewport = false } = {}) {
+        this._scrollToLoadedItem(itemNumber);
+        // Programmatic jumps cannot rely on the browser delivering a scroll
+        // event soon enough to remount the correct slice, especially in Firefox.
+        this.scheduleRenderWindowUpdate(true);
+        if (refillViewport) {
+            this.checkAndFillViewport();
+        }
+    },
+
     // ─────────────────────────────────────────────────────────────────────────
     // Custom scrubber
     // ─────────────────────────────────────────────────────────────────────────
@@ -695,8 +752,7 @@ const InfiniteScroll = {
         if (targetItem <= loaded) {
             // Fraction 0 / item 1 → absolute top of the page so the header and
             // favorites bar are fully visible, not just the first gallery row.
-            this._scrollToLoadedItem(targetItem);
-            this.checkAndFillViewport();
+            this._jumpToLoadedItem(targetItem, { refillViewport: true });
             return;
         }
 
@@ -745,8 +801,9 @@ const InfiniteScroll = {
             }
             if (!res.ok) return null;
             return await res.json();
-        } catch {
+        } catch (err) {
             clearTimeout(tid);
+            if (err.name === 'AbortError' || err instanceof TypeError) throw err;
             return null;
         }
     },
@@ -810,10 +867,13 @@ const InfiniteScroll = {
                 this.state.loadedItems.push(...data.items);
                 this.state.totalItems = data.totalItems;
                 this.state.hasMore = this.state.loadedItems.length < data.totalItems;
-                // Align currentPage so sequential loadMore resumes from the right page
-                this.state.currentPage = Math.ceil(
-                    this.state.loadedItems.length / this.config.batchSize
+                this.state.currentPage = Math.max(
+                    1,
+                    Math.ceil(this.state.loadedItems.length / this.config.batchSize)
                 );
+                this._resumeLoadMoreFromOffset =
+                    this.state.hasMore &&
+                    this.state.loadedItems.length % this.config.batchSize !== 0;
                 this.renderItems(data.items, true);
             } else {
                 this.state.loadFailed = true;
@@ -831,7 +891,7 @@ const InfiniteScroll = {
                 this.updateVirtualSpacer();
 
                 if (!this.state.loadFailed) {
-                    this._scrollToLoadedItem(this._catchUpTarget);
+                    this._jumpToLoadedItem(this._catchUpTarget);
                 }
 
                 document.documentElement.classList.remove('catchup-active');
@@ -865,12 +925,23 @@ const InfiniteScroll = {
         this.showSkeletons();
 
         try {
-            const data = await this._fetchPage(this.state.currentPage + 1);
+            const data = this._resumeLoadMoreFromOffset
+                ? await this._fetchOffset(this.state.loadedItems.length, this.config.batchSize)
+                : await this._fetchPage(this.state.currentPage + 1);
             if (!data) throw new Error('Failed to load more items');
 
-            this.state.currentPage++;
             this.state.loadedItems.push(...data.items);
             this.state.hasMore = this.state.loadedItems.length < this.state.totalItems;
+            if (this._resumeLoadMoreFromOffset) {
+                this.state.currentPage = Math.max(
+                    this.state.currentPage,
+                    Math.ceil(this.state.loadedItems.length / this.config.batchSize)
+                );
+            } else {
+                this.state.currentPage++;
+            }
+            this._resumeLoadMoreFromOffset =
+                this.state.hasMore && this.state.loadedItems.length % this.config.batchSize !== 0;
             this.state.loadFailed = false;
             this.renderItems(data.items, true);
         } catch (error) {
@@ -1082,6 +1153,7 @@ const InfiniteScroll = {
         this.cache.set(path, {
             loadedItems: [...this.state.loadedItems],
             currentPage: this.state.currentPage,
+            resumeLoadMoreFromOffset: this._resumeLoadMoreFromOffset,
             totalItems: this.state.totalItems,
             hasMore: this.state.hasMore,
             scrollPosition: window.scrollY,
