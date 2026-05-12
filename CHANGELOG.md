@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump actions/labeler from 6.0.1 to 6.1.0 ([#541](https://github.com/djryanj/media-viewer/pull/541))
 - build(deps): bump renovatebot/github-action from 46.1.12 to 46.1.14 ([#540](https://github.com/djryanj/media-viewer/pull/540))
 ### Fixed
 
