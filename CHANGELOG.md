@@ -7,14 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.18.2] - 05-12-2026
 
-
 ### Changed
 
 - chore(deps): update module github.com/golangci/golangci-lint to v2.12.2 ([#537](https://github.com/djryanj/media-viewer/pull/537))
 - chore(deps): update dependency golangci/golangci-lint to v2.12.2 ([#536](https://github.com/djryanj/media-viewer/pull/536))
+- chore(deps): update all non-major dependencies ([#535](https://github.com/djryanj/media-viewer/pull/535))
 - build(deps): bump github.com/go-webauthn/webauthn from 0.17.0 to 0.17.3 ([#539](https://github.com/djryanj/media-viewer/pull/539))
 - build(deps): bump actions/labeler from 6.0.1 to 6.1.0 ([#541](https://github.com/djryanj/media-viewer/pull/541))
 - build(deps): bump renovatebot/github-action from 46.1.12 to 46.1.14 ([#540](https://github.com/djryanj/media-viewer/pull/540))
+
 ### Fixed
 
 - fix(frontend): Large library browsing is stable again after the recent gallery windowing changes in v0.18.1. Desktop scrolling no longer flickers, touch scrolling no longer snaps back toward the top, and scrubber jumps now reliably load the requested position instead of stalling partway through the library. ([#542](https://github.com/djryanj/media-viewer/issues/542))
@@ -23,8 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- chore(deps): update all non-major dependencies ([#535](https://github.com/djryanj/media-viewer/pull/535))
-- chore(deps): update all non-major dependencies ([#535](https://github.com/djryanj/media-viewer/pull/535))
 - chore(deps): bump Go version to 1.26.2
 - chore(deps): update all non-major dependencies ([#517](https://github.com/djryanj/media-viewer/pull/517))
 - chore(deps): update github actions ([#519](https://github.com/djryanj/media-viewer/pull/519))
