@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update dependency golangci/golangci-lint to v2.12.2 ([#536](https://github.com/djryanj/media-viewer/pull/536))
 - build(deps): bump github.com/go-webauthn/webauthn from 0.17.0 to 0.17.3 ([#539](https://github.com/djryanj/media-viewer/pull/539))
 - build(deps): bump actions/labeler from 6.0.1 to 6.1.0 ([#541](https://github.com/djryanj/media-viewer/pull/541))
 - build(deps): bump renovatebot/github-action from 46.1.12 to 46.1.14 ([#540](https://github.com/djryanj/media-viewer/pull/540))
