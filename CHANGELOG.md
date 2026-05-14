@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.19.0] - Unreleased
 
+
+### Changed
+
+- build(deps): bump golang.org/x/image from 0.39.0 to 0.40.0 ([#546](https://github.com/djryanj/media-viewer/pull/546))
 ### Added
 
 - feat(admin): The footer and Settings -> Cache tab now shows live status for indexing, thumbnail generation, and auto-tagging from one unified system status view, including whether each worker is running or idle plus progress details such as throughput, ETA, last-run information, and direct maintenance actions. This work also adds a single `/api/system/status` backend endpoint in place of the removed `/api/stats`, `/api/thumbnails/status`, and `/api/autotagger/status` endpoints. ([#526](https://github.com/djryanj/media-viewer/issues/526))
