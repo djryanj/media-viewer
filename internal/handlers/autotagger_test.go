@@ -157,7 +157,7 @@ func TestGetSystemStatusIncludesAutoTagger(t *testing.T) {
 
 			h := &Handlers{autoTagger: tt.autoTagger}
 
-			req := httptest.NewRequest(tt.method, "/api/autotagger/status", http.NoBody)
+			req := httptest.NewRequest(tt.method, "/api/system/status", http.NoBody)
 			w := httptest.NewRecorder()
 
 			h.GetSystemStatus(w, req)

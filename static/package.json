@@ -29,7 +29,7 @@
         "test:e2e": "PLAYWRIGHT_HTML_OPEN=never node ./e2e/run-playwright.js --reporter=list",
         "test:e2e:all": "PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1 PLAYWRIGHT_HTML_OPEN=never node ./e2e/run-playwright.js --reporter=list",
         "test:e2e:smoke": "PLAYWRIGHT_HTML_OPEN=never PLAYWRIGHT_FAIL_ON_FLAKY_TESTS=1 playwright test e2e/specs/core/auth.spec.js e2e/specs/ui/gallery.spec.js e2e/specs/ui/lightbox-video.spec.js --project=chromium",
-        "test:e2e:runtime-smoke": "PLAYWRIGHT_HTML_OPEN=never PLAYWRIGHT_FAIL_ON_FLAKY_TESTS=1 playwright test e2e/specs/core/auth.spec.js e2e/specs/ui/gallery.spec.js e2e/specs/ui/lightbox-video.spec.js e2e/specs/features/autotagger-runtime.spec.js --project=chromium",
+        "test:e2e:runtime-smoke": "PLAYWRIGHT_HTML_OPEN=never PLAYWRIGHT_FAIL_ON_FLAKY_TESTS=1 playwright test e2e/specs/core/auth.spec.js e2e/specs/ui/gallery.spec.js e2e/specs/features/autotagger-runtime.spec.js --project=chromium",
         "test:e2e:visual": "PLAYWRIGHT_HTML_OPEN=never playwright test e2e/specs/visual --project=chromium --reporter=list",
         "test:e2e:visual:baselines": "node ./e2e/sync-visual-baselines.js",
         "test:e2e:performance:smoke": "PLAYWRIGHT_HTML_OPEN=never PLAYWRIGHT_FAIL_ON_FLAKY_TESTS=1 playwright test e2e/specs/performance/selection-performance.spec.js --project=chromium",
