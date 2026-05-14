@@ -31,13 +31,15 @@ The thumbnail cache can grow significantly for large libraries. Plan storage acc
 ## Cache Management
 
 <div align="center">
-  <img src="../../images/settings-tab-cache.png" alt="Settings Cache tab showing Rebuild Thumbnails, Reindex Media, Run Auto-Tagger, and Clear Transcoded Videos actions" width="700">
-  <p><em>The Cache tab in Settings provides quick access to all cache and index maintenance actions.</em></p>
+  <img src="../../images/settings-tab-cache.png" alt="Settings Cache tab showing the Background Activity section with live cards for the indexer, thumbnails, auto-tagger, and transcode cache" width="700">
+  <p><em>The Cache tab now groups maintenance actions with live worker status in the Background Activity section.</em></p>
 </div>
 
 ### Viewing Cache Status
 
-The stats bar at the bottom of the gallery shows library statistics including total images, videos, folders, favorites, the last indexed time, and the running version/build.
+The stats bar at the bottom of the gallery shows library totals, index freshness, version/build information, and a compact worker summary for the indexer, thumbnails, and auto-tagger.
+
+For detailed maintenance visibility, open **Settings → Cache**. The **Background Activity** section expands that same status into live cards for the indexer, thumbnail generator, auto-tagger, and transcode cache utility.
 
 ### Rebuilding Thumbnails
 
@@ -45,7 +47,7 @@ To clear and rebuild all thumbnails:
 
 1. Open **Settings** (⚙️ icon)
 2. Go to the **Cache** tab
-3. Click **Rebuild Thumbnails**
+3. In **Background Activity**, use the **Thumbnails** card and click **Rebuild Thumbnails**
 4. Confirm the action — thumbnails regenerate in the background
 
 This is useful when:
@@ -60,7 +62,7 @@ To remove cached transcoded videos and free disk space:
 
 1. Open **Settings** (⚙️ icon)
 2. Go to the **Cache** tab
-3. In the **Clear Transcoded Videos** card, click **Clear Cache**
+3. In **Background Activity**, use the **Transcode Cache** card and click **Clear Cache**
 4. Confirm the action — Media Viewer reports the space freed after deletion
 
 This is useful when:

@@ -506,6 +506,23 @@ describe('InfiniteScroll Module', () => {
 
             expect(() => InfiniteScroll.updateStats()).not.toThrow();
         });
+
+        test('includes worker summary when available', () => {
+            InfiniteScroll.state.loadedItems = new Array(5);
+            InfiniteScroll.state.totalItems = 25;
+            globalThis.MediaApp.state.systemStatus = {
+                indexer: { summary: { state: 'running' } },
+                thumbnails: { summary: { state: 'idle' } },
+                autotagger: { summary: { state: 'disabled' } },
+            };
+
+            InfiniteScroll.updateStats();
+
+            expect(InfiniteScroll.elements.statsInfo.textContent).toContain('Indexer: running');
+            expect(InfiniteScroll.elements.statsInfo.innerHTML).toContain(
+                'stats-worker-state running'
+            );
+        });
     });
 
     describe('Loading state', () => {

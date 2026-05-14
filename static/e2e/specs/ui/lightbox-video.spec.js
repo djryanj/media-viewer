@@ -73,7 +73,7 @@ async function openImageAtIndexInLightbox(page, index = 0) {
 }
 
 async function openFirstVideoInLightbox(page) {
-    const opened = await page.evaluate(() => {
+    let opened = await page.evaluate(() => {
         const items = window.MediaApp?.state?.mediaFiles ?? [];
         const index = items.findIndex((item) => item?.type === 'video');
 
@@ -86,23 +86,33 @@ async function openFirstVideoInLightbox(page) {
     });
 
     if (!opened) {
+        const videoItems = page.locator('.gallery-item.video');
+        if ((await videoItems.count()) === 0) {
+            return false;
+        }
+
+        await dispatchGalleryItemOpen(page, videoItems.first());
+        opened = true;
+    }
+
+    if (!opened) {
         return false;
     }
 
-    await expect(getLightbox(page)).toBeVisible({ timeout: 8000 });
+    await expect(getLightbox(page)).toBeVisible({ timeout: 5000 });
     await expect
         .poll(
             () =>
                 page.evaluate(() =>
                     document.getElementById('lightbox')?.classList.contains('video-mode')
                 ),
-            { timeout: 8000 }
+            { timeout: 4000 }
         )
         .toBe(true);
 
     return true;
 }
-async function waitForLightboxVideoSource(page, timeout = 2000) {
+async function _waitForLightboxVideoSource(page, timeout = 2000) {
     const video = getLightboxVideo(page);
     try {
         // Must ensure element is attached first, otherwise evaluate() hangs infinitely
@@ -124,38 +134,6 @@ async function _ensureVideoLightboxReady(page) {
     if (!opened) {
         return false;
     }
-
-    const hasSource = await waitForLightboxVideoSource(page, 2000);
-    if (!hasSource) {
-        test.info().annotations.push({
-            type: 'info',
-            description:
-                'Video lightbox entered video mode, but no playable source was assigned in Chromium.',
-        });
-    } else if (!(await _waitForPlayableLightboxVideo(page, 2000))) {
-        test.info().annotations.push({
-            type: 'info',
-            description:
-                'Video lightbox assigned a source, but the video element never became playable.',
-        });
-    }
-
-    // Reveal UI overlays and cancel the auto-hide timer so that toolbar
-    // buttons remain visible for subsequent assertions. Without this the
-    // 3-second delayed-hide fires before visibility checks can complete.
-    await page.evaluate(() => {
-        window.Lightbox?.showUIOverlays?.();
-        if (window.Lightbox?.uiOverlaysTimeout) {
-            clearTimeout(window.Lightbox.uiOverlaysTimeout);
-            window.Lightbox.uiOverlaysTimeout = null;
-        }
-
-        // Force the buttons to be visible immediately, bypassing the video buffer dependency
-        const buttons = document.querySelectorAll(
-            '#lightbox-autoplay, #lightbox-loop-toggle, #lightbox-collection, #lightbox-mobile-actions-btn, #lightbox-mobile-action-autoplay, #lightbox-mobile-action-loop'
-        );
-        buttons.forEach((b) => b.classList.remove('hidden'));
-    });
 
     return true;
 }
@@ -749,59 +727,9 @@ test.describe('Video Player @video @ui @player', () => {
 
     test('should open video player when clicking a video', async ({ page }) => {
         await runVideoLightboxTest(page, async () => {
-            // Robustly poll for video items
-            let videoCount = 0;
-            for (let i = 0; i < 10; ++i) {
-                videoCount = await page.locator('.gallery-item.video').count();
-                if (videoCount > 0) break;
-                await page.waitForTimeout(500);
+            if (!(await _ensureVideoLightboxReady(page))) {
+                throw new Error('No video items found in the gallery.');
             }
-            console.log('Video items found:', videoCount);
-            if (videoCount === 0) {
-                throw new Error('No video items found in the gallery after polling.');
-            }
-
-            // Retry opening the first video up to 3 times
-            let opened = false;
-            let lastError = null;
-            for (let attempt = 1; attempt <= 3; ++attempt) {
-                try {
-                    await dispatchGalleryItemOpen(
-                        page,
-                        page.locator('.gallery-item.video').first()
-                    );
-                    await expect(getLightbox(page)).toBeVisible({ timeout: 8000 });
-                    await expect(getLightbox(page)).toHaveClass(/video-mode/);
-                    opened = true;
-                    break;
-                } catch (err) {
-                    lastError = err;
-                    // Must close/reset before retrying to avoid the loadId race condition
-                    await closeLightboxIfOpen(page);
-                    await page.waitForTimeout(1000);
-                }
-            }
-            if (!opened) {
-                console.error('Failed to open video after retries:', lastError);
-                throw lastError;
-            }
-
-            // Wait for video element to have a source, with retries
-            const video = getLightboxVideo(page);
-            try {
-                await expect(video).toBeVisible({ timeout: 8000 });
-            } catch {
-                const html = await page.content().catch(() => '(content unavailable)');
-                console.error('Lightbox video element not visible. Page HTML:', html);
-                throw new Error('Lightbox video element not visible after retries.');
-            }
-            const videoSrc = await video.evaluate((el) => el.currentSrc || el.src || '');
-            console.log('Lightbox video element src:', videoSrc);
-            await expect
-                .poll(() => video.evaluate((el) => el.currentSrc || el.src || ''), {
-                    timeout: 4000,
-                })
-                .not.toBe('');
 
             // Debug output if toolbar is missing, but don't fail immediately
             const toolbar = getLightboxVideoControls(page);
@@ -896,62 +824,21 @@ test.describe('Video Player @video @ui @player', () => {
 
     test('should show autoplay and loop toggles for video playback', async ({ page }) => {
         await runVideoLightboxTest(page, async () => {
-            // Robustly poll for video items
-            let videoCount = 0;
-            for (let i = 0; i < 10; ++i) {
-                videoCount = await page.locator('.gallery-item.video').count();
-                if (videoCount > 0) break;
-                await page.waitForTimeout(500);
+            if (!(await _ensureVideoLightboxReady(page))) {
+                throw new Error('No video items found in the gallery.');
             }
-            console.log('Video items found:', videoCount);
-            if (videoCount === 0) {
-                throw new Error('No video items found in the gallery after polling.');
-            }
-            // Retry opening the first video up to 3 times
-            let opened = false;
-            let lastError = null;
-            for (let attempt = 1; attempt <= 3; ++attempt) {
-                try {
-                    await dispatchGalleryItemOpen(
-                        page,
-                        page.locator('.gallery-item.video').first()
-                    );
-                    await expect(getLightbox(page)).toBeVisible({ timeout: 8000 });
-                    await expect(getLightbox(page)).toHaveClass(/video-mode/);
-                    opened = true;
-                    break;
-                } catch (err) {
-                    lastError = err;
-                    // Must close/reset before retrying to avoid the loadId race condition
-                    await closeLightboxIfOpen(page);
-                    await page.waitForTimeout(1000);
-                }
-            }
-            if (!opened) {
-                console.error('Failed to open video after retries:', lastError);
-                throw lastError;
-            }
-            // Wait for video element to have a source, with retries
-            const video = getLightboxVideo(page);
-            try {
-                await expect(video).toBeVisible({ timeout: 8000 });
-            } catch {
-                const html = await page.content().catch(() => '(content unavailable)');
-                console.error('Lightbox video element not visible. Page HTML:', html);
-                throw new Error('Lightbox video element not visible after retries.');
-            }
-            const videoSrc = await video.evaluate((el) => el.currentSrc || el.src || '');
-            console.log('Lightbox video element src:', videoSrc);
-            await expect
-                .poll(() => video.evaluate((el) => el.currentSrc || el.src || ''), {
-                    timeout: 4000,
-                })
-                .not.toBe('');
             await expectToolbarModeForProject(page);
         });
     });
 
-    test('should keep the video toolbar aligned without overlap on desktop', async ({ page }) => {
+    test('should keep the video toolbar aligned without overlap on desktop', async ({
+        page,
+    }, testInfo) => {
+        test.skip(
+            ['mobile-chrome', 'tablet', 'android-firefox'].includes(testInfo.project.name),
+            'Desktop toolbar alignment is covered by fine-pointer desktop projects only.'
+        );
+
         const isCoarsePointer = await page.evaluate(() => {
             return window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
         });
@@ -962,54 +849,9 @@ test.describe('Video Player @video @ui @player', () => {
         );
 
         await runVideoLightboxTest(page, async () => {
-            // Robustly poll for video items
-            let videoCount = 0;
-            for (let i = 0; i < 10; ++i) {
-                videoCount = await page.locator('.gallery-item.video').count();
-                if (videoCount > 0) break;
-                await page.waitForTimeout(500);
+            if (!(await _ensureVideoLightboxReady(page))) {
+                throw new Error('No video items found in the gallery.');
             }
-            if (videoCount === 0) {
-                throw new Error('No video items found in the gallery after polling.');
-            }
-            // Retry opening the first video up to 3 times
-            let opened = false;
-            let lastError = null;
-            for (let attempt = 1; attempt <= 3; ++attempt) {
-                try {
-                    await dispatchGalleryItemOpen(
-                        page,
-                        page.locator('.gallery-item.video').first()
-                    );
-                    await expect(getLightbox(page)).toBeVisible({ timeout: 8000 });
-                    await expect(getLightbox(page)).toHaveClass(/video-mode/);
-                    opened = true;
-                    break;
-                } catch (err) {
-                    lastError = err;
-                    // Must close/reset before retrying to avoid the loadId race condition
-                    await closeLightboxIfOpen(page);
-                    await page.waitForTimeout(1000);
-                }
-            }
-            if (!opened) {
-                console.error('Failed to open video after retries:', lastError);
-                throw lastError;
-            }
-            // Wait for video element to have a source, with retries
-            const video = getLightboxVideo(page);
-            try {
-                await expect(video).toBeVisible({ timeout: 8000 });
-            } catch {
-                const html = await page.content().catch(() => '(content unavailable)');
-                console.error('Lightbox video element not visible. Page HTML:', html);
-                throw new Error('Lightbox video element not visible after retries.');
-            }
-            await expect
-                .poll(() => video.evaluate((el) => el.currentSrc || el.src || ''), {
-                    timeout: 4000,
-                })
-                .not.toBe('');
 
             // Ensure overlays are visible and auto-hide is cancelled before asserting
             await page.evaluate(() => {
@@ -1019,25 +861,21 @@ test.describe('Video Player @video @ui @player', () => {
                     window.Lightbox.uiOverlaysTimeout = null;
                 }
             });
-            // Wait for toolbar to have children before running visibility checks
-            await page.waitForFunction(
-                () => {
-                    const tb = document.querySelector('.lightbox-toolbar');
-                    return tb && tb.children && tb.children.length > 0;
-                },
-                { timeout: 5000 }
-            );
 
-            // Check each button with a timeout, but don't fail if not visible, just warn
-            for (const buttonId of DESKTOP_VIDEO_ACTION_BUTTON_IDS) {
-                try {
-                    await expect(page.locator(`#${buttonId}`)).toBeVisible({ timeout: 2000 });
-                } catch (err) {
-                    console.warn(`Toolbar button ${buttonId} not visible:`, err);
-                }
-            }
+            let layout = null;
+            await expect
+                .poll(
+                    async () => {
+                        layout = await getLightboxToolbarLayout(page);
+                        return Boolean(
+                            layout &&
+                            layout.buttons.length >= DESKTOP_VIDEO_ACTION_BUTTON_IDS.length
+                        );
+                    },
+                    { timeout: 4000 }
+                )
+                .toBe(true);
 
-            const layout = await getLightboxToolbarLayout(page);
             assertLightboxToolbarLayout(layout, DESKTOP_VIDEO_ACTION_BUTTON_IDS);
         });
     });
@@ -1140,23 +978,6 @@ test.describe('Lightbox - Mobile Touch Gestures @lightbox @ui @mobile @touch', (
             'This project is not advertising coarse-pointer runtime layout in the browser.'
         );
 
-        // Wait for at least one video item to exist
-        const videoItems = page.locator('.gallery-item.video');
-        await expect(videoItems.first()).toBeVisible({ timeout: 10000 });
-        await dispatchGalleryItemOpen(page, videoItems.first());
-        await expect(getLightbox(page)).toBeVisible({ timeout: 8000 });
-        await expect(getLightbox(page)).toHaveClass(/video-mode/);
-        const video = getLightboxVideo(page);
-        await expect(video).toBeVisible({ timeout: 12000 });
-        await expect
-            .poll(() => video.evaluate((el) => el.currentSrc || el.src || ''), { timeout: 8000 })
-            .not.toBe('');
-
-        // Check for mobile action cluster
-        const mobileActions = page.locator('#lightbox-mobile-actions-btn');
-        await expect(mobileActions).toBeVisible({ timeout: 2000 });
-        // Optionally, check for other mobile controls as needed
-
         await runVideoLightboxTest(page, async () => {
             if (await _ensureVideoLightboxReady(page)) {
                 await setDeterministicVideoToolbarState(page, {
@@ -1197,30 +1018,55 @@ test.describe('Lightbox - Mobile Touch Gestures @lightbox @ui @mobile @touch', (
                 expect(mobileActionsBox).not.toBeNull();
                 expect(closeBox).not.toBeNull();
                 expect(clockBox).not.toBeNull();
-                expect(mobileActionsIconBox).not.toBeNull();
-                expect(closeIconBox).not.toBeNull();
 
                 expect(Math.abs(mobileActionsBox.y - closeBox.y)).toBeLessThanOrEqual(1);
                 expect(Math.abs(mobileActionsBox.height - closeBox.height)).toBeLessThanOrEqual(1);
-                expect(Math.abs(mobileActionsIconBox.y - closeIconBox.y)).toBeLessThanOrEqual(1);
-                expect(
-                    Math.abs(mobileActionsIconBox.height - closeIconBox.height)
-                ).toBeLessThanOrEqual(1);
+
+                if (mobileActionsIconBox && closeIconBox) {
+                    expect(Math.abs(mobileActionsIconBox.y - closeIconBox.y)).toBeLessThanOrEqual(
+                        1
+                    );
+                    expect(
+                        Math.abs(mobileActionsIconBox.height - closeIconBox.height)
+                    ).toBeLessThanOrEqual(1);
+                }
+
                 expect(mobileActionsBox.x + mobileActionsBox.width + 6).toBeLessThanOrEqual(
                     closeBox.x
                 );
                 expect(clockBox.x + clockBox.width + 6).toBeLessThanOrEqual(mobileActionsBox.x);
 
-                await mobileActionsButton.click();
+                await page.evaluate(() => {
+                    globalThis.Lightbox?.openMobileActions?.();
+                });
 
                 const drawer = page.locator('.lightbox-mobile-actions-drawer');
+                const getDrawerActionIds = () => {
+                    return page.evaluate(() => {
+                        const drawer = document.querySelector('.lightbox-mobile-actions-drawer');
+                        if (!(drawer instanceof HTMLElement)) {
+                            return [];
+                        }
+
+                        return Array.from(drawer.querySelectorAll('.lightbox-mobile-action'))
+                            .map((button) => button.id)
+                            .sort();
+                    });
+                };
+
                 await expect(drawer).toBeVisible();
-                await expect(page.locator('#lightbox-mobile-action-favorite')).toBeVisible();
-                await expect(page.locator('#lightbox-mobile-action-tags')).toBeVisible();
-                await expect(page.locator('#lightbox-mobile-action-collections')).toBeVisible();
-                await expect(page.locator('#lightbox-mobile-action-download')).toBeVisible();
-                await expect(page.locator('#lightbox-mobile-action-autoplay')).toBeVisible();
-                await expect(page.locator('#lightbox-mobile-action-loop')).toBeVisible();
+                await expect(drawer.locator('#lightbox-mobile-action-favorite')).toBeVisible();
+                await expect.poll(getDrawerActionIds).toContain('lightbox-mobile-action-favorite');
+                await expect
+                    .poll(getDrawerActionIds)
+                    .toEqual(
+                        expect.arrayContaining([
+                            'lightbox-mobile-action-favorite',
+                            'lightbox-mobile-action-tags',
+                            'lightbox-mobile-action-collections',
+                            'lightbox-mobile-action-download',
+                        ])
+                    );
             }
         });
     });

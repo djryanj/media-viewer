@@ -13,6 +13,7 @@ import (
 type AutoTagRunner interface {
 	TriggerRun()
 	Status() autotagger.Status
+	Enabled() bool
 }
 
 // Handlers contains all HTTP request handlers and their dependencies.

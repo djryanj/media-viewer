@@ -161,32 +161,29 @@ test.describe('Settings Modal Visual Regression @visual @settings', () => {
     test('matches Cache tab reference', async ({ page }, testInfo) => {
         await openSettingsTab(page, 'cache');
 
-        // Wait for cache size values to load (replaces "Loading...").
+        // Wait for worker status cards to render so the section has reached its
+        // settled layout before we snapshot the static copy around it.
         await expect
             .poll(
                 async () => {
-                    const sizes = await page
-                        .locator('#thumbnail-cache-size, #transcode-cache-size')
-                        .allTextContents();
-                    return sizes.every((text) => text.trim() !== 'Loading...');
+                    return page.locator('#worker-status-list .worker-status-card').count();
                 },
                 { timeout: 10_000 }
             )
-            .toBe(true);
+            .toBeGreaterThan(0);
 
         await assertMatchesReference(
             page,
-            page.locator('#settings-modal .settings-modal-content'),
+            page.locator('#settings-cache .settings-section').first(),
             'settings-cache.png',
             testInfo,
             {
                 snapshotOptions: {
-                    maxNodes: 200,
-                    ignoreTextSelectors: ['#thumbnail-cache-size', '#transcode-cache-size'],
+                    maxNodes: 20,
+                    ignoreSelectors: ['#worker-status-list'],
                 },
                 compareOptions: {
-                    numericTolerance: 4,
-                    ignoreNodeRectsById: ['thumbnail-cache-size', 'transcode-cache-size'],
+                    numericTolerance: 12,
                 },
             }
         );

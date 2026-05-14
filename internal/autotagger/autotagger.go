@@ -110,6 +110,11 @@ func (a *AutoTagger) TriggerRun() {
 	go a.runPass(false)
 }
 
+// Enabled reports whether the autotagger is configured to run.
+func (a *AutoTagger) Enabled() bool {
+	return a.enabled
+}
+
 // Stop shuts down the background loop.
 func (a *AutoTagger) Stop() {
 	close(a.stopChan)

@@ -29,20 +29,3 @@ func (h *Handlers) RunAutoTagger(w http.ResponseWriter, r *http.Request) {
 		responseKeyMessage: "Auto-tagger run started",
 	})
 }
-
-// GetAutoTaggerStatus returns the current or most recent auto-tagger run status.
-// GET /api/autotagger/status
-func (h *Handlers) GetAutoTaggerStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if h.autoTagger == nil {
-		http.Error(w, "Auto-tagger not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, h.autoTagger.Status())
-}

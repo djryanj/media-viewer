@@ -20,7 +20,8 @@ import (
 // stubAutoTagRunner is a minimal AutoTagRunner implementation for integration
 // tests.  It records call count and does not spawn any goroutines.
 type stubAutoTagRunner struct {
-	calls atomic.Int32
+	calls   atomic.Int32
+	enabled bool
 }
 
 func (s *stubAutoTagRunner) TriggerRun() {
@@ -29,6 +30,10 @@ func (s *stubAutoTagRunner) TriggerRun() {
 
 func (s *stubAutoTagRunner) Status() autotagger.Status {
 	return autotagger.Status{}
+}
+
+func (s *stubAutoTagRunner) Enabled() bool {
+	return s.enabled
 }
 
 // setupAutoTaggerIntegrationTest creates a real *Handlers wired with a
@@ -57,7 +62,7 @@ func setupAutoTaggerIntegrationTest(t *testing.T) (h *Handlers, stub *stubAutoTa
 	thumbGen := media.NewThumbnailGenerator(cacheDir, mediaDir, false, db, 0, nil)
 	config := &startup.Config{MediaDir: mediaDir, CacheDir: cacheDir}
 
-	stub = &stubAutoTagRunner{}
+	stub = &stubAutoTagRunner{enabled: true}
 	h = New(db, idx, trans, thumbGen, config, stub)
 
 	cleanup = func() {
@@ -131,22 +136,26 @@ func TestRunAutoTaggerIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("GET status returns 200", func(t *testing.T) {
+	t.Run("system status includes autotagger", func(t *testing.T) {
 		h, _, cleanup := setupAutoTaggerIntegrationTest(t)
 		defer cleanup()
 
-		req := httptest.NewRequest(http.MethodGet, "/api/autotagger/status", http.NoBody)
+		req := httptest.NewRequest(http.MethodGet, "/api/system/status", http.NoBody)
 		w := httptest.NewRecorder()
 
-		h.GetAutoTaggerStatus(w, req)
+		h.GetSystemStatus(w, req)
 
 		if w.Code != http.StatusOK {
 			t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 		}
 
-		var resp autotagger.Status
+		var resp SystemStatusResponse
 		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if !resp.AutoTagger.Summary.Enabled {
+			t.Fatal("expected autotagger summary to be enabled")
 		}
 	})
 }

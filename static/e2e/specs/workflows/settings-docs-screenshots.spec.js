@@ -135,18 +135,15 @@ test.describe('Settings Modal Docs Screenshots @docs @screenshots @docs-screensh
         const modalContent = page.locator('#settings-modal').locator('.settings-modal-content');
         await expect(page.locator('#settings-cache')).toHaveClass(/active/);
 
-        // Wait for cache size values to load (replaces "Loading...").
+        // Wait for the unified worker cards to render before capturing the tab.
         await expect
             .poll(
                 async () => {
-                    const sizes = await page
-                        .locator('#thumbnail-cache-size, #transcode-cache-size')
-                        .allTextContents();
-                    return sizes.every((text) => text.trim() !== 'Loading...');
+                    return page.locator('#worker-status-list .worker-status-card').count();
                 },
                 { timeout: 10_000 }
             )
-            .toBe(true);
+            .toBeGreaterThan(0);
 
         await captureDocsScreenshot(page, modalContent, SCREENSHOTS.cache);
     });

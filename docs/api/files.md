@@ -12,14 +12,14 @@ GET /api/files
 
 ### Query Parameters
 
-| Parameter  | Type    | Default | Description |
-| ---------- | ------- | ------- | ----------- |
+| Parameter  | Type    | Default | Description                                                    |
+| ---------- | ------- | ------- | -------------------------------------------------------------- |
 | `path`     | string  | `""`    | Directory path to browse. Empty string means the library root. |
-| `sort`     | string  | `name`  | One of `name`, `date`, `size`, `type`. |
-| `order`    | string  | `asc`   | `asc` or `desc`. |
-| `type`     | string  | `all`   | One of `all`, `images`, `videos`, `playlists`. |
-| `page`     | integer | `1`     | Page number. |
-| `pageSize` | integer | `100`   | Number of items per page. |
+| `sort`     | string  | `name`  | One of `name`, `date`, `size`, `type`.                         |
+| `order`    | string  | `asc`   | `asc` or `desc`.                                               |
+| `type`     | string  | `all`   | One of `all`, `images`, `videos`, `playlists`.                 |
+| `page`     | integer | `1`     | Page number.                                                   |
+| `pageSize` | integer | `100`   | Number of items per page.                                      |
 | `offset`   | integer | `0`     | Optional offset for clients that want explicit offset control. |
 
 ### Response
@@ -91,13 +91,13 @@ GET /api/media
 
 ### Query Parameters
 
-| Parameter | Type    | Default | Description |
-| --------- | ------- | ------- | ----------- |
-| `path`    | string  | `""`    | Directory path. |
+| Parameter | Type    | Default | Description                            |
+| --------- | ------- | ------- | -------------------------------------- |
+| `path`    | string  | `""`    | Directory path.                        |
 | `sort`    | string  | `name`  | One of `name`, `date`, `size`, `type`. |
-| `order`   | string  | `asc`   | `asc` or `desc`. |
-| `offset`  | integer | `0`     | Zero-based media offset. |
-| `limit`   | integer | `500`   | Maximum items to return. |
+| `order`   | string  | `asc`   | `asc` or `desc`.                       |
+| `offset`  | integer | `0`     | Zero-based media offset.               |
+| `limit`   | integer | `500`   | Maximum items to return.               |
 
 ### Response
 
@@ -149,13 +149,12 @@ GET /api/thumbnails/{path}
 DELETE /api/thumbnails/{path}
 POST /api/thumbnails/invalidate
 POST /api/thumbnails/rebuild
-GET /api/thumbnails/status
 ```
 
 - `GET /api/thumbnails/{path}` returns a generated or cached thumbnail.
 - `DELETE /api/thumbnails/{path}` invalidates a single cached thumbnail.
 - `POST /api/thumbnails/invalidate` clears the full thumbnail cache.
 - `POST /api/thumbnails/rebuild` starts a background rebuild.
-- `GET /api/thumbnails/status` reports rebuild progress.
+- Thumbnail rebuild progress and cache state are exposed through `GET /api/system/status`.
 
 For exact schemas and media-specific edge cases, see the [OpenAPI specification](openapi.md).

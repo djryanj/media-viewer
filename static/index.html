@@ -622,78 +622,14 @@
                             experiencing display issues or have added new media.
                         </p>
 
-                        <div class="cache-actions">
-                            <div class="cache-action-card">
-                                <div class="cache-action-info">
-                                    <h4>Rebuild Thumbnails</h4>
-                                    <p>
-                                        Regenerate all thumbnail images. This may take a while
-                                        depending on your library size.
-                                    </p>
-                                    <p class="cache-size">
-                                        Current cache size:
-                                        <strong id="thumbnail-cache-size">Loading...</strong>
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    id="rebuild-thumbnails-btn"
-                                    class="btn btn-secondary"
-                                >
-                                    <i data-lucide="refresh-cw"></i>
-                                    Rebuild Thumbnails
-                                </button>
-                            </div>
-
-                            <div class="cache-action-card">
-                                <div class="cache-action-info">
-                                    <h4>Reindex Media</h4>
-                                    <p>
-                                        Scan for new, modified, or deleted files. Usually happens
-                                        automatically.
-                                    </p>
-                                </div>
-                                <button type="button" id="reindex-btn" class="btn btn-secondary">
-                                    <i data-lucide="database-backup"></i>
-                                    Reindex Now
-                                </button>
-                            </div>
-
-                            <div class="cache-action-card">
-                                <div class="cache-action-info">
-                                    <h4>Run Auto-Tagger</h4>
-                                    <p>
-                                        Apply tags from embedded EXIF/IPTC metadata to all media
-                                        files immediately.
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    id="run-autotagger-btn"
-                                    class="btn btn-secondary"
-                                >
-                                    <i data-lucide="tag"></i>
-                                    Run Now
-                                </button>
-                            </div>
-
-                            <div class="cache-action-card">
-                                <div class="cache-action-info">
-                                    <h4>Clear Transcoded Videos</h4>
-                                    <p>Remove cached video transcodes to free up disk space.</p>
-                                    <p class="cache-size">
-                                        Current cache size:
-                                        <strong id="transcode-cache-size">Loading...</strong>
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    id="clear-transcode-btn"
-                                    class="btn btn-secondary"
-                                >
-                                    <i data-lucide="trash-2"></i>
-                                    Clear Cache
-                                </button>
+                        <div class="settings-section">
+                            <h4>Background Activity</h4>
+                            <p class="settings-description">
+                                Live worker status and maintenance tools for indexing, thumbnails,
+                                metadata tagging, and cached transcodes.
+                            </p>
+                            <div id="worker-status-list" class="worker-status-grid">
+                                <div class="worker-status-empty">Loading worker status...</div>
                             </div>
                         </div>
 
@@ -891,7 +827,7 @@
                                 rel="noopener noreferrer"
                                 class="about-link"
                             >
-                                <i data-lucide="github"></i>
+                                <i data-lucide="external-link"></i>
                                 View on GitHub
                             </a>
                         </div>

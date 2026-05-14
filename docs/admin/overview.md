@@ -36,8 +36,9 @@ This section covers server administration, configuration, and monitoring for Med
 
 ### Maintenance
 
+- **Background Activity**: Use **Settings → Cache** to monitor live status for the indexer, thumbnails, auto-tagger, and transcode cache tools from one panel
 - **Rebuild Thumbnails**: Use **Settings → Cache → Rebuild Thumbnails** to regenerate the thumbnail cache
-- **Clear Transcoded Videos**: Use **Settings → Cache → Clear Cache** in the **Clear Transcoded Videos** card to delete cached video conversions and reclaim disk space
+- **Clear Transcoded Videos**: Use **Settings → Cache → Transcode Cache → Clear Cache** to delete cached video conversions and reclaim disk space
 - **Session Cleanup**: Expired sessions are automatically removed
 - **Cache Management**: Monitor thumbnail and transcode cache size via [metrics](metrics.md)
 

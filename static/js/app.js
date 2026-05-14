@@ -37,6 +37,8 @@ const MediaApp = {
         pageSize: 100,
         version: null,
         lastAuthCheck: 0,
+        libraryStats: null,
+        systemStatus: null,
     },
 
     elements: {},
@@ -591,15 +593,9 @@ const MediaApp = {
 
     async loadStats() {
         try {
-            const response = await fetch('/api/stats');
-            if (response.status === 401) {
-                window.location.href = '/login.html';
-                return;
-            }
-            if (response.ok) {
-                const stats = await response.json();
-                this.renderStats(stats);
-            }
+            await this.refreshSystemStatus({
+                redirectOnUnauthorized: true,
+            });
         } catch (error) {
             console.error('Error loading stats:', error);
         }
@@ -626,7 +622,122 @@ const MediaApp = {
             }
         }
 
-        this.elements.statsInfo.textContent = parts.join(' | ');
+        this.renderStatsBar(parts, this.getBackgroundTaskSummaryMarkup());
+    },
+
+    async refreshSystemStatus({ silent = false, redirectOnUnauthorized = false } = {}) {
+        try {
+            const response = await fetch('/api/system/status', {
+                cache: 'no-store',
+            });
+            if (response.status === 401) {
+                if (redirectOnUnauthorized) {
+                    window.location.href = '/login.html';
+                }
+                return this.state.systemStatus;
+            }
+            if (!response.ok) {
+                throw new Error(`System status request failed: ${response.status}`);
+            }
+
+            const status = await response.json();
+            this.state.systemStatus = status;
+            if (status.library) {
+                this.state.libraryStats = status.library;
+            }
+            this.refreshFooterStatus();
+            return status;
+        } catch (error) {
+            if (!silent) {
+                console.error('Error loading system status:', error);
+            }
+            return this.state.systemStatus;
+        }
+    },
+
+    refreshFooterStatus() {
+        const hasInfiniteScrollStats =
+            typeof InfiniteScroll !== 'undefined' &&
+            InfiniteScroll &&
+            InfiniteScroll.state &&
+            (Array.isArray(InfiniteScroll.state.loadedItems)
+                ? InfiniteScroll.state.loadedItems.length > 0 || InfiniteScroll.state.totalItems > 0
+                : false);
+
+        if (hasInfiniteScrollStats && typeof InfiniteScroll.updateStats === 'function') {
+            InfiniteScroll.updateStats();
+            return;
+        }
+
+        if (this.state.libraryStats) {
+            this.renderStats(this.state.libraryStats);
+            return;
+        }
+
+        if (this.elements.statsInfo) {
+            this.renderStatsBar([], this.getBackgroundTaskSummaryMarkup());
+        }
+    },
+
+    renderStatsBar(parts, workerSummaryHtml = '') {
+        if (!this.elements.statsInfo) return;
+
+        const htmlParts = parts.map(
+            (part) => `<span class="stats-bar-part">${this.escapeHtml(part)}</span>`
+        );
+
+        if (workerSummaryHtml) {
+            htmlParts.push(`<span class="stats-bar-part">${workerSummaryHtml}</span>`);
+        }
+
+        this.elements.statsInfo.innerHTML = htmlParts.join(
+            '<span class="stats-bar-separator" aria-hidden="true"> | </span>'
+        );
+    },
+
+    getBackgroundTaskSummaryMarkup(status = this.state.systemStatus) {
+        const summaryParts = this.getBackgroundTaskSummaryParts(status);
+        if (summaryParts.length === 0) return '';
+
+        return summaryParts
+            .map(
+                ({ label, state }) =>
+                    `<span class="stats-worker-summary-item">${this.escapeHtml(label)}: <span class="stats-worker-state ${state === 'running' ? 'running' : ''}">${this.escapeHtml(state)}</span></span>`
+            )
+            .join('<span class="stats-worker-summary-separator" aria-hidden="true">, </span>');
+    },
+
+    getBackgroundTaskSummaryParts(status = this.state.systemStatus) {
+        if (!status) return [];
+
+        return [
+            ['Indexer', status.indexer],
+            ['Thumbnails', status.thumbnails],
+            ['Auto-tagger', status.autotagger],
+        ].map(([label, worker]) => ({
+            label,
+            state: this.getWorkerStateLabel(worker?.summary),
+        }));
+    },
+
+    getBackgroundTaskSummary(status = this.state.systemStatus) {
+        return this.getBackgroundTaskSummaryParts(status)
+            .map(({ label, state }) => `${label}: ${state}`)
+            .join(', ');
+    },
+
+    getWorkerStateLabel(summary) {
+        if (!summary) return 'unknown';
+        if (summary.state === 'running') return 'running';
+        if (summary.state === 'disabled') return 'disabled';
+        return 'idle';
+    },
+
+    escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = String(str);
+        return div.innerHTML;
     },
 
     renderBreadcrumb() {

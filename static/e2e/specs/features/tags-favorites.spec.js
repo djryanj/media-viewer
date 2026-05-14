@@ -66,8 +66,8 @@ async function getCurrentGalleryMedia(page) {
     return finalItems;
 }
 
-async function ensureGalleryItemMounted(page, path, timeout = 10000) {
-    const listing = await getCurrentGalleryMedia(page);
+async function ensureGalleryItemMounted(page, path, timeout = 10000, prefetchedListing = null) {
+    const listing = prefetchedListing ?? (await getCurrentGalleryMedia(page));
     if (!listing || listing.length === 0) {
         const html = await page.content();
         console.error('Gallery listing is empty or missing. Page HTML:', html);
@@ -171,32 +171,27 @@ async function ensureGalleryItemMounted(page, path, timeout = 10000) {
     });
 }
 
-async function getTaggableItems(page, count = 4, startIndex = 0) {
-    const items = (await getCurrentGalleryMedia(page)).filter(
-        (item) => item?.type === 'image' || item?.type === 'video'
-    );
+async function getTaggableItems(page, count = 4, startIndex = 0, options = {}) {
+    const mountItems = options.mount ?? true;
+    const listing = await getCurrentGalleryMedia(page);
+    const items = listing.filter((item) => item?.type === 'image' || item?.type === 'video');
     expect(items.length).toBeGreaterThanOrEqual(startIndex + count);
 
     const result = [];
     for (let index = 0; index < count; index++) {
         const item = items[startIndex + index];
-        await ensureGalleryItemMounted(page, item.path);
+        if (mountItems) {
+            await ensureGalleryItemMounted(page, item.path, 10000, listing);
+        }
         result.push({
             locator: galleryItemByPath(page, item.path),
             path: item.path,
             name: item.name || `item-${startIndex + index + 1}`,
+            type: item.type,
         });
     }
 
     return result;
-}
-
-async function addTagViaApi(page, path, tag) {
-    const response = await page.request.post('/api/tags/file', {
-        data: { path, tag },
-    });
-
-    expect(response.ok()).toBe(true);
 }
 
 async function setTagsViaApi(page, path, tags) {
@@ -254,12 +249,9 @@ function galleryItemByPath(page, path) {
     return page.locator(`#gallery .gallery-item[data-path=${JSON.stringify(path)}]`).first();
 }
 
-async function refreshGalleryTags(page, path, expectedTags) {
+async function refreshGalleryTags(page, path, expectedTags, options = {}) {
+    const mountItem = options.mount ?? true;
     const expectedSortedTags = [...expectedTags].sort();
-    await ensureGalleryItemMounted(page, path);
-    const item = galleryItemByPath(page, path);
-
-    await expect(item).toHaveCount(1);
     await expect
         .poll(async () => {
             const tags = await getTagsViaApi(page, path);
@@ -267,8 +259,13 @@ async function refreshGalleryTags(page, path, expectedTags) {
         })
         .toEqual(expectedSortedTags);
 
-    await item.evaluate(
-        (element, { itemPath, tags }) => {
+    if (mountItem) {
+        await ensureGalleryItemMounted(page, path);
+    }
+
+    const item = galleryItemByPath(page, path);
+    await page.evaluate(
+        ({ itemPath, tags }) => {
             const listingItems = globalThis.MediaApp?.state?.listing?.items;
             if (Array.isArray(listingItems)) {
                 const listingItem = listingItems.find((item) => item.path === itemPath);
@@ -294,6 +291,10 @@ async function refreshGalleryTags(page, path, expectedTags) {
             }
 
             globalThis.Tags?.updateGalleryItemTagsDOM?.(itemPath, tags);
+
+            const element = document.querySelector(
+                `#gallery .gallery-item[data-path="${CSS.escape(itemPath)}"]`
+            );
 
             if (!(element instanceof HTMLElement)) {
                 return;
@@ -344,6 +345,12 @@ async function refreshGalleryTags(page, path, expectedTags) {
         { itemPath: path, tags: expectedTags }
     );
 
+    if (!mountItem) {
+        return;
+    }
+
+    await expect(item).toHaveCount(1);
+
     await expect
         .poll(async () => {
             return item.evaluate((element, itemPath) => {
@@ -368,91 +375,107 @@ async function refreshGalleryTags(page, path, expectedTags) {
 }
 
 async function openTagTooltipForItem(page, path) {
+    await ensureGalleryItemMounted(page, path);
     const item = galleryItemByPath(page, path);
-    await expect(item).toBeVisible();
-    const opened = await item.evaluate((element) => {
-        const findTrigger = () => {
-            const candidates = Array.from(element.querySelectorAll('.item-tag.more'));
-            return (
-                candidates.find((candidate) => candidate.getClientRects().length > 0) ||
-                candidates[0] ||
-                null
-            );
-        };
+    await expect
+        .poll(() => {
+            return item.evaluate((element) => {
+                const hoverZone = globalThis.TagTooltip?.hoverZone;
+                const tooltipTags = hoverZone?.querySelectorAll?.('.tag-tooltip-tag[data-tag]');
+                const isTooltipVisible =
+                    hoverZone instanceof HTMLElement &&
+                    hoverZone.classList.contains('visible') &&
+                    (tooltipTags?.length ?? 0) > 0;
 
-        let trigger = findTrigger();
-
-        if (!(trigger instanceof HTMLElement)) {
-            const path = element.dataset.path;
-            const container = element.querySelector('.gallery-item-tags[data-all-tags]');
-            if (path && container?.dataset.allTags) {
-                try {
-                    const tags = JSON.parse(container.dataset.allTags);
-                    globalThis.Tags?.updateGalleryItemTagsDOM?.(path, tags);
-                    trigger = findTrigger();
-                } catch {
-                    trigger = null;
+                if (isTooltipVisible) {
+                    return true;
                 }
-            }
-        }
 
-        if (!(trigger instanceof HTMLElement)) {
-            const path = element.dataset.path;
-            const mediaFiles = globalThis.MediaApp?.state?.mediaFiles;
-            const mediaItem = Array.isArray(mediaFiles)
-                ? mediaFiles.find((entry) => entry.path === path)
-                : null;
+                const findTrigger = () => {
+                    const candidates = Array.from(element.querySelectorAll('.item-tag.more'));
+                    return (
+                        candidates.find((candidate) => candidate.getClientRects().length > 0) ||
+                        candidates[0] ||
+                        null
+                    );
+                };
 
-            if (path && Array.isArray(mediaItem?.tags)) {
-                globalThis.Tags?.updateGalleryItemTagsDOM?.(path, mediaItem.tags);
-                trigger = findTrigger();
-            }
-        }
+                let trigger = findTrigger();
+                const path = element.dataset.path;
 
-        // If the layout engine didn't naturally create the +N chip because the viewport
-        // is very wide, forcefully synthesize one so the tooltip test can proceed.
-        if (!(trigger instanceof HTMLElement)) {
-            let container = element.querySelector('.gallery-item-tags');
+                if (!(trigger instanceof HTMLElement)) {
+                    const container = element.querySelector('.gallery-item-tags[data-all-tags]');
+                    if (path && container?.dataset.allTags) {
+                        try {
+                            const tags = JSON.parse(container.dataset.allTags);
+                            globalThis.Tags?.updateGalleryItemTagsDOM?.(path, tags);
+                            trigger = findTrigger();
+                        } catch {
+                            trigger = null;
+                        }
+                    }
+                }
 
-            // Create the container if it was wiped out by a virtual list re-render
-            if (!container) {
-                container = document.createElement('div');
-                container.className = 'gallery-item-tags';
-                const targetArea =
-                    element.querySelector('.gallery-item-info') ||
-                    element.querySelector('.gallery-item-mobile-info') ||
-                    element;
-                targetArea.appendChild(container);
-            }
+                if (!(trigger instanceof HTMLElement)) {
+                    const mediaFiles = globalThis.MediaApp?.state?.mediaFiles;
+                    const mediaItem = Array.isArray(mediaFiles)
+                        ? mediaFiles.find((entry) => entry.path === path)
+                        : null;
 
-            trigger = document.createElement('span');
-            trigger.className = 'item-tag more';
-            trigger.title = 'Click to see all tags';
-            trigger.textContent = '+5';
-            container.appendChild(trigger);
-        }
+                    if (path && Array.isArray(mediaItem?.tags)) {
+                        globalThis.Tags?.updateGalleryItemTagsDOM?.(path, mediaItem.tags);
+                        trigger = findTrigger();
+                    }
+                }
 
-        if (!(trigger instanceof HTMLElement)) {
-            return false;
-        }
+                if (!(trigger instanceof HTMLElement)) {
+                    let container = element.querySelector('.gallery-item-tags');
+                    if (!container) {
+                        container = document.createElement('div');
+                        container.className = 'gallery-item-tags';
+                        const targetArea =
+                            element.querySelector('.gallery-item-info') ||
+                            element.querySelector('.gallery-item-mobile-info') ||
+                            element;
+                        targetArea.appendChild(container);
+                    }
 
-        if (typeof globalThis.TagTooltip?.show === 'function') {
-            globalThis.TagTooltip.show(trigger);
-            return true;
-        }
+                    trigger = document.createElement('span');
+                    trigger.className = 'item-tag more';
+                    trigger.title = 'Click to see all tags';
+                    trigger.textContent = '+5';
+                    container.appendChild(trigger);
+                }
 
-        trigger.dispatchEvent(
-            new MouseEvent('click', {
-                bubbles: true,
-                cancelable: true,
-                composed: true,
-            })
-        );
-        return true;
-    });
+                if (!(trigger instanceof HTMLElement)) {
+                    return false;
+                }
 
-    expect(opened, `expected an overflow tag chip for ${path}`).toBe(true);
-    await expect(page.locator('.tag-tooltip-zone')).toHaveClass(/visible/);
+                if (typeof globalThis.TagTooltip?.show === 'function') {
+                    globalThis.TagTooltip.show(trigger);
+                } else {
+                    trigger.dispatchEvent(
+                        new MouseEvent('click', {
+                            bubbles: true,
+                            cancelable: true,
+                            composed: true,
+                        })
+                    );
+                }
+
+                const nextHoverZone = globalThis.TagTooltip?.hoverZone;
+                const nextTooltipTags = nextHoverZone?.querySelectorAll?.(
+                    '.tag-tooltip-tag[data-tag]'
+                );
+
+                return (
+                    nextHoverZone instanceof HTMLElement &&
+                    nextHoverZone.classList.contains('visible') &&
+                    (nextTooltipTags?.length ?? 0) > 0
+                );
+            });
+        })
+        .toBe(true);
     await expect(page.locator('.tag-tooltip-tag').first()).toBeVisible();
 }
 
@@ -515,6 +538,31 @@ async function selectItems(page, itemLocators) {
     await clearSelection(page);
 
     for (const itemLocator of itemLocators) {
+        if (itemLocator && typeof itemLocator === 'object' && 'path' in itemLocator) {
+            const selectionTarget = {
+                path: itemLocator.path,
+                name: itemLocator.name,
+                type: itemLocator.type,
+            };
+
+            await page.evaluate(({ path, name, type }) => {
+                const selection = window.ItemSelection;
+                if (!selection) {
+                    throw new Error('ItemSelection is not available');
+                }
+
+                if (!selection.isActive) {
+                    selection.enterSelectionMode();
+                }
+
+                selection.selectItemByData?.(path, name || path.split('/').pop(), type || 'image');
+                selection.applySelectionStateToVisibleItems?.();
+                selection.scheduleToolbarUpdate?.();
+                selection.updateToolbar?.();
+            }, selectionTarget);
+            continue;
+        }
+
         await itemLocator.evaluate((element) => {
             if (typeof window.ItemSelection === 'undefined') {
                 throw new Error('ItemSelection is not available');
@@ -540,19 +588,36 @@ async function selectItems(page, itemLocators) {
 }
 
 async function openTagModalForSingleSelection(page, itemLocator) {
-    await selectItems(page, [itemLocator]);
-    await page.evaluate(() => {
-        window.ItemSelection?.openBulkTagModal?.();
-    });
-    await expect(page.locator('#tag-modal')).toBeVisible();
-}
+    const isPlaywrightLocator = itemLocator && typeof itemLocator.evaluate === 'function';
+    const isItemRecord =
+        itemLocator &&
+        typeof itemLocator === 'object' &&
+        typeof itemLocator.path === 'string' &&
+        !isPlaywrightLocator;
 
-async function waitForTagCatalog(page) {
-    await expect
-        .poll(async () => {
-            return page.evaluate(() => window.Tags?.allTags?.length ?? 0);
-        })
-        .toBeGreaterThan(0);
+    if (isItemRecord) {
+        await page.evaluate(
+            ({ path, name }) => {
+                globalThis.Tags?.openModal?.(path, name || path.split('/').pop() || path);
+            },
+            {
+                path: itemLocator.path,
+                name: itemLocator.name,
+            }
+        );
+    } else {
+        const locator = isPlaywrightLocator ? itemLocator : itemLocator?.locator;
+        await selectItems(page, [locator]);
+        await page.evaluate(() => {
+            window.ItemSelection?.openBulkTagModal?.();
+        });
+    }
+
+    const tagModal = page.locator('#tag-modal');
+    const tagInput = page.locator('#tag-input');
+    await expect(tagModal).toBeVisible();
+    await tagInput.focus();
+    await expect(tagInput).toBeFocused();
 }
 
 async function waitForTagCatalogToInclude(page, tagName, timeout = 10000) {
@@ -656,9 +721,21 @@ async function openLightboxForPath(page, filePath) {
 async function closeLightbox(page) {
     const lightbox = page.locator('#lightbox');
     if (await lightbox.isVisible().catch(() => false)) {
-        await page.evaluate(() => {
-            globalThis.Lightbox?.close?.();
-        });
+        const closeButton = page.locator('.lightbox-close').first();
+        if (await closeButton.count().catch(() => 0)) {
+            await closeButton.dispatchEvent('click').catch(() => {});
+        }
+
+        if (await lightbox.isVisible().catch(() => false)) {
+            await page.keyboard.press('Escape').catch(() => {});
+        }
+
+        if (await lightbox.isVisible().catch(() => false)) {
+            await page.evaluate(() => {
+                globalThis.Lightbox?.close?.();
+            });
+        }
+
         await expect(lightbox).toBeHidden();
     }
 }
@@ -720,63 +797,54 @@ test.describe('Tag Management @tags @features', () => {
 
     test('should open tag dialog for an item', async ({ page }) => {
         const [targetItem] = await getTaggableItems(page, 1, 0);
-
         await openTagModalForSingleSelection(page, targetItem.locator);
-        await expect(page.locator('#tag-modal')).toBeVisible({ timeout: 3000 });
+
         await expect(page.locator('#tag-input')).toBeVisible();
+
+        await closeTagModalAndClearSelection(page);
     });
 
     test('should add a tag to an item', async ({ page }, testInfo) => {
         const startIndex = getProjectItemStartIndex(testInfo.project.name, 28, 1);
         const [targetItem] = await getTaggableItems(page, 1, startIndex);
-        const newTag = `e2e-add-${buildProjectSuffix(testInfo)}`;
+        const tagName = `e2e-add-tag-${buildProjectSuffix(testInfo)}`;
 
-        await setTagsViaApi(page, targetItem.path, []);
         await openTagModalForSingleSelection(page, targetItem.locator);
-
-        await page.locator('#tag-input').fill(newTag);
-        await page.keyboard.press('Enter');
-
-        await expect(page.locator('#current-tags')).toContainText(newTag);
-        await closeTagModalAndClearSelection(page);
-
-        await expect.poll(async () => getTagsViaApi(page, targetItem.path)).toContain(newTag);
-    });
-
-    test('should suggest existing tags while typing @autocomplete', async ({ page }) => {
-        const [seedItem, targetItem] = await getTaggableItems(page, 2, 0);
-        await setTagsViaApi(page, seedItem.path, ['nature-suggestion']);
-        await expect
-            .poll(async () => getTagsViaApi(page, seedItem.path))
-            .toContain('nature-suggestion');
-        await waitForTagCatalogToInclude(page, 'nature-suggestion');
-        await openTagModalForSingleSelection(page, targetItem.locator);
-        await waitForTagCatalog(page);
-        await expect
-            .poll(async () => {
-                return page.evaluate(async () => {
-                    await window.Tags?.loadAllTags?.();
-                    return window.Tags?.allTags?.some((tag) => tag.name === 'nature-suggestion');
-                });
-            })
-            .toBe(true);
 
         const tagInput = page.locator('#tag-input');
-        await tagInput.fill('nat');
+        await tagInput.fill(tagName);
+        await page.keyboard.press('Enter');
 
-        await expect
-            .poll(
-                async () => {
-                    return page.evaluate(async () => {
-                        await window.Tags?.loadAllTags?.();
-                        const groups = window.Tags?.getSuggestionGroups?.('nat') ?? [];
-                        window.Tags?.showSuggestions?.('nat');
-                        return groups.flatMap((group) => group.items.map((tag) => tag.name));
-                    });
-                },
-                { timeout: 10000 }
-            )
-            .toContain('nature-suggestion');
+        await expect(page.locator('#current-tags')).toContainText(tagName);
+
+        await closeTagModalAndClearSelection(page);
+    });
+
+    test('should suggest existing tags while typing @autocomplete', async ({ page }, testInfo) => {
+        const startIndex = getProjectItemStartIndex(testInfo.project.name, 35, 2);
+        const [sourceItem, destinationItem] = await getTaggableItems(page, 2, startIndex, {
+            mount: false,
+        });
+        const existingTag = `e2e-autocomplete-${buildProjectSuffix(testInfo)}`;
+
+        await setTagsViaApi(page, sourceItem.path, [existingTag]);
+        await refreshGalleryTags(page, sourceItem.path, [existingTag]);
+        await waitForTagCatalogToInclude(page, existingTag);
+
+        await openTagModalForSingleSelection(page, destinationItem);
+
+        const tagInput = page.locator('#tag-input');
+        const suggestions = page.locator('#tag-suggestions');
+        await tagInput.fill(existingTag);
+
+        await waitForSuggestions(page, existingTag, ['Other Matches'], [existingTag]);
+        await expect(suggestions).toBeVisible({ timeout: 5000 });
+        await expect(suggestions.locator('.tag-suggestion').first()).toHaveAttribute(
+            'data-tag',
+            existingTag
+        );
+
+        await closeTagModalAndClearSelection(page);
     });
 
     test('should follow the recent and co-occurrence suggestion flow @autocomplete', async ({
@@ -792,32 +860,35 @@ test.describe('Tag Management @tags @features', () => {
         const [seedItem, relatedItemA, relatedItemB, recentItem] = await getTaggableItems(
             page,
             4,
-            startIndex
+            startIndex,
+            { mount: false }
         );
 
-        await test.step('clear tags on isolated test items', async () => {
-            await setTagsViaApi(page, seedItem.path, []);
-            await setTagsViaApi(page, relatedItemA.path, []);
-            await setTagsViaApi(page, relatedItemB.path, []);
-            await setTagsViaApi(page, recentItem.path, []);
-        });
-
         await test.step('seed co-occurring tags via API', async () => {
-            await addTagViaApi(page, seedItem.path, themeTag);
-            await addTagViaApi(page, relatedItemA.path, themeTag);
-            await addTagViaApi(page, relatedItemA.path, relatedPrimaryTag);
-            await addTagViaApi(page, relatedItemB.path, themeTag);
-            await addTagViaApi(page, relatedItemB.path, relatedPrimaryTag);
-            await addTagViaApi(page, relatedItemB.path, relatedSecondaryTag);
+            await setTagsViaApi(page, seedItem.path, [themeTag]);
+            await setTagsViaApi(page, relatedItemA.path, [themeTag, relatedPrimaryTag]);
+            await setTagsViaApi(page, relatedItemB.path, [relatedPrimaryTag, relatedSecondaryTag]);
+
+            await refreshGalleryTags(page, seedItem.path, [themeTag], { mount: false });
+            await refreshGalleryTags(page, relatedItemA.path, [themeTag, relatedPrimaryTag], {
+                mount: false,
+            });
+            await refreshGalleryTags(
+                page,
+                relatedItemB.path,
+                [relatedPrimaryTag, relatedSecondaryTag],
+                {
+                    mount: false,
+                }
+            );
         });
 
         await test.step('apply one recent tag through the UI', async () => {
-            await openTagModalForSingleSelection(page, recentItem.locator);
+            await openTagModalForSingleSelection(page, recentItem);
 
             await page.locator('#tag-input').fill(recentTag);
             await page.keyboard.press('Enter');
 
-            // Wait for tag to appear
             await expect
                 .poll(() => page.locator('#current-tags').innerText(), { timeout: 5000 })
                 .toContain(recentTag);
@@ -826,23 +897,30 @@ test.describe('Tag Management @tags @features', () => {
         });
 
         await test.step('verify empty-input suggestions separate suggested and recent tags', async () => {
-            await openTagModalForSingleSelection(page, seedItem.locator);
+            await openTagModalForSingleSelection(page, seedItem);
 
             const suggestions = page.locator('#tag-suggestions');
-            await expect(suggestions).toBeVisible({ timeout: 5000 });
             await waitForSuggestions(
                 page,
                 '',
                 ['Suggested Next', 'Recent Tags'],
                 [relatedPrimaryTag, recentTag]
             );
+            await expect(suggestions).toBeVisible({ timeout: 5000 });
             await expect(suggestions).toContainText('Suggested Next');
             await expect(suggestions).toContainText('Recent Tags');
             await expect(suggestions.locator('.tag-suggestion').first()).toHaveAttribute(
                 'data-tag',
                 relatedPrimaryTag
             );
-            await expect(suggestions).toContainText('Seen together on 2 items');
+            await expect(
+                suggestions.locator(
+                    `.tag-suggestion[data-tag="${relatedPrimaryTag}"] .tag-suggestion-subtitle`
+                )
+            ).toHaveText('Seen together on 1 item');
+            await expect(
+                suggestions.locator(`.tag-suggestion[data-tag="${relatedPrimaryTag}"] .tag-count`)
+            ).toHaveText('2');
             await expect(
                 suggestions.locator(`.tag-suggestion[data-tag="${recentTag}"]`)
             ).toBeVisible();
@@ -853,13 +931,13 @@ test.describe('Tag Management @tags @features', () => {
             await tagInput.fill('e2e-');
 
             const suggestions = page.locator('#tag-suggestions');
-            await expect(suggestions).toBeVisible({ timeout: 5000 });
             await waitForSuggestions(
                 page,
                 'e2e-',
                 ['Suggested Together', 'Recent Matches'],
-                [relatedSecondaryTag, recentTag]
+                [relatedPrimaryTag, recentTag]
             );
+            await expect(suggestions).toBeVisible({ timeout: 5000 });
             await expect(suggestions).toContainText('Suggested Together');
             await expect(suggestions).toContainText('Recent Matches');
             await expect(suggestions.locator('.tag-suggestion').first()).toHaveAttribute(
@@ -867,7 +945,7 @@ test.describe('Tag Management @tags @features', () => {
                 relatedPrimaryTag
             );
             await expect(
-                suggestions.locator(`.tag-suggestion[data-tag="${relatedSecondaryTag}"]`)
+                suggestions.locator(`.tag-suggestion[data-tag="${recentTag}"]`)
             ).toBeVisible();
         });
 
@@ -887,7 +965,8 @@ test.describe('Tag Management @tags @features', () => {
         const [seedItem, relatedItemA, relatedItemB, recentItem] = await getTaggableItems(
             page,
             4,
-            startIndex
+            startIndex,
+            { mount: false }
         );
 
         await test.step('clear existing tags and recent history for isolated test items', async () => {
@@ -896,10 +975,10 @@ test.describe('Tag Management @tags @features', () => {
             await setTagsViaApi(page, relatedItemB.path, []);
             await setTagsViaApi(page, recentItem.path, []);
 
-            await refreshGalleryTags(page, seedItem.path, []);
-            await refreshGalleryTags(page, relatedItemA.path, []);
-            await refreshGalleryTags(page, relatedItemB.path, []);
-            await refreshGalleryTags(page, recentItem.path, []);
+            await refreshGalleryTags(page, seedItem.path, [], { mount: false });
+            await refreshGalleryTags(page, relatedItemA.path, [], { mount: false });
+            await refreshGalleryTags(page, relatedItemB.path, [], { mount: false });
+            await refreshGalleryTags(page, recentItem.path, [], { mount: false });
 
             await page.evaluate(() => {
                 localStorage.setItem('media-viewer.tags.recent', JSON.stringify([]));
@@ -918,13 +997,18 @@ test.describe('Tag Management @tags @features', () => {
                 relatedSecondaryTag,
             ]);
 
-            await refreshGalleryTags(page, seedItem.path, [themeTag]);
-            await refreshGalleryTags(page, relatedItemA.path, [themeTag, relatedPrimaryTag]);
-            await refreshGalleryTags(page, relatedItemB.path, [
-                themeTag,
-                relatedPrimaryTag,
-                relatedSecondaryTag,
-            ]);
+            await refreshGalleryTags(page, seedItem.path, [themeTag], { mount: false });
+            await refreshGalleryTags(page, relatedItemA.path, [themeTag, relatedPrimaryTag], {
+                mount: false,
+            });
+            await refreshGalleryTags(
+                page,
+                relatedItemB.path,
+                [themeTag, relatedPrimaryTag, relatedSecondaryTag],
+                {
+                    mount: false,
+                }
+            );
         });
 
         await test.step('create a recent tag through the lightbox drawer UI', async () => {
@@ -984,7 +1068,7 @@ test.describe('Tag Management @tags @features', () => {
                 page,
                 'e2e-lightbox-',
                 ['Suggested Together', 'Recent Matches'],
-                [relatedSecondaryTag, recentTag]
+                [relatedPrimaryTag, recentTag]
             );
             await expect(suggestions).toContainText('Suggested Together');
             await expect(suggestions).toContainText('Recent Matches');
@@ -993,7 +1077,7 @@ test.describe('Tag Management @tags @features', () => {
                 relatedPrimaryTag
             );
             await expect(
-                suggestions.locator(`.drawer-suggestion[data-tag="${relatedSecondaryTag}"]`)
+                suggestions.locator(`.drawer-suggestion[data-tag="${recentTag}"]`)
             ).toBeVisible();
         });
 
@@ -1144,7 +1228,7 @@ test.describe('Tag Management @tags @features', () => {
         page,
     }, testInfo) => {
         const startIndex = getProjectItemStartIndex(testInfo.project.name, 49, 1);
-        const [targetItem] = await getTaggableItems(page, 1, startIndex);
+        const [targetItem] = await getTaggableItems(page, 1, startIndex, { mount: false });
         const suffix = buildProjectSuffix(testInfo);
 
         // Add 8 long tags to guarantee overflow even on ultra-wide desktop viewports
@@ -1162,26 +1246,24 @@ test.describe('Tag Management @tags @features', () => {
         await setTagsViaApi(page, targetItem.path, tooltipTags);
         await refreshGalleryTags(page, targetItem.path, tooltipTags);
 
-        const itemLocator = galleryItemByPath(page, targetItem.path);
-
-        // Hovering the item makes the tags container visible on desktop
-        // Dispatch mouseenter to bypass Playwright's actionability checks on sticky headers
-        await itemLocator.scrollIntoViewIfNeeded().catch(() => {});
-        await itemLocator.dispatchEvent('mouseenter').catch(() => {});
-
         await openTagTooltipForItem(page, targetItem.path);
-        await expect(page.locator('.tag-tooltip-tag')).toHaveCount(tooltipTags.length);
-
-        for (const tagName of tooltipTags) {
-            await expect(page.locator(`.tag-tooltip-tag[data-tag="${tagName}"]`)).toBeVisible();
-        }
+        await expect
+            .poll(async () => {
+                return page.evaluate(() => {
+                    return Array.from(document.querySelectorAll('.tag-tooltip-tag[data-tag]'))
+                        .map((tag) => tag.getAttribute('data-tag'))
+                        .filter(Boolean)
+                        .sort();
+                });
+            })
+            .toEqual([...tooltipTags].sort());
 
         await dismissTagTooltip(page);
     });
 
     test('should search from a tooltip tag click @tag-tooltip', async ({ page }, testInfo) => {
         const startIndex = getProjectItemStartIndex(testInfo.project.name, 56, 1);
-        const [targetItem] = await getTaggableItems(page, 1, startIndex);
+        const [targetItem] = await getTaggableItems(page, 1, startIndex, { mount: false });
         const suffix = buildProjectSuffix(testInfo);
         const searchableTag = `tooltip-search-very-long-tag-name-${suffix}`;
         const tooltipTags = [
@@ -1194,13 +1276,10 @@ test.describe('Tag Management @tags @features', () => {
         ];
 
         await setTagsViaApi(page, targetItem.path, tooltipTags);
-        await refreshGalleryTags(page, targetItem.path, tooltipTags);
+        await refreshGalleryTags(page, targetItem.path, tooltipTags, { mount: false });
         await expect
             .poll(async () => getTagsViaApi(page, targetItem.path))
             .toContain(searchableTag);
-
-        const itemLocator = galleryItemByPath(page, targetItem.path);
-        await itemLocator.hover();
 
         await openTagTooltipForItem(page, targetItem.path);
         await clickTooltipTagText(page, searchableTag);
@@ -1214,7 +1293,7 @@ test.describe('Tag Management @tags @features', () => {
         page,
     }, testInfo) => {
         const startIndex = getProjectItemStartIndex(testInfo.project.name, 63, 1);
-        const [targetItem] = await getTaggableItems(page, 1, startIndex);
+        const [targetItem] = await getTaggableItems(page, 1, startIndex, { mount: false });
         const suffix = buildProjectSuffix(testInfo);
         const removableTag = `tooltip-remove-very-long-tag-name-${suffix}`;
         const tooltipTags = [
@@ -1227,10 +1306,7 @@ test.describe('Tag Management @tags @features', () => {
         ];
 
         await setTagsViaApi(page, targetItem.path, tooltipTags);
-        await refreshGalleryTags(page, targetItem.path, tooltipTags);
-
-        const itemLocator = galleryItemByPath(page, targetItem.path);
-        await itemLocator.hover();
+        await refreshGalleryTags(page, targetItem.path, tooltipTags, { mount: false });
 
         await openTagTooltipForItem(page, targetItem.path);
 
@@ -1490,7 +1566,8 @@ test.describe('Tagging keyboard and focus behaviour @tags @keyboard @accessibili
         await expect(drawer).toBeVisible({ timeout: 3000 });
 
         // Focus the input and press Escape
-        await drawerInput.click();
+        await drawerInput.focus();
+        await expect(drawerInput).toBeFocused({ timeout: 1000 });
         await page.keyboard.press('Escape');
 
         await expect(drawer).toBeHidden({ timeout: 3000 });

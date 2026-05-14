@@ -91,7 +91,7 @@ describe('fetchWithTimeout utility', () => {
         // This test may be flaky depending on network conditions
         // Skip if needed
         const promise = global.fetchWithTimeout(
-            TEST_CONFIG.buildUrl('/api/stats'),
+            TEST_CONFIG.buildUrl('/api/system/status'),
             { timeout: 1 } // Very short timeout
         );
 

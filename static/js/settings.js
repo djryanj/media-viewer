@@ -17,6 +17,9 @@ class SettingsManager {
         this.thumbnailCacheFiles = 0; // Cache stats
         this.transcodeCacheBytes = 0; // Cache stats
         this.transcodeCacheFiles = 0; // Cache stats
+        this.systemStatus = null;
+        this.cacheStatusPollTimer = null;
+        this.cacheStatusPollInterval = 2500;
 
         if (!this.modal) {
             console.error('Settings modal not found');
@@ -86,18 +89,25 @@ class SettingsManager {
         }
 
         // Cache actions
-        document
-            .getElementById('rebuild-thumbnails-btn')
-            ?.addEventListener('click', () => this.rebuildThumbnails());
-        document
-            .getElementById('reindex-btn')
-            ?.addEventListener('click', () => this.reindexMedia());
-        document
-            .getElementById('run-autotagger-btn')
-            ?.addEventListener('click', () => this.runAutoTagger());
-        document
-            .getElementById('clear-transcode-btn')
-            ?.addEventListener('click', () => this.clearTranscodeCache());
+        document.getElementById('worker-status-list')?.addEventListener('click', (e) => {
+            const actionBtn = e.target.closest('[data-worker-action]');
+            if (!actionBtn || actionBtn.disabled) return;
+
+            switch (actionBtn.dataset.workerAction) {
+                case 'rebuild-thumbnails':
+                    this.rebuildThumbnails();
+                    break;
+                case 'reindex':
+                    this.reindexMedia();
+                    break;
+                case 'run-autotagger':
+                    this.runAutoTagger();
+                    break;
+                case 'clear-transcode':
+                    this.clearTranscodeCache();
+                    break;
+            }
+        });
 
         // Add passkey button
         document
@@ -546,6 +556,7 @@ class SettingsManager {
     }
 
     close() {
+        this.stopCacheStatusPolling();
         this.modal.classList.add('hidden');
         document.body.style.overflow = '';
         this.clearMessages();
@@ -554,6 +565,9 @@ class SettingsManager {
 
     switchTab(tabName) {
         this.currentTab = tabName;
+        if (tabName !== 'cache') {
+            this.stopCacheStatusPolling();
+        }
 
         // Update tab buttons
         this.modal.querySelectorAll('.settings-tab').forEach((tab) => {
@@ -580,6 +594,7 @@ class SettingsManager {
                 break;
             case 'cache':
                 this.loadCacheStats();
+                this.startCacheStatusPolling();
                 break;
             case 'about':
                 this.loadAboutInfo();
@@ -979,7 +994,7 @@ class SettingsManager {
     // =========================================
 
     async rebuildThumbnails() {
-        const btn = document.getElementById('rebuild-thumbnails-btn');
+        const btn = this.getWorkerActionButton('rebuild-thumbnails');
 
         const cacheSize = this.formatBytes(this.thumbnailCacheBytes);
         const fileCount = this.thumbnailCacheFiles;
@@ -1013,6 +1028,7 @@ class SettingsManager {
                     'cache-success',
                     'Thumbnail rebuild started. This will continue in the background.'
                 );
+                await this.loadBackgroundWorkerStatus(true);
                 // Note: Cache size won't update immediately as rebuild happens in background
             } else {
                 const error = await response.text();
@@ -1028,7 +1044,7 @@ class SettingsManager {
     }
 
     async reindexMedia() {
-        const btn = document.getElementById('reindex-btn');
+        const btn = this.getWorkerActionButton('reindex');
 
         this.setCacheLoading(btn, true, 'Indexing...');
         this.showCacheStatus('Scanning for new and modified files...');
@@ -1043,6 +1059,7 @@ class SettingsManager {
                     'cache-success',
                     'Media reindex started. New files will appear shortly.'
                 );
+                await this.loadBackgroundWorkerStatus(true);
             } else {
                 const error = await response.text();
                 this.showError('cache-error', error || 'Failed to start reindex');
@@ -1057,7 +1074,7 @@ class SettingsManager {
     }
 
     async runAutoTagger() {
-        const btn = document.getElementById('run-autotagger-btn');
+        const btn = this.getWorkerActionButton('run-autotagger');
 
         this.setCacheLoading(btn, true, 'Running...');
         this.showCacheStatus('Running auto-tagger pass on all media...');
@@ -1072,6 +1089,7 @@ class SettingsManager {
                     'cache-success',
                     'Auto-tagger run started. Tags will be applied to matching files shortly.'
                 );
+                await this.loadBackgroundWorkerStatus(true);
             } else {
                 const error = await response.text();
                 this.showError('cache-error', error || 'Failed to start auto-tagger');
@@ -1086,7 +1104,7 @@ class SettingsManager {
     }
 
     async clearTranscodeCache() {
-        const btn = document.getElementById('clear-transcode-btn');
+        const btn = this.getWorkerActionButton('clear-transcode');
 
         const cacheSize = this.formatBytes(this.transcodeCacheBytes);
         const fileCount = this.transcodeCacheFiles;
@@ -1148,6 +1166,10 @@ class SettingsManager {
         }
     }
 
+    getWorkerActionButton(action) {
+        return document.querySelector(`[data-worker-action="${action}"]`);
+    }
+
     showCacheStatus(message) {
         const status = document.getElementById('cache-status');
         const statusText = document.getElementById('cache-status-text');
@@ -1177,10 +1199,9 @@ class SettingsManager {
                 }
             }
 
-            // Load stats
-            const statsResponse = await fetch('/api/stats');
-            if (statsResponse.ok) {
-                const stats = await statsResponse.json();
+            const status = await this.getSystemStatus();
+            const stats = status?.library;
+            if (stats) {
                 this.updateElement('stats-files', stats.totalFiles?.toLocaleString() || '0');
                 this.updateElement('stats-images', stats.totalImages?.toLocaleString() || '0');
                 this.updateElement('stats-videos', stats.totalVideos?.toLocaleString() || '0');
@@ -1202,10 +1223,9 @@ class SettingsManager {
 
     async loadCacheStats() {
         try {
-            const statsResponse = await fetch('/api/stats');
-            if (statsResponse.ok) {
-                const stats = await statsResponse.json();
-
+            const status = await this.getSystemStatus();
+            const stats = status?.library;
+            if (stats) {
                 // Store cache sizes and file counts for use in confirmation modals
                 this.thumbnailCacheBytes = stats.thumbnailCacheBytes || 0;
                 this.thumbnailCacheFiles = stats.thumbnailCacheFiles || 0;
@@ -1228,9 +1248,358 @@ class SettingsManager {
                     transcodeSizeEl.textContent = `${sizeText} (${countText} files)`;
                 }
             }
+
+            if (status) {
+                this.renderBackgroundWorkerStatus(status);
+            }
         } catch (err) {
             console.error('Failed to load cache stats:', err);
         }
+    }
+
+    async getSystemStatus(forceRefresh = false) {
+        if (typeof MediaApp !== 'undefined' && typeof MediaApp.refreshSystemStatus === 'function') {
+            return MediaApp.refreshSystemStatus({ silent: true, forceRefresh });
+        }
+
+        const response = await fetch('/api/system/status', {
+            cache: 'no-store',
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    startCacheStatusPolling() {
+        this.stopCacheStatusPolling();
+        this.cacheStatusPollTimer = setInterval(() => {
+            if (this.currentTab !== 'cache' || this.modal.classList.contains('hidden')) {
+                this.stopCacheStatusPolling();
+                return;
+            }
+            void this.loadBackgroundWorkerStatus(false);
+        }, this.cacheStatusPollInterval);
+    }
+
+    stopCacheStatusPolling() {
+        if (this.cacheStatusPollTimer) {
+            clearInterval(this.cacheStatusPollTimer);
+            this.cacheStatusPollTimer = null;
+        }
+    }
+
+    async loadBackgroundWorkerStatus(forceRefresh = false) {
+        try {
+            const status = await this.getSystemStatus(forceRefresh);
+
+            if (status) {
+                this.renderBackgroundWorkerStatus(status);
+            }
+            return status;
+        } catch (err) {
+            console.error('Failed to load worker status:', err);
+            return null;
+        }
+    }
+
+    renderBackgroundWorkerStatus(status) {
+        this.systemStatus = status;
+        const container = document.getElementById('worker-status-list');
+        if (!container) return;
+
+        const cards = [
+            this.renderUtilityStatusCard(),
+            this.renderWorkerStatusCard(
+                'Indexer',
+                'Background scanner and change detection.',
+                status?.indexer,
+                {
+                    processedLabel: 'Processed',
+                    processedValue: this.formatWorkerProgress(status?.indexer?.metrics),
+                    rateValue: this.formatWorkerRate(
+                        status?.indexer?.metrics,
+                        status?.indexer?.summary
+                    ),
+                    etaValue: this.formatWorkerEta(
+                        status?.indexer?.metrics,
+                        status?.indexer?.summary
+                    ),
+                    lastRunValue: this.formatDate(status?.indexer?.health?.lastIndexed),
+                    action: this.getWorkerActionConfig('reindex', status?.indexer?.summary),
+                    notes: [
+                        status?.indexer?.health?.initialIndexError
+                            ? `Last error: ${status.indexer.health.initialIndexError}`
+                            : '',
+                    ],
+                }
+            ),
+            this.renderWorkerStatusCard(
+                'Thumbnails',
+                'Cache generation and cleanup for image previews.',
+                status?.thumbnails,
+                {
+                    processedLabel: 'Progress',
+                    processedValue: this.formatWorkerProgress(status?.thumbnails?.metrics),
+                    rateValue: this.formatWorkerRate(
+                        status?.thumbnails?.metrics,
+                        status?.thumbnails?.summary
+                    ),
+                    etaValue: this.formatWorkerEta(
+                        status?.thumbnails?.metrics,
+                        status?.thumbnails?.summary
+                    ),
+                    lastRunValue: this.formatDate(
+                        status?.thumbnails?.status?.generation?.lastCompleted
+                    ),
+                    action: this.getWorkerActionConfig(
+                        'rebuild-thumbnails',
+                        status?.thumbnails?.summary
+                    ),
+                    notes: [
+                        status?.thumbnails?.status?.generation?.currentFile
+                            ? `Current file: ${status.thumbnails.status.generation.currentFile}`
+                            : '',
+                        status?.thumbnails?.status?.cacheSizeHuman
+                            ? `Cache: ${status.thumbnails.status.cacheSizeHuman} (${(status.thumbnails.status.cacheCount || 0).toLocaleString()} files)`
+                            : '',
+                    ],
+                }
+            ),
+            this.renderWorkerStatusCard(
+                'Auto-Tagger',
+                'Embedded metadata extraction and tag application.',
+                status?.autotagger,
+                {
+                    processedLabel: 'Progress',
+                    processedValue: this.formatWorkerProgress(status?.autotagger?.metrics),
+                    rateValue: this.formatWorkerRate(
+                        status?.autotagger?.metrics,
+                        status?.autotagger?.summary
+                    ),
+                    etaValue: this.formatWorkerEta(
+                        status?.autotagger?.metrics,
+                        status?.autotagger?.summary
+                    ),
+                    lastRunValue: this.formatDate(status?.autotagger?.status?.run?.lastCompleted),
+                    action: this.getWorkerActionConfig(
+                        'run-autotagger',
+                        status?.autotagger?.summary
+                    ),
+                    notes: [
+                        status?.autotagger?.status?.run?.currentFile
+                            ? `Current file: ${status.autotagger.status.run.currentFile}`
+                            : '',
+                        status?.autotagger?.status?.run?.lastError
+                            ? `Last error: ${status.autotagger.status.run.lastError}`
+                            : '',
+                    ],
+                }
+            ),
+        ];
+
+        container.innerHTML = cards.join('');
+
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+    }
+
+    renderWorkerStatusCard(title, description, worker, details) {
+        const summary = worker?.summary || {};
+        const state = this.formatWorkerState(summary.state);
+        const action = this.renderWorkerAction(details.action);
+        const notes = (details.notes || [])
+            .filter(Boolean)
+            .map((note) => {
+                const isError = note.toLowerCase().startsWith('last error:');
+                return `<p class="worker-status-note${isError ? ' error' : ''}">${this.escapeHtml(note)}</p>`;
+            })
+            .join('');
+
+        return `
+            <div class="worker-status-card ${this.escapeHtml(summary.state || 'idle')}">
+                <div class="worker-status-header">
+                    <div class="worker-status-title">
+                        <h5>${this.escapeHtml(title)}</h5>
+                        <p>${this.escapeHtml(description)}</p>
+                    </div>
+                    <div class="worker-status-toolbar">
+                        <span class="worker-status-pill ${this.escapeHtml(summary.state || 'idle')}">${this.escapeHtml(state)}</span>
+                        ${action}
+                    </div>
+                </div>
+                <dl class="worker-status-metrics">
+                    ${this.renderWorkerMetric(details.processedLabel, details.processedValue)}
+                    ${this.renderWorkerMetric('Rate', details.rateValue)}
+                    ${this.renderWorkerMetric('ETA', details.etaValue)}
+                    ${this.renderWorkerMetric('Last run', details.lastRunValue)}
+                </dl>
+                ${notes}
+            </div>
+        `;
+    }
+
+    renderUtilityStatusCard() {
+        return `
+            <div class="worker-status-card utility">
+                <div class="worker-status-header">
+                    <div class="worker-status-title">
+                        <h5>Transcode Cache</h5>
+                        <p>Remove cached video transcodes to free up disk space.</p>
+                        <p class="cache-size">
+                            Current cache size:
+                            <strong>${this.escapeHtml(this.formatTranscodeCacheSummary())}</strong>
+                        </p>
+                    </div>
+                    <div class="worker-status-toolbar">
+                        <span class="worker-status-pill">Utility</span>
+                        ${this.renderWorkerAction(
+                            this.getWorkerActionConfig('clear-transcode', {
+                                state: 'idle',
+                                running: false,
+                                enabled: true,
+                            })
+                        )}
+                    </div>
+                </div>
+                <dl class="worker-status-metrics">
+                    ${this.renderWorkerMetric('Cache size', this.formatBytes(this.transcodeCacheBytes))}
+                    ${this.renderWorkerMetric('Cached files', (this.transcodeCacheFiles || 0).toLocaleString())}
+                    ${this.renderWorkerMetric('Status', 'Ready')}
+                    ${this.renderWorkerMetric('Action', 'Clears stored transcodes')}
+                </dl>
+            </div>
+        `;
+    }
+
+    renderWorkerAction(action) {
+        if (!action) return '';
+
+        const disabledAttr = action.disabled ? ' disabled' : '';
+        return `
+            <button
+                type="button"
+                class="btn btn-secondary worker-status-action"
+                data-worker-action="${this.escapeHtml(action.action)}"${disabledAttr}
+            >
+                <i data-lucide="${this.escapeHtml(action.icon || 'arrow-right')}" aria-hidden="true"></i>
+                ${this.escapeHtml(action.label)}
+            </button>
+        `;
+    }
+
+    renderWorkerMetric(label, value) {
+        return `
+            <div class="worker-status-metric">
+                <dt>${this.escapeHtml(label)}</dt>
+                <dd>${this.escapeHtml(value || '--')}</dd>
+            </div>
+        `;
+    }
+
+    formatWorkerState(state) {
+        switch (state) {
+            case 'running':
+                return 'Running';
+            case 'disabled':
+                return 'Disabled';
+            default:
+                return 'Idle';
+        }
+    }
+
+    formatWorkerProgress(metrics) {
+        if (!metrics) return '--';
+
+        const processed = Number(metrics.processedItems || 0);
+        if (metrics.totalItems) {
+            const total = Number(metrics.totalItems);
+            const percent = Number(metrics.progressPercent || 0).toFixed(1);
+            return `${processed.toLocaleString()} / ${total.toLocaleString()} (${percent}%)`;
+        }
+
+        if (processed > 0) {
+            return `${processed.toLocaleString()} items`;
+        }
+
+        return '--';
+    }
+
+    formatWorkerRate(metrics, summary) {
+        if (summary && !summary.running) return '0 items/s';
+        if (!metrics || !metrics.itemsPerSecond) return '--';
+        const rate = Number(metrics.itemsPerSecond);
+        const digits = rate >= 10 ? 0 : 1;
+        return `${rate.toFixed(digits)} items/s`;
+    }
+
+    formatTranscodeCacheSummary() {
+        return `${this.formatBytes(this.transcodeCacheBytes)} (${(this.transcodeCacheFiles || 0).toLocaleString()} files)`;
+    }
+
+    getWorkerActionConfig(action, summary) {
+        const configs = {
+            reindex: {
+                idleLabel: 'Reindex Now',
+                runningLabel: 'Indexing...',
+                disabledLabel: 'Unavailable',
+                icon: 'database-backup',
+            },
+            'rebuild-thumbnails': {
+                idleLabel: 'Rebuild Now',
+                runningLabel: 'Rebuilding...',
+                disabledLabel: 'Disabled',
+                icon: 'refresh-cw',
+            },
+            'run-autotagger': {
+                idleLabel: 'Run Now',
+                runningLabel: 'Running...',
+                disabledLabel: 'Disabled',
+                icon: 'tag',
+            },
+            'clear-transcode': {
+                idleLabel: 'Clear Cache',
+                runningLabel: 'Clearing...',
+                disabledLabel: 'Unavailable',
+                icon: 'trash-2',
+            },
+        };
+
+        const config = configs[action];
+        if (!config) return null;
+
+        const running = Boolean(summary?.running);
+        const enabled = summary ? summary.enabled !== false : true;
+
+        return {
+            action,
+            disabled: !enabled || running,
+            label: !enabled
+                ? config.disabledLabel
+                : running
+                  ? config.runningLabel
+                  : config.idleLabel,
+            icon: config.icon,
+        };
+    }
+
+    formatWorkerEta(metrics, summary) {
+        if (!metrics) return '--';
+        if (metrics.estimatedSecondsRemaining) {
+            return this.formatDuration(metrics.estimatedSecondsRemaining);
+        }
+        return summary?.running && metrics.totalItems ? 'Calculating...' : '--';
+    }
+
+    formatDuration(seconds) {
+        const totalSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+        if (totalSeconds < 60) return `${totalSeconds}s`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const remainingSeconds = totalSeconds % 60;
+        if (minutes < 60)
+            return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
     }
 
     // =========================================

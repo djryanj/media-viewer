@@ -584,6 +584,29 @@ test.describe('Library Docs Screenshots @docs @screenshots @docs-screenshots @wo
     });
 
     test('captures stats bar screenshot', async ({ page }) => {
+        await page.evaluate(() => {
+            if (!window.MediaApp || typeof window.MediaApp.renderStats !== 'function') {
+                return;
+            }
+
+            window.MediaApp.state.version = {
+                version: 'dev',
+                commit: '4cee623',
+            };
+            window.MediaApp.state.systemStatus = {
+                indexer: { summary: { state: 'running' } },
+                thumbnails: { summary: { state: 'idle' } },
+                autotagger: { summary: { state: 'idle' } },
+            };
+            window.MediaApp.renderStats({
+                totalImages: 240,
+                totalVideos: 59,
+                totalFolders: 18,
+                totalFavorites: 7,
+                lastIndexed: '2026-05-13T12:34:00Z',
+            });
+        });
+
         await expect
             .poll(
                 async () => {
@@ -595,9 +618,11 @@ test.describe('Library Docs Screenshots @docs @screenshots @docs-screenshots @wo
                 },
                 { timeout: 10_000 }
             )
-            .not.toBe('');
+            .toContain('Indexer:');
 
-        await captureDocsScreenshot(page, page.locator('.stats-bar'), SCREENSHOTS.statsBar);
+        await captureDocsScreenshot(page, page.locator('.stats-bar-inner'), SCREENSHOTS.statsBar, {
+            shrinkToContent: true,
+        });
     });
 
     test('captures scroll restore prompt screenshot', async ({ page }) => {
