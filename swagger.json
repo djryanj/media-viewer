@@ -1005,12 +1005,13 @@
                 }
             }
         },
-        "/api/thumbnails/status": {
+        "/api/system/status": {
             "get": {
                 "tags": [
-                    "Thumbnails"
+                    "System"
                 ],
-                "summary": "Get thumbnail generation status",
+                "summary": "Get aggregate system status",
+                "description": "Returns library statistics, cache usage, and background worker status for indexing, thumbnail generation, and EXIF auto-tagging. Replaces the older /api/stats, /api/thumbnails/status, and /api/autotagger/status endpoints.",
                 "security": [
                     {
                         "cookieAuth": []
@@ -1018,22 +1019,11 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Generation status",
+                        "description": "Aggregate system status",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "generating": {
-                                            "type": "boolean"
-                                        },
-                                        "total": {
-                                            "type": "integer"
-                                        },
-                                        "generated": {
-                                            "type": "integer"
-                                        }
-                                    }
+                                    "$ref": "#/components/schemas/SystemStatusResponse"
                                 }
                             }
                         }
@@ -2632,77 +2622,6 @@
                 }
             }
         },
-        "/api/autotagger/status": {
-            "get": {
-                "tags": [
-                    "System"
-                ],
-                "summary": "Get EXIF auto-tagger status",
-                "description": "Returns the current or most recent EXIF auto-tagging run state, including whether a run is in progress and when the last run completed.",
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Auto-tagger status",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "run": {
-                                            "type": "object",
-                                            "properties": {
-                                                "inProgress": {
-                                                    "type": "boolean"
-                                                },
-                                                "startedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time"
-                                                },
-                                                "lastCompleted": {
-                                                    "type": "string",
-                                                    "format": "date-time"
-                                                },
-                                                "currentFile": {
-                                                    "type": "string"
-                                                },
-                                                "isIncremental": {
-                                                    "type": "boolean"
-                                                },
-                                                "totalFiles": {
-                                                    "type": "integer"
-                                                },
-                                                "processed": {
-                                                    "type": "integer"
-                                                },
-                                                "tagged": {
-                                                    "type": "integer"
-                                                },
-                                                "skipped": {
-                                                    "type": "integer"
-                                                },
-                                                "failed": {
-                                                    "type": "integer"
-                                                },
-                                                "lastError": {
-                                                    "type": "string"
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "503": {
-                        "description": "Auto-tagger not configured"
-                    }
-                }
-            }
-        },
         "/api/reindex": {
             "post": {
                 "tags": [
@@ -2718,31 +2637,6 @@
                 "responses": {
                     "200": {
                         "description": "Reindex started"
-                    }
-                }
-            }
-        },
-        "/api/stats": {
-            "get": {
-                "tags": [
-                    "System"
-                ],
-                "summary": "Get library statistics",
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Library stats",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/Stats"
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -3578,6 +3472,329 @@
                     },
                     "totalFolders": {
                         "type": "integer"
+                    }
+                }
+            },
+            "IndexStats": {
+                "type": "object",
+                "properties": {
+                    "totalFiles": {
+                        "type": "integer"
+                    },
+                    "totalFolders": {
+                        "type": "integer"
+                    },
+                    "totalImages": {
+                        "type": "integer"
+                    },
+                    "totalVideos": {
+                        "type": "integer"
+                    },
+                    "totalPlaylists": {
+                        "type": "integer"
+                    },
+                    "totalFavorites": {
+                        "type": "integer"
+                    },
+                    "totalTags": {
+                        "type": "integer"
+                    },
+                    "thumbnailCacheBytes": {
+                        "type": "integer"
+                    },
+                    "thumbnailCacheFiles": {
+                        "type": "integer"
+                    },
+                    "transcodeCacheBytes": {
+                        "type": "integer"
+                    },
+                    "transcodeCacheFiles": {
+                        "type": "integer"
+                    },
+                    "lastIndexed": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "indexDuration": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ProgressMetrics": {
+                "type": "object",
+                "properties": {
+                    "elapsedSeconds": {
+                        "type": "number"
+                    },
+                    "processedItems": {
+                        "type": "integer"
+                    },
+                    "totalItems": {
+                        "type": "integer"
+                    },
+                    "remainingItems": {
+                        "type": "integer"
+                    },
+                    "progressPercent": {
+                        "type": "number"
+                    },
+                    "itemsPerSecond": {
+                        "type": "number"
+                    },
+                    "estimatedSecondsRemaining": {
+                        "type": "number"
+                    },
+                    "estimatedCompletion": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "WorkerSummary": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "running": {
+                        "type": "boolean"
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "idle",
+                            "running",
+                            "disabled"
+                        ]
+                    }
+                }
+            },
+            "IndexProgress": {
+                "type": "object",
+                "properties": {
+                    "filesIndexed": {
+                        "type": "integer"
+                    },
+                    "foldersIndexed": {
+                        "type": "integer"
+                    },
+                    "isIndexing": {
+                        "type": "boolean"
+                    },
+                    "startedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "IndexerHealthStatus": {
+                "type": "object",
+                "properties": {
+                    "ready": {
+                        "type": "boolean"
+                    },
+                    "indexing": {
+                        "type": "boolean"
+                    },
+                    "startTime": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "uptime": {
+                        "type": "string"
+                    },
+                    "lastIndexed": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "initialIndexError": {
+                        "type": "string"
+                    },
+                    "filesIndexed": {
+                        "type": "integer"
+                    },
+                    "foldersIndexed": {
+                        "type": "integer"
+                    },
+                    "indexProgress": {
+                        "$ref": "#/components/schemas/IndexProgress"
+                    }
+                }
+            },
+            "GenerationStats": {
+                "type": "object",
+                "properties": {
+                    "inProgress": {
+                        "type": "boolean"
+                    },
+                    "startedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "lastCompleted": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "totalFiles": {
+                        "type": "integer"
+                    },
+                    "processed": {
+                        "type": "integer"
+                    },
+                    "generated": {
+                        "type": "integer"
+                    },
+                    "skipped": {
+                        "type": "integer"
+                    },
+                    "failed": {
+                        "type": "integer"
+                    },
+                    "orphansRemoved": {
+                        "type": "integer"
+                    },
+                    "foldersUpdated": {
+                        "type": "integer"
+                    },
+                    "currentFile": {
+                        "type": "string"
+                    },
+                    "isIncremental": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "ThumbnailStatus": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "cacheDir": {
+                        "type": "string"
+                    },
+                    "cacheCount": {
+                        "type": "integer"
+                    },
+                    "cacheSize": {
+                        "type": "integer"
+                    },
+                    "cacheSizeHuman": {
+                        "type": "string"
+                    },
+                    "generation": {
+                        "$ref": "#/components/schemas/GenerationStats"
+                    }
+                }
+            },
+            "AutoTaggerRunStatus": {
+                "type": "object",
+                "properties": {
+                    "inProgress": {
+                        "type": "boolean"
+                    },
+                    "startedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "lastCompleted": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "currentFile": {
+                        "type": "string"
+                    },
+                    "isIncremental": {
+                        "type": "boolean"
+                    },
+                    "totalFiles": {
+                        "type": "integer"
+                    },
+                    "processed": {
+                        "type": "integer"
+                    },
+                    "tagged": {
+                        "type": "integer"
+                    },
+                    "skipped": {
+                        "type": "integer"
+                    },
+                    "failed": {
+                        "type": "integer"
+                    },
+                    "lastError": {
+                        "type": "string"
+                    }
+                }
+            },
+            "AutoTaggerStatus": {
+                "type": "object",
+                "properties": {
+                    "run": {
+                        "$ref": "#/components/schemas/AutoTaggerRunStatus"
+                    }
+                }
+            },
+            "IndexerSystemStatus": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "$ref": "#/components/schemas/WorkerSummary"
+                    },
+                    "health": {
+                        "$ref": "#/components/schemas/IndexerHealthStatus"
+                    },
+                    "metrics": {
+                        "$ref": "#/components/schemas/ProgressMetrics"
+                    }
+                }
+            },
+            "ThumbnailSystemStatus": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "$ref": "#/components/schemas/WorkerSummary"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/ThumbnailStatus"
+                    },
+                    "metrics": {
+                        "$ref": "#/components/schemas/ProgressMetrics"
+                    }
+                }
+            },
+            "AutoTaggerSystemStatus": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "$ref": "#/components/schemas/WorkerSummary"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/AutoTaggerStatus"
+                    },
+                    "metrics": {
+                        "$ref": "#/components/schemas/ProgressMetrics"
+                    }
+                }
+            },
+            "SystemStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "library": {
+                        "$ref": "#/components/schemas/IndexStats"
+                    },
+                    "indexer": {
+                        "$ref": "#/components/schemas/IndexerSystemStatus"
+                    },
+                    "thumbnails": {
+                        "$ref": "#/components/schemas/ThumbnailSystemStatus"
+                    },
+                    "autotagger": {
+                        "$ref": "#/components/schemas/AutoTaggerSystemStatus"
                     }
                 }
             },
