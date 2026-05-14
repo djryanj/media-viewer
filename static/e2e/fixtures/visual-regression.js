@@ -30,17 +30,30 @@ function normalizeSnapshotValue(value) {
 function normalizeSnapshotForComparison(snapshot, options = {}) {
     const normalizedSnapshot = normalizeSnapshotValue(snapshot);
     const ignoreNodeRectsById = new Set(options.ignoreNodeRectsById ?? []);
+    const ignoreNodeRectsByClass = new Set(options.ignoreNodeRectsByClass ?? []);
     const ignoreStyleKeys = new Set(options.ignoreStyleKeys ?? []);
+    const ignoreSnapshotSize = options.ignoreSnapshotSize === true;
 
-    if (!ignoreNodeRectsById.size && !ignoreStyleKeys.size) {
+    if (
+        !ignoreNodeRectsById.size &&
+        !ignoreNodeRectsByClass.size &&
+        !ignoreStyleKeys.size &&
+        !ignoreSnapshotSize
+    ) {
         return normalizedSnapshot;
     }
 
     if (!Array.isArray(normalizedSnapshot?.nodes)) {
-        return normalizedSnapshot;
+        if (!ignoreSnapshotSize) {
+            return normalizedSnapshot;
+        }
+
+        const nextSnapshot = { ...normalizedSnapshot };
+        delete nextSnapshot.size;
+        return nextSnapshot;
     }
 
-    return {
+    const nextSnapshot = {
         ...normalizedSnapshot,
         nodes: normalizedSnapshot.nodes.map((node) => {
             if (!node || typeof node !== 'object') {
@@ -49,7 +62,11 @@ function normalizeSnapshotForComparison(snapshot, options = {}) {
 
             let nextNode = node;
 
-            if (ignoreNodeRectsById.has(node.id)) {
+            const hasIgnoredClass = Array.isArray(node.classes)
+                ? node.classes.some((className) => ignoreNodeRectsByClass.has(className))
+                : false;
+
+            if (ignoreNodeRectsById.has(node.id) || hasIgnoredClass) {
                 nextNode = { ...nextNode };
                 delete nextNode.rect;
             }
@@ -65,6 +82,12 @@ function normalizeSnapshotForComparison(snapshot, options = {}) {
             return nextNode;
         }),
     };
+
+    if (ignoreSnapshotSize) {
+        delete nextSnapshot.size;
+    }
+
+    return nextSnapshot;
 }
 
 function findFirstDifference(actual, reference, path = 'root', options = {}) {

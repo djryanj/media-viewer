@@ -15,10 +15,15 @@ const SEL = {
     securityPanel: '#settings-security',
     passkeysPanel: '#settings-passkeys',
     cachePanel: '#settings-cache',
+    workerStatusList: '#worker-status-list',
     displayPanel: '#settings-display',
     tagsPanel: '#settings-tags',
     aboutPanel: '#settings-about',
 };
+
+function workerAction(action) {
+    return `${SEL.workerStatusList} [data-worker-action="${action}"]`;
+}
 
 async function openSettingsViaButton(page) {
     await expect(page.locator(SEL.button)).toBeAttached();
@@ -83,6 +88,23 @@ async function setToggleSwitch(page, inputSelector, checked) {
     } else {
         await expect(input).not.toBeChecked();
     }
+}
+
+async function reloadPreferencesPage(page) {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect
+        .poll(() => {
+            return page.evaluate(() => ({
+                mediaReady: Boolean(window.MediaApp?.state),
+                preferencesReady: Boolean(window.Preferences),
+                settingsReady: Boolean(window.settingsManager),
+            }));
+        })
+        .toEqual({
+            mediaReady: true,
+            preferencesReady: true,
+            settingsReady: true,
+        });
 }
 
 test.describe('Settings - Modal and Navigation @settings @features', () => {
@@ -217,15 +239,66 @@ test.describe('Settings - Display, Cache, and Tags @settings @features @admin', 
         await openSettings(page, 'cache');
 
         await expect(page.locator(SEL.cachePanel)).toHaveClass(/active/);
-        await expect(page.locator('#rebuild-thumbnails-btn')).toBeVisible();
-        await expect(page.locator('#reindex-btn')).toBeVisible();
-        await expect(page.locator('#clear-transcode-btn')).toBeVisible();
-        await expect(page.locator('#run-autotagger-btn')).toBeVisible();
-        await expect(page.locator('#thumbnail-cache-size')).toBeVisible();
-        await expect(page.locator('#transcode-cache-size')).toBeVisible();
+        await expect(page.locator(SEL.workerStatusList)).toBeVisible();
+        await expect(page.locator(`${SEL.workerStatusList} .worker-status-card`)).toHaveCount(4);
+        await expect(page.locator(workerAction('rebuild-thumbnails'))).toBeVisible();
+        await expect(page.locator(workerAction('reindex'))).toBeVisible();
+        await expect(page.locator(workerAction('clear-transcode'))).toBeVisible();
+        await expect(page.locator(workerAction('run-autotagger'))).toBeVisible();
+        await expect(page.locator(SEL.workerStatusList)).toContainText('Thumbnails');
+        await expect(page.locator(SEL.workerStatusList)).toContainText('Auto-Tagger');
+        await expect(page.locator(SEL.workerStatusList)).toContainText('Transcode Cache');
     });
 
     test('should trigger autotagger run and show success message', async ({ page }) => {
+        await page.route('**/api/system/status', (route) => {
+            route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    updatedAt: new Date().toISOString(),
+                    library: {
+                        totalFiles: 1000,
+                        totalImages: 800,
+                        totalVideos: 200,
+                        totalFolders: 50,
+                        totalFavorites: 10,
+                        totalTags: 20,
+                        thumbnailCacheBytes: 1024000,
+                        thumbnailCacheFiles: 100,
+                        transcodeCacheBytes: 5120000,
+                        transcodeCacheFiles: 50,
+                    },
+                    indexer: {
+                        summary: { state: 'idle', running: false, enabled: true },
+                        health: { lastIndexed: new Date().toISOString() },
+                        metrics: { processedItems: 120 },
+                    },
+                    thumbnails: {
+                        summary: { state: 'idle', running: false, enabled: true },
+                        status: {
+                            enabled: true,
+                            cacheSizeHuman: '1000 KB',
+                            cacheCount: 100,
+                            generation: {
+                                inProgress: false,
+                            },
+                        },
+                        metrics: { processedItems: 25 },
+                    },
+                    autotagger: {
+                        summary: { state: 'idle', running: false, enabled: true },
+                        status: {
+                            run: {
+                                inProgress: false,
+                            },
+                        },
+                        metrics: { processedItems: 0 },
+                    },
+                }),
+            });
+        });
+
         // Intercept the API call so the test does not depend on a real running tagger.
         await page.route('/api/autotagger/run', (route) => {
             route.fulfill({
@@ -237,7 +310,12 @@ test.describe('Settings - Display, Cache, and Tags @settings @features @admin', 
 
         await openSettings(page, 'cache');
 
-        await page.locator('#run-autotagger-btn').dispatchEvent('click');
+        await page.evaluate(() => {
+            window.settingsManager?.stopCacheStatusPolling?.();
+        });
+
+        await expect(page.locator(workerAction('run-autotagger'))).toBeEnabled();
+        await page.locator(workerAction('run-autotagger')).dispatchEvent('click');
 
         // Wait for the success element to become visible (loading state resolves).
         await expect(page.locator('#cache-success')).toBeVisible({ timeout: 5000 });
@@ -284,7 +362,7 @@ test.describe('Settings - Display, Cache, and Tags @settings @features @admin', 
         expect(storedBeforeReload?.clockFormat).toBe('24');
         expect(storedBeforeReload?.clockAlwaysVisible).toBe(false);
 
-        await page.reload();
+        await reloadPreferencesPage(page);
         await expect
             .poll(async () => {
                 return page.evaluate(() => ({
@@ -338,7 +416,7 @@ test.describe('Settings - Display, Cache, and Tags @settings @features @admin', 
         expect(storedBeforeReload?.sortField).toBe('date');
         expect(storedBeforeReload?.sortOrder).toBe('desc');
 
-        await page.reload();
+        await reloadPreferencesPage(page);
 
         await expect(gallerySortSelect).toHaveValue('date');
         await expect

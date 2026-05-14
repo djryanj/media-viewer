@@ -278,6 +278,41 @@ describe('SettingsManager Class', () => {
         });
     });
 
+    describe('worker status formatting', () => {
+        test('shows zero rate for idle workers', () => {
+            const result = settingsManager.formatWorkerRate(
+                { itemsPerSecond: 4.2 },
+                { running: false }
+            );
+
+            expect(result).toBe('0 items/s');
+        });
+
+        test('renders inline action buttons for worker cards', () => {
+            const html = settingsManager.renderWorkerStatusCard(
+                'Indexer',
+                'Background scanner and change detection.',
+                { summary: { state: 'idle', running: false, enabled: true } },
+                {
+                    processedLabel: 'Processed',
+                    processedValue: '12 items',
+                    rateValue: '0 items/s',
+                    etaValue: '--',
+                    lastRunValue: 'just now',
+                    notes: [],
+                    action: settingsManager.getWorkerActionConfig('reindex', {
+                        state: 'idle',
+                        running: false,
+                        enabled: true,
+                    }),
+                }
+            );
+
+            expect(html).toContain('data-worker-action="reindex"');
+            expect(html).toContain('Reindex Now');
+        });
+    });
+
     describe('sortTags()', () => {
         beforeEach(() => {
             // Setup test data

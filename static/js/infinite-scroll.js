@@ -1126,6 +1126,27 @@ const InfiniteScroll = {
         const loaded = this.state.loadedItems.length;
         const total = this.state.totalItems;
         const parts = [];
+        const systemStatus = MediaApp?.state?.systemStatus;
+        const workerSummaryParts = systemStatus
+            ? [
+                  ['Indexer', systemStatus.indexer],
+                  ['Thumbnails', systemStatus.thumbnails],
+                  ['Auto-tagger', systemStatus.autotagger],
+              ].map(([label, worker]) => {
+                  const state = worker?.summary?.state || 'unknown';
+                  return { label, state };
+              })
+            : [];
+        const fallbackWorkerSummary = workerSummaryParts
+            .map(({ label, state }) => `${label}: ${state}`)
+            .join(', ');
+        const fallbackWorkerSummaryHtml = workerSummaryParts
+            .map(
+                ({ label, state }) =>
+                    `<span class="stats-worker-summary-item">${label}: <span class="stats-worker-state ${state === 'running' ? 'running' : ''}">${state}</span></span>`
+            )
+            .join('<span class="stats-worker-summary-separator" aria-hidden="true">, </span>');
+
         if (total > 0) {
             parts.push(`Showing ${loaded.toLocaleString()} of ${total.toLocaleString()} items`);
         }
@@ -1135,6 +1156,38 @@ const InfiniteScroll = {
             const versionText = shortCommit ? `${v.version} (${shortCommit})` : v.version || '';
             if (versionText) parts.push(versionText);
         }
+        if (
+            typeof MediaApp !== 'undefined' &&
+            typeof MediaApp.getBackgroundTaskSummary === 'function'
+        ) {
+            const workerSummary = MediaApp.getBackgroundTaskSummary();
+            if (workerSummary) parts.push(workerSummary);
+        } else if (fallbackWorkerSummary) {
+            parts.push(fallbackWorkerSummary);
+        }
+
+        if (
+            typeof MediaApp !== 'undefined' &&
+            typeof MediaApp.renderStatsBar === 'function' &&
+            typeof MediaApp.getBackgroundTaskSummaryMarkup === 'function'
+        ) {
+            const workerSummaryHtml = MediaApp.getBackgroundTaskSummaryMarkup();
+            const nonWorkerParts = workerSummaryHtml ? parts.slice(0, -1) : parts;
+            MediaApp.renderStatsBar(nonWorkerParts, workerSummaryHtml);
+            return;
+        }
+
+        if (fallbackWorkerSummaryHtml && this.elements.statsInfo) {
+            const nonWorkerParts = parts
+                .slice(0, -1)
+                .map((part) => `<span class="stats-bar-part">${part}</span>`);
+            nonWorkerParts.push(`<span class="stats-bar-part">${fallbackWorkerSummaryHtml}</span>`);
+            this.elements.statsInfo.innerHTML = nonWorkerParts.join(
+                '<span class="stats-bar-separator" aria-hidden="true"> | </span>'
+            );
+            return;
+        }
+
         this.elements.statsInfo.textContent = parts.join(' | ');
     },
 

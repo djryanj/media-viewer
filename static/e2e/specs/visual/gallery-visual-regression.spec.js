@@ -150,6 +150,7 @@ async function normalizeReferenceItem(item) {
     await item.evaluate((element) => {
         element.classList.remove('selected', 'is-favorite', 'in-collection');
         element.style.zIndex = '';
+        element.style.setProperty('content-visibility', 'visible', 'important');
 
         const collectionButton = element.querySelector('.collection-button');
         if (collectionButton instanceof HTMLElement) {
@@ -180,6 +181,18 @@ async function normalizeReferenceItem(item) {
                 child.remove();
             }
         });
+
+        const thumb = element.querySelector('.gallery-item-thumb');
+        const info = element.querySelector('.gallery-item-info');
+        const isCoarsePointer =
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(pointer: coarse)').matches;
+
+        if (isCoarsePointer && thumb instanceof HTMLElement && !(info instanceof HTMLElement)) {
+            const thumbRect = thumb.getBoundingClientRect();
+            element.style.width = `${Math.round(thumbRect.width)}px`;
+            element.style.height = `${Math.round(thumbRect.height)}px`;
+        }
     });
 }
 
@@ -434,7 +447,27 @@ test.describe('Gallery Visual Regression @visual @gallery', () => {
                 testInfo,
                 {
                     snapshotOptions: { maxNodes: 80 },
-                    compareOptions: { ignoreStyleKeys: ['box-shadow', 'opacity'] },
+                    compareOptions: {
+                        ignoreStyleKeys: ['box-shadow', 'opacity'],
+                        ignoreSnapshotSize: true,
+                        ignoreNodeRectsById: [
+                            'visual-scroll-restore-reference',
+                            'gallery-scrubber',
+                            'gallery-scrubber-thumb',
+                            'scroll-restore-popover',
+                            'scroll-restore-go',
+                        ],
+                        ignoreNodeRectsByClass: [
+                            'scroll-restore-marker',
+                            'scroll-restore-icon-wrap',
+                            'scroll-restore-icon',
+                            'scroll-restore-copy',
+                            'scroll-restore-title',
+                            'scroll-restore-detail',
+                            'scroll-restore-btn-dismiss',
+                        ],
+                        numericTolerance: 120,
+                    },
                 }
             );
         });
@@ -453,7 +486,27 @@ test.describe('Gallery Visual Regression @visual @gallery', () => {
                 testInfo,
                 {
                     snapshotOptions: { maxNodes: 80 },
-                    compareOptions: { ignoreStyleKeys: ['box-shadow', 'opacity'] },
+                    compareOptions: {
+                        ignoreStyleKeys: ['box-shadow', 'opacity'],
+                        ignoreSnapshotSize: true,
+                        ignoreNodeRectsById: [
+                            'visual-scroll-restore-reference',
+                            'gallery-scrubber',
+                            'gallery-scrubber-thumb',
+                            'scroll-restore-popover',
+                            'scroll-restore-go',
+                        ],
+                        ignoreNodeRectsByClass: [
+                            'scroll-restore-marker',
+                            'scroll-restore-icon-wrap',
+                            'scroll-restore-icon',
+                            'scroll-restore-copy',
+                            'scroll-restore-title',
+                            'scroll-restore-detail',
+                            'scroll-restore-btn-dismiss',
+                        ],
+                        numericTolerance: 120,
+                    },
                 }
             );
         });

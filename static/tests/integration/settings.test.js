@@ -1,3 +1,4 @@
+/* global loadModuleForTesting */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 describe('SettingsManager Integration Tests', () => {
@@ -61,25 +62,7 @@ describe('SettingsManager Integration Tests', () => {
                     return null;
                 }),
             },
-            'rebuild-thumbnails-btn': {
-                addEventListener: vi.fn(),
-                disabled: false,
-                innerHTML: '',
-                dataset: {},
-            },
-            'reindex-btn': {
-                addEventListener: vi.fn(),
-                disabled: false,
-                innerHTML: '',
-                dataset: {},
-            },
             'clear-transcode-btn': {
-                addEventListener: vi.fn(),
-                disabled: false,
-                innerHTML: '',
-                dataset: {},
-            },
-            'run-autotagger-btn': {
                 addEventListener: vi.fn(),
                 disabled: false,
                 innerHTML: '',
@@ -170,6 +153,7 @@ describe('SettingsManager Integration Tests', () => {
                 classList: { add: vi.fn(), remove: vi.fn() },
             },
             'cache-status-text': { textContent: '' },
+            'worker-status-list': { innerHTML: '', addEventListener: vi.fn() },
             'thumbnail-cache-size': { textContent: '' },
             'transcode-cache-size': { textContent: '' },
             'app-version': { textContent: '' },
@@ -271,6 +255,48 @@ describe('SettingsManager Integration Tests', () => {
             },
             loadDirectory: vi.fn(),
             showConfirmModal: vi.fn(() => Promise.resolve(true)),
+            refreshSystemStatus: vi.fn(() =>
+                Promise.resolve({
+                    library: {
+                        totalFiles: 1000,
+                        totalImages: 800,
+                        totalVideos: 200,
+                        totalFolders: 50,
+                        thumbnailCacheBytes: 1024000,
+                        thumbnailCacheFiles: 100,
+                        transcodeCacheBytes: 5120000,
+                        transcodeCacheFiles: 50,
+                    },
+                    indexer: {
+                        summary: { state: 'idle' },
+                        health: { lastIndexed: new Date().toISOString() },
+                        metrics: { processedItems: 120 },
+                    },
+                    thumbnails: {
+                        summary: { state: 'running' },
+                        status: {
+                            cacheSizeHuman: '12 MB',
+                            cacheCount: 42,
+                            generation: {
+                                lastCompleted: new Date().toISOString(),
+                                currentFile: 'sample-media/image.jpg',
+                            },
+                        },
+                        metrics: {
+                            processedItems: 25,
+                            totalItems: 100,
+                            progressPercent: 25,
+                            itemsPerSecond: 2.5,
+                            estimatedSecondsRemaining: 30,
+                        },
+                    },
+                    autotagger: {
+                        summary: { state: 'disabled' },
+                        status: { run: {} },
+                        metrics: { processedItems: 0 },
+                    },
+                })
+            ),
         };
 
         // Mock lucide
@@ -777,21 +803,16 @@ describe('SettingsManager Integration Tests', () => {
 
     describe('Cache Management', () => {
         it('should load cache stats', async () => {
-            globalThis.fetch.mockResolvedValueOnce({
-                ok: true,
-                json: () =>
-                    Promise.resolve({
-                        thumbnailCacheBytes: 1024000,
-                        thumbnailCacheFiles: 100,
-                        transcodeCacheBytes: 5120000,
-                        transcodeCacheFiles: 50,
-                    }),
-            });
-
             await settingsManager.loadCacheStats();
 
             expect(settingsManager.thumbnailCacheBytes).toBe(1024000);
             expect(settingsManager.thumbnailCacheFiles).toBe(100);
+            expect(mockElements['worker-status-list'].innerHTML).toContain('Transcode Cache');
+            expect(mockElements['worker-status-list'].innerHTML).toContain('Clear Cache');
+            expect(mockElements['worker-status-list'].innerHTML).toContain('Thumbnails');
+            expect(mockElements['worker-status-list'].innerHTML).toContain('Auto-Tagger');
+            expect(mockElements['worker-status-list'].innerHTML).toContain('Rebuild Now');
+            expect(mockElements['worker-status-list'].innerHTML).toContain('Reindex Now');
         });
 
         it('should rebuild thumbnails after confirmation', async () => {
@@ -1069,26 +1090,15 @@ describe('SettingsManager Integration Tests', () => {
 
     describe('About Info', () => {
         it('should load version and stats', async () => {
-            globalThis.fetch
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve({ version: '1.0.0', commit: 'abc123def' }),
-                })
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () =>
-                        Promise.resolve({
-                            totalFiles: 1000,
-                            totalImages: 800,
-                            totalVideos: 200,
-                            totalFolders: 50,
-                        }),
-                });
+            globalThis.fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ version: '1.0.0', commit: 'abc123def' }),
+            });
 
             await settingsManager.loadAboutInfo();
 
             expect(globalThis.fetch).toHaveBeenCalledWith('/version');
-            expect(globalThis.fetch).toHaveBeenCalledWith('/api/stats');
+            expect(globalThis.MediaApp.refreshSystemStatus).toHaveBeenCalled();
         });
 
         it('should handle API errors gracefully', async () => {

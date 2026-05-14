@@ -67,26 +67,6 @@ async function waitForFixtureIndexed(page, timeout = 120000) {
         .toBe(true);
 }
 
-async function getAutoTaggerStatus(page) {
-    const response = await page.request.get('/api/autotagger/status');
-    expect(response.ok()).toBeTruthy();
-    return await response.json();
-}
-
-async function waitForAutoTaggerCompletion(page, previousLastCompleted = 0, timeout = 180000) {
-    await expect
-        .poll(
-            async () => {
-                const status = await getAutoTaggerStatus(page);
-                const run = status?.run ?? {};
-                const lastCompleted = run.lastCompleted ? Date.parse(run.lastCompleted) : 0;
-                return !run.inProgress && lastCompleted > previousLastCompleted;
-            },
-            { timeout }
-        )
-        .toBe(true);
-}
-
 async function waitForAutoTaggedFile(page, timeout = 180000) {
     const expectedTags = [...EXPECTED_TAGS].sort();
 
@@ -161,18 +141,12 @@ test.describe('Autotagger Runtime Smoke @autotagger @docker-runtime', () => {
         await triggerReindex(page);
         await waitForFixtureIndexed(page);
 
-        const previousStatus = await getAutoTaggerStatus(page);
-        const previousLastCompleted = previousStatus?.run?.lastCompleted
-            ? Date.parse(previousStatus.run.lastCompleted)
-            : 0;
-
         await openSettings(page, 'cache');
         await page.evaluate(async () => {
             await window.settingsManager?.runAutoTagger?.();
         });
         await expect(page.locator('#cache-success')).toBeVisible({ timeout: 10000 });
 
-        await waitForAutoTaggerCompletion(page, previousLastCompleted);
         await waitForAutoTaggedFile(page);
         await waitForSearchHit(page, `tag:${EXPECTED_TAGS[0]}`, FIXTURE_NAME);
 

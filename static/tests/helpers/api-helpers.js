@@ -378,13 +378,13 @@ export async function search(query) {
  * @returns {Promise<{success: boolean, data: any}>}
  */
 export async function getStats() {
-    const response = await apiRequest(TEST_CONFIG.API.SYSTEM.STATS);
+    const response = await apiRequest(TEST_CONFIG.API.SYSTEM.STATUS);
     const data = await response.json().catch(() => ({}));
 
     return {
         success: response.ok,
         status: response.status,
-        data,
+        data: data.library || {},
     };
 }
 

@@ -13,7 +13,8 @@ import (
 // mockAutoTagRunner is a test double for the AutoTagRunner interface that
 // records how many times TriggerRun was called.
 type mockAutoTagRunner struct {
-	calls atomic.Int32
+	calls   atomic.Int32
+	enabled bool
 }
 
 func (m *mockAutoTagRunner) TriggerRun() {
@@ -22,6 +23,10 @@ func (m *mockAutoTagRunner) TriggerRun() {
 
 func (m *mockAutoTagRunner) Status() autotagger.Status {
 	return autotagger.Status{}
+}
+
+func (m *mockAutoTagRunner) Enabled() bool {
+	return m.enabled
 }
 
 // Verify mockAutoTagRunner satisfies the interface at compile time.
@@ -41,7 +46,7 @@ func TestRunAutoTagger(t *testing.T) {
 		{
 			name:        "POST triggers run and returns 202",
 			method:      http.MethodPost,
-			autoTagger:  &mockAutoTagRunner{},
+			autoTagger:  &mockAutoTagRunner{enabled: true},
 			wantStatus:  http.StatusAccepted,
 			wantCalls:   1,
 			wantSuccess: true,
@@ -56,21 +61,21 @@ func TestRunAutoTagger(t *testing.T) {
 		{
 			name:       "GET method not allowed",
 			method:     http.MethodGet,
-			autoTagger: &mockAutoTagRunner{},
+			autoTagger: &mockAutoTagRunner{enabled: true},
 			wantStatus: http.StatusMethodNotAllowed,
 			wantCalls:  0,
 		},
 		{
 			name:       "PUT method not allowed",
 			method:     http.MethodPut,
-			autoTagger: &mockAutoTagRunner{},
+			autoTagger: &mockAutoTagRunner{enabled: true},
 			wantStatus: http.StatusMethodNotAllowed,
 			wantCalls:  0,
 		},
 		{
 			name:       "DELETE method not allowed",
 			method:     http.MethodDelete,
-			autoTagger: &mockAutoTagRunner{},
+			autoTagger: &mockAutoTagRunner{enabled: true},
 			wantStatus: http.StatusMethodNotAllowed,
 			wantCalls:  0,
 		},
@@ -123,7 +128,7 @@ func TestRunAutoTagger(t *testing.T) {
 	}
 }
 
-func TestGetAutoTaggerStatus(t *testing.T) {
+func TestGetSystemStatusIncludesAutoTagger(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -135,19 +140,13 @@ func TestGetAutoTaggerStatus(t *testing.T) {
 		{
 			name:       "GET returns 200",
 			method:     http.MethodGet,
-			autoTagger: &mockAutoTagRunner{},
+			autoTagger: &mockAutoTagRunner{enabled: true},
 			wantStatus: http.StatusOK,
-		},
-		{
-			name:       "nil autoTagger returns 503",
-			method:     http.MethodGet,
-			autoTagger: nil,
-			wantStatus: http.StatusServiceUnavailable,
 		},
 		{
 			name:       "POST method not allowed",
 			method:     http.MethodPost,
-			autoTagger: &mockAutoTagRunner{},
+			autoTagger: &mockAutoTagRunner{enabled: true},
 			wantStatus: http.StatusMethodNotAllowed,
 		},
 	}
@@ -158,10 +157,10 @@ func TestGetAutoTaggerStatus(t *testing.T) {
 
 			h := &Handlers{autoTagger: tt.autoTagger}
 
-			req := httptest.NewRequest(tt.method, "/api/autotagger/status", http.NoBody)
+			req := httptest.NewRequest(tt.method, "/api/system/status", http.NoBody)
 			w := httptest.NewRecorder()
 
-			h.GetAutoTaggerStatus(w, req)
+			h.GetSystemStatus(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)

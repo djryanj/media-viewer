@@ -1114,16 +1114,16 @@ func TestGetStatsIntegration(t *testing.T) {
 		t.Fatalf("failed to add favorite: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/stats", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/system/status", http.NoBody)
 	w := httptest.NewRecorder()
 
-	h.GetStats(w, req)
+	h.GetSystemStatus(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
 
-	var stats database.IndexStats
+	var stats SystemStatusResponse
 	if err := json.NewDecoder(w.Body).Decode(&stats); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -1131,8 +1131,8 @@ func TestGetStatsIntegration(t *testing.T) {
 	// Note: Stats might be 0 because they're cached in memory and not updated
 	// when files are added via test helper. This is expected behavior.
 	// In production, stats are updated during indexing.
-	if stats.TotalFavorites != 1 {
-		t.Errorf("expected 1 favorite, got %d", stats.TotalFavorites)
+	if stats.Library.TotalFavorites != 1 {
+		t.Errorf("expected 1 favorite, got %d", stats.Library.TotalFavorites)
 	}
 }
 
@@ -1274,23 +1274,22 @@ func TestGetThumbnailStatusDisabledIntegration(t *testing.T) {
 	h, cleanup := setupMediaIntegrationTest(t)
 	defer cleanup()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/thumbnails/status", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/system/status", http.NoBody)
 	w := httptest.NewRecorder()
 
-	h.GetThumbnailStatus(w, req)
+	h.GetSystemStatus(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
 
-	var response map[string]interface{}
+	var response SystemStatusResponse
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	enabled, ok := response["enabled"].(bool)
-	if !ok || enabled {
-		t.Errorf("expected enabled=false, got %v", response["enabled"])
+	if response.Thumbnails.Summary.Enabled {
+		t.Errorf("expected thumbnail summary enabled=false, got %v", response.Thumbnails.Summary.Enabled)
 	}
 }
 
@@ -1361,19 +1360,19 @@ func TestCompleteMediaFlowIntegration(t *testing.T) {
 		t.Fatalf("failed to add favorite: %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/stats", http.NoBody)
+	req = httptest.NewRequest(http.MethodGet, "/api/system/status", http.NoBody)
 	w = httptest.NewRecorder()
-	h.GetStats(w, req)
+	h.GetSystemStatus(w, req)
 
-	var stats database.IndexStats
+	var stats SystemStatusResponse
 	if err := json.NewDecoder(w.Body).Decode(&stats); err != nil {
 		t.Fatalf("failed to decode stats: %v", err)
 	}
 
 	// Note: Stats might be 0 because they're cached in memory and not updated
 	// when files are added via test helper. This is expected behavior.
-	if stats.TotalFavorites != 1 {
-		t.Errorf("expected 1 favorite in stats, got %d", stats.TotalFavorites)
+	if stats.Library.TotalFavorites != 1 {
+		t.Errorf("expected 1 favorite in stats, got %d", stats.Library.TotalFavorites)
 	}
 }
 
@@ -2679,34 +2678,32 @@ func TestGetThumbnailStatusActiveIntegration(t *testing.T) {
 	h.RebuildAllThumbnails(rebuildW, rebuildReq)
 
 	// Immediately check status
-	req := httptest.NewRequest(http.MethodGet, "/api/thumbnail/status", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/system/status", http.NoBody)
 	w := httptest.NewRecorder()
 
-	h.GetThumbnailStatus(w, req)
+	h.GetSystemStatus(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
 	// Verify response structure
-	var status map[string]interface{}
+	var status SystemStatusResponse
 	if err := json.NewDecoder(w.Body).Decode(&status); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	// Check for expected fields
-	if _, ok := status["is_generating"]; !ok {
-		t.Error("expected is_generating field in status response")
+	if !status.Thumbnails.Summary.Enabled {
+		t.Error("expected thumbnails summary to be enabled")
 	}
 
-	if _, ok := status["total"]; !ok {
-		t.Error("expected total field in status response")
+	if status.Thumbnails.Status.Generation == nil {
+		t.Error("expected thumbnail generation status in system response")
+		return
 	}
 
-	// Optional: completed field may or may not be present depending on timing
-	// Just log it if it exists
-	if completed, ok := status["completed"]; ok {
-		t.Logf("Completed count: %v", completed)
+	if status.Thumbnails.Status.Generation.TotalFiles < 0 {
+		t.Errorf("expected non-negative total files, got %d", status.Thumbnails.Status.Generation.TotalFiles)
 	}
 }
 

@@ -13,8 +13,8 @@ import (
 	"media-viewer/internal/transcoder"
 )
 
-// BenchmarkGetStatsEndpoint benchmarks the /api/stats endpoint performance
-func BenchmarkGetStatsEndpoint(b *testing.B) {
+// BenchmarkGetSystemStatusEndpoint benchmarks the /api/system/status endpoint performance.
+func BenchmarkGetSystemStatusEndpoint(b *testing.B) {
 	tmpDir := b.TempDir()
 	mediaDir := filepath.Join(tmpDir, "media")
 	cacheDir := filepath.Join(tmpDir, "cache")
@@ -66,9 +66,9 @@ func BenchmarkGetStatsEndpoint(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/api/stats", http.NoBody)
+		req := httptest.NewRequest(http.MethodGet, "/api/system/status", http.NoBody)
 		w := httptest.NewRecorder()
-		handlers.GetStats(w, req)
+		handlers.GetSystemStatus(w, req)
 
 		if w.Code != http.StatusOK {
 			b.Fatalf("Expected status 200, got %d", w.Code)

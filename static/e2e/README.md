@@ -17,7 +17,7 @@ npm run test:e2e:all
 # Run the stable Chromium smoke suite used on pull requests
 npm run test:e2e:smoke
 
-# Run the Docker-backed Chromium smoke suite (auth, gallery, lightbox/video, autotagger runtime)
+# Run the Docker-backed Chromium smoke suite (auth, gallery, autotagger runtime)
 npm run test:e2e:runtime-smoke
 
 # Run visual regression checks against committed JSON baselines

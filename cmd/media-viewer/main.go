@@ -347,7 +347,6 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/hls/{sessionId:[0-9a-f]+}/seg{index:[0-9]+}.ts", h.GetHLSSegment).Methods("GET")
 	api.HandleFunc("/search", h.Search).Methods("GET")
 	api.HandleFunc("/search/suggestions", h.SearchSuggestions).Methods("GET")
-	api.HandleFunc("/stats", h.GetStats).Methods("GET")
 	api.HandleFunc("/reindex", h.TriggerReindex).Methods("POST")
 
 	// Favorites
@@ -390,12 +389,11 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/thumbnails/{path:.*}", h.InvalidateThumbnail).Methods("DELETE")
 	api.HandleFunc("/thumbnails/invalidate", h.InvalidateAllThumbnails).Methods("POST")
 	api.HandleFunc("/thumbnails/rebuild", h.RebuildAllThumbnails).Methods("POST")
-	api.HandleFunc("/thumbnails/status", h.GetThumbnailStatus).Methods("GET")
 
 	// Cache management
 	api.HandleFunc("/transcode/clear", h.ClearTranscodeCache).Methods("POST")
 	api.HandleFunc("/autotagger/run", h.RunAutoTagger).Methods("POST")
-	api.HandleFunc("/autotagger/status", h.GetAutoTaggerStatus).Methods("GET")
+	api.HandleFunc("/system/status", h.GetSystemStatus).Methods("GET")
 
 	// Static files
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))

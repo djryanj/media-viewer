@@ -310,6 +310,33 @@ describe('MediaApp Module', () => {
             expect(text).toContain('100 images');
             expect(text).not.toContain('v');
         });
+
+        it('should append worker summary when system status exists', () => {
+            const stats = { totalImages: 100 };
+            MediaApp.state.systemStatus = {
+                indexer: { summary: { state: 'running' } },
+                thumbnails: { summary: { state: 'idle' } },
+                autotagger: { summary: { state: 'disabled' } },
+            };
+
+            MediaApp.renderStats(stats);
+
+            expect(MediaApp.elements.statsInfo.textContent).toContain('Indexer: running');
+            expect(MediaApp.elements.statsInfo.textContent).toContain('Auto-tagger: disabled');
+            expect(MediaApp.elements.statsInfo.innerHTML).toContain('stats-worker-state running');
+        });
+    });
+
+    describe('getBackgroundTaskSummary()', () => {
+        it('should summarize worker states', () => {
+            const summary = MediaApp.getBackgroundTaskSummary({
+                indexer: { summary: { state: 'running' } },
+                thumbnails: { summary: { state: 'idle' } },
+                autotagger: { summary: { state: 'disabled' } },
+            });
+
+            expect(summary).toBe('Indexer: running, Thumbnails: idle, Auto-tagger: disabled');
+        });
     });
 
     describe('renderBreadcrumb()', () => {
@@ -2124,18 +2151,23 @@ describe('MediaApp Module', () => {
         });
 
         it('should load and render stats', async () => {
-            const stats = { totalImages: 100, totalVideos: 50 };
+            const status = {
+                library: { totalImages: 100, totalVideos: 50 },
+                indexer: { summary: { state: 'idle' } },
+                thumbnails: { summary: { state: 'idle' } },
+                autotagger: { summary: { state: 'idle' } },
+            };
             global.fetch = vi.fn(() =>
                 Promise.resolve({
                     ok: true,
-                    json: () => Promise.resolve(stats),
+                    json: () => Promise.resolve(status),
                 })
             );
 
             await MediaApp.loadStats();
 
-            expect(global.fetch).toHaveBeenCalledWith('/api/stats');
-            expect(MediaApp.renderStats).toHaveBeenCalledWith(stats);
+            expect(global.fetch).toHaveBeenCalledWith('/api/system/status', { cache: 'no-store' });
+            expect(MediaApp.renderStats).toHaveBeenCalledWith(status.library);
         });
 
         it('should redirect to login on 401', async () => {

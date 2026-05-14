@@ -684,28 +684,6 @@ func (h *Handlers) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, info)
 }
 
-// GetStats returns current library statistics
-func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	stats := h.db.GetStats()
-	stats.TotalFavorites = h.db.GetFavoriteCount(ctx)
-	stats.TotalTags = h.db.GetTagCount(ctx)
-
-	// Include cache sizes and file counts
-	if thumbnailSize, thumbnailCount, err := h.thumbGen.GetCacheSize(); err == nil {
-		stats.ThumbnailCacheBytes = thumbnailSize
-		stats.ThumbnailCacheFiles = thumbnailCount
-	}
-	if transcodeSize, transcodeCount, err := h.transcoder.GetCacheSize(); err == nil {
-		stats.TranscodeCacheBytes = transcodeSize
-		stats.TranscodeCacheFiles = transcodeCount
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, stats)
-}
-
 // TriggerReindex starts a new media library indexing operation
 func (h *Handlers) TriggerReindex(w http.ResponseWriter, _ *http.Request) {
 	if h.indexer.IsIndexing() {
@@ -834,22 +812,6 @@ func (h *Handlers) RebuildAllThumbnails(w http.ResponseWriter, _ *http.Request) 
 		responseKeyStatus:  responseStatusStarted,
 		responseKeyMessage: "Thumbnail rebuild started in background",
 	})
-}
-
-// GetThumbnailStatus returns the current status of thumbnail generation
-func (h *Handlers) GetThumbnailStatus(w http.ResponseWriter, _ *http.Request) {
-	if !h.thumbGen.IsEnabled() {
-		w.Header().Set("Content-Type", "application/json")
-		writeJSON(w, map[string]interface{}{
-			responseKeyEnabled: false,
-		})
-		return
-	}
-
-	status := h.thumbGen.GetStatus()
-
-	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, status)
 }
 
 // ListFilePaths returns lightweight path/name/type data for all files in a directory

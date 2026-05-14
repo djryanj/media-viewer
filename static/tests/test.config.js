@@ -56,7 +56,7 @@ const TEST_CONFIG = {
             GET: (name) => `/api/playlists/${name}`,
         },
         SYSTEM: {
-            STATS: '/api/stats',
+            STATUS: '/api/system/status',
             REINDEX: '/api/reindex',
             VERSION: '/version',
             HEALTH: '/health',

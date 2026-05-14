@@ -241,7 +241,7 @@ test.describe('Virtual Spacer @scroll @core', () => {
         }
 
         // Click "Load More" to trigger a page load and check height shrinks
-        const loadMoreBtn = page.locator('#load-more-btn:not(.hidden)');
+        const loadMoreBtn = page.locator('#load-more-btn');
 
         // Check if the button is actually visible before trying to dispatch a click
         if (await loadMoreBtn.isVisible()) {

@@ -55,18 +55,18 @@ When you have favorites, they appear in a horizontal scrollable strip below the 
 
 ### Stats Bar
 
-The bottom bar displays live library information including total images, videos, folders, favorites, the last indexed time, and the running version/build when available.
+The bottom bar displays live library information including total images, videos, folders, favorites, the last indexed time, the running version/build when available, and a compact status summary for the indexer, thumbnails, and auto-tagger.
 
 <div align="center">
-  <img src="../../images/stats-bar.png" alt="Stats bar showing counts for images, videos, folders, favorites, last indexed time, and version" width="900">
-  <p><em>The stats bar keeps basic library counts, index freshness, and build information visible while you browse.</em></p>
+  <img src="../../images/stats-bar.png" alt="Stats bar showing library counts alongside indexer, thumbnail, and auto-tagger worker states" width="900">
+  <p><em>The stats bar keeps library counts and background worker state visible while you browse.</em></p>
 </div>
 
 ## Settings
 
 Access the Settings modal by clicking the gear icon in the header. It provides tabs for managing your password, passkeys, cache tools, display preferences, tags, and library information.
 
-The Cache tab also includes maintenance actions such as reindexing, thumbnail rebuilds, clearing cached video transcodes, and on-demand auto-tagger runs.
+The Cache tab includes a **Background Activity** section with live cards for the indexer, thumbnail generator, auto-tagger, and transcode cache, alongside maintenance actions such as reindexing, thumbnail rebuilds, clearing cached video transcodes, and on-demand auto-tagger runs.
 
 The **About** tab shows the application version and a summary of your library contents, including total files, images, videos, and folders.
 

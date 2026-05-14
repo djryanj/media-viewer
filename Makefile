@@ -548,7 +548,7 @@ fmt: format-all
 
 gofmt: _check-go-version
 	@echo "Formatting Go code..."
-	@files="$$(gofmt -l $$(git ls-files '*.go'))"; \
+	@files="$$(gofmt -l $$(git ls-files --cached --others --exclude-standard -- '*.go'))"; \
 	if [ -z "$$files" ]; then \
 		echo "  No Go formatting changes needed."; \
 	else \
