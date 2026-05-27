@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump github.com/go-webauthn/webauthn from 0.17.3 to 0.17.4 ([#555](https://github.com/djryanj/media-viewer/pull/555))
 - build(deps): bump golang.org/x/image from 0.39.0 to 0.40.0 ([#546](https://github.com/djryanj/media-viewer/pull/546))
 ### Added
 
