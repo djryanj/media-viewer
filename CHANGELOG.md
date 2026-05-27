@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump docker/metadata-action from 6.0.0 to 6.1.0 ([#562](https://github.com/djryanj/media-viewer/pull/562))
 - build(deps): bump golang.org/x/image from 0.39.0 to 0.40.0 ([#546](https://github.com/djryanj/media-viewer/pull/546))
 ### Added
 
