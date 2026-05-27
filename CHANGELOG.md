@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump golang.org/x/image from 0.40.0 to 0.41.0 ([#556](https://github.com/djryanj/media-viewer/pull/556))
 - build(deps): bump golang.org/x/image from 0.39.0 to 0.40.0 ([#546](https://github.com/djryanj/media-viewer/pull/546))
 ### Added
 
