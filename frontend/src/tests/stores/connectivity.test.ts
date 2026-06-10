@@ -18,10 +18,8 @@ async function flushMicrotasks() {
     for (let i = 0; i < 5; i++) await Promise.resolve();
 }
 
-const okResponse = () =>
-    vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-const failResponse = () =>
-    vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+const okResponse = () => vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+const failResponse = () => vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
 
 // connectivityStore is a singleton whose isOffline state persists across tests.
 // Tests are ordered so each one sees the state left by the previous test.
@@ -132,5 +130,4 @@ describe('connectivityStore', () => {
 
         expect(vi.mocked(fetch).mock.calls).toHaveLength(0);
     });
-
 });

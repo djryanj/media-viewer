@@ -62,8 +62,19 @@ make frontend-test-e2e-smoke
 # E2E with ephemeral auto-managed backend (matches CI)
 make frontend-test-e2e-smoke-auto
 
-# Frontend lint/format/type checks
-make frontend-check
+# Visual regression tests — compare screenshots against baselines in e2e/snapshots/
+make frontend-test-e2e-visual          # compare
+make frontend-test-e2e-visual-baselines  # regenerate baselines (commits new PNGs)
+
+# Docs screenshot tests — write PNGs directly to docs/images/ for the docs site
+make frontend-test-e2e-docs-screenshots          # requires running backend
+make frontend-test-e2e-docs-screenshots-auto     # ephemeral backend
+
+# Frontend lint (ESLint) + format (Prettier) + type check (svelte-check)
+# All three are required by CI; make pr-check runs all three.
+make frontend-lint          # ESLint
+make frontend-format-check  # Prettier
+make frontend-check         # svelte-check (TypeScript types)
 ```
 
 ## Architecture
@@ -98,12 +109,18 @@ SvelteKit app compiled with `adapter-static`, output to `frontend/build/`. The G
 During development, `vite dev` runs on port 5173 and proxies `/api`, `/version`, `/thumbnails`, and `/stream` to the Go backend at port 8080.
 
 Structure:
-- `frontend/src/routes/` — SvelteKit file-based routes (`login`, `search`, `collections`, `favorites`, `settings`)
+- `frontend/src/routes/` — SvelteKit file-based routes (`/`, `login`, `search`, `collections`, `collections/[id]`, `favorites`, `playlists/[name]`)
 - `frontend/src/lib/api/` — API client (`client.ts`) and shared types (`types.ts`)
 - `frontend/src/lib/stores/` — Svelte 5 rune-based reactive stores (auth, gallery, lightbox, session, settings, toast)
-- `frontend/src/lib/components/` — Shared UI components
+- `frontend/src/lib/components/` — Shared UI components (gallery, lightbox, settings, ui)
+- `frontend/e2e/` — Playwright end-to-end tests; baselines in `e2e/snapshots/`
+- `frontend/src/tests/` — Vitest unit tests
 
-> **Note:** The `static/` directory contains an older vanilla JS frontend that is still present. The active frontend being developed is the SvelteKit app in `frontend/`.
+Settings modal tabs: **Security** · **Passkeys** · **Library** (clock, sort, worker status) · **Tags** · **System** · **About**
+
+> **Note:** The `static/` directory contains the legacy vanilla JS frontend. It still runs at the same URL but is no longer being developed. All active frontend work is in `frontend/`.
+
+**Docker build note:** `.dockerignore` must include `frontend/vite.config.ts` only if you want to exclude it — currently it is *not* excluded, which is required so that the SvelteKit Vite plugin is present during the Docker `npm run build` step. Excluding `vite.config.ts` causes a "Could not resolve entry module 'index.html'" error.
 
 ### Database Schema
 

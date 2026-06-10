@@ -41,7 +41,9 @@
         const full = new Set<number>();
         const partial = new Set<number>();
         for (const col of allCollections) {
-            const memberCount = itemPaths.filter((p) => (memberships[p] ?? []).includes(col.id)).length;
+            const memberCount = itemPaths.filter((p) =>
+                (memberships[p] ?? []).includes(col.id)
+            ).length;
             if (memberCount === itemPaths.length) full.add(col.id);
             else if (memberCount > 0) partial.add(col.id);
         }
@@ -117,7 +119,13 @@
     <div class="cp-header">
         <span class="cp-title">{title}</span>
         <button class="cp-close" onclick={onclose} aria-label="Close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+            >
                 <path d="M18 6 6 18M6 6l12 12" />
             </svg>
         </button>
@@ -142,15 +150,27 @@
                             onclick={() => toggle(col)}
                             disabled={isToggling}
                             aria-pressed={isFull}
-                            title={isPartial ? 'Partially in collection — click to add remaining' : undefined}
+                            title={isPartial
+                                ? 'Partially in collection — click to add remaining'
+                                : undefined}
                         >
                             <span class="cp-check" aria-hidden="true">
                                 {#if isFull}
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.5"
+                                    >
                                         <polyline points="20 6 9 17 4 12" />
                                     </svg>
                                 {:else if isPartial}
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.5"
+                                    >
                                         <line x1="5" y1="12" x2="19" y2="12" />
                                     </svg>
                                 {:else}
@@ -237,8 +257,13 @@
         border-radius: var(--radius-sm);
     }
 
-    .cp-close svg { width: 14px; height: 14px; }
-    .cp-close:hover { color: var(--color-text); }
+    .cp-close svg {
+        width: 14px;
+        height: 14px;
+    }
+    .cp-close:hover {
+        color: var(--color-text);
+    }
 
     .cp-body {
         overflow-y: auto;
@@ -272,8 +297,13 @@
         color: var(--color-text);
     }
 
-    .cp-item:hover:not(:disabled) { background: var(--color-surface-2); }
-    .cp-item:disabled { opacity: 0.6; cursor: wait; }
+    .cp-item:hover:not(:disabled) {
+        background: var(--color-surface-2);
+    }
+    .cp-item:disabled {
+        opacity: 0.6;
+        cursor: wait;
+    }
 
     .cp-check {
         flex-shrink: 0;
@@ -285,7 +315,10 @@
         color: var(--color-primary);
     }
 
-    .cp-check svg { width: 16px; height: 16px; }
+    .cp-check svg {
+        width: 16px;
+        height: 16px;
+    }
 
     .cp-item.partial .cp-check {
         color: var(--color-text-muted);
@@ -337,8 +370,12 @@
         outline: none;
     }
 
-    .cp-input:focus { border-color: var(--color-primary); }
-    .cp-input:disabled { opacity: 0.5; }
+    .cp-input:focus {
+        border-color: var(--color-primary);
+    }
+    .cp-input:disabled {
+        opacity: 0.5;
+    }
 
     .cp-create {
         flex-shrink: 0;
@@ -352,6 +389,11 @@
         font-weight: 500;
     }
 
-    .cp-create:hover:not(:disabled) { opacity: 0.9; }
-    .cp-create:disabled { opacity: 0.4; cursor: default; }
+    .cp-create:hover:not(:disabled) {
+        opacity: 0.9;
+    }
+    .cp-create:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
 </style>

@@ -38,7 +38,9 @@ import { lightboxStore } from '$lib/stores/lightbox.svelte';
 import { galleryStore } from '$lib/stores/gallery.svelte';
 import { favorites as favApi } from '$lib/api/client';
 
-function makeItem(overrides: Partial<MediaFile> & Pick<MediaFile, 'id' | 'name' | 'path' | 'type'>): MediaFile {
+function makeItem(
+    overrides: Partial<MediaFile> & Pick<MediaFile, 'id' | 'name' | 'path' | 'type'>
+): MediaFile {
     return {
         parentPath: '/',
         size: 100,
@@ -47,11 +49,28 @@ function makeItem(overrides: Partial<MediaFile> & Pick<MediaFile, 'id' | 'name' 
     };
 }
 
-const imageItem = makeItem({ id: 1, name: 'photo.jpg', path: '/photo.jpg', type: 'image', thumbnailUrl: '/thumb/photo.jpg' });
-const imageItem2 = makeItem({ id: 2, name: 'photo2.jpg', path: '/photo2.jpg', type: 'image', thumbnailUrl: '/thumb/photo2.jpg' });
+const imageItem = makeItem({
+    id: 1,
+    name: 'photo.jpg',
+    path: '/photo.jpg',
+    type: 'image',
+    thumbnailUrl: '/thumb/photo.jpg'
+});
+const imageItem2 = makeItem({
+    id: 2,
+    name: 'photo2.jpg',
+    path: '/photo2.jpg',
+    type: 'image',
+    thumbnailUrl: '/thumb/photo2.jpg'
+});
 const imageNoThumb = makeItem({ id: 3, name: 'raw.jpg', path: '/raw.jpg', type: 'image' });
 const folderItem = makeItem({ id: 4, name: 'myfolder', path: '/myfolder', type: 'folder' });
-const playlistItem = makeItem({ id: 5, name: 'playlist.m3u8', path: '/playlist.m3u8', type: 'playlist' });
+const playlistItem = makeItem({
+    id: 5,
+    name: 'playlist.m3u8',
+    path: '/playlist.m3u8',
+    type: 'playlist'
+});
 
 describe('FavoritesStrip', () => {
     beforeEach(() => {
@@ -135,7 +154,9 @@ describe('FavoritesStrip', () => {
         const second = stripItems[1] as HTMLElement;
 
         // Simulate drag from index 0 → drop on index 1
-        await fireEvent.dragStart(first, { dataTransfer: { effectAllowed: 'move', setData: vi.fn() } });
+        await fireEvent.dragStart(first, {
+            dataTransfer: { effectAllowed: 'move', setData: vi.fn() }
+        });
         await fireEvent.dragOver(second, { dataTransfer: { dropEffect: 'move' } });
         await fireEvent.drop(second, { dataTransfer: {} });
 
@@ -148,7 +169,9 @@ describe('FavoritesStrip', () => {
         const stripItems = container.querySelectorAll('.strip-item');
         const first = stripItems[0] as HTMLElement;
 
-        await fireEvent.dragStart(first, { dataTransfer: { effectAllowed: 'move', setData: vi.fn() } });
+        await fireEvent.dragStart(first, {
+            dataTransfer: { effectAllowed: 'move', setData: vi.fn() }
+        });
         await fireEvent.dragOver(first, { dataTransfer: { dropEffect: 'move' } });
         await fireEvent.drop(first, { dataTransfer: {} });
 
@@ -166,7 +189,9 @@ describe('FavoritesStrip', () => {
         const first = stripItems[0] as HTMLElement;
         const second = stripItems[1] as HTMLElement;
 
-        await fireEvent.dragStart(first, { dataTransfer: { effectAllowed: 'move', setData: vi.fn() } });
+        await fireEvent.dragStart(first, {
+            dataTransfer: { effectAllowed: 'move', setData: vi.fn() }
+        });
         await fireEvent.drop(second, { dataTransfer: {} });
 
         // Wait for the async persistOrder call

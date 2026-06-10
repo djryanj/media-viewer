@@ -44,12 +44,12 @@ make frontend-test-e2e-docs-screenshots
 
 Notes:
 
-- `make pr-check` runs backend lint/test/race checks for Go-related changes and frontend check/unit/integration/smoke checks for frontend changes.
+- `make pr-check` runs backend lint/test/race checks for Go-related changes and frontend ESLint/Prettier/svelte-check/unit/smoke checks for frontend changes.
 - `make pr-check-fix` runs the same flow but uses Go lint autofix before the backend test steps.
 - `make pr-check` does not run broader Playwright coverage outside smoke, visual regression, docs screenshot generation, or performance lanes.
-- The default frontend E2E lane excludes performance specs and docs screenshot-generation specs.
-- Visual regression coverage is separate and compares deterministic JSON baselines under `static/e2e/baselines/tagging/`.
-- Docs screenshot generation is also separate and writes PNG assets into `docs/images/`.
+- The default frontend E2E lane excludes `@performance` and `@docs-screenshots` specs.
+- Visual regression is a separate lane that compares Playwright screenshot baselines stored as PNGs in `frontend/e2e/snapshots/`.
+- Docs screenshot generation writes PNG assets directly to `docs/images/`.
 - See [testing.md](testing.md) for the complete testing matrix and command reference.
 
 ## PR Checklist

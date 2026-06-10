@@ -6,7 +6,7 @@ This document describes the technical architecture of Media Viewer.
 
 Media Viewer is a client-server application with:
 
-- **Frontend**: Single-page application (SPA) using vanilla JavaScript, HTML, and CSS
+- **Frontend**: SvelteKit SPA compiled with `adapter-static` (Svelte 5, TypeScript)
 - **Backend**: Go HTTP server with Gorilla Mux router
 - **Database**: SQLite with FTS5 for full-text search
 - **Storage**: File system for media files, thumbnails, and transcoded videos
@@ -25,11 +25,13 @@ Media Viewer is a client-server application with:
 
 ### Frontend
 
-- **JavaScript**: Vanilla ES6+ (no frameworks)
-- **CSS**: Custom CSS with CSS Grid and Flexbox
-- **Icons**: Lucide Icons (SVG)
-- **PWA**: Service Worker, Web App Manifest
-- **APIs**: WebAuthn, Wake Lock, Intersection Observer
+- **Framework**: SvelteKit 2 with Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`)
+- **Language**: TypeScript (strict mode)
+- **Build**: Vite 6 + `@sveltejs/adapter-static` — outputs to `frontend/build/`
+- **State**: Rune-based reactive stores in `frontend/src/lib/stores/`
+- **Styling**: Scoped `<style>` blocks per component; CSS custom properties for theming
+- **Testing**: Vitest (unit) + Playwright (E2E); visual baselines in `frontend/e2e/snapshots/`
+- **APIs**: WebAuthn, HLS.js, Intersection Observer
 
 ## Backend Architecture
 
@@ -38,7 +40,7 @@ Media Viewer is a client-server application with:
 ```
 media-viewer/
 ├── cmd/
-│   └── resetpw/          # Password reset utility
+│   └── media-viewer/     # Application entry point
 ├── internal/
 │   ├── database/         # SQLite operations
 │   ├── filesystem/       # Resilient filesystem operations
@@ -54,12 +56,13 @@ media-viewer/
 │   ├── streaming/        # Video streaming utilities
 │   ├── transcoder/       # Video transcoding
 │   └── workers/          # Worker pool utilities
-├── static/               # Frontend assets
-│   ├── css/
-│   ├── js/
-│   ├── icons/
-│   └── *.html
-└── main.go              # Application entry point
+├── frontend/             # SvelteKit frontend (active)
+│   ├── src/
+│   │   ├── routes/       # SvelteKit file-based routes
+│   │   └── lib/          # Components, stores, API client
+│   ├── e2e/              # Playwright E2E tests + baselines
+│   └── build/            # Compiled output (served by Go)
+└── static/               # Legacy vanilla JS frontend (preserved, not developed)
 ```
 
 ### Core Components
@@ -166,71 +169,80 @@ Sized based on available CPU cores (respects container limits):
 
 ## Frontend Architecture
 
-### Module Structure
+The active frontend is a SvelteKit application in `frontend/`. It is compiled with `adapter-static` and served as a SPA by the Go backend with an `index.html` fallback for all unknown paths.
 
-The frontend is organized into independent modules:
+### Route Structure
 
-| Module               | File                        | Purpose                            |
-| -------------------- | --------------------------- | ---------------------------------- |
-| MediaApp             | `app.js`                    | Main application controller        |
-| Gallery              | `gallery.js`                | Gallery rendering and interactions |
-| Lightbox             | `lightbox.js`               | Full-screen media viewer           |
-| Search               | `search.js`                 | Search functionality               |
-| Tags                 | `tags.js`                   | Tag management                     |
-| Favorites            | `favorites.js`              | Favorites management               |
-| ItemSelection        | `selection.js`              | Multi-select mode                  |
-| TagClipboard         | `tag-clipboard.js`          | Tag copy/paste                     |
-| Player               | `playlist.js`               | Playlist player                    |
-| HistoryManager       | `history.js`                | Browser history management         |
-| InfiniteScroll       | `infinite-scroll.js`        | Gallery pagination                 |
-| InfiniteScrollSearch | `infinite-scroll-search.js` | Search pagination                  |
-| WebAuthnManager      | `webauthn.js`               | Passkey authentication             |
-| SettingsManager      | `settings.js`               | Settings modal and management      |
-| SessionManager       | `session.js`                | Session keepalive                  |
-| WakeLockManager      | `wake-lock.js`              | Screen wake lock                   |
-| PreferencesManager   | `preferences.js`            | User preferences storage           |
+| Route | Purpose |
+|---|---|
+| `/` | Gallery view — browse the media library tree |
+| `/search` | Full-text search with tag filtering |
+| `/favorites` | Favorited items |
+| `/collections` | Collections list |
+| `/collections/[id]` | Collection detail view |
+| `/playlists/[name]` | Playlist player |
+| `/login` | Password + passkey authentication |
+
+### Key Source Directories
+
+| Path | Purpose |
+|---|---|
+| `frontend/src/routes/` | SvelteKit file-based routes |
+| `frontend/src/lib/api/client.ts` | Typed API client (all backend calls) |
+| `frontend/src/lib/api/types.ts` | Shared TypeScript types |
+| `frontend/src/lib/stores/` | Reactive state (Svelte 5 runes) |
+| `frontend/src/lib/components/gallery/` | Gallery, GalleryItem, FavoritesStrip |
+| `frontend/src/lib/components/lightbox/` | Lightbox, VideoPlayer, CollectionsPanel |
+| `frontend/src/lib/components/settings/` | SettingsModal (all tabs) |
+| `frontend/src/lib/components/ui/` | SearchBar, TagEditor, Toast, etc. |
+| `frontend/src/lib/utils/` | format, webauthn helpers |
+| `frontend/e2e/` | Playwright E2E specs + baselines |
+| `frontend/src/tests/` | Vitest unit tests |
 
 ### State Management
 
-Application state is managed in `MediaApp.state`:
+State is managed with Svelte 5 runes in `*.svelte.ts` store files:
 
-```javascript
-{
-  currentPath: '',      // Current directory path
-  listing: null,        // Current directory listing
-  mediaFiles: [],       // Files for lightbox navigation
-  currentSort: { field: 'name', order: 'asc' },
-  currentFilter: 'all',
-  currentPage: 1,
-  hasMore: false,
-  isSearchMode: false,
-  searchQuery: ''
-}
-```
+| Store | File | Manages |
+|---|---|---|
+| `authStore` | `auth.svelte.ts` | Auth state, setup/login/logout |
+| `galleryStore` | `gallery.svelte.ts` | Current path, items, sort, filter, pagination |
+| `lightboxStore` | `lightbox.svelte.ts` | Open/close, current item, navigation |
+| `settingsStore` | `settings.svelte.ts` | Modal open/closed |
+| `sessionStore` | `session.svelte.ts` | Keepalive polling |
+| `toastStore` | `toast.svelte.ts` | Notification queue |
 
-### Event Flow
+Rune primitives used: `$state` (mutable reactive), `$derived` (computed), `$effect` (side effects).
 
-1. User interaction triggers event handler
-2. Handler updates state and/or calls API
-3. API response updates state via `setState()`
-4. UI components re-render based on new state
+### Settings Modal Tabs
 
-### History Management
+The settings modal (`SettingsModal.svelte`) has six tabs:
 
-Browser history is managed for:
-
-- Directory navigation (pushState)
-- Lightbox overlay (replaceState)
-- Search results (pushState)
-
-The `HistoryManager` module handles back/forward navigation and state restoration.
+| Tab | Content |
+|---|---|
+| **Security** | Change password |
+| **Passkeys** | Register and manage WebAuthn credentials |
+| **Library** | Default sort order, clock settings, video autoplay/loop; worker status cards |
+| **Tags** | Search, rename, delete tags globally |
+| **System** | Live indexer / thumbnail / autotagger status with counters |
+| **About** | App version, build info, file/tag counts |
 
 ### WebAuthn Integration
 
-- **Registration**: Custom naming modal before browser prompt
-- **Authentication**: Conditional UI (autofill) + manual button + auto-prompt
-- **Credential Management**: List, add, delete passkeys
-- **Fallback**: Always maintains password auth option
+- **Registration**: Challenge-response with credential naming before browser prompt
+- **Authentication**: Conditional UI (autofill) + manual button; auto-starts on page load
+- **Credential Management**: List, rename, delete passkeys via `Settings → Passkeys`
+- **Fallback**: Password login is always available
+
+### Development Server
+
+```bash
+make dev          # Go backend on :8080
+make dev-frontend # Vite dev server on :5173 (proxies /api to :8080)
+make dev-full     # Both simultaneously
+```
+
+During development Vite proxies `/api`, `/version`, `/thumbnails`, and `/stream` to the Go backend so hot-module-reload works without a full build cycle.
 
 ## Database Schema
 
@@ -380,12 +392,12 @@ CREATE VIRTUAL TABLE files_fts USING fts5(
 
 ### Frontend
 
-- **Infinite Scroll**: Reduces initial load time
-- **Intersection Observer**: Efficient scroll detection
-- **Lazy Loading**: Thumbnails loaded as needed
-- **Batched Updates**: Single DOM paint for selection changes
-- **Service Worker**: Caches static assets
-- **Debouncing**: Search input and scroll events
+- **Infinite Scroll**: Reduces initial load time; next page fetched when sentinel enters viewport
+- **Intersection Observer**: Efficient scroll detection without polling
+- **Lazy Loading**: Thumbnails loaded on demand via native `loading="lazy"`
+- **SvelteKit SSG**: Static adapter produces a pre-built SPA — no server-side rendering overhead
+- **Svelte 5 Runes**: Fine-grained reactivity avoids unnecessary re-renders
+- **Debouncing**: Search input and window-resize events
 
 ### Caching Strategy
 

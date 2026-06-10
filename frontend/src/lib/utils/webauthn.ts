@@ -17,7 +17,9 @@ export function bufToB64(buf: ArrayBuffer): string {
 }
 
 /** Decode base64url challenge + allowCredentials ids from server options */
-export function prepareGetOptions(opts: PublicKeyCredentialRequestOptions): PublicKeyCredentialRequestOptions {
+export function prepareGetOptions(
+    opts: PublicKeyCredentialRequestOptions
+): PublicKeyCredentialRequestOptions {
     return {
         ...opts,
         challenge: b64ToBuffer(opts.challenge as unknown as string),
@@ -29,7 +31,9 @@ export function prepareGetOptions(opts: PublicKeyCredentialRequestOptions): Publ
 }
 
 /** Decode base64url challenge + user.id + excludeCredentials ids from server options */
-export function prepareCreateOptions(opts: PublicKeyCredentialCreationOptions): PublicKeyCredentialCreationOptions {
+export function prepareCreateOptions(
+    opts: PublicKeyCredentialCreationOptions
+): PublicKeyCredentialCreationOptions {
     return {
         ...opts,
         challenge: b64ToBuffer(opts.challenge as unknown as string),
@@ -76,7 +80,9 @@ export function serializeCreateCredential(cred: PublicKeyCredential): Record<str
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const transports = (resp as any).getTransports?.();
         if (transports) (out.response as Record<string, unknown>).transports = transports;
-    } catch { /* optional */ }
+    } catch {
+        /* optional */
+    }
     return out;
 }
 

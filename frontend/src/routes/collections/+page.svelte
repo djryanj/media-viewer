@@ -110,7 +110,9 @@
         overflow: hidden;
         cursor: pointer;
         text-align: left;
-        transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+        transition:
+            border-color var(--transition-fast),
+            box-shadow var(--transition-fast);
         padding: 0;
     }
 
@@ -194,6 +196,8 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

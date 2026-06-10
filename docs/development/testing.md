@@ -11,11 +11,10 @@ The project has two test suites:
 
 ## Frontend Testing
 
-The frontend has three types of tests:
+The frontend (SvelteKit app in `frontend/`) has two types of tests:
 
-- **Unit Tests** - Test isolated code without external dependencies (no backend required)
-- **Integration Tests** - Test frontend integration with backend APIs (backend required)
-- **E2E Tests** - Browser-based tests with Playwright (backend required)
+- **Unit Tests** — Vitest tests for components and utilities, no backend required
+- **E2E Tests** — Playwright browser tests against a running backend
 
 ### Quick Start (Frontend)
 
@@ -23,18 +22,21 @@ The frontend has three types of tests:
 # Unit tests only (no backend required)
 make frontend-test-unit
 
-# Integration tests (requires backend)
-make dev  # Terminal 1: Start backend
-make frontend-test-integration  # Terminal 2
-
 # E2E tests (requires backend)
-make frontend-test-e2e
+make dev  # Terminal 1: Start backend
+make frontend-test-e2e  # Terminal 2
 
-# Visual regression checks against committed snapshot baselines
+# Stable Chromium smoke lane used by CI
+make frontend-test-e2e-smoke-auto  # auto-manages backend
+
+# Visual regression checks against committed PNG baselines in frontend/e2e/snapshots/
 make frontend-test-e2e-visual
 
-# Generate or refresh visual snapshot baselines
+# Regenerate visual baselines after intentional UI changes
 make frontend-test-e2e-visual-baselines
+
+# Generate docs screenshots written to docs/images/
+make frontend-test-e2e-docs-screenshots-auto
 
 # All frontend tests
 make frontend-test
@@ -44,79 +46,29 @@ make frontend-test
 
 #### Unit Tests (No Backend Required)
 
-Unit tests run in isolation without any external dependencies:
+Unit tests use **Vitest** and **@testing-library/svelte** with Happy DOM.
 
 ```bash
 # Run all unit tests
 make frontend-test-unit
-cd static && npm run test:unit:only
+cd frontend && npm run test:unit
 
 # Watch mode (reruns on file changes)
 make frontend-test-unit-watch
-cd static && npm run test:unit:watch
-
-# Interactive UI
-make frontend-test-unit-ui
-cd static && npm run test:unit:ui
+cd frontend && npm run test:unit:watch
 
 # With coverage
 make frontend-test-unit-coverage
-cd static && npm run test:unit:coverage
+cd frontend && npm run test:unit:coverage
 ```
 
-**Unit test coverage** includes 15 test files with 533+ test cases covering:
-
-- **Core Features**: History management, preferences, session tracking, selection mode, settings utilities
-- **Media Components**: Lightbox navigation, video player controls, playlist navigation
-- **UI Utilities**: Clock display, tag clipboard/tooltips, wake lock management
-- **Pagination**: Infinite scroll for gallery and search results
-
-See [Frontend Test Structure](#frontend-test-structure) for complete file listing.
-
-#### Integration Tests (Backend Required)
-
-Integration tests verify frontend integration with the real backend APIs.
-
-**Prerequisites:**
-
-1. Start the backend server first:
-
-```bash
-make dev
-```
-
-2. Run integration tests:
-
-```bash
-# Run all integration tests
-make frontend-test-integration
-cd static && npm run test:integration
-
-# Run a specific test file
-cd static && npx vitest run tests/integration/session.test.js
-```
-
-**Integration test coverage** includes 5 test files with 80+ test cases covering:
-
-- **Authentication**: Login, logout, session expiration handling
-- **Core APIs**: Stats, health checks, version info
-- **Gallery**: File listing, pagination, sorting, filtering
-- **Favorites**: Add/remove/query favorite items with idempotency
-- **Search & Tags**: Full-text search, tag management, tag filtering
-
-See [Frontend Test Structure](#frontend-test-structure) for complete file listing.
-
-For the same backend lifecycle used in CI and `make pr-check`, use the auto target instead of starting the backend manually:
-
-```bash
-make frontend-test-integration-auto
-```
+Test files live in `frontend/src/tests/`. Coverage includes component rendering, store logic, API client utilities, and format helpers.
 
 #### E2E Tests (Backend Required)
 
-End-to-end browser tests using Playwright.
+End-to-end browser tests using **Playwright** in `frontend/e2e/`. Tests are tagged `@smoke`, `@visual`, or `@docs-screenshots` so lanes run independently.
 
-The default E2E selection excludes performance specs and docs screenshot-generation specs. Regenerate docs screenshots only when needed with `make frontend-test-e2e-docs-screenshots` / `npm run test:e2e:docs-screenshots`, or include them in the default selection with `PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1`. Visual regression coverage runs separately with `make frontend-test-e2e-visual` and compares deterministic Chromium DOM/style snapshots against committed JSON baselines in `static/e2e/baselines/tagging/`. Refresh those baselines with `make frontend-test-e2e-visual-baselines` or `cd static && npm run test:e2e:visual:baselines`.
+The default E2E selection (`npm run test:e2e`) excludes `@performance` and `@docs-screenshots` specs so routine runs stay fast. Visual regression compares Playwright screenshots against committed PNG baselines in `frontend/e2e/snapshots/`.
 
 **Prerequisites:**
 
@@ -129,53 +81,46 @@ make dev
 2. Run E2E tests:
 
 ```bash
-# Run all E2E tests
+# Run all E2E tests (excludes @performance and @docs-screenshots)
 make frontend-test-e2e
-cd static && npm run test:e2e
+cd frontend && npm run test:e2e
 
-# Run the same stable smoke lane and backend startup path used by PR CI
-make frontend-test-e2e-smoke-auto
+# Stable Chromium smoke lane used by CI
+make frontend-test-e2e-smoke-auto  # auto-manages backend
 
-# Run the scheduled performance lanes locally with the same shared helper
+# Scheduled performance lanes
 make frontend-test-e2e-performance-smoke-auto
 make frontend-test-e2e-performance-soak-auto
 
-# Include docs screenshot-generation specs in the default E2E selection
-PLAYWRIGHT_INCLUDE_DOCS_SCREENSHOTS=1 make frontend-test-e2e
-
-# Run visual regression checks against committed snapshot baselines
+# Visual regression against committed PNG baselines
 make frontend-test-e2e-visual
-cd static && npm run test:e2e:visual
+cd frontend && npm run test:e2e:visual
 
-# Generate or refresh visual snapshot baselines
+# Regenerate visual baselines after intentional UI changes
 make frontend-test-e2e-visual-baselines
-cd static && npm run test:e2e:visual:baselines
+cd frontend && npm run test:e2e:visual:baselines
+
+# Generate docs screenshots (writes PNGs to docs/images/)
+make frontend-test-e2e-docs-screenshots-auto
+cd frontend && npm run test:e2e:docs-screenshots
 
 # Run with browser visible
-cd static && npm run test:e2e:headed
-
-# Interactive mode
-cd static && npm run test:e2e:ui
+cd frontend && npm run test:e2e:headed
 
 # Debug mode
-cd static && npm run test:e2e:debug
-
-# View test report
-cd static && npm run test:e2e:report
+cd frontend && npm run test:e2e:debug
 ```
 
 #### All Frontend Tests
 
-Run the complete frontend test suite (unit + integration + E2E):
+Run the complete frontend test suite (unit + E2E):
 
 ```bash
 make frontend-test
-cd static && npm test
+cd frontend && npm test
 ```
 
-This requires the backend to be running for integration and E2E tests.
-
-If you want the same ephemeral backend lifecycle used by CI and `pr-check`, prefer the `*-auto` targets. They all run through `hack/run-with-test-server.sh`, which prepares playlist fixtures when `MEDIA_DIR` is set, waits for both `/readyz` and `/api/auth/check`, and tears the backend down automatically.
+E2E tests require the backend to be running. Use the `*-auto` Make targets to auto-manage the backend lifecycle (same path as CI).
 
 ### Frontend Test Configuration
 
@@ -191,38 +136,26 @@ TEST_BASE_URL=http://localhost:3000 npm run test:integration
 TEST_BASE_URL=http://localhost:3000 npm run test:e2e
 ```
 
-#### Test Configuration File
+#### Test Configuration
 
-Core configuration in `static/tests/test.config.js`:
+Playwright config: `frontend/playwright.config.ts`
 
-- `BASE_URL` - Effective backend server URL in shared frontend test config (populated from `TEST_BASE_URL`)
-- `TEST_USER` - Test credentials
-- `TIMEOUTS` - Various timeout settings
-- API endpoint paths
+- `TEST_BASE_URL` — Override backend URL (default: `http://localhost:5173`)
+- `TEST_PASSWORD` — Override test account password (default: `testpass123`)
+- Auth state is saved to `frontend/e2e/.auth/user.json` by `global-setup.ts`
+- Visual baselines stored in `frontend/e2e/snapshots/`
 
-#### API Helpers
-
-Helper functions for integration tests in `static/tests/helpers/api-helpers.js`:
-
-- `ensureAuthenticated()` - Ensure logged in before tests
-- `login(password)` - Authenticate user
-- `logout()` - End session
-- `checkAuth()` - Check authentication status
-- `listFiles(path)` - Get file listing
-- `getAllTags()` - Get all tags
-- `addTagToFile()`, `removeTagFromFile()` - Tag management
-- `getFavorites()`, `addFavorite()`, `removeFavorite()` - Favorites
-- `search(query)` - Search functionality
+Vitest config: `frontend/vitest.config.ts`
 
 ### Frontend CI/CD
 
 Frontend tests run automatically in GitHub Actions:
 
-1. **Unit tests** - Run first without backend (fast, ~60s)
-2. **Integration tests** - Run after starting backend (~45s)
-3. **Playwright smoke tests** - Run the stable Chromium smoke lane with backend and browser automation on pull requests and again in the tagged release workflow before Docker publishing
-4. **Scheduled performance tests** - Run in a separate GitHub Actions workflow with a weekly baseline performance smoke lane and a monthly or manually-triggered soak tier
-5. **Coverage upload** - Coverage reports uploaded as artifacts
+1. **ESLint + Prettier + svelte-check** — Static checks; all three are required
+2. **Unit tests** — Run first without backend (fast, Vitest)
+3. **Playwright smoke tests** — Chromium smoke lane with auto-managed backend on PRs and release tags
+4. **Scheduled performance tests** — Separate weekly/monthly workflow
+5. **Coverage upload** — Coverage reports uploaded as artifacts
 
 Visual regression and docs screenshot generation are intentionally separate from the default PR lane. Run them locally when you are validating intentional UI changes or refreshing documentation assets.
 
@@ -230,49 +163,33 @@ Release tags now repeat the Chromium smoke lane before container publishing. Per
 
 The PR, release, and scheduled performance workflows now reuse the same `make ...-auto` targets that local developers use, so CI and local smoke/performance runs share one backend startup path instead of maintaining separate shell logic.
 
-**Test Statistics (February 2026):**
-
-- **Total test files**: 20 (15 unit + 5 integration)
-- **Total test cases**: 613+ tests
-- **Coverage**: ~80% of frontend modules
-- **CI execution time**: ~4 minutes total
+**Frontend CI steps:** ESLint → Prettier → svelte-check → Vitest unit → Playwright smoke
 
 See [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) for workflow details.
 
 ### Frontend Test Structure
 
 ```
-static/tests/
-├── unit/              # Unit tests (no backend)
-│   ├── clock.test.js                    # Clock display and time formatting
-│   ├── history.test.js                  # Navigation history management
-│   ├── infinite-scroll.test.js          # Gallery pagination logic
-│   ├── infinite-scroll-search.test.js   # Search result pagination
-│   ├── lightbox.test.js                 # Lightbox navigation and zoom
-│   ├── playlist.test.js                 # Playlist navigation and state
-│   ├── preferences.test.js              # localStorage operations
-│   ├── selection.test.js                # Item selection state
-│   ├── session.test.js                  # Session manager (mocked)
-│   ├── settings.test.js                 # Settings manager utilities
-│   ├── tag-clipboard.test.js            # Tag clipboard operations
-│   ├── tag-tooltip.test.js              # Tag tooltip utilities
-│   ├── video-controls.test.js           # Video control utilities
-│   ├── video-player.test.js             # VideoPlayer class
-│   └── wake-lock.test.js                # Wake Lock API management
-├── integration/       # Integration tests (backend required)
-│   ├── app.test.js                      # Core application APIs
-│   ├── favorites.test.js                # Favorites API operations
-│   ├── gallery.test.js                  # File listing and favorites
-│   ├── search-tags.test.js              # Search and tag management
-│   └── session.test.js                  # Authentication API
-├── e2e/               # End-to-end browser tests (Playwright)
-│   └── [playwright test files]
-├── helpers/
-│   ├── api-helpers.js    # Real API call helpers
-│   ├── setup.js          # Test environment setup
-│   └── test-utils.js     # Mock utilities
-├── test.config.js        # Central configuration
-└── README.md             # Detailed frontend test docs
+frontend/
+├── src/tests/                # Vitest unit tests
+│   ├── components/           # Component rendering tests
+│   │   └── GalleryItem.test.ts
+│   ├── format.test.ts        # Date/size formatting utilities
+│   └── ...
+├── e2e/                      # Playwright E2E tests
+│   ├── global-setup.ts       # Auth setup (saves e2e/.auth/user.json)
+│   ├── auth.spec.ts          # Auth flow (@smoke)
+│   ├── gallery.spec.ts       # Gallery page (@smoke)
+│   ├── gallery-filter.spec.ts
+│   ├── lightbox.spec.ts
+│   ├── navigation.spec.ts
+│   ├── search.spec.ts
+│   ├── search-shortcut.spec.ts
+│   ├── settings.spec.ts
+│   ├── visual-regression.spec.ts  # (@visual) PNG baselines in e2e/snapshots/
+│   └── docs-screenshots.spec.ts   # (@docs-screenshots) writes docs/images/
+├── e2e/snapshots/            # Committed visual regression PNG baselines
+└── playwright.config.ts      # Playwright configuration
 ```
 
 ### Troubleshooting Frontend Tests
@@ -301,10 +218,10 @@ it('slow test', async () => {
 
 ```bash
 # Run with visible browser to see what's happening
-cd static && npm run test:e2e:headed
+cd frontend && npm run test:e2e:headed
 
-# Generate test code interactively
-cd static && npm run test:e2e:codegen
+# Debug mode (pause on failure)
+cd frontend && npm run test:e2e:debug
 ```
 
 #### Clear Test State
@@ -698,93 +615,45 @@ func TestDatabaseIntegration(t *testing.T) {
 
 ### Frontend Testing Patterns
 
-#### Unit Test Pattern (JSDOM with eval)
+#### Unit Test Pattern (Vitest + @testing-library/svelte)
 
-Frontend unit tests use JSDOM for DOM simulation and load modules via `eval()`:
+```typescript
+import { describe, test, expect } from 'vitest';
+import { render } from '@testing-library/svelte';
+import GalleryItem from '$lib/components/gallery/GalleryItem.svelte';
 
-```javascript
-import { describe, test, expect, beforeEach, vi } from 'vitest';
-import fs from 'fs';
-import { JSDOM } from 'jsdom';
-
-describe('Module Name', () => {
-    let dom, ModuleName;
-
-    beforeEach(() => {
-        // Create DOM environment
-        dom = new JSDOM(`<!DOCTYPE html><html><body></body></html>`, {
-            url: 'http://localhost',
-            pretendToBeVisual: true,
+describe('GalleryItem', () => {
+    test('renders image thumbnail', () => {
+        const { getByRole } = render(GalleryItem, {
+            props: { item: { path: 'photo.jpg', name: 'photo.jpg', type: 'image', size: 1024 } }
         });
-
-        globalThis.document = dom.window.document;
-        globalThis.window = dom.window;
-
-        // Mock dependencies
-        globalThis.lucide = { createIcons: vi.fn() };
-        globalThis.MediaApp = { showLoading: vi.fn() };
-
-        // Load module
-        const code = fs.readFileSync('./static/js/module.js', 'utf-8');
-        eval(code);
-        ModuleName = globalThis.ModuleName;
-    });
-
-    test('tests pure logic', () => {
-        const result = ModuleName.formatName('/path/file.txt');
-        expect(result).toBe('file');
+        expect(getByRole('img')).toBeTruthy();
     });
 });
 ```
 
-#### Key Testing Principles
+#### E2E Test Pattern (Playwright)
 
-1. **Test Pure Functions First**
-    - Utility functions (formatTime, escapeHtml, getDisplayName)
-    - State calculations (navigation indices, URL parsing)
-    - Data transformations (tag rendering, name extraction)
+```typescript
+import { test, expect } from '@playwright/test';
+import { STORAGE_STATE } from './global-setup';
 
-2. **Mock External Dependencies**
-    - `lucide.createIcons()` - Icon library
-    - `MediaApp`, `Gallery`, `Search` - Global modules
-    - `fetch` and API calls - Use `vi.fn()` mocks
-    - localStorage - Implement mock object
+test.use({ storageState: STORAGE_STATE });
 
-3. **Avoid Heavy DOM Manipulation**
-    - Focus on testable logic over rendering
-    - Test state changes rather than visual output
-    - Use simple assertions on DOM properties when needed
-
-4. **Clean Up State**
-    - Reset module state in `beforeEach`
-    - Clear timers in `afterEach`
-    - Use `vi.clearAllMocks()` for Vitest spies
-
-5. **Test Edge Cases**
-    - Null/undefined inputs
-    - Empty strings and arrays
-    - Boundary conditions (wraparound indices)
-    - Error handling paths
-
-#### Integration Test Pattern
-
-Integration tests call real backend APIs with proper authentication:
-
-```javascript
-import { describe, test, expect, beforeAll } from 'vitest';
-import { ensureAuthenticated, listFiles } from '../helpers/api-helpers.js';
-
-describe('API Integration', () => {
-    beforeAll(async () => {
-        await ensureAuthenticated();
-    });
-
-    test('fetches data from backend', async () => {
-        const files = await listFiles('/');
-        expect(files).toBeInstanceOf(Array);
-    });
+test('@smoke gallery loads after login', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
 });
 ```
+
+Tags on tests drive lane filtering:
+
+| Tag | Lane | Command |
+|---|---|---|
+| `@smoke` | CI PR gate | `npm run test:e2e:smoke` |
+| `@visual` | Visual regression | `npm run test:e2e:visual` |
+| `@docs-screenshots` | Docs image generation | `npm run test:e2e:docs-screenshots` |
 
 ### Benchmarking
 
@@ -845,13 +714,17 @@ The CI pipeline (`.github/workflows/ci.yml`) includes:
 - Runs tests with `-race` to detect data races
 - Runs on pull requests when Go code changes
 
-#### 6. Frontend Integration Tests (`test-frontend-integration`)
+#### 6. Frontend Static Checks (`test-frontend-check`)
 
-- Starts the backend automatically
-- Runs frontend integration coverage against real APIs
-- Runs on pull requests when frontend code changes
+- ESLint (`npm run lint:js`), Prettier format check, and svelte-check (TypeScript types)
+- All three are required; runs on pull requests when frontend code changes
 
-#### 7. Frontend Playwright Smoke (`test-frontend-e2e-smoke`)
+#### 7. Frontend Unit Tests (`test-frontend-unit`)
+
+- Vitest unit tests in `frontend/src/tests/`
+- No backend required; runs on all PRs
+
+#### 8. Frontend Playwright Smoke (`test-frontend-e2e-smoke`)
 
 - Starts the backend automatically
 - Runs the stable Chromium smoke lane used for routine PR coverage
@@ -876,12 +749,13 @@ The workflow uses path-based change detection to skip unnecessary jobs. In pract
 
 For a PR to be mergeable:
 
-1. ✅ Linting must pass
-2. ✅ Unit tests must pass
-3. ✅ Frontend integration must pass when frontend code changes
-4. ✅ Frontend Playwright smoke must pass when frontend code changes
-5. ✅ Backend integration and race detection must pass when Go code changes
-6. ✅ Docker build must succeed
+1. ✅ Go linting must pass
+2. ✅ Go unit tests must pass
+3. ✅ Frontend ESLint, Prettier, and svelte-check must pass when frontend files changed
+4. ✅ Frontend unit tests must pass when frontend files changed
+5. ✅ Frontend Playwright smoke must pass when frontend files changed
+6. ✅ Backend integration and race detection must pass when Go code changes
+7. ✅ Docker build must succeed
 
 ### Viewing CI Results
 
@@ -952,12 +826,14 @@ Tests use the same build tags as the main application:
 
 ### Recent Improvements
 
-**February 2026**:
+**2026**:
 
-- Added comprehensive integration tests for database package, increasing backend coverage from ~5% to ~40%
-- Added 14 frontend unit test files covering core features, media components, and UI utilities
-- Total frontend test count increased to 547+ tests across 19 test files
-- Frontend coverage improved from ~25% to ~80% of modules
+- Migrated frontend from vanilla JS to SvelteKit (Svelte 5, TypeScript)
+- Frontend test suite migrated from JSDOM/eval-based Vitest to `@testing-library/svelte` component tests
+- Playwright E2E tests rewritten for SvelteKit DOM structure; old `static/e2e/` specs preserved but not run in CI
+- Added visual regression lane (`@visual`) with Playwright `toHaveScreenshot()` and PNG baselines in `frontend/e2e/snapshots/`
+- Added docs screenshot lane (`@docs-screenshots`) that writes PNGs directly to `docs/images/`
+- `make pr-check` now runs ESLint + Prettier + svelte-check (was only svelte-check before)
 
 ## Common Issues
 
@@ -1206,7 +1082,8 @@ Times vary based on system performance and video complexity.
 - [Monitoring Stack](monitoring.md) - Performance testing and metrics monitoring
 - [Architecture](architecture.md) - System architecture overview
 - [Memory & GC Tuning](../admin/memory-tuning.md) - Performance optimization guide
-- [Frontend Testing README](../../static/tests/README.md) - Detailed frontend test documentation
+- [Playwright Config](../../frontend/playwright.config.ts) - E2E test configuration
+- [E2E Test Directory](../../frontend/e2e/) - Playwright spec files
 
 ## Resources
 
@@ -1216,9 +1093,9 @@ Times vary based on system performance and video complexity.
 - [Go Blog: Table Driven Tests](https://go.dev/blog/subtests)
 - [Effective Go: Testing](https://go.dev/doc/effective_go#testing)
 
-### Frontend Testing (JavaScript)
+### Frontend Testing (TypeScript / SvelteKit)
 
-- [Vitest Documentation](https://vitest.dev/) - Unit and integration test framework
+- [Vitest Documentation](https://vitest.dev/) - Unit test framework
 - [Playwright Documentation](https://playwright.dev/) - E2E browser testing
-- [Testing Library](https://testing-library.com/) - DOM testing utilities
-- [Happy DOM](https://github.com/capricorn86/happy-dom) - Fast DOM implementation for Node.js
+- [@testing-library/svelte](https://testing-library.com/docs/svelte-testing-library/intro/) - Svelte component testing utilities
+- [SvelteKit Testing](https://svelte.dev/docs/kit/testing) - Official SvelteKit testing guide

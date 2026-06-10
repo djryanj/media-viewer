@@ -33,19 +33,30 @@
     }
 
     function clearIdleTimer() {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+        }
     }
 
     $effect(() => {
         if (lightboxStore.open) showControls();
-        else { clearIdleTimer(); controlsVisible = true; }
+        else {
+            clearIdleTimer();
+            controlsVisible = true;
+        }
     });
 
     // Reset on item change
-    $effect(() => { lightboxStore.item; if (lightboxStore.open) showControls(); });
+    $effect(() => {
+        lightboxStore.item;
+        if (lightboxStore.open) showControls();
+    });
 
     // Keep visible while collections panel is open
-    $effect(() => { if (collectionsOpen) controlsVisible = true; });
+    $effect(() => {
+        if (collectionsOpen) controlsVisible = true;
+    });
 
     // ── Playback preferences (toggled by keyboard shortcuts L) ──────────────
     let loopEnabled = $state(false);
@@ -57,7 +68,10 @@
 
     function scheduleSlide() {
         clearSlideTimer();
-        if (!slideshowActive || !lightboxStore.hasNext) { slideshowActive = false; return; }
+        if (!slideshowActive || !lightboxStore.hasNext) {
+            slideshowActive = false;
+            return;
+        }
         slideshowTimer = setTimeout(() => {
             if (!slideshowActive) return;
             lightboxStore.next();
@@ -66,7 +80,10 @@
     }
 
     function clearSlideTimer() {
-        if (slideshowTimer) { clearTimeout(slideshowTimer); slideshowTimer = null; }
+        if (slideshowTimer) {
+            clearTimeout(slideshowTimer);
+            slideshowTimer = null;
+        }
     }
 
     $effect(() => {
@@ -98,19 +115,51 @@
         showControls();
         // Don't steal from inputs (e.g. TagEditor)
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+            return;
 
         switch (e.key) {
-            case 'ArrowLeft': collectionsOpen = false; lightboxStore.prev(); break;
-            case 'ArrowRight': collectionsOpen = false; lightboxStore.next(); break;
-            case 'Escape': lightboxStore.close(); break;
-            case 'c': case 'C': e.preventDefault(); collectionsOpen = !collectionsOpen; break;
-            case 'f': case 'F': e.preventDefault(); toggleFavorite(); break;
-            case 'd': case 'D': e.preventDefault(); triggerDownload(); break;
-            case 'a': case 'A': e.preventDefault(); slideshowActive = !slideshowActive; break;
-            case 'l': case 'L': e.preventDefault(); loopEnabled = !loopEnabled; break;
+            case 'ArrowLeft':
+                collectionsOpen = false;
+                lightboxStore.prev();
+                break;
+            case 'ArrowRight':
+                collectionsOpen = false;
+                lightboxStore.next();
+                break;
+            case 'Escape':
+                lightboxStore.close();
+                break;
+            case 'c':
+            case 'C':
+                e.preventDefault();
+                collectionsOpen = !collectionsOpen;
+                break;
+            case 'f':
+            case 'F':
+                e.preventDefault();
+                toggleFavorite();
+                break;
+            case 'd':
+            case 'D':
+                e.preventDefault();
+                triggerDownload();
+                break;
+            case 'a':
+            case 'A':
+                e.preventDefault();
+                slideshowActive = !slideshowActive;
+                break;
+            case 'l':
+            case 'L':
+                e.preventDefault();
+                loopEnabled = !loopEnabled;
+                break;
             case ' ':
-                if (isVideo) { e.preventDefault(); videoPlayerRef?.togglePlay?.(); }
+                if (isVideo) {
+                    e.preventDefault();
+                    videoPlayerRef?.togglePlay?.();
+                }
                 break;
         }
     }
@@ -123,7 +172,9 @@
     // Reset zoom when item changes
     $effect(() => {
         lightboxStore.item; // reactive dependency
-        zoom = 1; panX = 0; panY = 0;
+        zoom = 1;
+        panX = 0;
+        panY = 0;
     });
 
     let pinchStartDist = 0;
@@ -152,7 +203,10 @@
         const rect = el.getBoundingClientRect();
         const maxPanX = Math.max(0, (rect.width * (scale - 1)) / 2);
         const maxPanY = Math.max(0, (rect.height * (scale - 1)) / 2);
-        return [Math.max(-maxPanX, Math.min(maxPanX, px)), Math.max(-maxPanY, Math.min(maxPanY, py))];
+        return [
+            Math.max(-maxPanX, Math.min(maxPanX, px)),
+            Math.max(-maxPanY, Math.min(maxPanY, py))
+        ];
     }
 
     // ── Touch/swipe — window-level so works from anywhere on screen ──────────
@@ -204,7 +258,8 @@
             // Pan based on midpoint movement
             const newMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
             const newMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            const [cx, cy] = clampPan(newScale,
+            const [cx, cy] = clampPan(
+                newScale,
                 pinchStartPanX + (newMidX - pinchMidX),
                 pinchStartPanY + (newMidY - pinchMidY)
             );
@@ -226,7 +281,11 @@
 
         if (isPinching) {
             // Snap back to 1× if barely zoomed
-            if (zoom < 1.05) { zoom = 1; panX = 0; panY = 0; }
+            if (zoom < 1.05) {
+                zoom = 1;
+                panX = 0;
+                panY = 0;
+            }
             if (e.touches.length === 0) isPinching = false;
             return;
         }
@@ -243,7 +302,9 @@
         if (dy < -80 && absDy > absDx) {
             swipeHandled = true;
             lightboxStore.close();
-            requestAnimationFrame(() => { swipeHandled = false; });
+            requestAnimationFrame(() => {
+                swipeHandled = false;
+            });
             return;
         }
 
@@ -257,7 +318,9 @@
         if (dx < 0) lightboxStore.next();
         else lightboxStore.prev();
         // Clear flag after a frame so any synthetic click is suppressed
-        requestAnimationFrame(() => { swipeHandled = false; });
+        requestAnimationFrame(() => {
+            swipeHandled = false;
+        });
     }
 
     // ── Preloading ───────────────────────────────────────────────────────────
@@ -358,9 +421,11 @@
             if (raw) {
                 const p = JSON.parse(raw) as Record<string, unknown>;
                 clockEnabled = (p.clockEnabled as boolean) ?? true;
-                clockFormat = ((p.clockFormat as string) === '24' ? '24' : '12');
+                clockFormat = (p.clockFormat as string) === '24' ? '24' : '12';
             }
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
     }
 
     function updateClock() {
@@ -380,20 +445,37 @@
             updateClock();
             clockTimer = setInterval(updateClock, 1000);
         } else {
-            if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+            if (clockTimer) {
+                clearInterval(clockTimer);
+                clockTimer = null;
+            }
         }
-        return () => { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } };
+        return () => {
+            if (clockTimer) {
+                clearInterval(clockTimer);
+                clockTimer = null;
+            }
+        };
     });
 
     // Re-read prefs when settings are saved (SettingsModal dispatches this event).
     $effect(() => {
-        function onClockPrefChanged() { readClockPrefs(); updateClock(); }
+        function onClockPrefChanged() {
+            readClockPrefs();
+            updateClock();
+        }
         window.addEventListener('clockPreferenceChanged', onClockPrefChanged);
         return () => window.removeEventListener('clockPreferenceChanged', onClockPrefChanged);
     });
 </script>
 
-<svelte:window onkeydown={handleKeydown} onmousemove={showControls} ontouchstart={handleTouchStart} ontouchmove={handleTouchMove} ontouchend={handleTouchEnd} />
+<svelte:window
+    onkeydown={handleKeydown}
+    onmousemove={showControls}
+    ontouchstart={handleTouchStart}
+    ontouchmove={handleTouchMove}
+    ontouchend={handleTouchEnd}
+/>
 
 {#if lightboxStore.open && item}
     <!-- Backdrop -->
@@ -402,7 +484,10 @@
     <div
         class="lightbox-backdrop"
         onclick={() => {
-            if (!controlsVisible) { showControls(); return; }
+            if (!controlsVisible) {
+                showControls();
+                return;
+            }
             if (!swipeHandled) lightboxStore.close();
         }}
         aria-label="Close lightbox"
@@ -418,12 +503,14 @@
     >
         <!-- Top bar -->
         <div class="lightbox-topbar">
-            <button
-                class="lb-btn"
-                onclick={() => lightboxStore.close()}
-                aria-label="Close"
-            >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <button class="lb-btn" onclick={() => lightboxStore.close()} aria-label="Close">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                >
                     <path d="M18 6 6 18M6 6l12 12" />
                 </svg>
             </button>
@@ -441,13 +528,21 @@
                         class="lb-btn"
                         class:active={slideshowActive}
                         onclick={() => (slideshowActive = !slideshowActive)}
-                        aria-label={slideshowActive ? 'Slideshow on (press A to stop)' : 'Slideshow (press A to start)'}
+                        aria-label={slideshowActive
+                            ? 'Slideshow on (press A to stop)'
+                            : 'Slideshow (press A to start)'}
                         aria-pressed={slideshowActive}
                         title="Slideshow (A)"
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <polygon points="5 3 19 12 5 21 5 3"/>
-                            <line x1="19" y1="3" x2="19" y2="21"/>
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <polygon points="5 3 19 12 5 21 5 3" />
+                            <line x1="19" y1="3" x2="19" y2="21" />
                         </svg>
                     </button>
                 {/if}
@@ -458,15 +553,23 @@
                         class="lb-btn"
                         class:active={loopEnabled}
                         onclick={() => (loopEnabled = !loopEnabled)}
-                        aria-label={loopEnabled ? 'Loop on (press L to toggle)' : 'Loop off (press L to toggle)'}
+                        aria-label={loopEnabled
+                            ? 'Loop on (press L to toggle)'
+                            : 'Loop off (press L to toggle)'}
                         aria-pressed={loopEnabled}
                         title="Loop (L)"
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <polyline points="17 1 21 5 17 9"/>
-                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                            <polyline points="7 23 3 19 7 15"/>
-                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <polyline points="17 1 21 5 17 9" />
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                            <polyline points="7 23 3 19 7 15" />
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
                         </svg>
                     </button>
                 {/if}
@@ -479,11 +582,17 @@
                     aria-pressed={collectionsOpen}
                     title="Collections (C)"
                 >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <rect x="3" y="3" width="7" height="7" rx="1"/>
-                        <rect x="14" y="3" width="7" height="7" rx="1"/>
-                        <rect x="3" y="14" width="7" height="7" rx="1"/>
-                        <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
                     </svg>
                 </button>
 
@@ -496,8 +605,16 @@
                     aria-pressed={item.isFavorite}
                     title="Favorite (F)"
                 >
-                    <svg viewBox="0 0 24 24" fill={item.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill={item.isFavorite ? 'currentColor' : 'none'}
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
+                        <polygon
+                            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                        />
                     </svg>
                 </button>
 
@@ -508,7 +625,13 @@
                     aria-label="Download"
                     title="Download (D)"
                 >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                         <polyline points="7 10 12 15 17 10" />
                         <line x1="12" x2="12" y1="15" y2="3" />
@@ -520,30 +643,30 @@
         <!-- Media area -->
         <div class="lb-media">
             {#key item.path}
-            {#if isVideo}
-                <VideoPlayer
-                    bind:this={videoPlayerRef}
-                    path={item.path}
-                    autoplay={true}
-                    loop={loopEnabled}
-                    showNav={lightboxStore.hasPrev || lightboxStore.hasNext}
-                    onPrev={lightboxStore.hasPrev ? lightboxStore.prev : undefined}
-                    onNext={lightboxStore.hasNext ? lightboxStore.next : undefined}
-                    onclick={(e) => e.stopPropagation()}
-                />
-            {:else}
-                <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <img
-                    src="/api/files/{encodedPath(item.path)}"
-                    alt={item.name}
-                    class="lb-image"
-                    class:zoomed={zoom > 1}
-                    style="transform: scale({zoom}) translate({panX / zoom}px, {panY / zoom}px)"
-                    onclick={(e) => e.stopPropagation()}
-                    draggable="false"
-                />
-            {/if}
+                {#if isVideo}
+                    <VideoPlayer
+                        bind:this={videoPlayerRef}
+                        path={item.path}
+                        autoplay={true}
+                        loop={loopEnabled}
+                        showNav={lightboxStore.hasPrev || lightboxStore.hasNext}
+                        onPrev={lightboxStore.hasPrev ? lightboxStore.prev : undefined}
+                        onNext={lightboxStore.hasNext ? lightboxStore.next : undefined}
+                        onclick={(e) => e.stopPropagation()}
+                    />
+                {:else}
+                    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <img
+                        src="/api/files/{encodedPath(item.path)}"
+                        alt={item.name}
+                        class="lb-image"
+                        class:zoomed={zoom > 1}
+                        style="transform: scale({zoom}) translate({panX / zoom}px, {panY / zoom}px)"
+                        onclick={(e) => e.stopPropagation()}
+                        draggable="false"
+                    />
+                {/if}
             {/key}
         </div>
 
@@ -551,10 +674,19 @@
         {#if !isVideo && lightboxStore.hasPrev}
             <button
                 class="lb-nav lb-nav--prev"
-                onclick={(e) => { e.stopPropagation(); lightboxStore.prev(); }}
+                onclick={(e) => {
+                    e.stopPropagation();
+                    lightboxStore.prev();
+                }}
                 aria-label="Previous"
             >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    aria-hidden="true"
+                >
                     <polyline points="15 18 9 12 15 6" />
                 </svg>
             </button>
@@ -563,10 +695,19 @@
         {#if !isVideo && lightboxStore.hasNext}
             <button
                 class="lb-nav lb-nav--next"
-                onclick={(e) => { e.stopPropagation(); lightboxStore.next(); }}
+                onclick={(e) => {
+                    e.stopPropagation();
+                    lightboxStore.next();
+                }}
                 aria-label="Next"
             >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    aria-hidden="true"
+                >
                     <polyline points="9 18 15 12 9 6" />
                 </svg>
             </button>
@@ -584,11 +725,7 @@
                 <span>{formatDate(item.modTime)}</span>
             </div>
             <div class="lb-tag-row">
-                <TagEditor
-                    tags={itemTags}
-                    onchange={handleTagsChange}
-                    compact
-                />
+                <TagEditor tags={itemTags} onchange={handleTagsChange} compact />
             </div>
         </div>
     </div>
@@ -621,13 +758,13 @@
         align-items: center;
         gap: var(--spacing-3);
         padding: var(--spacing-2) var(--spacing-3);
-        background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
         transition: opacity 0.35s ease;
     }
 
     .lb-clock {
         font-size: var(--text-sm);
-        color: rgba(255,255,255,0.75);
+        color: rgba(255, 255, 255, 0.75);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
         flex-shrink: 0;
@@ -656,16 +793,18 @@
         border: none;
         background: none;
         cursor: pointer;
-        color: rgba(255,255,255,0.8);
+        color: rgba(255, 255, 255, 0.8);
         border-radius: var(--radius-md);
-        transition: color var(--transition-fast), background var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            background var(--transition-fast);
         text-decoration: none;
     }
 
     .lb-btn:hover,
     .lb-btn.active {
         color: #fff;
-        background: rgba(255,255,255,0.1);
+        background: rgba(255, 255, 255, 0.1);
     }
 
     .lb-btn.active {
@@ -716,7 +855,7 @@
         z-index: 302;
         width: 44px;
         height: 72px;
-        background: rgba(0,0,0,0.4);
+        background: rgba(0, 0, 0, 0.4);
         border: none;
         cursor: pointer;
         color: #fff;
@@ -724,11 +863,13 @@
         align-items: center;
         justify-content: center;
         border-radius: var(--radius-md);
-        transition: background var(--transition-fast), opacity 0.35s ease;
+        transition:
+            background var(--transition-fast),
+            opacity 0.35s ease;
     }
 
     .lb-nav:hover {
-        background: rgba(0,0,0,0.65);
+        background: rgba(0, 0, 0, 0.65);
     }
 
     .lb-nav svg {
@@ -750,7 +891,7 @@
         gap: var(--spacing-2);
         padding: var(--spacing-2) var(--spacing-4);
         padding-bottom: calc(var(--spacing-3) + var(--safe-area-inset-bottom));
-        background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
         transition: opacity 0.35s ease;
     }
 
@@ -772,8 +913,10 @@
         flex-wrap: wrap;
         gap: var(--spacing-3);
         font-size: var(--text-xs);
-        color: rgba(255,255,255,0.6);
+        color: rgba(255, 255, 255, 0.6);
     }
 
-    .lb-tag-row { color: var(--color-text); }
+    .lb-tag-row {
+        color: var(--color-text);
+    }
 </style>

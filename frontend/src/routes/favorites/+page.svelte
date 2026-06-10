@@ -1,7 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { favorites as favApi } from '$lib/api/client';
-    import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import type { MediaFile } from '$lib/api/types';
     import Gallery from '$lib/components/gallery/Gallery.svelte';
 
@@ -18,8 +17,6 @@
             loading = false;
         }
     });
-
-    const mediaItems = $derived(items.filter((i) => i.type !== 'folder'));
 </script>
 
 <svelte:head>
@@ -89,6 +86,8 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

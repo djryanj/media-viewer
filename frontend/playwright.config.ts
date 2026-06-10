@@ -25,6 +25,18 @@ const config: PlaywrightTestConfig = {
         reducedMotion: 'reduce',
     },
 
+    // Visual snapshot baselines live alongside the spec files so they travel
+    // with the test code and are easy to review in PRs.
+    snapshotDir: 'e2e/snapshots',
+    snapshotPathTemplate: '{snapshotDir}/{testFilePath}/{arg}{ext}',
+
+    // Tolerate minor rendering noise (sub-pixel antialiasing, etc.).
+    expect: {
+        toHaveScreenshot: {
+            maxDiffPixelRatio: 0.01,
+        },
+    },
+
     testDir: 'e2e',
     testMatch: '**/*.spec.ts',
 

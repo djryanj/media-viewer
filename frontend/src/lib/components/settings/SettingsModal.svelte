@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
     import { auth, tags as tagsApi, system, version as versionApi } from '$lib/api/client';
     import type { Tag, SystemStatus, BuildInfo } from '$lib/api/types';
     import {
@@ -37,7 +36,7 @@
             prefVideoAutoplay = (loadPrefs().videoAutoplay as boolean) ?? true;
             prefMediaLoop = (loadPrefs().mediaLoop as boolean) ?? true;
             prefClockEnabled = (loadPrefs().clockEnabled as boolean) ?? true;
-            prefClockFormat = ((loadPrefs().clockFormat as string) === '24' ? '24' : '12');
+            prefClockFormat = (loadPrefs().clockFormat as string) === '24' ? '24' : '12';
         }
     });
 
@@ -78,7 +77,9 @@
         try {
             const raw = localStorage.getItem(PREFS_KEY);
             if (raw) return JSON.parse(raw) as Record<string, unknown>;
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
         return {};
     }
 
@@ -92,7 +93,9 @@
     let prefVideoAutoplay = $state((loadPrefs().videoAutoplay as boolean) ?? true);
     let prefMediaLoop = $state((loadPrefs().mediaLoop as boolean) ?? true);
     let prefClockEnabled = $state((loadPrefs().clockEnabled as boolean) ?? true);
-    let prefClockFormat = $state<'12' | '24'>(((loadPrefs().clockFormat as string) === '24' ? '24' : '12'));
+    let prefClockFormat = $state<'12' | '24'>(
+        (loadPrefs().clockFormat as string) === '24' ? '24' : '12'
+    );
 
     function saveLibraryPrefs() {
         savePrefs({
@@ -170,7 +173,12 @@
     }
 
     // ── Passkeys ─────────────────────────────────────────────────────────────
-    interface Passkey { id: string; name: string; createdAt: string; lastUsedAt?: string }
+    interface Passkey {
+        id: string;
+        name: string;
+        createdAt: string;
+        lastUsedAt?: string;
+    }
     let passkeys: Passkey[] = $state([]);
     let passkeysLoading = $state(false);
     let passkeyRegLoading = $state(false);
@@ -192,8 +200,12 @@
         passkeyRegLoading = true;
         try {
             const { options, sessionId } = await auth.webauthnRegisterBegin();
-            const publicKey = prepareCreateOptions(options as unknown as PublicKeyCredentialCreationOptions);
-            const cred = await navigator.credentials.create({ publicKey }) as PublicKeyCredential | null;
+            const publicKey = prepareCreateOptions(
+                options as unknown as PublicKeyCredentialCreationOptions
+            );
+            const cred = (await navigator.credentials.create({
+                publicKey
+            })) as PublicKeyCredential | null;
             if (!cred) return;
             const name = newPasskeyName.trim() || 'Passkey';
             // Call finish with the credential serialized; name is passed via JSON body
@@ -201,8 +213,14 @@
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, name, credential: serializeCreateCredential(cred) })
-            }).then((r) => { if (!r.ok) throw new Error('Registration failed'); });
+                body: JSON.stringify({
+                    sessionId,
+                    name,
+                    credential: serializeCreateCredential(cred)
+                })
+            }).then((r) => {
+                if (!r.ok) throw new Error('Registration failed');
+            });
             toastStore.success('Passkey registered');
             newPasskeyName = '';
             await loadPasskeys();
@@ -220,7 +238,8 @@
     }
 
     async function deletePasskey(id: string) {
-        if (!confirm('Remove this passkey? You will no longer be able to use it to sign in.')) return;
+        if (!confirm('Remove this passkey? You will no longer be able to use it to sign in.'))
+            return;
         try {
             await auth.deletePasskey(id);
             toastStore.success('Passkey removed');
@@ -231,7 +250,13 @@
     }
 
     $effect(() => {
-        if (webauthnSupported && activeTab === 'passkeys' && settingsStore.open && passkeys.length === 0 && !passkeysLoading) {
+        if (
+            webauthnSupported &&
+            activeTab === 'passkeys' &&
+            settingsStore.open &&
+            passkeys.length === 0 &&
+            !passkeysLoading
+        ) {
             loadPasskeys();
         }
     });
@@ -239,11 +264,7 @@
     // ── System actions ───────────────────────────────────────────────────────
     let systemLoading = $state<string | null>(null);
 
-    async function runSystemAction(
-        key: string,
-        fn: () => Promise<unknown>,
-        successMsg: string
-    ) {
+    async function runSystemAction(key: string, fn: () => Promise<unknown>, successMsg: string) {
         systemLoading = key;
         try {
             await fn();
@@ -262,14 +283,21 @@
     function startStatusPolling() {
         if (statusPollTimer) return;
         async function poll() {
-            try { systemStatus = await system.status(); } catch { /* ignore */ }
+            try {
+                systemStatus = await system.status();
+            } catch {
+                /* ignore */
+            }
         }
         poll();
         statusPollTimer = setInterval(poll, 3000);
     }
 
     function stopStatusPolling() {
-        if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null; }
+        if (statusPollTimer) {
+            clearInterval(statusPollTimer);
+            statusPollTimer = null;
+        }
     }
 
     $effect(() => {
@@ -288,7 +316,15 @@
     $effect(() => {
         if (activeTab === 'about' && settingsStore.open && !buildInfo && !buildInfoLoading) {
             buildInfoLoading = true;
-            versionApi.get().then((b) => { buildInfo = b; }).catch(() => {}).finally(() => { buildInfoLoading = false; });
+            versionApi
+                .get()
+                .then((b) => {
+                    buildInfo = b;
+                })
+                .catch(() => {})
+                .finally(() => {
+                    buildInfoLoading = false;
+                });
         }
     });
 
@@ -334,7 +370,13 @@
             <div class="modal-header">
                 <h2 class="modal-title">Settings</h2>
                 <button class="close-btn" onclick={close} aria-label="Close settings">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
                         <path d="M18 6 6 18M6 6l12 12" />
                     </svg>
                 </button>
@@ -342,20 +384,19 @@
 
             <!-- Tab bar -->
             <div class="tabs" role="tablist">
-                {#each ([['security', 'Security'], ['passkeys', 'Passkeys'], ['library', 'Library'], ['tags', 'Tags'], ['system', 'System'], ['about', 'About']] as [Tab, string][]) as [id, label]}
+                {#each [['security', 'Security'], ['passkeys', 'Passkeys'], ['library', 'Library'], ['tags', 'Tags'], ['system', 'System'], ['about', 'About']] as [Tab, string][] as [id, label]}
                     <button
                         class="tab"
                         class:active={activeTab === id}
                         role="tab"
                         aria-selected={activeTab === id}
-                        onclick={() => (activeTab = id)}
-                    >{label}</button>
+                        onclick={() => (activeTab = id)}>{label}</button
+                    >
                 {/each}
             </div>
 
             <!-- Scrollable content -->
             <div class="modal-body">
-
                 <!-- Security -->
                 {#if activeTab === 'security'}
                     <section class="settings-section">
@@ -363,15 +404,35 @@
                         <form class="form" onsubmit={handlePasswordChange}>
                             <div class="field">
                                 <label for="current-pw">Current password</label>
-                                <input id="current-pw" type="password" bind:value={currentPassword} autocomplete="current-password" required />
+                                <input
+                                    id="current-pw"
+                                    type="password"
+                                    bind:value={currentPassword}
+                                    autocomplete="current-password"
+                                    required
+                                />
                             </div>
                             <div class="field">
                                 <label for="new-pw">New password</label>
-                                <input id="new-pw" type="password" bind:value={newPassword} autocomplete="new-password" minlength="6" required />
+                                <input
+                                    id="new-pw"
+                                    type="password"
+                                    bind:value={newPassword}
+                                    autocomplete="new-password"
+                                    minlength="6"
+                                    required
+                                />
                             </div>
                             <div class="field">
                                 <label for="confirm-pw">Confirm new password</label>
-                                <input id="confirm-pw" type="password" bind:value={confirmPassword} autocomplete="new-password" minlength="6" required />
+                                <input
+                                    id="confirm-pw"
+                                    type="password"
+                                    bind:value={confirmPassword}
+                                    autocomplete="new-password"
+                                    minlength="6"
+                                    required
+                                />
                             </div>
                             <button class="btn-primary" type="submit" disabled={pwLoading}>
                                 {pwLoading ? 'Saving…' : 'Change password'}
@@ -379,70 +440,98 @@
                         </form>
                     </section>
 
-                <!-- Passkeys -->
+                    <!-- Passkeys -->
                 {:else if activeTab === 'passkeys'}
                     {#if !webauthnSupported}
                         <section class="settings-section">
                             <h3 class="section-title">Passkeys not available</h3>
-                            <p class="section-desc">Passkeys require a secure context (HTTPS or localhost). Access this app via HTTPS to enable passkey authentication.</p>
+                            <p class="section-desc">
+                                Passkeys require a secure context (HTTPS or localhost). Access this
+                                app via HTTPS to enable passkey authentication.
+                            </p>
                         </section>
                     {:else}
-                    <section class="settings-section">
-                        <h3 class="section-title">Registered passkeys</h3>
-                        <p class="section-desc">Passkeys let you sign in using your device's biometrics or PIN instead of a password.</p>
+                        <section class="settings-section">
+                            <h3 class="section-title">Registered passkeys</h3>
+                            <p class="section-desc">
+                                Passkeys let you sign in using your device's biometrics or PIN
+                                instead of a password.
+                            </p>
 
-                        {#if passkeysLoading}
-                            <p class="muted">Loading passkeys…</p>
-                        {:else if passkeys.length === 0}
-                            <p class="muted">No passkeys registered yet.</p>
-                        {:else}
-                            <ul class="passkey-list">
-                                {#each passkeys as pk (pk.id)}
-                                    <li class="passkey-item">
-                                        <div class="passkey-info">
-                                            <svg class="passkey-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                                <circle cx="8" cy="15" r="4"/>
-                                                <path d="m12 15 5-5"/>
-                                                <path d="m17 10 2-2"/>
-                                                <path d="m15 12 2 2"/>
-                                            </svg>
-                                            <div>
-                                                <span class="passkey-name">{pk.name}</span>
-                                                <span class="passkey-date">Added {new Date(pk.createdAt).toLocaleDateString()}</span>
+                            {#if passkeysLoading}
+                                <p class="muted">Loading passkeys…</p>
+                            {:else if passkeys.length === 0}
+                                <p class="muted">No passkeys registered yet.</p>
+                            {:else}
+                                <ul class="passkey-list">
+                                    {#each passkeys as pk (pk.id)}
+                                        <li class="passkey-item">
+                                            <div class="passkey-info">
+                                                <svg
+                                                    class="passkey-ico"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    aria-hidden="true"
+                                                >
+                                                    <circle cx="8" cy="15" r="4" />
+                                                    <path d="m12 15 5-5" />
+                                                    <path d="m17 10 2-2" />
+                                                    <path d="m15 12 2 2" />
+                                                </svg>
+                                                <div>
+                                                    <span class="passkey-name">{pk.name}</span>
+                                                    <span class="passkey-date"
+                                                        >Added {new Date(
+                                                            pk.createdAt
+                                                        ).toLocaleDateString()}</span
+                                                    >
+                                                </div>
                                             </div>
-                                        </div>
-                                        <button class="action-btn danger" onclick={() => deletePasskey(pk.id)}>Remove</button>
-                                    </li>
-                                {/each}
-                            </ul>
-                        {/if}
-                    </section>
+                                            <button
+                                                class="action-btn danger"
+                                                onclick={() => deletePasskey(pk.id)}>Remove</button
+                                            >
+                                        </li>
+                                    {/each}
+                                </ul>
+                            {/if}
+                        </section>
 
-                    <section class="settings-section">
-                        <h3 class="section-title">Add a passkey</h3>
-                        <div class="form">
-                            <div class="field">
-                                <label for="passkey-name">Passkey name (optional)</label>
-                                <input
-                                    id="passkey-name"
-                                    type="text"
-                                    bind:value={newPasskeyName}
-                                    placeholder="e.g. MacBook Touch ID"
-                                    maxlength="50"
-                                />
+                        <section class="settings-section">
+                            <h3 class="section-title">Add a passkey</h3>
+                            <div class="form">
+                                <div class="field">
+                                    <label for="passkey-name">Passkey name (optional)</label>
+                                    <input
+                                        id="passkey-name"
+                                        type="text"
+                                        bind:value={newPasskeyName}
+                                        placeholder="e.g. MacBook Touch ID"
+                                        maxlength="50"
+                                    />
+                                </div>
+                                <button
+                                    class="btn-primary"
+                                    onclick={registerPasskey}
+                                    disabled={passkeyRegLoading}
+                                >
+                                    {passkeyRegLoading ? 'Registering…' : 'Add passkey'}
+                                </button>
                             </div>
-                            <button class="btn-primary" onclick={registerPasskey} disabled={passkeyRegLoading}>
-                                {passkeyRegLoading ? 'Registering…' : 'Add passkey'}
-                            </button>
-                        </div>
-                    </section>
+                        </section>
                     {/if}
 
-                <!-- Library -->
+                    <!-- Library -->
                 {:else if activeTab === 'library'}
                     <section class="settings-section">
                         <h3 class="section-title">Default sort order</h3>
-                        <p class="section-desc">Applied when opening a folder for the first time.</p>
+                        <p class="section-desc">
+                            Applied when opening a folder for the first time.
+                        </p>
                         <div class="form">
                             <div class="field">
                                 <label for="sort-field">Sort by</label>
@@ -467,7 +556,9 @@
                         <div class="toggle-row">
                             <div>
                                 <span class="toggle-label">Autoplay videos</span>
-                                <span class="toggle-desc">Automatically play videos when opened in the lightbox</span>
+                                <span class="toggle-desc"
+                                    >Automatically play videos when opened in the lightbox</span
+                                >
                             </div>
                             <label class="switch" aria-label="Autoplay videos">
                                 <input type="checkbox" bind:checked={prefVideoAutoplay} />
@@ -477,7 +568,9 @@
                         <div class="toggle-row">
                             <div>
                                 <span class="toggle-label">Loop media</span>
-                                <span class="toggle-desc">Repeat videos and images when reaching the end</span>
+                                <span class="toggle-desc"
+                                    >Repeat videos and images when reaching the end</span
+                                >
                             </div>
                             <label class="switch" aria-label="Loop media">
                                 <input type="checkbox" bind:checked={prefMediaLoop} />
@@ -491,7 +584,9 @@
                         <div class="toggle-row">
                             <div>
                                 <span class="toggle-label">Show clock in lightbox</span>
-                                <span class="toggle-desc">Display the current time in the top bar while viewing media</span>
+                                <span class="toggle-desc"
+                                    >Display the current time in the top bar while viewing media</span
+                                >
                             </div>
                             <label class="switch" aria-label="Show clock in lightbox">
                                 <input type="checkbox" bind:checked={prefClockEnabled} />
@@ -509,10 +604,12 @@
                                 </div>
                             </div>
                         {/if}
-                        <button class="btn-primary" onclick={saveLibraryPrefs}>Save preferences</button>
+                        <button class="btn-primary" onclick={saveLibraryPrefs}
+                            >Save preferences</button
+                        >
                     </section>
 
-                <!-- Tags -->
+                    <!-- Tags -->
                 {:else if activeTab === 'tags'}
                     <section class="settings-section">
                         <h3 class="section-title">Tag manager</h3>
@@ -532,7 +629,9 @@
                         {#if tagsLoading}
                             <p class="muted">Loading tags…</p>
                         {:else if filteredTags.length === 0}
-                            <p class="muted">{tagSearch ? 'No tags match your search.' : 'No tags yet.'}</p>
+                            <p class="muted">
+                                {tagSearch ? 'No tags match your search.' : 'No tags yet.'}
+                            </p>
                         {:else}
                             <table class="tag-table">
                                 <thead>
@@ -552,8 +651,10 @@
                                                         type="text"
                                                         bind:value={renameValue}
                                                         onkeydown={(e) => {
-                                                            if (e.key === 'Enter') commitRename(tag.name);
-                                                            if (e.key === 'Escape') renamingTag = null;
+                                                            if (e.key === 'Enter')
+                                                                commitRename(tag.name);
+                                                            if (e.key === 'Escape')
+                                                                renamingTag = null;
                                                         }}
                                                     />
                                                 {:else}
@@ -563,11 +664,27 @@
                                             <td class="num">{tag.itemCount}</td>
                                             <td class="actions-col">
                                                 {#if renamingTag === tag.name}
-                                                    <button class="action-btn save" onclick={() => commitRename(tag.name)}>Save</button>
-                                                    <button class="action-btn cancel" onclick={() => (renamingTag = null)}>Cancel</button>
+                                                    <button
+                                                        class="action-btn save"
+                                                        onclick={() => commitRename(tag.name)}
+                                                        >Save</button
+                                                    >
+                                                    <button
+                                                        class="action-btn cancel"
+                                                        onclick={() => (renamingTag = null)}
+                                                        >Cancel</button
+                                                    >
                                                 {:else}
-                                                    <button class="action-btn" onclick={() => startRename(tag)}>Rename</button>
-                                                    <button class="action-btn danger" onclick={() => deleteTag(tag.name)}>Delete</button>
+                                                    <button
+                                                        class="action-btn"
+                                                        onclick={() => startRename(tag)}
+                                                        >Rename</button
+                                                    >
+                                                    <button
+                                                        class="action-btn danger"
+                                                        onclick={() => deleteTag(tag.name)}
+                                                        >Delete</button
+                                                    >
                                                 {/if}
                                             </td>
                                         </tr>
@@ -577,23 +694,23 @@
                         {/if}
                     </section>
 
-                <!-- System -->
+                    <!-- System -->
                 {:else if activeTab === 'system'}
                     <section class="settings-section">
                         <h3 class="section-title">Worker status</h3>
                         <div class="worker-list">
-                            {#each ([
-                                ['Indexer', systemStatus?.indexer],
-                                ['Thumbnails', systemStatus?.thumbnails],
-                                ['Auto-tagger', systemStatus?.autotagger]
-                            ] as [string, SystemStatus['indexer'] | undefined][]) as [label, w]}
+                            {#each [['Indexer', systemStatus?.indexer], ['Thumbnails', systemStatus?.thumbnails], ['Auto-tagger', systemStatus?.autotagger]] as [string, SystemStatus['indexer'] | undefined][] as [label, w]}
                                 {@const state = workerState(w)}
                                 {@const pct = w?.metrics.progressPercent}
                                 {@const eta = w?.metrics.estimatedSecondsRemaining}
                                 <div class="worker-row">
                                     <span class="worker-name">{label}</span>
                                     <span class="worker-badge worker-badge--{state}">
-                                        {state === 'running' ? 'Running' : state === 'idle' ? 'Idle' : 'Disabled'}
+                                        {state === 'running'
+                                            ? 'Running'
+                                            : state === 'idle'
+                                              ? 'Idle'
+                                              : 'Disabled'}
                                     </span>
                                     {#if state === 'running' && pct != null}
                                         <span class="worker-progress">
@@ -611,11 +728,17 @@
                             <div class="stat-list">
                                 <div class="stat-row">
                                     <span class="stat-label">Thumbnails</span>
-                                    <span class="stat-value">{systemStatus.library.thumbnailCacheFiles.toLocaleString()} files · {fmtBytes(systemStatus.library.thumbnailCacheBytes)}</span>
+                                    <span class="stat-value"
+                                        >{systemStatus.library.thumbnailCacheFiles.toLocaleString()} files
+                                        · {fmtBytes(systemStatus.library.thumbnailCacheBytes)}</span
+                                    >
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Transcode</span>
-                                    <span class="stat-value">{systemStatus.library.transcodeCacheFiles.toLocaleString()} files · {fmtBytes(systemStatus.library.transcodeCacheBytes)}</span>
+                                    <span class="stat-value"
+                                        >{systemStatus.library.transcodeCacheFiles.toLocaleString()} files
+                                        · {fmtBytes(systemStatus.library.transcodeCacheBytes)}</span
+                                    >
                                 </div>
                             </div>
                         {:else}
@@ -634,8 +757,14 @@
                                 <button
                                     class="btn-ghost"
                                     disabled={systemLoading === 'reindex'}
-                                    onclick={() => runSystemAction('reindex', system.reindex, 'Reindex started')}
-                                >{systemLoading === 'reindex' ? 'Starting…' : 'Run now'}</button>
+                                    onclick={() =>
+                                        runSystemAction(
+                                            'reindex',
+                                            system.reindex,
+                                            'Reindex started'
+                                        )}
+                                    >{systemLoading === 'reindex' ? 'Starting…' : 'Run now'}</button
+                                >
                             </div>
                             <div class="action-row">
                                 <div>
@@ -645,35 +774,58 @@
                                 <button
                                     class="btn-ghost"
                                     disabled={systemLoading === 'thumbs'}
-                                    onclick={() => runSystemAction('thumbs', system.rebuildThumbnails, 'Thumbnail rebuild started')}
-                                >{systemLoading === 'thumbs' ? 'Starting…' : 'Rebuild'}</button>
+                                    onclick={() =>
+                                        runSystemAction(
+                                            'thumbs',
+                                            system.rebuildThumbnails,
+                                            'Thumbnail rebuild started'
+                                        )}
+                                    >{systemLoading === 'thumbs' ? 'Starting…' : 'Rebuild'}</button
+                                >
                             </div>
                             <div class="action-row">
                                 <div>
                                     <span class="action-label">Clear transcode cache</span>
-                                    <span class="action-desc">Delete cached HLS video segments</span>
+                                    <span class="action-desc">Delete cached HLS video segments</span
+                                    >
                                 </div>
                                 <button
                                     class="btn-danger"
                                     disabled={systemLoading === 'transcode'}
-                                    onclick={() => runSystemAction('transcode', system.clearTranscodeCache, 'Transcode cache cleared')}
-                                >{systemLoading === 'transcode' ? 'Clearing…' : 'Clear cache'}</button>
+                                    onclick={() =>
+                                        runSystemAction(
+                                            'transcode',
+                                            system.clearTranscodeCache,
+                                            'Transcode cache cleared'
+                                        )}
+                                    >{systemLoading === 'transcode'
+                                        ? 'Clearing…'
+                                        : 'Clear cache'}</button
+                                >
                             </div>
                             <div class="action-row">
                                 <div>
                                     <span class="action-label">Run auto-tagger</span>
-                                    <span class="action-desc">Extract EXIF metadata tags from files</span>
+                                    <span class="action-desc"
+                                        >Extract EXIF metadata tags from files</span
+                                    >
                                 </div>
                                 <button
                                     class="btn-ghost"
                                     disabled={systemLoading === 'autotag'}
-                                    onclick={() => runSystemAction('autotag', system.runAutoTagger, 'Auto-tagger started')}
-                                >{systemLoading === 'autotag' ? 'Starting…' : 'Run now'}</button>
+                                    onclick={() =>
+                                        runSystemAction(
+                                            'autotag',
+                                            system.runAutoTagger,
+                                            'Auto-tagger started'
+                                        )}
+                                    >{systemLoading === 'autotag' ? 'Starting…' : 'Run now'}</button
+                                >
                             </div>
                         </div>
                     </section>
 
-                <!-- About -->
+                    <!-- About -->
                 {:else if activeTab === 'about'}
                     <section class="settings-section">
                         <h3 class="section-title">Version</h3>
@@ -687,11 +839,15 @@
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Commit</span>
-                                    <span class="stat-value about-mono">{buildInfo.commit.slice(0, 7)}</span>
+                                    <span class="stat-value about-mono"
+                                        >{buildInfo.commit.slice(0, 7)}</span
+                                    >
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Runtime</span>
-                                    <span class="stat-value">{buildInfo.goVersion} · {buildInfo.os}/{buildInfo.arch}</span>
+                                    <span class="stat-value"
+                                        >{buildInfo.goVersion} · {buildInfo.os}/{buildInfo.arch}</span
+                                    >
                                 </div>
                             </div>
                         {/if}
@@ -704,23 +860,32 @@
                             <div class="stat-list">
                                 <div class="stat-row">
                                     <span class="stat-label">Total files</span>
-                                    <span class="stat-value">{lib.totalFiles.toLocaleString()}</span>
+                                    <span class="stat-value">{lib.totalFiles.toLocaleString()}</span
+                                    >
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Images</span>
-                                    <span class="stat-value">{lib.totalImages.toLocaleString()}</span>
+                                    <span class="stat-value"
+                                        >{lib.totalImages.toLocaleString()}</span
+                                    >
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Videos</span>
-                                    <span class="stat-value">{lib.totalVideos.toLocaleString()}</span>
+                                    <span class="stat-value"
+                                        >{lib.totalVideos.toLocaleString()}</span
+                                    >
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Folders</span>
-                                    <span class="stat-value">{lib.totalFolders.toLocaleString()}</span>
+                                    <span class="stat-value"
+                                        >{lib.totalFolders.toLocaleString()}</span
+                                    >
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Playlists</span>
-                                    <span class="stat-value">{lib.totalPlaylists.toLocaleString()}</span>
+                                    <span class="stat-value"
+                                        >{lib.totalPlaylists.toLocaleString()}</span
+                                    >
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Tags</span>
@@ -728,12 +893,16 @@
                                 </div>
                                 <div class="stat-row">
                                     <span class="stat-label">Favorites</span>
-                                    <span class="stat-value">{lib.totalFavorites.toLocaleString()}</span>
+                                    <span class="stat-value"
+                                        >{lib.totalFavorites.toLocaleString()}</span
+                                    >
                                 </div>
                                 {#if lib.lastIndexed}
                                     <div class="stat-row">
                                         <span class="stat-label">Last indexed</span>
-                                        <span class="stat-value">{new Date(lib.lastIndexed).toLocaleString()}</span>
+                                        <span class="stat-value"
+                                            >{new Date(lib.lastIndexed).toLocaleString()}</span
+                                        >
                                     </div>
                                 {/if}
                             </div>
@@ -742,10 +911,12 @@
                         {/if}
                     </section>
                 {/if}
-
-            </div><!-- /.modal-body -->
-        </div><!-- /.modal -->
-    </div><!-- /.overlay -->
+            </div>
+            <!-- /.modal-body -->
+        </div>
+        <!-- /.modal -->
+    </div>
+    <!-- /.overlay -->
 {/if}
 
 <style>
@@ -803,7 +974,9 @@
         border-radius: var(--radius-md);
         color: var(--color-text-muted);
         cursor: pointer;
-        transition: background var(--transition-fast), color var(--transition-fast);
+        transition:
+            background var(--transition-fast),
+            color var(--transition-fast);
     }
 
     .close-btn:hover {
@@ -811,7 +984,10 @@
         color: var(--color-text);
     }
 
-    .close-btn svg { width: 18px; height: 18px; }
+    .close-btn svg {
+        width: 18px;
+        height: 18px;
+    }
 
     /* ── Tabs ───────────────────────────────────────────────────────────── */
     .tabs {
@@ -824,7 +1000,9 @@
         scrollbar-width: none;
     }
 
-    .tabs::-webkit-scrollbar { display: none; }
+    .tabs::-webkit-scrollbar {
+        display: none;
+    }
 
     .tab {
         background: none;
@@ -838,10 +1016,14 @@
         cursor: pointer;
         white-space: nowrap;
         flex-shrink: 0;
-        transition: color var(--transition-fast), border-color var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            border-color var(--transition-fast);
     }
 
-    .tab:hover { color: var(--color-text); }
+    .tab:hover {
+        color: var(--color-text);
+    }
 
     .tab.active {
         color: var(--color-primary);
@@ -940,8 +1122,13 @@
         margin-top: var(--spacing-2);
     }
 
-    .btn-primary:hover:not(:disabled) { background: var(--color-primary-hover); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary:hover:not(:disabled) {
+        background: var(--color-primary-hover);
+    }
+    .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 
     .btn-ghost {
         padding: var(--spacing-1) var(--spacing-4);
@@ -955,8 +1142,13 @@
         white-space: nowrap;
     }
 
-    .btn-ghost:hover:not(:disabled) { background: var(--color-surface-3); }
-    .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-ghost:hover:not(:disabled) {
+        background: var(--color-surface-3);
+    }
+    .btn-ghost:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 
     .btn-danger {
         padding: var(--spacing-1) var(--spacing-4);
@@ -970,8 +1162,13 @@
         white-space: nowrap;
     }
 
-    .btn-danger:hover:not(:disabled) { background: rgba(239, 83, 80, 0.1); }
-    .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger:hover:not(:disabled) {
+        background: rgba(239, 83, 80, 0.1);
+    }
+    .btn-danger:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 
     /* ── Toggle switch ──────────────────────────────────────────────────── */
     .toggle-row {
@@ -1011,7 +1208,11 @@
         cursor: pointer;
     }
 
-    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
 
     .slider {
         position: absolute;
@@ -1033,8 +1234,12 @@
         transition: transform var(--transition-fast);
     }
 
-    .switch input:checked + .slider { background: var(--color-primary); }
-    .switch input:checked + .slider::before { transform: translateX(20px); }
+    .switch input:checked + .slider {
+        background: var(--color-primary);
+    }
+    .switch input:checked + .slider::before {
+        transform: translateX(20px);
+    }
 
     /* ── Tag table ──────────────────────────────────────────────────────── */
     .tag-toolbar {
@@ -1054,7 +1259,9 @@
         outline: none;
     }
 
-    .search-input:focus { border-color: var(--color-primary); }
+    .search-input:focus {
+        border-color: var(--color-primary);
+    }
 
     .tag-table {
         width: 100%;
@@ -1077,11 +1284,20 @@
         color: var(--color-text);
     }
 
-    .tag-table tr:last-child td { border-bottom: none; }
+    .tag-table tr:last-child td {
+        border-bottom: none;
+    }
 
-    .num { text-align: right; width: 56px; color: var(--color-text-muted); }
+    .num {
+        text-align: right;
+        width: 56px;
+        color: var(--color-text-muted);
+    }
 
-    .actions-col { text-align: right; width: 140px; }
+    .actions-col {
+        text-align: right;
+        width: 140px;
+    }
 
     .tag-chip {
         background: var(--color-surface);
@@ -1110,16 +1326,31 @@
         cursor: pointer;
         padding: 2px var(--spacing-2);
         border-radius: var(--radius-sm);
-        transition: color var(--transition-fast), background var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            background var(--transition-fast);
     }
 
-    .action-btn:hover { color: var(--color-text); background: var(--color-surface); }
-    .action-btn.danger:hover { color: var(--color-danger); background: rgba(239, 83, 80, 0.1); }
-    .action-btn.save { color: var(--color-primary); }
-    .action-btn.cancel { color: var(--color-text-muted); }
+    .action-btn:hover {
+        color: var(--color-text);
+        background: var(--color-surface);
+    }
+    .action-btn.danger:hover {
+        color: var(--color-danger);
+        background: rgba(239, 83, 80, 0.1);
+    }
+    .action-btn.save {
+        color: var(--color-primary);
+    }
+    .action-btn.cancel {
+        color: var(--color-text-muted);
+    }
 
     /* ── System action rows ─────────────────────────────────────────────── */
-    .action-list { display: flex; flex-direction: column; }
+    .action-list {
+        display: flex;
+        flex-direction: column;
+    }
 
     .action-row {
         display: flex;
@@ -1130,7 +1361,9 @@
         border-bottom: 1px solid var(--color-border);
     }
 
-    .action-row:last-child { border-bottom: none; }
+    .action-row:last-child {
+        border-bottom: none;
+    }
 
     .action-label {
         display: block;
@@ -1147,7 +1380,11 @@
     }
 
     /* ── Worker status ──────────────────────────────────────────────────── */
-    .worker-list { display: flex; flex-direction: column; gap: var(--spacing-2); }
+    .worker-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-2);
+    }
 
     .worker-row {
         display: flex;
@@ -1171,9 +1408,19 @@
         flex-shrink: 0;
     }
 
-    .worker-badge--running { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-    .worker-badge--idle    { background: var(--color-surface-3); color: var(--color-text-muted); }
-    .worker-badge--disabled { background: var(--color-surface-3); color: var(--color-text-subtle, var(--color-text-muted)); opacity: 0.6; }
+    .worker-badge--running {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+    .worker-badge--idle {
+        background: var(--color-surface-3);
+        color: var(--color-text-muted);
+    }
+    .worker-badge--disabled {
+        background: var(--color-surface-3);
+        color: var(--color-text-subtle, var(--color-text-muted));
+        opacity: 0.6;
+    }
 
     .worker-progress {
         font-size: var(--text-xs);
@@ -1181,7 +1428,10 @@
     }
 
     /* ── Stat rows (cache + about) ──────────────────────────────────────── */
-    .stat-list { display: flex; flex-direction: column; }
+    .stat-list {
+        display: flex;
+        flex-direction: column;
+    }
 
     .stat-row {
         display: flex;
@@ -1193,11 +1443,22 @@
         font-size: var(--text-sm);
     }
 
-    .stat-row:last-child { border-bottom: none; }
+    .stat-row:last-child {
+        border-bottom: none;
+    }
 
-    .stat-label { color: var(--color-text-muted); flex-shrink: 0; }
-    .stat-value { color: var(--color-text); text-align: right; }
-    .about-mono { font-family: monospace; font-size: var(--text-xs); }
+    .stat-label {
+        color: var(--color-text-muted);
+        flex-shrink: 0;
+    }
+    .stat-value {
+        color: var(--color-text);
+        text-align: right;
+    }
+    .about-mono {
+        font-family: monospace;
+        font-size: var(--text-xs);
+    }
 
     /* Passkeys */
     .passkey-list {
@@ -1217,7 +1478,9 @@
         border-bottom: 1px solid var(--color-border);
     }
 
-    .passkey-item:last-child { border-bottom: none; }
+    .passkey-item:last-child {
+        border-bottom: none;
+    }
 
     .passkey-info {
         display: flex;
@@ -1258,5 +1521,7 @@
         outline: none;
     }
 
-    input[type='text']:focus { border-color: var(--color-primary); }
+    input[type='text']:focus {
+        border-color: var(--color-primary);
+    }
 </style>

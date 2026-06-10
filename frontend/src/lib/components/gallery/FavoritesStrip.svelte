@@ -10,7 +10,9 @@
 
     // Local mutable order (optimistic)
     let orderedItems = $state<MediaFile[]>([]);
-    $effect(() => { orderedItems = [...items]; });
+    $effect(() => {
+        orderedItems = [...items];
+    });
 
     // ── Drag-and-drop (pointer-based so it works on touch too) ────────────────
     let dragIndex = $state<number | null>(null);
@@ -36,7 +38,9 @@
     function handleDrop(e: DragEvent, targetIdx: number) {
         e.preventDefault();
         if (dragIndex === null || dragIndex === targetIdx) {
-            dragIndex = null; overIndex = null; return;
+            dragIndex = null;
+            overIndex = null;
+            return;
         }
         const next = [...orderedItems];
         const [moved] = next.splice(dragIndex, 1);
@@ -83,7 +87,9 @@
 <section class="favorites-strip" aria-label="Favorites">
     <div class="strip-header">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+            />
         </svg>
         <span>Favorites</span>
         {#if saving}
@@ -112,15 +118,25 @@
                     <img src={item.thumbnailUrl} alt={item.name} loading="lazy" decoding="async" />
                 {:else if item.type === 'playlist'}
                     <div class="strip-placeholder">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                            <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14" />
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14"
+                            />
                             <rect x="2" y="6" width="13" height="12" rx="2" />
                         </svg>
                     </div>
                 {:else}
                     <div class="strip-placeholder">
                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                            <path
+                                d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+                            />
                         </svg>
                     </div>
                 {/if}
@@ -128,9 +144,9 @@
                 <!-- Drag handle hint -->
                 <div class="drag-handle" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/>
-                        <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
-                        <circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/>
+                        <circle cx="9" cy="7" r="1.5" /><circle cx="15" cy="7" r="1.5" />
+                        <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+                        <circle cx="9" cy="17" r="1.5" /><circle cx="15" cy="17" r="1.5" />
                     </svg>
                 </div>
             </div>
@@ -188,7 +204,9 @@
         overflow: hidden;
         cursor: grab;
         background: var(--color-surface-2);
-        transition: opacity var(--transition-fast), outline var(--transition-fast);
+        transition:
+            opacity var(--transition-fast),
+            outline var(--transition-fast);
         position: relative;
     }
 

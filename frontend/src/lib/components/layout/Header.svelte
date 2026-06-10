@@ -30,7 +30,8 @@
     function handleKeydown(e: KeyboardEvent) {
         if (lightboxStore.open) return;
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+            return;
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
             e.preventDefault();
             openSearch();
@@ -62,20 +63,20 @@
                 class="nav-link"
                 class:active={$page.url.pathname === '/'}
                 onclick={handleLogo}
-                aria-label="Library"
-            >Library</button>
+                aria-label="Library">Library</button
+            >
             <button
                 class="nav-link"
                 class:active={$page.url.pathname === '/favorites'}
                 onclick={() => goto('/favorites')}
-                aria-label="Favorites"
-            >Favorites</button>
+                aria-label="Favorites">Favorites</button
+            >
             <button
                 class="nav-link"
                 class:active={$page.url.pathname === '/collections'}
                 onclick={() => goto('/collections')}
-                aria-label="Albums"
-            >Albums</button>
+                aria-label="Albums">Albums</button
+            >
         </nav>
 
         <!-- Header actions -->
@@ -106,14 +107,28 @@
             {/if}
 
             <button class="icon-btn" onclick={() => settingsStore.show()} aria-label="Settings">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                >
+                    <path
+                        d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+                    />
                     <circle cx="12" cy="12" r="3" />
                 </svg>
             </button>
 
             <button class="icon-btn" onclick={handleLogout} aria-label="Sign out">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                >
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                     <polyline points="16 17 21 12 16 7" />
                     <line x1="21" x2="9" y1="12" y2="12" />
@@ -180,7 +195,9 @@
         font-weight: 500;
         padding: var(--spacing-1) var(--spacing-3);
         border-radius: var(--radius-md);
-        transition: color var(--transition-fast), background var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            background var(--transition-fast);
         white-space: nowrap;
     }
 
@@ -257,7 +274,9 @@
         border-radius: var(--radius-md);
         cursor: pointer;
         color: var(--color-text-muted);
-        transition: color var(--transition-fast), background var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            background var(--transition-fast);
         text-decoration: none;
         flex-shrink: 0;
     }

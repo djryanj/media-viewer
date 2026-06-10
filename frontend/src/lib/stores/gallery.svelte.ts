@@ -268,7 +268,14 @@ function createGalleryStore() {
             state.totalItems = 0;
             state.listing = null;
             try {
-                const page = await mediaApi.list(path, 0, PAGE_SIZE, state.sort, state.order, state.typeFilter);
+                const page = await mediaApi.list(
+                    path,
+                    0,
+                    PAGE_SIZE,
+                    state.sort,
+                    state.order,
+                    state.typeFilter
+                );
                 state.listing = page;
                 state.favorites = page.favorites ?? [];
                 state.items = page.items;
@@ -399,7 +406,14 @@ function createGalleryStore() {
             state.loadOffset = 0;
             state.totalItems = 0;
             try {
-                const page = await mediaApi.list(state.path, 0, PAGE_SIZE, state.sort, state.order, state.typeFilter);
+                const page = await mediaApi.list(
+                    state.path,
+                    0,
+                    PAGE_SIZE,
+                    state.sort,
+                    state.order,
+                    state.typeFilter
+                );
                 state.listing = page;
                 if (page.favorites) state.favorites = page.favorites;
                 state.items = page.items;

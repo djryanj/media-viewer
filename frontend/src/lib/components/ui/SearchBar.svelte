@@ -7,7 +7,6 @@
 
     let query = $state('');
     let suggestions: SearchSuggestion[] = $state([]);
-    let loading = $state(false);
     let activeIndex = $state(-1);
     let debounceTimer: ReturnType<typeof setTimeout>;
     let inputEl: HTMLInputElement;
@@ -36,20 +35,19 @@
             return;
         }
         debounceTimer = setTimeout(async () => {
-            loading = true;
             try {
                 suggestions = await media.suggest(query);
             } catch {
                 suggestions = [];
-            } finally {
-                loading = false;
             }
         }, 200);
     }
 
     function scrollActiveIntoView() {
         if (!listEl || activeIndex < 0) return;
-        (listEl.children[activeIndex] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+        (listEl.children[activeIndex] as HTMLElement | undefined)?.scrollIntoView({
+            block: 'nearest'
+        });
     }
 
     function handleSubmit() {
@@ -74,7 +72,11 @@
 
     function handleKeydown(e: KeyboardEvent) {
         if (e.key === 'Escape') {
-            if (suggestions.length > 0) { suggestions = []; activeIndex = -1; return; }
+            if (suggestions.length > 0) {
+                suggestions = [];
+                activeIndex = -1;
+                return;
+            }
             query = '';
             onclose?.();
             return;
@@ -89,7 +91,10 @@
         if (e.key === 'ArrowUp') {
             e.preventDefault();
             if (!suggestions.length) return;
-            activeIndex = activeIndex < 0 ? suggestions.length - 1 : (activeIndex - 1 + suggestions.length) % suggestions.length;
+            activeIndex =
+                activeIndex < 0
+                    ? suggestions.length - 1
+                    : (activeIndex - 1 + suggestions.length) % suggestions.length;
             scrollActiveIntoView();
             return;
         }
@@ -118,12 +123,24 @@
 
 <div class="search-bar" role="search">
     <div class="input-wrap">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg
+            class="search-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+        >
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
         </svg>
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+        <form
+            onsubmit={(e) => {
+                e.preventDefault();
+                handleSubmit();
+            }}
+        >
             <input
                 bind:this={inputEl}
                 bind:value={query}
@@ -141,8 +158,21 @@
             />
         </form>
         {#if query}
-            <button class="clear-btn" onclick={() => { query = ''; suggestions = []; }} aria-label="Clear search">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <button
+                class="clear-btn"
+                onclick={() => {
+                    query = '';
+                    suggestions = [];
+                }}
+                aria-label="Clear search"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                >
                     <path d="M18 6 6 18M6 6l12 12" />
                 </svg>
             </button>
@@ -153,22 +183,48 @@
         <ul class="suggestions" id="search-suggestions" role="listbox" bind:this={listEl}>
             {#each suggestions as s, i}
                 <li id="sug-{i}" role="option" aria-selected={activeIndex === i}>
-                    <button class="suggestion-item" class:active={activeIndex === i} onclick={() => handleSuggestion(s)}>
+                    <button
+                        class="suggestion-item"
+                        class:active={activeIndex === i}
+                        onclick={() => handleSuggestion(s)}
+                    >
                         <!-- Thumbnail / type icon -->
                         <div class="sug-thumb">
                             {#if thumbUrl(s)}
-                                <img src={thumbUrl(s)} alt="" loading="lazy" decoding="async" class="sug-img" />
+                                <img
+                                    src={thumbUrl(s)}
+                                    alt=""
+                                    loading="lazy"
+                                    decoding="async"
+                                    class="sug-img"
+                                />
                             {:else if s.type === 'folder'}
                                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                    <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                                    <path
+                                        d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+                                    />
                                 </svg>
                             {:else if s.type === 'tag' || s.type === 'tag-exclude'}
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                                    />
                                     <line x1="7" y1="7" x2="7.01" y2="7" />
                                 </svg>
                             {:else}
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    aria-hidden="true"
+                                >
                                     <rect x="3" y="3" width="18" height="18" rx="2" />
                                     <circle cx="8.5" cy="8.5" r="1.5" />
                                     <polyline points="21 15 16 10 5 21" />
@@ -189,7 +245,9 @@
 
                         <!-- Type badge (tags only) -->
                         {#if s.type === 'tag' || s.type === 'tag-exclude'}
-                            <span class="sug-badge">{s.type === 'tag-exclude' ? 'exclude' : 'tag'}</span>
+                            <span class="sug-badge"
+                                >{s.type === 'tag-exclude' ? 'exclude' : 'tag'}</span
+                            >
                         {/if}
                     </button>
                 </li>

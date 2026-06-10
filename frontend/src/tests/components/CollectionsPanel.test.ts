@@ -39,7 +39,13 @@ describe('CollectionsPanel', () => {
         mocks.memberships.mockResolvedValue({});
         mocks.addItems.mockResolvedValue(undefined);
         mocks.removeItems.mockResolvedValue(undefined);
-        mocks.create.mockResolvedValue({ id: 3, name: 'New', itemCount: 1, createdAt: '', updatedAt: '' });
+        mocks.create.mockResolvedValue({
+            id: 3,
+            name: 'New',
+            itemCount: 1,
+            createdAt: '',
+            updatedAt: ''
+        });
     });
 
     it('renders a dialog with the title "Collections" for a single item', async () => {
@@ -87,7 +93,10 @@ describe('CollectionsPanel', () => {
 
     it('clicking a non-member collection calls addItems', async () => {
         mocks.memberships.mockResolvedValue({ '/photo.jpg': [] });
-        const { container } = render(CollectionsPanel, { itemPaths: ['/photo.jpg'], onclose: vi.fn() });
+        const { container } = render(CollectionsPanel, {
+            itemPaths: ['/photo.jpg'],
+            onclose: vi.fn()
+        });
         await waitFor(() => expect(screen.getByText('Vacation')).toBeTruthy());
         await fireEvent.click(container.querySelector('.cp-item') as HTMLElement);
         await waitFor(() => expect(mocks.addItems).toHaveBeenCalledWith(1, ['/photo.jpg']));
@@ -95,7 +104,10 @@ describe('CollectionsPanel', () => {
 
     it('clicking a full-member collection calls removeItems', async () => {
         mocks.memberships.mockResolvedValue({ '/photo.jpg': [1] });
-        const { container } = render(CollectionsPanel, { itemPaths: ['/photo.jpg'], onclose: vi.fn() });
+        const { container } = render(CollectionsPanel, {
+            itemPaths: ['/photo.jpg'],
+            onclose: vi.fn()
+        });
         await waitFor(() => expect(screen.getByText('Vacation')).toBeTruthy());
         await fireEvent.click(container.querySelector('.cp-item') as HTMLElement);
         await waitFor(() => expect(mocks.removeItems).toHaveBeenCalledWith(1, ['/photo.jpg']));
@@ -150,9 +162,7 @@ describe('CollectionsPanel', () => {
         const input = screen.getByPlaceholderText('New collection…');
         await fireEvent.input(input, { target: { value: 'Summer' } });
         await fireEvent.click(screen.getByRole('button', { name: /create collection/i }));
-        await waitFor(() =>
-            expect(mocks.create).toHaveBeenCalledWith('Summer', ['/photo.jpg'])
-        );
+        await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('Summer', ['/photo.jpg']));
     });
 
     it('after creation the list reloads and the input is cleared', async () => {
@@ -172,8 +182,6 @@ describe('CollectionsPanel', () => {
         const input = screen.getByPlaceholderText('New collection…');
         await fireEvent.input(input, { target: { value: 'Road Trip' } });
         await fireEvent.keyDown(input, { key: 'Enter' });
-        await waitFor(() =>
-            expect(mocks.create).toHaveBeenCalledWith('Road Trip', ['/photo.jpg'])
-        );
+        await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('Road Trip', ['/photo.jpg']));
     });
 });

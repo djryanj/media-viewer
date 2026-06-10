@@ -33,7 +33,6 @@
     let controlsVisible = $state(true);
     let isDragging = $state(false);
     let isInteractingWithBar = $state(false);
-    let loaded = $state(false);
     let hasError = $state(false);
 
     // ── Volume (persisted) ────────────────────────────────────────────────────
@@ -41,16 +40,26 @@
     let muted = $state(loadMuted());
 
     function loadVolume(): number {
-        try { return parseFloat(localStorage.getItem('playerVolume') ?? '1') || 1; } catch { return 1; }
+        try {
+            return parseFloat(localStorage.getItem('playerVolume') ?? '1') || 1;
+        } catch {
+            return 1;
+        }
     }
     function loadMuted(): boolean {
-        try { return localStorage.getItem('playerMuted') === 'true'; } catch { return false; }
+        try {
+            return localStorage.getItem('playerMuted') === 'true';
+        } catch {
+            return false;
+        }
     }
     function saveVolumePrefs() {
         try {
             localStorage.setItem('playerVolume', String(volume));
             localStorage.setItem('playerMuted', String(muted));
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
     }
 
     // ── HLS / source management ───────────────────────────────────────────────
@@ -62,9 +71,15 @@
     }
 
     function cleanupPrev() {
-        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        if (hlsInstance) {
+            hlsInstance.destroy();
+            hlsInstance = null;
+        }
         if (videoEl && !videoEl.paused) videoEl.pause();
-        if (videoEl) { videoEl.removeAttribute('src'); videoEl.load(); }
+        if (videoEl) {
+            videoEl.removeAttribute('src');
+            videoEl.load();
+        }
     }
 
     async function loadSource(p: string) {
@@ -73,7 +88,6 @@
 
         cleanupPrev();
         hasError = false;
-        loaded = false;
 
         if (!videoEl) return;
 
@@ -83,7 +97,9 @@
         try {
             const r = await fetch(`/api/stream-info/${encPath(p)}`);
             if (r.ok) info = await r.json();
-        } catch { /* non-fatal */ }
+        } catch {
+            /* non-fatal */
+        }
 
         if (stale() || !videoEl) return;
 
@@ -110,10 +126,15 @@
                 body: JSON.stringify({ path: p, width: 0 })
             });
             if (r.ok) sessionData = await r.json();
-        } catch { /* fall through */ }
+        } catch {
+            /* fall through */
+        }
 
         if (stale() || !videoEl) return;
-        if (!sessionData?.playlistUrl) { loadDirect(p, id); return; }
+        if (!sessionData?.playlistUrl) {
+            loadDirect(p, id);
+            return;
+        }
 
         const hls = new Hls({
             debug: false,
@@ -127,9 +148,12 @@
         hls.attachMedia(videoEl);
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            if (stale()) { hls.destroy(); if (hlsInstance === hls) hlsInstance = null; return; }
+            if (stale()) {
+                hls.destroy();
+                if (hlsInstance === hls) hlsInstance = null;
+                return;
+            }
             applyVolumeToVideo();
-            loaded = true;
             if (autoplay) videoEl?.play().catch(() => {});
         });
 
@@ -159,15 +183,19 @@
                 body: JSON.stringify({ path: p, width: 0 })
             });
             if (r.ok) sessionData = await r.json();
-        } catch { /* fall through */ }
+        } catch {
+            /* fall through */
+        }
 
         if (stale() || !videoEl) return;
-        if (!sessionData?.playlistUrl) { loadDirect(p, id); return; }
+        if (!sessionData?.playlistUrl) {
+            loadDirect(p, id);
+            return;
+        }
 
         videoEl.src = sessionData.playlistUrl;
         videoEl.load();
         applyVolumeToVideo();
-        loaded = true;
         if (autoplay) videoEl.play().catch(() => {});
     }
 
@@ -176,7 +204,6 @@
         videoEl.src = `/api/stream/${encPath(p)}`;
         videoEl.load();
         applyVolumeToVideo();
-        loaded = true;
         if (autoplay) videoEl.play().catch(() => {});
     }
 
@@ -201,13 +228,19 @@
     }
 
     function cancelHide() {
-        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        if (hideTimer) {
+            clearTimeout(hideTimer);
+            hideTimer = null;
+        }
     }
 
     function scheduleHide() {
         cancelHide();
         if (paused || isDragging || isInteractingWithBar) return;
-        hideTimer = setTimeout(() => { controlsVisible = false; hideTimer = null; }, 3000);
+        hideTimer = setTimeout(() => {
+            controlsVisible = false;
+            hideTimer = null;
+        }, 3000);
     }
 
     // ── Progress bar interaction ──────────────────────────────────────────────
@@ -221,9 +254,10 @@
     function getProgressFraction(e: MouseEvent | TouchEvent): number {
         if (!progressBarEl) return 0;
         const rect = progressBarEl.getBoundingClientRect();
-        const clientX = 'touches' in e
-            ? (e.touches[0]?.clientX ?? e.changedTouches[0]?.clientX ?? 0)
-            : (e as MouseEvent).clientX;
+        const clientX =
+            'touches' in e
+                ? (e.touches[0]?.clientX ?? e.changedTouches[0]?.clientX ?? 0)
+                : (e as MouseEvent).clientX;
         return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     }
 
@@ -263,7 +297,10 @@
     function setVolume(v: number) {
         volume = v;
         muted = false;
-        if (videoEl) { videoEl.volume = v; videoEl.muted = false; }
+        if (videoEl) {
+            videoEl.volume = v;
+            videoEl.muted = false;
+        }
         saveVolumePrefs();
     }
 
@@ -278,7 +315,8 @@
 
     function volumeIcon() {
         if (muted || volume === 0) return 'M11 5 6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6';
-        if (volume > 0.5) return 'M11 5 6 9H2v6h4l5 4V5zM19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07';
+        if (volume > 0.5)
+            return 'M11 5 6 9H2v6h4l5 4V5zM19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07';
         return 'M11 5 6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07';
     }
 
@@ -311,7 +349,9 @@
             wakeLock.addEventListener('release', () => {
                 if (!wakeLockDestroyed && !paused) acquireWakeLock();
             });
-        } catch { /* ignore — may fail when page is not visible */ }
+        } catch {
+            /* ignore — may fail when page is not visible */
+        }
     }
 
     function releaseWakeLock() {
@@ -374,8 +414,9 @@
     function onDurationChange() {
         if (videoEl) duration = videoEl.duration;
     }
-    function onError() { hasError = true; loaded = true; }
-    function onCanPlay() { loaded = true; }
+    function onError() {
+        hasError = true;
+    }
 </script>
 
 <svelte:window onfullscreenchange={onFullscreenChange} />
@@ -388,9 +429,13 @@
     class:controls-hidden={!controlsVisible && !paused}
     bind:this={containerEl}
     onmousemove={showControls}
-    onmouseleave={() => { if (!paused) scheduleHide(); }}
+    onmouseleave={() => {
+        if (!paused) scheduleHide();
+    }}
     ontouchstart={showControls}
-    onclick={(e) => { onclick?.(e); }}
+    onclick={(e) => {
+        onclick?.(e);
+    }}
     onkeydown={handleKey}
     role="application"
     aria-label="Video player"
@@ -407,8 +452,10 @@
         ontimeupdate={onTimeUpdate}
         ondurationchange={onDurationChange}
         onerror={onError}
-        oncanplay={onCanPlay}
-        onclick={(e) => { e.stopPropagation(); togglePlay(); }}
+        onclick={(e) => {
+            e.stopPropagation();
+            togglePlay();
+        }}
     ></video>
 
     {#if hasError}
@@ -417,37 +464,86 @@
 
     <!-- Controls overlay -->
     <div class="vp-controls" class:visible={controlsVisible || paused}>
-
         <!-- Center play/pause -->
         <button
             class="vp-center-btn"
-            onclick={(e) => { e.stopPropagation(); togglePlay(); }}
+            onclick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+            }}
             aria-label={paused ? 'Play' : 'Pause'}
         >
             {#if paused}
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                    ><polygon points="5 3 19 12 5 21 5 3" /></svg
+                >
             {:else}
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                    ><rect x="6" y="4" width="4" height="16" /><rect
+                        x="14"
+                        y="4"
+                        width="4"
+                        height="16"
+                    /></svg
+                >
             {/if}
         </button>
 
         <!-- Prev / Next (optional) -->
         {#if showNav && onPrev}
-            <button class="vp-nav vp-nav--prev" onclick={(e) => { e.stopPropagation(); onPrev?.(); }} aria-label="Previous">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"/></svg>
+            <button
+                class="vp-nav vp-nav--prev"
+                onclick={(e) => {
+                    e.stopPropagation();
+                    onPrev?.();
+                }}
+                aria-label="Previous"
+            >
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                    ><polygon points="19 20 9 12 19 4 19 20" /><line
+                        x1="5"
+                        y1="19"
+                        x2="5"
+                        y2="5"
+                        stroke="currentColor"
+                        stroke-width="2"
+                    /></svg
+                >
             </button>
         {/if}
         {#if showNav && onNext}
-            <button class="vp-nav vp-nav--next" onclick={(e) => { e.stopPropagation(); onNext?.(); }} aria-label="Next">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"/></svg>
+            <button
+                class="vp-nav vp-nav--next"
+                onclick={(e) => {
+                    e.stopPropagation();
+                    onNext?.();
+                }}
+                aria-label="Next"
+            >
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                    ><polygon points="5 4 15 12 5 20 5 4" /><line
+                        x1="19"
+                        y1="5"
+                        x2="19"
+                        y2="19"
+                        stroke="currentColor"
+                        stroke-width="2"
+                    /></svg
+                >
             </button>
         {/if}
 
         <!-- Bottom bar -->
         <div
             class="vp-bottom"
-            onmouseenter={() => { isInteractingWithBar = true; cancelHide(); }}
-            onmouseleave={() => { isInteractingWithBar = false; scheduleHide(); }}
+            onmouseenter={() => {
+                isInteractingWithBar = true;
+                cancelHide();
+            }}
+            onmouseleave={() => {
+                isInteractingWithBar = false;
+                scheduleHide();
+            }}
         >
             <!-- Progress -->
             <div
@@ -472,17 +568,48 @@
 
             <!-- Controls row -->
             <div class="vp-row">
-                <button class="vp-btn" onclick={(e) => { e.stopPropagation(); togglePlay(); }} aria-label={paused ? 'Play' : 'Pause'}>
+                <button
+                    class="vp-btn"
+                    onclick={(e) => {
+                        e.stopPropagation();
+                        togglePlay();
+                    }}
+                    aria-label={paused ? 'Play' : 'Pause'}
+                >
                     {#if paused}
-                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                            ><polygon points="5 3 19 12 5 21 5 3" /></svg
+                        >
                     {:else}
-                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                            ><rect x="6" y="4" width="4" height="16" /><rect
+                                x="14"
+                                y="4"
+                                width="4"
+                                height="16"
+                            /></svg
+                        >
                     {/if}
                 </button>
 
-                <button class="vp-btn" onclick={(e) => { e.stopPropagation(); toggleMute(); }} aria-label={muted ? 'Unmute' : 'Mute'}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d={volumeIcon()}/>
+                <button
+                    class="vp-btn"
+                    onclick={(e) => {
+                        e.stopPropagation();
+                        toggleMute();
+                    }}
+                    aria-label={muted ? 'Unmute' : 'Mute'}
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d={volumeIcon()} />
                     </svg>
                 </button>
 
@@ -498,7 +625,9 @@
                     <input
                         class="vp-volume"
                         type="range"
-                        min="0" max="1" step="0.02"
+                        min="0"
+                        max="1"
+                        step="0.02"
                         value={muted ? 0 : volume}
                         oninput={(e) => setVolume(parseFloat((e.target as HTMLInputElement).value))}
                         aria-label="Volume"
@@ -507,14 +636,37 @@
 
                 <span class="vp-time">{fmt(currentTime)} / {fmt(duration)}</span>
 
-                <button class="vp-btn" onclick={(e) => { e.stopPropagation(); toggleFullscreen(); }} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+                <button
+                    class="vp-btn"
+                    onclick={(e) => {
+                        e.stopPropagation();
+                        toggleFullscreen();
+                    }}
+                    aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                >
                     {#if isFullscreen}
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"
+                            />
                         </svg>
                     {:else}
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+                            />
                         </svg>
                     {/if}
                 </button>
@@ -544,7 +696,7 @@
 
     .vp-error {
         position: absolute;
-        color: rgba(255,255,255,0.7);
+        color: rgba(255, 255, 255, 0.7);
         font-size: 0.875rem;
     }
 
@@ -577,7 +729,7 @@
         transform: translate(-50%, -50%);
         width: 56px;
         height: 56px;
-        background: rgba(0,0,0,0.55);
+        background: rgba(0, 0, 0, 0.55);
         border: none;
         border-radius: 50%;
         color: #fff;
@@ -585,12 +737,20 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: background 0.15s, transform 0.1s;
+        transition:
+            background 0.15s,
+            transform 0.1s;
     }
 
-    .vp-center-btn:hover { background: rgba(0,0,0,0.75); transform: translate(-50%, -50%) scale(1.08); }
+    .vp-center-btn:hover {
+        background: rgba(0, 0, 0, 0.75);
+        transform: translate(-50%, -50%) scale(1.08);
+    }
 
-    .vp-center-btn svg { width: 26px; height: 26px; }
+    .vp-center-btn svg {
+        width: 26px;
+        height: 26px;
+    }
 
     /* Prev/next nav */
     .vp-nav {
@@ -599,7 +759,7 @@
         transform: translateY(-50%);
         width: 44px;
         height: 64px;
-        background: rgba(0,0,0,0.4);
+        background: rgba(0, 0, 0, 0.4);
         border: none;
         border-radius: 6px;
         color: #fff;
@@ -610,10 +770,19 @@
         transition: background 0.15s;
     }
 
-    .vp-nav:hover { background: rgba(0,0,0,0.65); }
-    .vp-nav svg { width: 22px; height: 22px; }
-    .vp-nav--prev { left: 8px; }
-    .vp-nav--next { right: 8px; }
+    .vp-nav:hover {
+        background: rgba(0, 0, 0, 0.65);
+    }
+    .vp-nav svg {
+        width: 22px;
+        height: 22px;
+    }
+    .vp-nav--prev {
+        left: 8px;
+    }
+    .vp-nav--next {
+        right: 8px;
+    }
 
     /* Bottom bar */
     .vp-bottom {
@@ -622,7 +791,7 @@
         left: 0;
         right: 0;
         padding: 40px 12px 10px;
-        background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent);
     }
 
     /* Progress */
@@ -639,9 +808,10 @@
     .vp-progress::before {
         content: '';
         position: absolute;
-        left: 0; right: 0;
+        left: 0;
+        right: 0;
         height: 4px;
-        background: rgba(255,255,255,0.3);
+        background: rgba(255, 255, 255, 0.3);
         border-radius: 2px;
         top: 50%;
         transform: translateY(-50%);
@@ -667,7 +837,7 @@
         top: 50%;
         transform: translate(-50%, -50%);
         pointer-events: none;
-        box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
     }
 
     /* Controls row */
@@ -682,18 +852,26 @@
         height: 36px;
         background: none;
         border: none;
-        color: rgba(255,255,255,0.85);
+        color: rgba(255, 255, 255, 0.85);
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
         border-radius: 4px;
-        transition: color 0.15s, background 0.15s;
+        transition:
+            color 0.15s,
+            background 0.15s;
         flex-shrink: 0;
     }
 
-    .vp-btn:hover { color: #fff; background: rgba(255,255,255,0.12); }
-    .vp-btn svg { width: 18px; height: 18px; }
+    .vp-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.12);
+    }
+    .vp-btn svg {
+        width: 18px;
+        height: 18px;
+    }
 
     .vp-vol-wrap {
         display: flex;
@@ -704,7 +882,7 @@
         width: 72px;
         height: 4px;
         appearance: none;
-        background: rgba(255,255,255,0.3);
+        background: rgba(255, 255, 255, 0.3);
         border-radius: 2px;
         outline: none;
         cursor: pointer;
@@ -731,12 +909,14 @@
     .vp-time {
         margin-left: auto;
         font-size: 0.75rem;
-        color: rgba(255,255,255,0.7);
+        color: rgba(255, 255, 255, 0.7);
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
     }
 
     @media (max-width: 480px) {
-        .vp-volume { width: 50px; }
+        .vp-volume {
+            width: 50px;
+        }
     }
 </style>

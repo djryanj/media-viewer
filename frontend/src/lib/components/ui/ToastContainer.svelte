@@ -9,8 +9,8 @@
             <button
                 class="toast-close"
                 onclick={() => toastStore.dismiss(toast.id)}
-                aria-label="Dismiss"
-            >×</button>
+                aria-label="Dismiss">×</button
+            >
         </div>
     {/each}
 </div>

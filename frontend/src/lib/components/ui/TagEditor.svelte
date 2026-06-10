@@ -54,7 +54,9 @@
         if (!allTagsProp) {
             try {
                 knownTags = await tagsApi.list();
-            } catch { /* ignore */ }
+            } catch {
+                /* ignore */
+            }
         }
     });
 
@@ -66,9 +68,12 @@
             return;
         }
         const id = ++relatedRequestId;
-        tagsApi.related(current, current, 8).then((res) => {
-            if (id === relatedRequestId) relatedSuggestions = res;
-        }).catch(() => {});
+        tagsApi
+            .related(current, current, 8)
+            .then((res) => {
+                if (id === relatedRequestId) relatedSuggestions = res;
+            })
+            .catch(() => {});
     });
 
     // ── Input / suggestions state ─────────────────────────────────────────────
@@ -112,14 +117,22 @@
             if (idx === -1) continue;
             const isRelated = relatedSuggestions.some((r) => r.name === t.name);
             const isRecent = recentTagNames.includes(t.name);
-            const score = (isRelated ? 1000 : 0) + (isRecent ? 500 : 0) + (idx === 0 ? 100 : 0) - idx;
-            scored.push({ name: t.name, count: t.itemCount, group: isRelated ? 'related' : isRecent ? 'recent' : 'all', score });
+            const score =
+                (isRelated ? 1000 : 0) + (isRecent ? 500 : 0) + (idx === 0 ? 100 : 0) - idx;
+            scored.push({
+                name: t.name,
+                count: t.itemCount,
+                group: isRelated ? 'related' : isRecent ? 'recent' : 'all',
+                score
+            });
         }
         scored.sort((a, b) => b.score - a.score);
         return scored.slice(0, 8);
     });
 
-    const showSuggestions = $derived(focused && suggestions.length > 0 && !inputValue.includes('|'));
+    const showSuggestions = $derived(
+        focused && suggestions.length > 0 && !inputValue.includes('|')
+    );
 
     // Expansion preview — shown instead of suggestions when input contains `|`
     const expansionPreview = $derived.by<string[]>(() => {
@@ -168,11 +181,17 @@
 
     function addTag(name: string) {
         const trimmed = name.trim();
-        if (!trimmed) { inputValue = ''; return; }
+        if (!trimmed) {
+            inputValue = '';
+            return;
+        }
         const expanded = expandTagExpression(trimmed);
         const existing = new Set(tags.map((t) => t.toLowerCase()));
         const toAdd = expanded.filter((t) => !existing.has(t.toLowerCase()));
-        if (toAdd.length === 0) { inputValue = ''; return; }
+        if (toAdd.length === 0) {
+            inputValue = '';
+            return;
+        }
         for (const t of toAdd) {
             if (!knownTags.find((k) => k.name === t)) {
                 knownTags = [...knownTags, { id: 0, name: t, itemCount: 0, createdAt: '' }];
@@ -217,7 +236,9 @@
         if (idx === -1) return escHtml(text);
         return (
             escHtml(text.slice(0, idx)) +
-            '<mark>' + escHtml(text.slice(idx, idx + query.length)) + '</mark>' +
+            '<mark>' +
+            escHtml(text.slice(idx, idx + query.length)) +
+            '</mark>' +
             escHtml(text.slice(idx + query.length))
         );
     }
@@ -263,13 +284,27 @@
 
     function handleEditorKeydown(e: KeyboardEvent) {
         if (e.target instanceof HTMLInputElement) return;
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyTags(); }
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteTags(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+            e.preventDefault();
+            copyTags();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+            e.preventDefault();
+            pasteTags();
+        }
     }
 
     function handleInputKeydown(e: KeyboardEvent) {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyTags(); return; }
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteTags(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+            e.preventDefault();
+            copyTags();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+            e.preventDefault();
+            pasteTags();
+            return;
+        }
         handleKeydown(e);
     }
 </script>
@@ -292,11 +327,14 @@
             {tag}
             <button
                 class="chip-remove"
-                onclick={(e) => { e.stopPropagation(); removeTag(tag); }}
+                onclick={(e) => {
+                    e.stopPropagation();
+                    removeTag(tag);
+                }}
                 aria-label="Remove tag {tag}"
                 type="button"
-                tabindex="-1"
-            >×</button>
+                tabindex="-1">×</button
+            >
         </span>
     {/each}
 
@@ -307,9 +345,15 @@
             class="tag-input"
             placeholder={tags.length === 0 ? 'Add tags…' : ''}
             onkeydown={handleInputKeydown}
-            onfocus={() => { focused = true; highlightedIdx = -1; }}
+            onfocus={() => {
+                focused = true;
+                highlightedIdx = -1;
+            }}
             onblur={() => {
-                setTimeout(() => { focused = false; highlightedIdx = -1; }, 160);
+                setTimeout(() => {
+                    focused = false;
+                    highlightedIdx = -1;
+                }, 160);
                 if (inputValue.trim()) addTag(inputValue);
             }}
             type="text"
@@ -318,26 +362,40 @@
             role="combobox"
             aria-label="Tag input"
             aria-autocomplete="list"
-            aria-expanded={showSuggestions}
+            aria-expanded={showSuggestions || showExpansionPreview}
+            aria-controls="tag-suggestions-listbox"
         />
 
         {#if showExpansionPreview}
-            <ul class="suggestions" role="listbox" aria-label="Tag expansion preview">
+            <ul
+                id="tag-suggestions-listbox"
+                class="suggestions"
+                role="listbox"
+                aria-label="Tag expansion preview"
+            >
                 <li class="suggestion-header" role="presentation">Will create</li>
-                {#each expansionPreview as t, i (t)}
+                {#each expansionPreview as t (t)}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <li
                         role="option"
                         aria-selected={false}
                         class="suggestion expansion-preview"
-                        onmousedown={(e) => { e.preventDefault(); addTag(inputValue); }}
+                        onmousedown={(e) => {
+                            e.preventDefault();
+                            addTag(inputValue);
+                        }}
                     >
                         <span class="suggestion-name">{t}</span>
                     </li>
                 {/each}
             </ul>
         {:else if showSuggestions}
-            <ul class="suggestions" role="listbox" aria-label="Tag suggestions">
+            <ul
+                id="tag-suggestions-listbox"
+                class="suggestions"
+                role="listbox"
+                aria-label="Tag suggestions"
+            >
                 {#each suggestions as s, i (s.name)}
                     {@const groupChanged = i === 0 || suggestions[i - 1].group !== s.group}
                     {#if groupChanged && s.group !== 'all'}
@@ -351,9 +409,16 @@
                         aria-selected={i === highlightedIdx}
                         class="suggestion"
                         class:active={i === highlightedIdx}
-                        onmousedown={(e) => { e.preventDefault(); addTag(s.name); }}
-                        onmouseover={() => { highlightedIdx = i; }}
-                        onfocus={() => { highlightedIdx = i; }}
+                        onmousedown={(e) => {
+                            e.preventDefault();
+                            addTag(s.name);
+                        }}
+                        onmouseover={() => {
+                            highlightedIdx = i;
+                        }}
+                        onfocus={() => {
+                            highlightedIdx = i;
+                        }}
                     >
                         <span class="suggestion-name">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -379,9 +444,15 @@
             tabindex="-1"
             aria-label="Copy tags"
         >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+            >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
         </button>
         <button
@@ -393,9 +464,17 @@
             tabindex="-1"
             aria-label="Paste tags"
         >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+            >
+                <path
+                    d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+                />
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
             </svg>
         </button>
     </div>
@@ -468,7 +547,9 @@
         align-items: center;
         justify-content: center;
         border-radius: 50%;
-        transition: color var(--transition-fast), background var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            background var(--transition-fast);
     }
 
     .chip-remove:hover {
@@ -595,7 +676,9 @@
         color: var(--color-text-muted);
         border-radius: var(--radius-sm);
         padding: 0;
-        transition: color var(--transition-fast), background var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            background var(--transition-fast);
         flex-shrink: 0;
     }
 
@@ -623,4 +706,3 @@
         height: 14px;
     }
 </style>
-

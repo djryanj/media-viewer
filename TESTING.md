@@ -20,72 +20,64 @@ make test-package handlers
 make test-race
 ```
 
-### Frontend Tests (JavaScript)
+### Frontend Tests (TypeScript / SvelteKit)
 
-Frontend tests are split into unit tests (no backend) and integration tests (backend required).
+The frontend lives in `frontend/` and uses **Vitest** for unit tests and **Playwright** for E2E tests.
 
 ```bash
 # Run unit tests only (no backend needed)
 make frontend-test-unit
-cd static && npm run test:unit:only
+cd frontend && npm run test:unit
 
-# For integration/E2E tests, start backend first (in one terminal)
+# For E2E tests, start backend first (in one terminal)
 make dev
 
-# Run integration tests (in another terminal)
-make frontend-test-integration
-cd static && npm run test:integration
-
-# Run integration tests with the same ephemeral backend lifecycle used in CI/pr-check
-make frontend-test-integration-auto
-
-# Run E2E tests
+# Run E2E tests (in another terminal)
 make frontend-test-e2e
-cd static && npm run test:e2e
+cd frontend && npm run test:e2e
 
 # Run the stable Chromium smoke lane used for routine PR coverage
 make frontend-test-e2e-smoke
-cd static && npm run test:e2e:smoke
+cd frontend && npm run test:e2e:smoke
 
-# Run the same smoke lane with the shared ephemeral backend helper
+# Run the same smoke lane with an ephemeral auto-managed backend (matches CI)
 make frontend-test-e2e-smoke-auto
+
+# Visual regression — compare screenshots against committed PNG baselines in e2e/snapshots/
+make frontend-test-e2e-visual
+cd frontend && npm run test:e2e:visual
+
+# Regenerate visual regression baselines after intentional UI changes
+make frontend-test-e2e-visual-baselines
+cd frontend && npm run test:e2e:visual:baselines
+
+# Docs screenshot generation — writes PNGs directly to docs/images/
+make frontend-test-e2e-docs-screenshots
+cd frontend && npm run test:e2e:docs-screenshots
+
+# Same, with an ephemeral auto-managed backend
+make frontend-test-e2e-docs-screenshots-auto
 
 # Run the performance lanes with the shared ephemeral backend helper
 make frontend-test-e2e-performance-smoke-auto
 make frontend-test-e2e-performance-soak-auto
 
-# Run visual regression checks against committed JSON baselines
-make frontend-test-e2e-visual
-cd static && npm run test:e2e:visual
-
-# Refresh visual snapshot baselines after intentional UI changes
-make frontend-test-e2e-visual-baselines
-cd static && npm run test:e2e:visual:baselines
-
-# Refresh documentation screenshots written to docs/images/
-make frontend-test-e2e-docs-screenshots
-cd static && npm run test:e2e:docs-screenshots
-
-# Run all tests (unit + integration + E2E)
+# Run all tests (unit + E2E)
 make frontend-test
-cd static && npm test
+cd frontend && npm test
 
 # With coverage
 make frontend-test-unit-coverage
-cd static && npm run test:unit:coverage
+cd frontend && npm run test:unit:coverage
 
 # Watch mode
 make frontend-test-unit-watch
-cd static && npm run test:unit:watch
-
-# Interactive UI
-make frontend-test-unit-ui
-cd static && npm run test:unit:ui
+cd frontend && npm run test:unit:watch
 ```
 
-See [static/tests/README.md](static/tests/README.md) for complete frontend testing documentation.
+The default `make frontend-test-e2e` / `npm run test:e2e` path excludes `@performance` and `@docs-screenshots` specs so normal developer and PR runs stay fast and predictable. Visual regression and docs screenshot generation are separate opt-in workflows.
 
-The default `make frontend-test-e2e` / `npm run test:e2e` path excludes `@performance` specs and docs screenshot-generation specs so normal developer and PR runs stay predictable. Visual regression and docs screenshot generation are separate workflows.
+> **Legacy:** `static/e2e/` contains the old vanilla-JS Playwright suite that targeted the pre-SvelteKit frontend. Those tests rely on `window.MediaApp`, `window.Lightbox`, etc., which no longer exist in the SvelteKit app. They are preserved for reference but are not run in CI.
 
 The `*-auto` frontend targets all route through `hack/run-with-test-server.sh`. That shared helper is also used by CI, so local auto runs, `make pr-check`, release smoke, and scheduled performance jobs now use the same backend startup and readiness checks.
 

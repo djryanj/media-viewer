@@ -5,9 +5,7 @@
     import { galleryStore } from '$lib/stores/gallery.svelte';
 
     const itemCount = $derived(
-        !galleryStore.loading && galleryStore.totalItems > 0
-            ? galleryStore.totalItems
-            : null
+        !galleryStore.loading && galleryStore.totalItems > 0 ? galleryStore.totalItems : null
     );
 
     let buildInfo = $state<BuildInfo | null>(null);
@@ -16,17 +14,18 @@
 
     // Derived: is any worker actively running?
     const anyRunning = $derived(
-        !!status && (
-            status.indexer.summary.running ||
-            status.thumbnails.summary.running ||
-            status.autotagger.summary.running
-        )
+        !!status &&
+            (status.indexer.summary.running ||
+                status.thumbnails.summary.running ||
+                status.autotagger.summary.running)
     );
 
     async function fetchStatus() {
         try {
             status = await system.status();
-        } catch { /* silently ignore */ }
+        } catch {
+            /* silently ignore */
+        }
     }
 
     function startPolling() {
@@ -41,8 +40,9 @@
     });
 
     onMount(async () => {
-        [buildInfo] = await Promise.allSettled([versionApi.get(), fetchStatus()])
-            .then(([v]) => [v.status === 'fulfilled' ? v.value : null]);
+        [buildInfo] = await Promise.allSettled([versionApi.get(), fetchStatus()]).then(([v]) => [
+            v.status === 'fulfilled' ? v.value : null
+        ]);
         startPolling();
     });
 
@@ -63,8 +63,12 @@
         status
             ? [
                   status.indexer.summary.running ? workerLabel('Indexing', status.indexer) : '',
-                  status.thumbnails.summary.running ? workerLabel('Thumbnails', status.thumbnails) : '',
-                  status.autotagger.summary.running ? workerLabel('Auto-tagging', status.autotagger) : ''
+                  status.thumbnails.summary.running
+                      ? workerLabel('Thumbnails', status.thumbnails)
+                      : '',
+                  status.autotagger.summary.running
+                      ? workerLabel('Auto-tagging', status.autotagger)
+                      : ''
               ].filter(Boolean)
             : []
     );
@@ -117,8 +121,13 @@
         }
     }
 
-    .left  { flex: 1; }
-    .right { flex: 1; text-align: right; }
+    .left {
+        flex: 1;
+    }
+    .right {
+        flex: 1;
+        text-align: right;
+    }
     .centre {
         flex: 2;
         text-align: center;
@@ -140,7 +149,14 @@
     }
 
     @keyframes pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50%       { opacity: 0.4; transform: scale(0.75); }
+        0%,
+        100% {
+            opacity: 1;
+            transform: scale(1);
+        }
+        50% {
+            opacity: 0.4;
+            transform: scale(0.75);
+        }
     }
 </style>

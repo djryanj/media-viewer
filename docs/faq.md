@@ -170,7 +170,7 @@ Thumbnails are intentionally small (300x300px by default) for fast loading. To v
 ### How do I regenerate thumbnails?
 
 1. Open Settings (gear icon)
-2. Go to the "Cache" tab
+2. Go to the "System" tab
 3. Click "Regenerate Thumbnails"
 
 This will delete all thumbnails and regenerate them on next access.
@@ -283,7 +283,7 @@ See [Troubleshooting](troubleshooting.md#cannot-log-in) for details.
 
 ### Thumbnails aren't showing up. What's wrong?
 
-Use the "Rebuild Thumbnails" button in the Settings (Gear Icon -> Cache tab -> Rebuild Thumbnails). Let the process run for a few minutes, then reload the page.
+Use the "Rebuild thumbnails" button in Settings → System tab. Let the process run for a few minutes, then reload the page.
 
 If that doesn't work, check:
 

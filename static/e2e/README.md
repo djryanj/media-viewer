@@ -1,6 +1,19 @@
-# End-to-End Tests
+# End-to-End Tests (Legacy — Vanilla JS Frontend)
 
-This directory contains E2E tests using Playwright for testing complete user workflows in real browsers.
+> **⚠️ This directory targets the legacy vanilla JS frontend in `static/`.**
+>
+> The active SvelteKit frontend (`frontend/`) has its own Playwright E2E suite in
+> `frontend/e2e/`. The specs in this directory rely on `window.MediaApp`,
+> `window.Lightbox`, `window.Gallery`, and other global objects that no longer
+> exist in the SvelteKit app. They are preserved for historical reference but are
+> **not run in CI** against the current application.
+>
+> For active E2E tests, see:
+> - `frontend/e2e/` — Playwright specs for the SvelteKit app
+> - `frontend/playwright.config.ts` — Playwright configuration
+> - `make frontend-test-e2e-smoke-auto` — CI smoke lane
+
+This directory contains legacy E2E tests written with Playwright for testing the original vanilla JS frontend.
 
 ## Quick Start
 

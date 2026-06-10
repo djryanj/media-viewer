@@ -10,7 +10,6 @@ import type {
     DirectoryListing,
     DirectorySummary,
     MediaFile,
-    MediaFilesPage,
     Playlist,
     SearchResult,
     SearchSuggestion,
@@ -163,7 +162,13 @@ export const media = {
     // folders (sorted first by the DB) and a root-level favorites strip.
     // Uses offset-based pagination so the scrubber can jump to any position.
     list: (path = '', offset = 0, pageSize = 500, sort = 'name', order = 'asc', type = '') => {
-        const params = new URLSearchParams({ path, offset: String(offset), pageSize: String(pageSize), sort, order });
+        const params = new URLSearchParams({
+            path,
+            offset: String(offset),
+            pageSize: String(pageSize),
+            sort,
+            order
+        });
         if (type && type !== 'all') params.set('type', type);
         return request<DirectoryListing>(`/api/files?${params}`);
     },

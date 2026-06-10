@@ -48,19 +48,23 @@
     });
 
     // Build breadcrumb from the current path string
-    const breadcrumb = $derived<PathPart[]>((() => {
-        const p = galleryStore.path;
-        if (!p) return [];
-        const parts: PathPart[] = [{ name: 'Library', path: '' }];
-        const segments = p.split('/').filter(Boolean);
-        segments.forEach((seg, i) => {
-            parts.push({ name: seg, path: segments.slice(0, i + 1).join('/') });
-        });
-        return parts;
-    })());
+    const breadcrumb = $derived<PathPart[]>(
+        (() => {
+            const p = galleryStore.path;
+            if (!p) return [];
+            const parts: PathPart[] = [{ name: 'Library', path: '' }];
+            const segments = p.split('/').filter(Boolean);
+            segments.forEach((seg, i) => {
+                parts.push({ name: seg, path: segments.slice(0, i + 1).join('/') });
+            });
+            return parts;
+        })()
+    );
 
     const currentDirName = $derived(
-        galleryStore.path ? galleryStore.path.split('/').filter(Boolean).pop() ?? 'Library' : 'Library'
+        galleryStore.path
+            ? (galleryStore.path.split('/').filter(Boolean).pop() ?? 'Library')
+            : 'Library'
     );
 
     function handleKeydown(e: KeyboardEvent) {
@@ -77,7 +81,9 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <svelte:head>
-    <title>{currentDirName !== 'Library' ? `${currentDirName} — Media Viewer` : 'Media Viewer'}</title>
+    <title
+        >{currentDirName !== 'Library' ? `${currentDirName} — Media Viewer` : 'Media Viewer'}</title
+    >
 </svelte:head>
 
 <div class="gallery-page">
@@ -156,6 +162,8 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

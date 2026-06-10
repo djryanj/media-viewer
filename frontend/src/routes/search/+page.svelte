@@ -22,7 +22,11 @@
         if (q !== currentQuery) {
             currentQuery = q;
             if (q) runSearch(q);
-            else { items = []; totalItems = 0; hasMore = false; }
+            else {
+                items = [];
+                totalItems = 0;
+                hasMore = false;
+            }
         }
     });
 
@@ -56,7 +60,9 @@
             hasMore = items.length < result.totalItems;
             // Extend lightbox navigation so newly-visible items are reachable
             if (lightboxStore.open) {
-                lightboxStore.extendItems(newItems.filter((i) => i.type !== 'folder' && i.type !== 'playlist'));
+                lightboxStore.extendItems(
+                    newItems.filter((i) => i.type !== 'folder' && i.type !== 'playlist')
+                );
             }
         } catch {
             // silently ignore — retry on next scroll
@@ -73,7 +79,9 @@
         if (!sentinel) return;
         observer?.disconnect();
         observer = new IntersectionObserver(
-            (entries) => { if (entries[0].isIntersecting) loadMore(); },
+            (entries) => {
+                if (entries[0].isIntersecting) loadMore();
+            },
             { rootMargin: '0px 0px 600px 0px' }
         );
         observer.observe(sentinel);
@@ -180,6 +188,8 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

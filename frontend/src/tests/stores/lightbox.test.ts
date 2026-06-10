@@ -126,10 +126,7 @@ describe('lightboxStore', () => {
 });
 
 describe('lightboxStore — extendItems', () => {
-    const extra: MediaFile[] = [
-        makeImage(4, '/img4.jpg'),
-        makeImage(5, '/img5.jpg')
-    ];
+    const extra: MediaFile[] = [makeImage(4, '/img4.jpg'), makeImage(5, '/img5.jpg')];
 
     beforeEach(() => {
         lightboxStore.close();

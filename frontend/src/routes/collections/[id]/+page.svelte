@@ -46,7 +46,10 @@
         if (!detail) return;
         savingOrder = true;
         try {
-            await collectionsApi.reorder(id, reorderedItems.map((i) => i.path));
+            await collectionsApi.reorder(
+                id,
+                reorderedItems.map((i) => i.path)
+            );
             detail = { ...detail, items: reorderedItems };
             reorderMode = false;
         } catch {
@@ -102,7 +105,14 @@
 
 <div class="page-header">
     <button class="back-btn" onclick={() => goto('/collections')} aria-label="Back to albums">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+        >
             <polyline points="15 18 9 12 15 6" />
         </svg>
     </button>
@@ -112,7 +122,11 @@
         {#if !reorderMode && detail.items.length > 1}
             <button class="action-btn" onclick={enterReorder}>Reorder</button>
         {:else if reorderMode}
-            <button class="action-btn action-btn--cancel" onclick={cancelReorder} disabled={savingOrder}>Cancel</button>
+            <button
+                class="action-btn action-btn--cancel"
+                onclick={cancelReorder}
+                disabled={savingOrder}>Cancel</button
+            >
             <button class="action-btn action-btn--save" onclick={saveOrder} disabled={savingOrder}>
                 {savingOrder ? 'Saving…' : 'Save'}
             </button>
@@ -141,9 +155,9 @@
             >
                 <span class="drag-handle" aria-hidden="true" title="Drag to reorder">
                     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                        <circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>
-                        <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
-                        <circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
+                        <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
+                        <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+                        <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
                     </svg>
                 </span>
 
@@ -152,7 +166,9 @@
                     src={thumbUrl(item)}
                     alt={item.name}
                     loading="lazy"
-                    onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
+                    onerror={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                    }}
                 />
 
                 <span class="reorder-name">{item.name}</span>
@@ -165,7 +181,14 @@
                         aria-label="Move up"
                         title="Move up"
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
                             <polyline points="18 15 12 9 6 15" />
                         </svg>
                     </button>
@@ -176,7 +199,14 @@
                         aria-label="Move down"
                         title="Move down"
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
                             <polyline points="6 9 12 15 18 9" />
                         </svg>
                     </button>
@@ -211,8 +241,13 @@
         flex-shrink: 0;
     }
 
-    .back-btn:hover { background: var(--color-surface-2); }
-    .back-btn svg { width: 20px; height: 20px; }
+    .back-btn:hover {
+        background: var(--color-surface-2);
+    }
+    .back-btn svg {
+        width: 20px;
+        height: 20px;
+    }
 
     .page-title {
         font-size: var(--text-xl);
@@ -241,8 +276,13 @@
         cursor: pointer;
     }
 
-    .action-btn:hover:not(:disabled) { background: var(--color-surface-3); }
-    .action-btn:disabled { opacity: 0.5; cursor: default; }
+    .action-btn:hover:not(:disabled) {
+        background: var(--color-surface-3);
+    }
+    .action-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
 
     .action-btn--save {
         background: var(--color-primary);
@@ -250,9 +290,14 @@
         border-color: var(--color-primary);
     }
 
-    .action-btn--save:hover:not(:disabled) { opacity: 0.9; background: var(--color-primary); }
+    .action-btn--save:hover:not(:disabled) {
+        opacity: 0.9;
+        background: var(--color-primary);
+    }
 
-    .action-btn--cancel { color: var(--color-text-muted); }
+    .action-btn--cancel {
+        color: var(--color-text-muted);
+    }
 
     /* Reorder list */
     .reorder-list {
@@ -273,11 +318,15 @@
         background: var(--color-surface);
         border: 1px solid var(--color-border);
         cursor: grab;
-        transition: background var(--transition-fast), opacity var(--transition-fast);
+        transition:
+            background var(--transition-fast),
+            opacity var(--transition-fast);
         user-select: none;
     }
 
-    .reorder-item:hover { background: var(--color-surface-2); }
+    .reorder-item:hover {
+        background: var(--color-surface-2);
+    }
 
     .reorder-item.dragging {
         opacity: 0.4;
@@ -335,9 +384,18 @@
         border-radius: var(--radius-sm);
     }
 
-    .move-btn:hover:not(:disabled) { background: var(--color-surface-3); color: var(--color-text); }
-    .move-btn:disabled { opacity: 0.25; cursor: default; }
-    .move-btn svg { width: 14px; height: 14px; }
+    .move-btn:hover:not(:disabled) {
+        background: var(--color-surface-3);
+        color: var(--color-text);
+    }
+    .move-btn:disabled {
+        opacity: 0.25;
+        cursor: default;
+    }
+    .move-btn svg {
+        width: 14px;
+        height: 14px;
+    }
 
     /* Common */
     .state-msg {
@@ -349,7 +407,9 @@
         font-size: var(--text-sm);
     }
 
-    .state-msg.error { color: var(--color-danger); }
+    .state-msg.error {
+        color: var(--color-danger);
+    }
 
     .spinner {
         width: 28px;
@@ -361,6 +421,8 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

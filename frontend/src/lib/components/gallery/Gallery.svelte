@@ -145,7 +145,8 @@
         if (!galleryStore.isDragging) {
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         }
-        const under = document.elementFromPoint(e.clientX, e.clientY)
+        const under = document
+            .elementFromPoint(e.clientX, e.clientY)
             ?.closest<HTMLElement>('[data-path]');
         const toPath = under?.dataset.path ?? dragAnchorPath;
         galleryStore.selectDragRange(dragAnchorPath, toPath);
@@ -255,10 +256,7 @@
 {/if}
 
 {#if collectionsItem}
-    <CollectionsPanel
-        itemPaths={[collectionsItem.path]}
-        onclose={() => (collectionsItem = null)}
-    />
+    <CollectionsPanel itemPaths={[collectionsItem.path]} onclose={() => (collectionsItem = null)} />
 {/if}
 
 <style>
@@ -308,6 +306,8 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

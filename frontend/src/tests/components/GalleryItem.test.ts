@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 import GalleryItem from '$lib/components/gallery/GalleryItem.svelte';
 import type { MediaFile } from '$lib/api/types';
 

@@ -3,11 +3,7 @@
     import { authStore } from '$lib/stores/auth.svelte';
     import { goto } from '$app/navigation';
     import { auth as authApi, ApiError } from '$lib/api/client';
-    import {
-        isWebAuthnSupported,
-        prepareGetOptions,
-        serializeGetCredential
-    } from '$lib/utils/webauthn';
+    import { isWebAuthnSupported, prepareGetOptions } from '$lib/utils/webauthn';
 
     let password = $state('');
     let confirmPassword = $state('');
@@ -15,6 +11,7 @@
     let loading = $state(false);
     let passkeyLoading = $state(false);
     let passkeyAvailable = $state(false);
+    let passwordInput = $state<HTMLInputElement | null>(null);
 
     const isSetup = $derived(authStore.setupRequired);
     const webauthnSupported = isWebAuthnSupported();
@@ -48,7 +45,9 @@
             } else if (err instanceof ApiError && err.status === 400) {
                 error = err.message || 'Invalid password';
             } else {
-                error = isSetup ? 'Setup failed. Please try again.' : 'Login failed. Please try again.';
+                error = isSetup
+                    ? 'Setup failed. Please try again.'
+                    : 'Login failed. Please try again.';
             }
         } finally {
             loading = false;
@@ -66,8 +65,12 @@
         passkeyLoading = true;
         try {
             const { options, sessionId } = await authApi.webauthnLoginBegin();
-            const publicKey = prepareGetOptions(options as unknown as PublicKeyCredentialRequestOptions);
-            const credential = await navigator.credentials.get({ publicKey }) as PublicKeyCredential | null;
+            const publicKey = prepareGetOptions(
+                options as unknown as PublicKeyCredentialRequestOptions
+            );
+            const credential = (await navigator.credentials.get({
+                publicKey
+            })) as PublicKeyCredential | null;
             if (!credential) return;
             await authApi.webauthnLoginFinish(sessionId, credential);
             // Re-check auth status to update store, then navigate
@@ -96,13 +99,15 @@
 
         try {
             const { options, sessionId } = await authApi.webauthnLoginBegin();
-            const publicKey = prepareGetOptions(options as unknown as PublicKeyCredentialRequestOptions);
+            const publicKey = prepareGetOptions(
+                options as unknown as PublicKeyCredentialRequestOptions
+            );
             conditionalUIAbort = new AbortController();
-            const credential = await navigator.credentials.get({
+            const credential = (await navigator.credentials.get({
                 publicKey,
                 mediation: 'conditional' as CredentialMediationRequirement,
                 signal: conditionalUIAbort.signal
-            }) as PublicKeyCredential | null;
+            })) as PublicKeyCredential | null;
             if (!credential) return;
             await authApi.webauthnLoginFinish(sessionId, credential);
             await authStore.check();
@@ -115,12 +120,15 @@
     }
 
     onMount(async () => {
+        passwordInput?.focus();
         if (webauthnSupported && !isSetup) {
             try {
                 const { available } = await authApi.webauthnAvailable();
                 passkeyAvailable = available;
                 if (available) startConditionalUI();
-            } catch { /* ignore */ }
+            } catch {
+                /* ignore */
+            }
         }
     });
 
@@ -153,9 +161,9 @@
                     id="password"
                     type="password"
                     bind:value={password}
+                    bind:this={passwordInput}
                     autocomplete={isSetup ? 'new-password' : 'current-password webauthn'}
                     required
-                    autofocus
                     disabled={loading}
                     class="field-input"
                     placeholder={isSetup ? 'Choose a password' : 'Enter password'}
@@ -182,7 +190,11 @@
                 <p class="login-error" role="alert">{error}</p>
             {/if}
 
-            <button type="submit" class="login-btn" disabled={loading || !password || (isSetup && !confirmPassword)}>
+            <button
+                type="submit"
+                class="login-btn"
+                disabled={loading || !password || (isSetup && !confirmPassword)}
+            >
                 {#if loading}
                     <span class="btn-spinner" aria-hidden="true"></span>
                     {isSetup ? 'Setting up…' : 'Signing in…'}
@@ -208,11 +220,20 @@
                     Waiting for passkey…
                 {:else}
                     <!-- Passkey icon (FIDO key) -->
-                    <svg class="passkey-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <circle cx="8" cy="15" r="4"/>
-                        <path d="m12 15 5-5"/>
-                        <path d="m17 10 2-2"/>
-                        <path d="m15 12 2 2"/>
+                    <svg
+                        class="passkey-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <circle cx="8" cy="15" r="4" />
+                        <path d="m12 15 5-5" />
+                        <path d="m17 10 2-2" />
+                        <path d="m15 12 2 2" />
                     </svg>
                     Sign in with passkey
                 {/if}
@@ -323,7 +344,9 @@
         font-weight: 600;
         padding: var(--spacing-3);
         cursor: pointer;
-        transition: background var(--transition-fast), opacity var(--transition-fast);
+        transition:
+            background var(--transition-fast),
+            opacity var(--transition-fast);
         width: 100%;
         margin-top: var(--spacing-2);
     }
@@ -369,7 +392,9 @@
         font-size: var(--text-base);
         font-weight: 500;
         cursor: pointer;
-        transition: background var(--transition-fast), border-color var(--transition-fast);
+        transition:
+            background var(--transition-fast),
+            border-color var(--transition-fast);
     }
 
     .passkey-btn:hover:not(:disabled) {
@@ -392,7 +417,7 @@
     .btn-spinner {
         width: 16px;
         height: 16px;
-        border: 2px solid rgba(0,0,0,0.3);
+        border: 2px solid rgba(0, 0, 0, 0.3);
         border-top-color: #000;
         border-radius: 50%;
         animation: spin 0.6s linear infinite;
@@ -400,11 +425,13 @@
     }
 
     .btn-spinner.dark {
-        border-color: rgba(255,255,255,0.3);
+        border-color: rgba(255, 255, 255, 0.3);
         border-top-color: var(--color-text);
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>

@@ -518,7 +518,13 @@ pr-check:
 	fi
 	@# ── Frontend checks ──
 	@if [ -n "$(_HAS_FRONTEND_CHANGES)" ]; then \
-		echo "Step 4: Running frontend checks..."; \
+		echo "Step 4: Running frontend lint (ESLint)..."; \
+		$(MAKE) frontend-lint || exit 1; \
+		echo ""; \
+		echo "Step 4b: Running frontend format check..."; \
+		$(MAKE) frontend-format-check || exit 1; \
+		echo ""; \
+		echo "Step 4c: Running frontend type check (svelte-check)..."; \
 		$(MAKE) frontend-check || exit 1; \
 		echo ""; \
 		echo "Step 5: Running frontend unit tests..."; \

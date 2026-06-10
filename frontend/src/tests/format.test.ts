@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatBytes, formatDate, formatDuration } from '$lib/utils/format';
+import { formatBytes, formatDuration } from '$lib/utils/format';
 
 describe('formatBytes', () => {
     it('formats 0 bytes', () => {

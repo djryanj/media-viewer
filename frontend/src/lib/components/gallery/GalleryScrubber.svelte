@@ -167,7 +167,10 @@
 
         if (clamped >= loadedStart && clamped <= loadedEnd) {
             // In-window: scroll DOM synchronously, cancel any stale out-of-window fetch.
-            if (fetchTimer !== null) { clearTimeout(fetchTimer); fetchTimer = null; }
+            if (fetchTimer !== null) {
+                clearTimeout(fetchTimer);
+                fetchTimer = null;
+            }
             doInWindowScroll(clamped);
             return;
         }
@@ -186,7 +189,10 @@
         if (isDragging) {
             // Cancel the debounce and do a final authoritative jump to the exact
             // release position so the loaded window always matches where the thumb rests.
-            if (fetchTimer !== null) { clearTimeout(fetchTimer); fetchTimer = null; }
+            if (fetchTimer !== null) {
+                clearTimeout(fetchTimer);
+                fetchTimer = null;
+            }
             jumpToFraction(fractionFromPointer(e));
             isDragging = false;
         }
@@ -243,11 +249,7 @@
             ></div>
 
             <!-- Thumb -->
-            <div
-                class="thumb"
-                class:dragging={isDragging}
-                style:top="{thumbFrac * 100}%"
-            ></div>
+            <div class="thumb" class:dragging={isDragging} style:top="{thumbFrac * 100}%"></div>
 
             <!-- Hover line -->
             {#if hoverFraction !== null}
@@ -257,10 +259,9 @@
 
         <!-- Hover tooltip -->
         {#if hoverFraction !== null && tooltipLabel}
-            <div
-                class="tooltip"
-                style:top="{Math.min(hoverFraction * 100, 92)}%"
-            >{tooltipLabel}</div>
+            <div class="tooltip" style:top="{Math.min(hoverFraction * 100, 92)}%">
+                {tooltipLabel}
+            </div>
         {/if}
     </div>
 {/if}
@@ -326,7 +327,9 @@
 
     /* Hide labels on mobile */
     @media (max-width: 1023px) {
-        .ticks { display: none; }
+        .ticks {
+            display: none;
+        }
     }
 
     /* ── Track ── */
@@ -362,7 +365,9 @@
         border-radius: 50%;
         background: var(--color-primary);
         box-shadow: 0 0 0 2px var(--color-bg);
-        transition: width var(--transition-fast), height var(--transition-fast);
+        transition:
+            width var(--transition-fast),
+            height var(--transition-fast);
         pointer-events: none;
     }
 

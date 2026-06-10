@@ -83,7 +83,8 @@
     function handleKeydown(e: KeyboardEvent) {
         if (!galleryStore.selectionMode) return;
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+            return;
         if (e.key === 't' || e.key === 'T') {
             e.preventDefault();
             if (tagPanelOpen) tagPanelOpen = false;
@@ -100,7 +101,9 @@
         const items = galleryStore.getSelectedItems();
         if (!items.length) return;
         try {
-            await favorites.bulkAdd(items.map((i) => ({ path: i.path, name: i.name, type: i.type })));
+            await favorites.bulkAdd(
+                items.map((i) => ({ path: i.path, name: i.name, type: i.type }))
+            );
             items.forEach((i) => {
                 galleryStore.updateItem(i.path, { isFavorite: true });
                 galleryStore.addFavorite(i);
@@ -143,33 +146,64 @@
                     aria-label="Add to collection"
                     aria-pressed={collectionsPanelOpen}
                 >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <rect x="3" y="3" width="7" height="7" rx="1"/>
-                        <rect x="14" y="3" width="7" height="7" rx="1"/>
-                        <rect x="3" y="14" width="7" height="7" rx="1"/>
-                        <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
                     </svg>
                     Collections
                 </button>
                 <button
                     class="tb-btn"
                     class:active={tagPanelOpen}
-                    onclick={() => { if (tagPanelOpen) tagPanelOpen = false; else openTagModal(); }}
+                    onclick={() => {
+                        if (tagPanelOpen) tagPanelOpen = false;
+                        else openTagModal();
+                    }}
                     aria-label="Tag selected"
                 >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                        />
                         <line x1="7" y1="7" x2="7.01" y2="7" />
                     </svg>
                     Tag
                 </button>
                 <button class="tb-btn" onclick={bulkFavorite} aria-label="Add to favorites">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
+                        <polygon
+                            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                        />
                     </svg>
                 </button>
                 <button class="tb-btn" onclick={bulkUnfavorite} aria-label="Remove from favorites">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
@@ -177,7 +211,6 @@
                 <button class="tb-btn cancel" onclick={galleryStore.clearSelection}>Cancel</button>
             </div>
         </div>
-
     {:else}
         <!-- Default toolbar -->
         <div class="default-bar">
@@ -188,8 +221,8 @@
                         class="filter-chip"
                         class:active={galleryStore.typeFilter === f.value}
                         onclick={() => galleryStore.setTypeFilter(f.value)}
-                        aria-pressed={galleryStore.typeFilter === f.value}
-                    >{f.label}</button>
+                        aria-pressed={galleryStore.typeFilter === f.value}>{f.label}</button
+                    >
                 {/each}
             </div>
 
@@ -202,7 +235,13 @@
                         aria-expanded={sortOpen}
                         aria-haspopup="listbox"
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
                             <line x1="3" y1="6" x2="21" y2="6" />
                             <line x1="3" y1="12" x2="15" y2="12" />
                             <line x1="3" y1="18" x2="9" y2="18" />
@@ -213,21 +252,23 @@
                     {#if sortOpen}
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <div
-                            class="sort-backdrop"
-                            onclick={() => (sortOpen = false)}
-                        ></div>
+                        <div class="sort-backdrop" onclick={() => (sortOpen = false)}></div>
                         <ul class="sort-menu" role="listbox" aria-label="Sort options">
                             {#each sortOptions as opt}
-                                <li role="option" aria-selected={opt.field === galleryStore.sort && opt.order === galleryStore.order}>
+                                <li
+                                    role="option"
+                                    aria-selected={opt.field === galleryStore.sort &&
+                                        opt.order === galleryStore.order}
+                                >
                                     <button
                                         class="sort-option"
-                                        class:active={opt.field === galleryStore.sort && opt.order === galleryStore.order}
+                                        class:active={opt.field === galleryStore.sort &&
+                                            opt.order === galleryStore.order}
                                         onclick={() => {
                                             galleryStore.setSort(opt.field, opt.order);
                                             sortOpen = false;
-                                        }}
-                                    >{opt.label}</button>
+                                        }}>{opt.label}</button
+                                    >
                                 </li>
                             {/each}
                         </ul>
@@ -238,7 +279,6 @@
     {/if}
 </div>
 
-
 <svelte:window onkeydown={handleKeydown} />
 
 {#if tagPanelOpen}
@@ -248,27 +288,31 @@
     <div class="tag-modal" role="dialog" aria-modal="true" aria-label="Tag selected items">
         <div class="tag-modal-header">
             <span class="tag-modal-title">Tags — {galleryStore.selectedCount} item(s)</span>
-            <button class="tag-modal-close" onclick={() => (tagPanelOpen = false)} aria-label="Close">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <button
+                class="tag-modal-close"
+                onclick={() => (tagPanelOpen = false)}
+                aria-label="Close"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                >
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
             </button>
         </div>
         <div class="tag-modal-body">
-            <TagEditor
-                tags={bulkTagValue}
-                onchange={handleBulkTagChange}
-            />
+            <TagEditor tags={bulkTagValue} onchange={handleBulkTagChange} />
         </div>
     </div>
 {/if}
 
 {#if collectionsPanelOpen && selectedPaths.length > 0}
-    <CollectionsPanel
-        itemPaths={selectedPaths}
-        onclose={() => (collectionsPanelOpen = false)}
-    />
+    <CollectionsPanel itemPaths={selectedPaths} onclose={() => (collectionsPanelOpen = false)} />
 {/if}
 
 <style>
@@ -305,7 +349,10 @@
         cursor: pointer;
         font-size: var(--text-xs);
         padding: 2px var(--spacing-2);
-        transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            background var(--transition-fast),
+            border-color var(--transition-fast);
         white-space: nowrap;
     }
 

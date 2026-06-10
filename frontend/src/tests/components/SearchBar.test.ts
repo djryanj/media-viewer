@@ -6,13 +6,13 @@ import type { SearchSuggestion } from '$lib/api/types';
 const mockSuggest = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 
 vi.mock('$app/navigation', () => ({
-    goto: vi.fn(),
+    goto: vi.fn()
 }));
 
 vi.mock('$lib/api/client', () => ({
     media: {
-        suggest: mockSuggest,
-    },
+        suggest: mockSuggest
+    }
 }));
 
 import { goto } from '$app/navigation';

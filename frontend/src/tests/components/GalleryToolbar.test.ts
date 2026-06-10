@@ -48,14 +48,20 @@ describe('GalleryToolbar — type filter chips', () => {
     it('"All" chip has aria-pressed=true when typeFilter is "all"', () => {
         mockStore.typeFilter = 'all';
         render(GalleryToolbar);
-        expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe(
+            'true'
+        );
     });
 
     it('non-active chips have aria-pressed=false', () => {
         mockStore.typeFilter = 'all';
         render(GalleryToolbar);
-        expect(screen.getByRole('button', { name: 'Images' }).getAttribute('aria-pressed')).toBe('false');
-        expect(screen.getByRole('button', { name: 'Videos' }).getAttribute('aria-pressed')).toBe('false');
+        expect(screen.getByRole('button', { name: 'Images' }).getAttribute('aria-pressed')).toBe(
+            'false'
+        );
+        expect(screen.getByRole('button', { name: 'Videos' }).getAttribute('aria-pressed')).toBe(
+            'false'
+        );
     });
 
     it('clicking "Images" calls setTypeFilter("image")', async () => {
@@ -113,8 +119,24 @@ describe('GalleryToolbar — bulk Collections button in selection mode', () => {
         mockStore.selectionMode = true;
         mockStore.selectedCount = 2;
         mockStore.getSelectedItems.mockReturnValue([
-            { path: '/a.jpg', name: 'a.jpg', type: 'image', id: 1, parentPath: '', size: 0, modTime: '' },
-            { path: '/b.jpg', name: 'b.jpg', type: 'image', id: 2, parentPath: '', size: 0, modTime: '' }
+            {
+                path: '/a.jpg',
+                name: 'a.jpg',
+                type: 'image',
+                id: 1,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            },
+            {
+                path: '/b.jpg',
+                name: 'b.jpg',
+                type: 'image',
+                id: 2,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            }
         ]);
     });
 
