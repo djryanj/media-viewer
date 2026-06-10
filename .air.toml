@@ -5,8 +5,14 @@ tmp_dir = "tmp"
   cmd = "go build -tags 'fts5' -o ./tmp/main ./cmd/media-viewer"
   entrypoint = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
-  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules", "static/tests", "static/e2e", "site", "docs"]
+  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules", "static/tests", "static/e2e", "site", "docs", "frontend/e2e", "frontend/node_modules", "frontend/src/tests"]
   delay = 1000
 
 [misc]
   clean_on_exit = true
+
+[watch]
+  # Use polling so file changes made on the host (Windows/Mac) are detected
+  # reliably when the workspace is bind-mounted into the devcontainer.
+  poll = true
+  poll_interval = 300 # ms

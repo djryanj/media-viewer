@@ -183,6 +183,44 @@ func (h *Handlers) ListFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, listing)
 }
 
+// GetDirectorySummary returns label groups for the gallery scrubber.
+// GET /api/files/summary?path=&sort=name|date|size&order=asc|desc
+func (h *Handlers) GetDirectorySummary(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	path := r.URL.Query().Get("path")
+	sort := database.SortField(r.URL.Query().Get("sort"))
+	order := database.SortOrder(r.URL.Query().Get("order"))
+
+	if sort == "" {
+		sort = database.SortByName
+	}
+	if order == "" {
+		order = database.SortAsc
+	}
+
+	summary, err := h.db.GetDirectorySummary(ctx, path, sort, order)
+	if err != nil {
+		logging.Error("GetDirectorySummary error: %v", err)
+		http.Error(w, "Failed to build summary", http.StatusInternalServerError)
+		return
+	}
+
+	// Light caching: ETag based on path+sort+order+total so any re-index
+	// that changes the item count invalidates the cache automatically.
+	etagData := fmt.Sprintf("%s_%s_%s_%d", path, sort, order, summary.Total)
+	etag := fmt.Sprintf(`"%x"`, md5.Sum([]byte(etagData))) //nolint:gosec // MD5 for cache key
+	w.Header().Set("Cache-Control", "private, no-cache")
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, summary)
+}
+
 // defaultMediaPageSize is the number of media files returned per page by GetMediaFiles.
 // Directories smaller than this get a single complete response; larger directories
 // are served in pages so the lightbox can open quickly while the rest streams in

@@ -22,7 +22,7 @@ const (
 	statusAlive           = "alive"
 	statusReady           = "ready"
 	statusNotReady        = "not_ready"
-	loginHTMLPath         = "/login.html"
+	loginHTMLPath         = "/login"
 )
 
 // writeJSON encodes v as JSON and writes it to the response writer.

@@ -240,9 +240,9 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 		// Allow auth endpoints without authentication
 		if strings.HasPrefix(r.URL.Path, "/api/auth/") ||
 			r.URL.Path == loginHTMLPath ||
-			r.URL.Path == "/css/login.css" ||
-			r.URL.Path == "/js/login.js" ||
-			r.URL.Path == "/js/webauthn.js" ||
+			// SvelteKit SPA shell and compiled assets
+			r.URL.Path == "/" ||
+			strings.HasPrefix(r.URL.Path, "/_app/") ||
 			// Health check endpoints
 			r.URL.Path == "/health" ||
 			r.URL.Path == "/healthz" ||

@@ -724,7 +724,7 @@ func TestListDirectoryFavoritesIntegration(t *testing.T) {
 		t.Error("Expected no favorites on page 2")
 	}
 
-	// Non-root path should NOT load favorites
+	// Non-root path on page 1 SHOULD also load favorites
 	listing3, err := db.ListDirectory(ctx, ListOptions{
 		Path:     "subfolder",
 		Page:     1,
@@ -733,8 +733,8 @@ func TestListDirectoryFavoritesIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListDirectory subfolder failed: %v", err)
 	}
-	if len(listing3.Favorites) != 0 {
-		t.Error("Expected no favorites for non-root path")
+	if len(listing3.Favorites) == 0 {
+		t.Error("Expected favorites to be loaded for non-root path on page 1")
 	}
 }
 
@@ -1441,6 +1441,119 @@ func TestGetAllIndexedPathsIntegration(t *testing.T) {
 			t.Errorf("Expected path %q in result", f.Path)
 		}
 	}
+}
+
+// TestGetDirectorySummaryIntegration tests GetDirectorySummary returns correct label groups.
+func TestGetDirectorySummaryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	base := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	files := []MediaFile{
+		{Name: "Apple.jpg", Path: "Apple.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: base},
+		{Name: "Avocado.jpg", Path: "Avocado.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: base.AddDate(0, 1, 0)},
+		{Name: "Banana.jpg", Path: "Banana.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: base.AddDate(-1, 0, 0)},
+		{Name: "Cherry.jpg", Path: "Cherry.jpg", ParentPath: "sub", Type: FileTypeImage, Size: 100, ModTime: base},
+	}
+	tx, err := db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	for i := range files {
+		if err := tx.UpsertFile(ctx, &files[i]); err != nil {
+			t.Fatalf("UpsertFile: %v", err)
+		}
+	}
+	if err := db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	t.Run("name sort groups by letter", func(t *testing.T) {
+		summary, err := db.GetDirectorySummary(ctx, "", SortByName, SortAsc)
+		if err != nil {
+			t.Fatalf("GetDirectorySummary: %v", err)
+		}
+		if summary.Total != 3 {
+			t.Errorf("expected total=3, got %d", summary.Total)
+		}
+		if summary.Sort != string(SortByName) {
+			t.Errorf("expected sort=%q, got %q", SortByName, summary.Sort)
+		}
+		if len(summary.Groups) != 2 {
+			t.Fatalf("expected 2 groups (A, B), got %d: %v", len(summary.Groups), summary.Groups)
+		}
+		if summary.Groups[0].Label != "A" || summary.Groups[0].Count != 2 {
+			t.Errorf("group[0]: got %+v, want {A offset:0 count:2}", summary.Groups[0])
+		}
+		if summary.Groups[1].Label != "B" || summary.Groups[1].Count != 1 {
+			t.Errorf("group[1]: got %+v, want {B offset:2 count:1}", summary.Groups[1])
+		}
+	})
+
+	t.Run("date sort groups by year", func(t *testing.T) {
+		summary, err := db.GetDirectorySummary(ctx, "", SortByDate, SortAsc)
+		if err != nil {
+			t.Fatalf("GetDirectorySummary: %v", err)
+		}
+		if summary.Total != 3 {
+			t.Errorf("expected total=3, got %d", summary.Total)
+		}
+		// Files span 2023 and 2024
+		if len(summary.Groups) != 2 {
+			t.Fatalf("expected 2 year groups, got %d: %v", len(summary.Groups), summary.Groups)
+		}
+		if summary.Groups[0].Label != "2023" {
+			t.Errorf("expected first group label=2023, got %q", summary.Groups[0].Label)
+		}
+		if summary.Groups[1].Label != "2024" {
+			t.Errorf("expected second group label=2024, got %q", summary.Groups[1].Label)
+		}
+	})
+
+	t.Run("size sort returns no groups", func(t *testing.T) {
+		summary, err := db.GetDirectorySummary(ctx, "", SortBySize, SortAsc)
+		if err != nil {
+			t.Fatalf("GetDirectorySummary: %v", err)
+		}
+		if summary.Total != 3 {
+			t.Errorf("expected total=3, got %d", summary.Total)
+		}
+		if len(summary.Groups) != 0 {
+			t.Errorf("expected no groups for size sort, got %v", summary.Groups)
+		}
+	})
+
+	t.Run("subdirectory scoped correctly", func(t *testing.T) {
+		summary, err := db.GetDirectorySummary(ctx, "sub", SortByName, SortAsc)
+		if err != nil {
+			t.Fatalf("GetDirectorySummary: %v", err)
+		}
+		if summary.Total != 1 {
+			t.Errorf("expected total=1, got %d", summary.Total)
+		}
+		if len(summary.Groups) != 1 || summary.Groups[0].Label != "C" {
+			t.Errorf("expected group C, got %v", summary.Groups)
+		}
+	})
+
+	t.Run("empty directory returns zero total", func(t *testing.T) {
+		summary, err := db.GetDirectorySummary(ctx, "nonexistent", SortByName, SortAsc)
+		if err != nil {
+			t.Fatalf("GetDirectorySummary: %v", err)
+		}
+		if summary.Total != 0 {
+			t.Errorf("expected total=0, got %d", summary.Total)
+		}
+		if len(summary.Groups) != 0 {
+			t.Errorf("expected no groups, got %v", summary.Groups)
+		}
+	})
 }
 
 // end of queries_integration_test.go additions

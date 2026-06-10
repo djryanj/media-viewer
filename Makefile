@@ -16,6 +16,8 @@ LDFLAGS := -X 'media-viewer/internal/startup.Version=$(VERSION)' \
 DIST_DIR := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 STATIC_DIR := static
+# SvelteKit frontend directory
+FRONTEND_DIR := frontend
 
 # Build configuration
 BUILD_TAGS := fts5
@@ -65,6 +67,10 @@ FORCE ?= 0
 		frontend-test-e2e-module frontend-test-e2e-category frontend-test-e2e-file frontend-test-e2e-file-auto \
         frontend-test-e2e-headed frontend-test-e2e-ui frontend-test-e2e-debug \
 		frontend-test-e2e-coverage frontend-test-e2e-report \
+        svelte-install svelte-dev svelte-build svelte-preview \
+        svelte-lint svelte-lint-fix svelte-check svelte-format svelte-format-check \
+        svelte-test svelte-test-unit svelte-test-unit-watch svelte-test-e2e svelte-test-e2e-auto \
+        svelte-sync-icons
 		fmt gofmt lint lint-fix lint-all lint-fix-all format-all check-all \
         clean clean-all \
 		docker-build docker-build-dev docker-run \
@@ -154,14 +160,14 @@ prepare-release: _check-version
 	@git pull --ff-only origin main
 	@echo "─── Creating branch release/$(VERSION_TAG) ───────────────────────────"
 	@git checkout -b release/$(VERSION_TAG)
-	@echo "─── Bumping static/package.json to $(VERSION_NUM) ───────────────────"
-	@cd $(STATIC_DIR) && npm version $(VERSION_NUM) --no-git-tag-version --allow-same-version
+	@echo "─── Bumping frontend/package.json to $(VERSION_NUM) ─────────────────"
+	@cd $(FRONTEND_DIR) && npm version $(VERSION_NUM) --no-git-tag-version --allow-same-version
 	@echo "─── Stamping CHANGELOG.md ────────────────────────────────────────────"
 	@ESCAPED=$$(printf '%s' '$(VERSION_NUM)' | sed 's/\./\\./g'); \
 	 TODAY=$$(date -u '+%m-%d-%Y'); \
 	 sed -i "s/^\(## \[$$ESCAPED\] - \)Unreleased$$/\1$$TODAY/" CHANGELOG.md
 	@echo "─── Committing ───────────────────────────────────────────────────────"
-	@git add static/package.json static/package-lock.json CHANGELOG.md
+	@git add frontend/package.json frontend/package-lock.json CHANGELOG.md
 	@git commit -m "chore(release): prepare $(VERSION_TAG)"
 	@echo "─── Pushing branch ───────────────────────────────────────────────────"
 	@git push -u origin release/$(VERSION_TAG)
@@ -226,7 +232,7 @@ dev-info: _check-go-version
 # Start frontend dev server proxying to the Go backend (requires 'make dev' running)
 dev-proxy:
 	@echo "Starting frontend development server proxying to Go backend..."
-	@cd $(STATIC_DIR) && npm run dev:proxy
+	@cd $(FRONTEND_DIR) && npm run dev
 
 # Backward-compatible alias for dev-proxy
 dev-frontend: dev-proxy
@@ -236,7 +242,7 @@ dev-full:
 	@echo "Press Ctrl+C to stop both servers"
 	@trap 'kill 0' INT; \
 		LOG_LEVEL=debug air & \
-		sleep 2 && cd $(STATIC_DIR) && npm run dev:proxy & \
+		sleep 2 && cd $(FRONTEND_DIR) && npm run dev & \
 		wait
 
 # =============================================================================
@@ -454,12 +460,13 @@ test-clean:
 # PR Check Targets
 # =============================================================================
 
-# Detect changed files: committed (vs base branch) + uncommitted/staged
+# Detect changed files: committed (vs base branch) + uncommitted/staged + untracked (respects .gitignore)
 _CHANGED_FILES = $(shell \
 	{ git diff --name-only $(PR_BASE)...HEAD 2>/dev/null; \
 	  git diff --name-only HEAD 2>/dev/null; \
 	  git diff --name-only --cached 2>/dev/null; \
 	  git diff --name-only 2>/dev/null; \
+	  git ls-files --others --exclude-standard 2>/dev/null; \
 	} | sort -u)
 
 # Go backend changes (matches CI "go" filter)
@@ -468,10 +475,10 @@ _HAS_GO_CHANGES = $(shell \
 	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '\.go$$|^go\.(mod|sum)$$|^Makefile$$'; then echo "1"; \
 	else echo ""; fi)
 
-# Frontend changes (matches CI "frontend" filter)
+# Frontend changes (matches CI "frontend" filter — covers both legacy static/ and new SvelteKit frontend/)
 _HAS_FRONTEND_CHANGES = $(shell \
 	if [ "$(FORCE)" = "1" ]; then echo "1"; \
-	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^static/.*\.(js|css|html)$$|^static/package(-lock)?\.json$$'; then echo "1"; \
+	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^static/.*\.(js|css|html)$$|^static/package(-lock)?\.json$$|^frontend/.*\.(ts|svelte|js|css|html)$$|^frontend/package(-lock)?\.json$$'; then echo "1"; \
 	else echo ""; fi)
 
 PR_CHECK_GO_LINT_TARGET ?= lint
@@ -578,57 +585,40 @@ lint-fix: _check-go-version
 
 frontend-install:
 	@echo "Installing frontend dependencies..."
-	cd $(STATIC_DIR) && npm install
+	cd $(FRONTEND_DIR) && npm install
 
 # Lint all frontend code (JS + CSS)
 frontend-lint:
 	@echo "Linting frontend code..."
-	cd $(STATIC_DIR) && npm run lint
+	cd $(FRONTEND_DIR) && npm run lint
 
 frontend-lint-js:
 	@echo "Linting JavaScript..."
-	cd $(STATIC_DIR) && npm run lint:js
+	cd $(FRONTEND_DIR) && npm run lint:js
 
-css-lint:
-	@echo "Linting CSS..."
-	cd $(STATIC_DIR) && npm run lint:css
+frontend-lint-css:
+	@echo "No separate CSS linting — use 'make frontend-lint' (ESLint covers Svelte CSS)."
 
 # Fix all frontend lint issues (JS + CSS)
 frontend-lint-fix:
 	@echo "Fixing frontend lint issues..."
-	cd $(STATIC_DIR) && npm run lint:fix
+	cd $(FRONTEND_DIR) && npm run lint:fix
 
 frontend-lint-css-fix:
-	@echo "Fixing CSS lint issues..."
-	cd $(STATIC_DIR) && npm run lint:css:fix
+	@echo "No separate CSS lint fix — use 'make frontend-lint-fix' (ESLint covers Svelte CSS)."
 
 frontend-format:
 	@echo "Formatting frontend code..."
-	@cd $(STATIC_DIR) && \
-	files="$$(npx prettier --list-different "js/**/*.js" "css/**/*.css" "*.html" 2>/dev/null || true)"; \
-	if [ -z "$$files" ]; then \
-		echo "  No frontend formatting changes needed."; \
-	else \
-		echo "  Updating frontend files:"; \
-		printf '%s\n' "$$files" | sed 's/^/    - /'; \
-		npm run format; \
-		remaining="$$(npx prettier --list-different "js/**/*.js" "css/**/*.css" "*.html" 2>/dev/null || true)"; \
-		if [ -n "$$remaining" ]; then \
-			echo "  Remaining frontend formatting issues:"; \
-			printf '%s\n' "$$remaining" | sed 's/^/    - /'; \
-			exit 1; \
-		fi; \
-		echo "  Frontend formatting complete."; \
-	fi
+	cd $(FRONTEND_DIR) && npm run format
 
 frontend-format-check:
 	@echo "Checking frontend code formatting..."
-	cd $(STATIC_DIR) && npm run format:check
+	cd $(FRONTEND_DIR) && npm run format:check
 
 # Run all frontend static checks (lint + format check)
 frontend-check:
 	@echo "Running all frontend checks..."
-	cd $(STATIC_DIR) && npm run check
+	cd $(FRONTEND_DIR) && npm run check
 
 # =============================================================================
 # Frontend Targets — Development
@@ -637,7 +627,7 @@ frontend-check:
 # Standalone frontend dev server (no Go backend)
 frontend-dev:
 	@echo "Starting frontend dev server (standalone)..."
-	cd $(STATIC_DIR) && npm run dev
+	cd $(FRONTEND_DIR) && npm run dev
 
 # =============================================================================
 # Frontend Targets — Tests
@@ -647,21 +637,21 @@ frontend-dev:
 frontend-test:
 	@echo "Running all frontend tests (requires backend for integration/e2e tests)..."
 	@echo "Note: Start backend with 'make dev' in another terminal first"
-	cd $(STATIC_DIR) && npm test
+	cd $(FRONTEND_DIR) && npm test
 
 # Run frontend unit tests (no backend required)
 frontend-test-unit:
 	@echo "Running frontend unit tests (no backend required)..."
-	cd $(STATIC_DIR) && npm run test:unit:only
+	cd $(FRONTEND_DIR) && npm run test:unit:only
 
 # Run frontend integration tests (requires backend at TEST_BASE_URL or localhost:8080)
 frontend-test-integration:
 	@echo "Running frontend integration tests..."
 	@echo "Note: Requires backend running (use 'make frontend-test-integration-auto' for automatic server)"
-	cd $(STATIC_DIR) && npm run test:integration
+	cd $(FRONTEND_DIR) && npm run test:integration
 
 # Run frontend integration tests with an ephemeral test server
-frontend-test-integration-auto:
+frontend-test-integration-auto: svelte-build
 	@echo "Running frontend integration tests with ephemeral test server..."
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-integration
 
@@ -672,14 +662,14 @@ frontend-test-e2e:
 	@echo "Note: Use 'make frontend-test-e2e-performance*' for performance lanes and 'make frontend-test-e2e-docs-screenshots' for docs image generation"
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-auto' for automatic server)"
 	@echo "Logging to ../e2e.log"
-	cd $(STATIC_DIR) && npm run test:e2e 2>&1 | tee ../e2e.log
+	cd $(FRONTEND_DIR) && npm run test:e2e 2>&1 | tee ../e2e.log
 
 # Run frontend visual regression E2E tests against committed snapshot baselines.
 frontend-test-e2e-visual:
 	@echo "Running frontend E2E visual regression suite..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-auto' for automatic server)"
 	@echo "Logging to ../e2e-visual.log"
-	cd $(STATIC_DIR) && npm run test:e2e:visual 2>&1 | tee ../e2e-visual.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:visual 2>&1 | tee ../e2e-visual.log
 
 # Run frontend visual regression E2E tests with an ephemeral test server
 frontend-test-e2e-visual-auto:
@@ -691,17 +681,17 @@ frontend-test-e2e-visual-auto:
 frontend-test-e2e-visual-baselines:
 	@echo "Generating frontend visual regression snapshot baselines..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-auto' first if needed)"
-	cd $(STATIC_DIR) && npm run test:e2e:visual:baselines
+	cd $(FRONTEND_DIR) && npm run test:e2e:visual:baselines
 
 # Run the stable Chromium Playwright smoke suite (requires backend at TEST_BASE_URL or localhost:8080)
 frontend-test-e2e-smoke:
 	@echo "Running frontend E2E smoke suite..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-smoke-auto' for automatic server)"
 	@echo "Logging to ../e2e-smoke.log"
-	cd $(STATIC_DIR) && npm run test:e2e:smoke 2>&1 | tee ../e2e-smoke.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:smoke 2>&1 | tee ../e2e-smoke.log
 
 # Run the stable Chromium Playwright smoke suite with an ephemeral test server
-frontend-test-e2e-smoke-auto:
+frontend-test-e2e-smoke-auto: svelte-build
 	@echo "Running frontend E2E smoke suite with ephemeral test server..."
 	@echo "Logging to e2e-smoke-auto.log"
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-smoke 2>&1 | tee e2e-smoke-auto.log
@@ -711,7 +701,7 @@ frontend-test-e2e-runtime-smoke:
 	@echo "Running frontend Docker runtime smoke suite..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-runtime-smoke-auto' for automatic Docker server)"
 	@echo "Logging to ../e2e-runtime-smoke.log"
-	cd $(STATIC_DIR) && npm run test:e2e:runtime-smoke 2>&1 | tee ../e2e-runtime-smoke.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:runtime-smoke 2>&1 | tee ../e2e-runtime-smoke.log
 
 # Run the Docker-backed runtime smoke suite with an ephemeral Docker test server
 frontend-test-e2e-runtime-smoke-auto:
@@ -731,7 +721,7 @@ frontend-test-e2e-performance:
 	@echo "Note: Excludes soak tests; use 'make frontend-test-e2e-performance-soak' for the long-run tier"
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-performance-auto' for automatic server)"
 	@echo "Logging to ../e2e-performance.log"
-	cd $(STATIC_DIR) && npm run test:e2e:performance 2>&1 | tee ../e2e-performance.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:performance 2>&1 | tee ../e2e-performance.log
 
 # Run non-soak frontend performance E2E tests with an ephemeral test server
 frontend-test-e2e-performance-auto:
@@ -744,7 +734,7 @@ frontend-test-e2e-performance-smoke:
 	@echo "Running frontend E2E performance smoke suite..."
 	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080 (use 'make frontend-test-e2e-performance-smoke-auto' for automatic server)"
 	@echo "Logging to ../e2e-performance-smoke.log"
-	cd $(STATIC_DIR) && npm run test:e2e:performance:smoke 2>&1 | tee ../e2e-performance-smoke.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:performance:smoke 2>&1 | tee ../e2e-performance-smoke.log
 
 # Run the fast baseline performance suite in Chromium with an ephemeral test server
 frontend-test-e2e-performance-smoke-auto:
@@ -757,7 +747,7 @@ frontend-test-e2e-performance-soak:
 	@echo "Running frontend E2E performance soak suite..."
 	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
 	@echo "Logging to ../e2e-performance-soak.log"
-	cd $(STATIC_DIR) && npm run test:e2e:performance:soak 2>&1 | tee ../e2e-performance-soak.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:performance:soak 2>&1 | tee ../e2e-performance-soak.log
 
 # Run the long-running soak performance suite in Chromium with an ephemeral test server
 frontend-test-e2e-performance-soak-auto:
@@ -769,7 +759,7 @@ frontend-test-e2e-performance-soak-auto:
 frontend-test-e2e-docs-screenshots:
 	@echo "Generating documentation screenshots from Playwright..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-docs-screenshots-auto' for automatic server)"
-	cd $(STATIC_DIR) && npm run test:e2e:docs-screenshots
+	cd $(FRONTEND_DIR) && npm run test:e2e:docs-screenshots
 
 # Generate documentation screenshots with an ephemeral test server.
 frontend-test-e2e-docs-screenshots-auto:
@@ -788,9 +778,9 @@ frontend-test-coverage:
 	if [ -z "$$files" ]; then \
 		echo "Running all frontend tests with coverage..."; \
 		echo "Note: Requires backend running at http://localhost:8080"; \
-		cd $(STATIC_DIR) && npm run test:coverage; \
+		cd $(FRONTEND_DIR) && npm run test:coverage; \
 	else \
-		cd $(STATIC_DIR) && \
+		cd $(FRONTEND_DIR) && \
 		for file in $$files; do \
 			if echo "$$file" | grep -q "\.test\.js$$"; then \
 				file_path="$$file"; \
@@ -807,17 +797,17 @@ frontend-test-coverage:
 # Run frontend unit tests only with coverage
 frontend-test-unit-coverage:
 	@echo "Running frontend unit tests with coverage..."
-	cd $(STATIC_DIR) && npm run test:unit:coverage
+	cd $(FRONTEND_DIR) && npm run test:unit:coverage
 
 # Run frontend unit tests in watch mode
 frontend-test-unit-watch:
 	@echo "Running frontend unit tests in watch mode..."
-	cd $(STATIC_DIR) && npm run test:unit:watch
+	cd $(FRONTEND_DIR) && npm run test:unit:watch
 
 # Run frontend unit tests with interactive UI
 frontend-test-unit-ui:
 	@echo "Running frontend unit tests with UI..."
-	cd $(STATIC_DIR) && npm run test:unit:ui
+	cd $(FRONTEND_DIR) && npm run test:unit:ui
 
 # Run specific frontend test files.
 # Examples:
@@ -836,7 +826,7 @@ frontend-test-file:
 		echo "  make frontend-test-file tests/unit/favorites.test.js"; \
 		exit 1; \
 	fi; \
-	cd $(STATIC_DIR) && \
+	cd $(FRONTEND_DIR) && \
 	for file in $$files; do \
 		if echo "$$file" | grep -q "\.test\.js$$"; then \
 			file_path="$$file"; \
@@ -877,7 +867,7 @@ frontend-test-e2e-module:
 		echo "  Performance: @performance @perf-smoke @soak"; \
 		exit 1; \
 	fi; \
-	cd $(STATIC_DIR) && \
+	cd $(FRONTEND_DIR) && \
 	for module in $$modules; do \
 		tag=$$(echo "$$module" | sed 's/^@//'); \
 		echo "Running E2E tests for @$$tag... (logging to ../e2e-$$tag.log)"; \
@@ -902,7 +892,7 @@ frontend-test-e2e-category:
 		echo "Available categories: core, features, ui, workflows"; \
 		exit 1; \
 	fi; \
-	cd $(STATIC_DIR) && \
+	cd $(FRONTEND_DIR) && \
 	for category in $$categories; do \
 		echo "Running E2E tests for category: $$category... (logging to ../e2e-category-$$category.log)"; \
 		npm run test:e2e -- e2e/specs/$$category/ 2>&1 | tee "../e2e-category-$$category.log"; \
@@ -925,26 +915,23 @@ frontend-test-e2e-file:
 		echo "  make frontend-test-e2e-file e2e/specs/core/auth.spec.js"; \
 		echo ""; \
 		echo "Available spec files:"; \
-		echo "  Core: auth"; \
-		echo "  Features: search, settings, playlist, tags-favorites"; \
-		echo "  UI: gallery, lightbox-video"; \
-		echo "  Performance: selection-performance, selection-tagging-performance, selection-e2e-performance, selection-soak"; \
+		echo "  auth, gallery, gallery-filter, lightbox, navigation, search, search-shortcut, settings"; \
 		exit 1; \
 	fi; \
-	cd $(STATIC_DIR) && \
+	cd $(FRONTEND_DIR) && \
 	for file in $$files; do \
-		if echo "$$file" | grep -q "\.spec\.js$$"; then \
+		if echo "$$file" | grep -qE '\.spec\.(ts|js)$$'; then \
 			file_path="$$file"; \
-			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.spec\.js$$||'); \
-		elif echo "$$file" | grep -q "e2e/specs/"; then \
+			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.spec\.\(ts\|js\)$$||'); \
+		elif echo "$$file" | grep -q "e2e/"; then \
 			file_path="$$file"; \
-			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.spec\.js$$||'); \
+			file_name=$$(echo "$$file" | sed 's|^.*/||' | sed 's|\.spec\.\(ts\|js\)$$||'); \
 		else \
-			file_path=$$(find e2e/specs -name "*$$file*.spec.js" -type f | head -1); \
+			file_path=$$(find e2e -name "*$$file*.spec.ts" -o -name "*$$file*.spec.js" 2>/dev/null | head -1); \
 			file_name="$$file"; \
 			if [ -z "$$file_path" ]; then \
 				echo "Error: No spec file found matching '$$file'"; \
-				echo "Searched: e2e/specs/**/*$$file*.spec.js"; \
+				echo "Searched: e2e/**/*$$file*.spec.(ts|js)"; \
 				exit 1; \
 			fi; \
 		fi; \
@@ -968,36 +955,36 @@ frontend-test-e2e-headed:
 	@echo "Running E2E tests in headed mode..."
 	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
 	@echo "Logging to ../e2e-headed.log"
-	cd $(STATIC_DIR) && npm run test:e2e:headed 2>&1 | tee ../e2e-headed.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:headed 2>&1 | tee ../e2e-headed.log
 
 # Run E2E tests with interactive Playwright UI
 frontend-test-e2e-ui:
 	@echo "Running E2E tests with interactive UI..."
 	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
 	@echo "Logging to ../e2e-ui.log"
-	cd $(STATIC_DIR) && npm run test:e2e:ui 2>&1 | tee ../e2e-ui.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:ui 2>&1 | tee ../e2e-ui.log
 
 # Run E2E tests in debug mode
 frontend-test-e2e-debug:
 	@echo "Running E2E tests in debug mode..."
 	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
 	@echo "Logging to ../e2e-debug.log"
-	cd $(STATIC_DIR) && npm run test:e2e:debug 2>&1 | tee ../e2e-debug.log
+	cd $(FRONTEND_DIR) && npm run test:e2e:debug 2>&1 | tee ../e2e-debug.log
 
 # Generate E2E test coverage report
 frontend-test-e2e-coverage:
 	@echo "Generating E2E test coverage report..."
-	cd $(STATIC_DIR) && npm run test:e2e:coverage
+	cd $(FRONTEND_DIR) && npm run test:e2e:coverage
 	@echo ""
 	@echo "Coverage reports generated:"
-	@echo "  HTML:     $(STATIC_DIR)/e2e/coverage-reports/e2e-coverage.html"
-	@echo "  Markdown: $(STATIC_DIR)/e2e/coverage-reports/e2e-coverage.md"
-	@echo "  JSON:     $(STATIC_DIR)/e2e/coverage-reports/e2e-coverage.json"
+	@echo "  HTML:     $(FRONTEND_DIR)/e2e/coverage-reports/e2e-coverage.html"
+	@echo "  Markdown: $(FRONTEND_DIR)/e2e/coverage-reports/e2e-coverage.md"
+	@echo "  JSON:     $(FRONTEND_DIR)/e2e/coverage-reports/e2e-coverage.json"
 
 # View E2E test HTML report
 frontend-test-e2e-report:
 	@echo "Opening E2E test report..."
-	cd $(STATIC_DIR) && npm run test:e2e:report
+	cd $(FRONTEND_DIR) && npm run test:e2e:report
 
 # =============================================================================
 # Combined Lint / Format / Check Targets
@@ -1026,12 +1013,15 @@ clean:
 	rm -f resetpw
 	rm -f coverage.out coverage.html coverage-*.out
 	rm -f *.log
-	rm -rf $(STATIC_DIR)/e2e/test-results/
-	rm -rf $(STATIC_DIR)/coverage/
+	rm -rf $(FRONTEND_DIR)/e2e/test-results/
+	rm -rf $(FRONTEND_DIR)/coverage/
+	rm -rf $(FRONTEND_DIR)/build/
+	rm -rf $(FRONTEND_DIR)/.svelte-kit/
 
 clean-all: clean
 	@echo "Cleaning all artifacts including node_modules..."
 	rm -rf $(STATIC_DIR)/node_modules
+	rm -rf $(FRONTEND_DIR)/node_modules
 
 # =============================================================================
 # Docker Targets
@@ -1086,11 +1076,94 @@ download-sample-media:
 # Setup
 # =============================================================================
 
-setup: frontend-install
+setup: frontend-install svelte-install
 	@echo "Installing Go tools..."
 	go install github.com/air-verse/air@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Setup complete."
+
+# =============================================================================
+# SvelteKit Frontend Targets
+# =============================================================================
+
+# Install SvelteKit frontend dependencies
+svelte-install:
+	@echo "Installing SvelteKit frontend dependencies..."
+	cd $(FRONTEND_DIR) && npm install
+
+# Start SvelteKit development server (proxies API to Go backend at localhost:8080)
+svelte-dev:
+	@echo "Starting SvelteKit dev server (proxying API to Go backend at localhost:8080)..."
+	cd $(FRONTEND_DIR) && npm run dev
+
+# Build SvelteKit frontend for production
+svelte-build: svelte-sync-icons
+	@echo "Building SvelteKit frontend..."
+	cd $(FRONTEND_DIR) && npm run build
+
+# Sync PWA icons from static/ into frontend/static/icons/
+svelte-sync-icons:
+	@mkdir -p $(FRONTEND_DIR)/static/icons
+	@rsync -a --delete $(STATIC_DIR)/icons/ $(FRONTEND_DIR)/static/icons/
+	@[ -f $(STATIC_DIR)/sw.js ] && cp $(STATIC_DIR)/sw.js $(FRONTEND_DIR)/static/sw.js || true
+
+# Preview the production SvelteKit build
+svelte-preview:
+	@echo "Previewing SvelteKit production build..."
+	cd $(FRONTEND_DIR) && npm run preview
+
+# Type-check the SvelteKit frontend
+svelte-check:
+	@echo "Type-checking SvelteKit frontend..."
+	cd $(FRONTEND_DIR) && npm run check
+
+# Lint the SvelteKit frontend
+svelte-lint:
+	@echo "Linting SvelteKit frontend..."
+	cd $(FRONTEND_DIR) && npm run lint
+
+# Fix lint issues in the SvelteKit frontend
+svelte-lint-fix:
+	@echo "Fixing SvelteKit lint issues..."
+	cd $(FRONTEND_DIR) && npm run lint:fix
+
+# Format the SvelteKit frontend
+svelte-format:
+	@echo "Formatting SvelteKit frontend..."
+	cd $(FRONTEND_DIR) && npm run format
+
+# Check formatting of the SvelteKit frontend
+svelte-format-check:
+	@echo "Checking SvelteKit frontend formatting..."
+	cd $(FRONTEND_DIR) && npm run format:check
+
+# Run all SvelteKit unit tests
+svelte-test-unit:
+	@echo "Running SvelteKit unit tests..."
+	cd $(FRONTEND_DIR) && npm run test:unit
+
+# Run SvelteKit unit tests in watch mode
+svelte-test-unit-watch:
+	@echo "Running SvelteKit unit tests in watch mode..."
+	cd $(FRONTEND_DIR) && npm run test:unit:watch
+
+# Run SvelteKit Playwright E2E tests (requires Go backend at TEST_BASE_URL or localhost:8080)
+svelte-test-e2e:
+	@echo "Running SvelteKit E2E tests..."
+	@echo "Note: Requires backend running (use 'make svelte-test-e2e-auto' for automatic server)"
+	cd $(FRONTEND_DIR) && npm run test:e2e 2>&1 | tee ../e2e-svelte.log
+
+# Run SvelteKit E2E tests with an ephemeral test server
+svelte-test-e2e-auto:
+	@echo "Running SvelteKit E2E tests with ephemeral test server..."
+	@./hack/run-with-test-server.sh $(MAKE) svelte-test-e2e 2>&1 | tee e2e-svelte-auto.log
+
+# Run all SvelteKit tests
+svelte-test: svelte-test-unit svelte-test-e2e
+
+# Build SvelteKit and copy output so the Go backend can serve it
+svelte-build-serve: svelte-build
+	@echo "SvelteKit build complete. Output in $(FRONTEND_DIR)/build — Go backend will serve from there."
 
 # =============================================================================
 # Help

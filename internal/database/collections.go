@@ -328,7 +328,7 @@ func (d *Database) GetCollectionItems(ctx context.Context, id int64) ([]MediaFil
 			f.MimeType = *mimeType
 		}
 		if f.Type == FileTypeImage || f.Type == FileTypeVideo {
-			f.ThumbnailURL = "/api/thumbnails/" + f.Path
+			f.ThumbnailURL = "/api/thumbnail/" + f.Path
 		}
 		items = append(items, f)
 	}

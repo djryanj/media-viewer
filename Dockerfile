@@ -1,5 +1,16 @@
 # syntax=docker/dockerfile:1
 
+# Frontend build stage
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --prefer-offline
+
+COPY frontend/ ./
+RUN npm run build
+
 # Build stage
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
@@ -114,8 +125,8 @@ RUN mkdir -p /media /cache /database && \
 COPY --from=builder /app/media-viewer /app/media-viewer
 COPY --from=builder /app/resetpw /app/resetpw
 
-# Copy static files
-COPY --from=builder /app/static /app/static
+# Copy SvelteKit frontend build
+COPY --from=frontend-builder /app/build /app/frontend/build
 
 # Set ownership of application files
 RUN chown -R nobody:nobody /app

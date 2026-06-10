@@ -96,6 +96,24 @@ type MediaFilesPage struct {
 	Limit  int         `json:"limit"`
 }
 
+// SummaryGroup is a labeled bucket of consecutive items within a sorted
+// directory listing. Used by the gallery scrubber to show axis labels (letters
+// for name sort, years for date sort) without loading every item on the client.
+type SummaryGroup struct {
+	Label  string `json:"label"`
+	Offset int    `json:"offset"`
+	Count  int    `json:"count"`
+}
+
+// DirectorySummary contains the label groups for a directory listing in a
+// given sort order. Returned by GET /api/files/summary.
+type DirectorySummary struct {
+	Sort   string         `json:"sort"`
+	Order  string         `json:"order"`
+	Total  int            `json:"total"`
+	Groups []SummaryGroup `json:"groups"`
+}
+
 // Collection represents a user-defined ordered collection of media files.
 type Collection struct {
 	ID         int64     `json:"id"`

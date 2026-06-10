@@ -147,9 +147,9 @@ if [ -f "static/package.json" ]; then
 fi
 
 # Install Playwright system dependencies and browsers
-if [ -f "static/playwright.config.js" ]; then
+if [ -f "frontend/playwright.config.js" ]; then
     echo -e "${BLUE}[INFO] Installing Playwright system dependencies...${NC}"
-    cd static
+    cd frontend
     # Install system dependencies (requires sudo)
     sudo npx playwright install-deps
     echo -e "${GREEN}[SUCCESS] Playwright system dependencies installed${NC}"

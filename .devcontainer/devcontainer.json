@@ -21,7 +21,9 @@
                 "golang.go",
                 "ms-azuretools.vscode-docker",
                 "dbaeumer.vscode-eslint",
-                "esbenp.prettier-vscode"
+                "esbenp.prettier-vscode",
+                "svelte.svelte-vscode",
+                "anthropic.claude-code"
             ],
             "settings": {
                 "remote.localPortHost": "allInterfaces",
@@ -31,7 +33,7 @@
                     "source.fixAll.eslint": "explicit",
                     "source.fixAll.stylelint": "explicit"
                 },
-                "eslint.validate": ["javascript"],
+                "eslint.validate": ["javascript", "svelte"],
                 "stylelint.validate": ["css"],
                 "css.validate": false,
                 "files.eol": "\n",
