@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump github.com/mattn/go-sqlite3 from 1.14.44 to 1.14.45 ([#566](https://github.com/djryanj/media-viewer/pull/566))
 - build(deps): bump golang.org/x/image from 0.39.0 to 0.40.0 ([#546](https://github.com/djryanj/media-viewer/pull/546))
 ### Added
 
