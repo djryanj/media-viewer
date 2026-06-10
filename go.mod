@@ -7,7 +7,7 @@ require (
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-webauthn/webauthn v0.17.3
 	github.com/gorilla/mux v1.8.1
-	github.com/mattn/go-sqlite3 v1.14.44
+	github.com/mattn/go-sqlite3 v1.14.45
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.40.0
