@@ -148,9 +148,9 @@ export const auth = {
             ...json({ sessionId, credential: serializeCredential(credential) })
         }),
     listPasskeys: () =>
-        request<{ passkeys: Array<{ id: number; name: string; createdAt: string; lastUsedAt?: string }> }>(
-            '/api/auth/webauthn/passkeys'
-        ).then((r) => r.passkeys),
+        request<{
+            passkeys: Array<{ id: number; name: string; createdAt: string; lastUsedAt?: string }>;
+        }>('/api/auth/webauthn/passkeys').then((r) => r.passkeys),
     deletePasskey: (id: number) =>
         request<void>('/api/auth/webauthn/passkeys', { method: 'DELETE', ...json({ id }) })
 };

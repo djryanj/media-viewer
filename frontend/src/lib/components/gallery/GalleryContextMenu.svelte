@@ -69,18 +69,9 @@
 <svelte:window onkeydown={handleKeyDown} />
 
 <!-- Backdrop -->
-<div
-    class="overlay"
-    role="presentation"
-    onclick={handleOverlayClick}
->
+<div class="overlay" role="presentation" onclick={handleOverlayClick}>
     <!-- Bottom sheet -->
-    <div
-        class="sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Options for {item.name}"
-    >
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Options for {item.name}">
         <div class="handle" aria-hidden="true"></div>
 
         <header class="sheet-header">
@@ -91,7 +82,13 @@
             <!-- Tag editor sub-panel -->
             <div class="tag-panel">
                 <button class="back-btn" type="button" onclick={() => (tagEditing = false)}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        aria-hidden="true"
+                    >
                         <polyline points="15 18 9 12 15 6" />
                     </svg>
                     Back
@@ -112,7 +109,13 @@
                             download={item.name}
                             onclick={onclose}
                         >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                aria-hidden="true"
+                            >
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                 <polyline points="7 10 12 15 17 10" />
                                 <line x1="12" y1="15" x2="12" y2="3" />
@@ -127,7 +130,10 @@
                         class="menu-action"
                         class:favorited={item.isFavorite}
                         type="button"
-                        onclick={() => { ontogglefavorite(item); onclose(); }}
+                        onclick={() => {
+                            ontogglefavorite(item);
+                            onclose();
+                        }}
                     >
                         <svg
                             viewBox="0 0 24 24"
@@ -136,7 +142,9 @@
                             stroke-width="2"
                             aria-hidden="true"
                         >
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            <polygon
+                                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                            />
                         </svg>
                         {item.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
                     </button>
@@ -145,8 +153,16 @@
                 {#if !isFolder}
                     <li>
                         <button class="menu-action" type="button" onclick={openTagEditor}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                                />
                                 <line x1="7" y1="7" x2="7.01" y2="7" />
                             </svg>
                             Tags
@@ -159,9 +175,18 @@
                         <button
                             class="menu-action"
                             type="button"
-                            onclick={() => { onselect(item); onclose(); }}
+                            onclick={() => {
+                                onselect(item);
+                                onclose();
+                            }}
                         >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                aria-hidden="true"
+                            >
                                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                                 <polyline points="9 11 12 14 22 4" />
                             </svg>
@@ -315,12 +340,20 @@
     }
 
     @keyframes fade-in {
-        from { opacity: 0; }
-        to   { opacity: 1; }
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
     }
 
     @keyframes slide-up {
-        from { transform: translateY(100%); }
-        to   { transform: translateY(0); }
+        from {
+            transform: translateY(100%);
+        }
+        to {
+            transform: translateY(0);
+        }
     }
 </style>

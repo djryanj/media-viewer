@@ -125,8 +125,6 @@ describe('SettingsModal — passkeys tab', () => {
 
         // Unblock and confirm loading text disappears.
         resolve([]);
-        await waitFor(() =>
-            expect(screen.queryByText('Loading passkeys…')).toBeNull()
-        );
+        await waitFor(() => expect(screen.queryByText('Loading passkeys…')).toBeNull());
     });
 });
