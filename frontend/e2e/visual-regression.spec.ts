@@ -22,9 +22,32 @@ const DYNAMIC_SELECTORS = [
     '.toast-container',
 ];
 
+/** Idle status stub — keeps StatusFooter from dispatching indexer:running events
+ *  and backs off polling to 15 s so tests reach networkidle quickly. */
+const IDLE_STATUS_VR = JSON.stringify({
+    updatedAt: '',
+    library: {
+        totalFiles: 0, totalImages: 0, totalVideos: 0, totalFolders: 0,
+        totalPlaylists: 0, totalTags: 0, totalFavorites: 0,
+        thumbnailCacheFiles: 0, thumbnailCacheBytes: 0,
+        transcodeCacheFiles: 0, transcodeCacheBytes: 0
+    },
+    indexer:    { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
+    thumbnails: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
+    autotagger: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } }
+});
+
 test.describe('@visual Visual Regression', () => {
     test.use({ storageState: STORAGE_STATE });
     test.use({ viewport: { width: 1440, height: 900 } });
+
+    test.beforeEach(async ({ page }) => {
+        // Stub status so StatusFooter stays idle: no indexer:running events,
+        // no worker-dot animation, polling backs off to 15 s.
+        await page.route('**/api/system/status**', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/json', body: IDLE_STATUS_VR })
+        );
+    });
 
     test('@visual @gallery gallery page — desktop', async ({ page }) => {
         await page.goto('/');
@@ -33,7 +56,7 @@ test.describe('@visual Visual Regression', () => {
         await page.waitForFunction(
             () => {
                 const gallery = document.querySelector('.gallery');
-                const emptyState = document.querySelector('.state-msg');
+                const emptyState = document.querySelector('.state-message');
                 return Boolean(gallery || emptyState);
             },
             { timeout: 15000 }
@@ -59,7 +82,7 @@ test.describe('@visual Visual Regression', () => {
         await page.waitForFunction(
             () => {
                 const gallery = document.querySelector('.gallery');
-                const emptyState = document.querySelector('.state-msg');
+                const emptyState = document.querySelector('.state-message');
                 return Boolean(gallery || emptyState);
             },
             { timeout: 15000 }
@@ -136,8 +159,8 @@ test.describe('@visual Visual Regression', () => {
         await page.goto('/');
         await page.waitForLoadState('networkidle', { timeout: 15000 });
 
-        // Open settings via the header button
-        await page.getByRole('button', { name: 'Settings' }).click();
+        // Open settings via the header button — force bypasses stability check for the click.
+        await page.getByRole('button', { name: 'Settings' }).click({ force: true });
         const modal = page.locator('.modal');
         await expect(modal).toBeVisible({ timeout: 5000 });
 
@@ -148,7 +171,7 @@ test.describe('@visual Visual Regression', () => {
         await page.goto('/');
         await page.waitForLoadState('networkidle', { timeout: 15000 });
 
-        await page.getByRole('button', { name: 'Settings' }).click();
+        await page.getByRole('button', { name: 'Settings' }).click({ force: true });
         const modal = page.locator('.modal');
         await expect(modal).toBeVisible({ timeout: 5000 });
 

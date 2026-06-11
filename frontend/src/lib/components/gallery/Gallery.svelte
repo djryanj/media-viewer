@@ -7,6 +7,7 @@
     import { favorites as favApi } from '$lib/api/client';
     import { toastStore } from '$lib/stores/toast.svelte';
     import CollectionsPanel from '$lib/components/lightbox/CollectionsPanel.svelte';
+    import GalleryContextMenu from './GalleryContextMenu.svelte';
 
     let {
         items,
@@ -69,23 +70,22 @@
     // ── Per-item collections panel ────────────────────────────────────────────
     let collectionsItem = $state<MediaFile | null>(null);
 
+    // ── Long-press context menu ───────────────────────────────────────────────
+    let contextItem = $state<MediaFile | null>(null);
+
     function handleCollections(item: MediaFile) {
         collectionsItem = item;
     }
 
     function handleLongPress(item: MediaFile) {
+        // Show context menu for all item types (including folders).
+        contextItem = item;
+    }
+
+    // Called from the context menu's "Select" button — enters selection mode for that item.
+    function handleContextSelect(item: MediaFile) {
         if (item.type === 'folder') return;
         galleryStore.toggleSelection(item.path);
-        // If the long-press gesture is still live, immediately set up a drag
-        // so the user can keep dragging without lifting their finger.
-        if (pendingPointerId !== -1 && pendingPointerPath === item.path) {
-            dragAnchorPath = pendingPointerPath;
-            dragPointerId = pendingPointerId;
-            dragStartX = pendingPointerX;
-            dragStartY = pendingPointerY;
-            dragPointerType = pendingPointerType;
-        }
-        // Apply touch-action:none immediately (don't wait for Svelte re-render)
         if (galleryEl) galleryEl.style.touchAction = 'none';
     }
 
@@ -96,12 +96,6 @@
     let dragStartX = 0;
     let dragStartY = 0;
     let dragPointerType = 'mouse';
-    // Pending pointer: tracks the most recent pointerdown regardless of selectionMode
-    let pendingPointerPath: string | null = null;
-    let pendingPointerId = -1;
-    let pendingPointerX = 0;
-    let pendingPointerY = 0;
-    let pendingPointerType = 'mouse';
 
     // Sync touch-action to the DOM imperatively whenever selectionMode changes
     $effect(() => {
@@ -109,22 +103,11 @@
     });
 
     function handleGalleryPointerDown(e: PointerEvent) {
-        // Always record pending pointer info so long-press can initialize a drag.
-        const el = (e.target as HTMLElement).closest<HTMLElement>('[data-path]');
-        if (el?.dataset.path) {
-            const hit = items.find((i) => i.path === el.dataset.path);
-            if (hit && hit.type !== 'folder') {
-                pendingPointerPath = el.dataset.path;
-                pendingPointerId = e.pointerId;
-                pendingPointerX = e.clientX;
-                pendingPointerY = e.clientY;
-                pendingPointerType = e.pointerType;
-            }
-        }
         if (!galleryStore.selectionMode) return;
+        const el = (e.target as HTMLElement).closest<HTMLElement>('[data-path]');
         if (!el?.dataset.path) return;
-        const hit2 = items.find((i) => i.path === el.dataset.path);
-        if (!hit2 || hit2.type === 'folder') return;
+        const hit = items.find((i) => i.path === el.dataset.path);
+        if (!hit || hit.type === 'folder') return;
         dragAnchorPath = el.dataset.path;
         dragPointerId = e.pointerId;
         dragStartX = e.clientX;
@@ -153,8 +136,6 @@
     }
 
     function handleGalleryPointerUp(e: PointerEvent) {
-        pendingPointerId = -1;
-        pendingPointerPath = null;
         if (e.pointerId !== dragPointerId) return;
         dragAnchorPath = null;
         dragPointerId = -1;
@@ -257,6 +238,15 @@
 
 {#if collectionsItem}
     <CollectionsPanel itemPaths={[collectionsItem.path]} onclose={() => (collectionsItem = null)} />
+{/if}
+
+{#if contextItem}
+    <GalleryContextMenu
+        item={contextItem}
+        onclose={() => (contextItem = null)}
+        ontogglefavorite={handleToggleFavorite}
+        onselect={handleContextSelect}
+    />
 {/if}
 
 <style>

@@ -43,6 +43,12 @@ const config: PlaywrightTestConfig = {
     projects: [
         {
             name: 'chromium',
+            // Exclude visual-regression and docs-screenshots: they require a headed
+            // browser under Xvfb and are run via dedicated Makefile targets
+            // (frontend-test-e2e-visual / frontend-test-e2e-docs-screenshots).
+            // Including them in the default chromium project causes hangs in
+            // headless Chrome (compositor never commits a frame → screenshot hangs).
+            testIgnore: ['**/visual-regression.spec.ts', '**/docs-screenshots.spec.ts'],
             use: {
                 browserName: 'chromium',
                 // --disable-gpu forces software rendering in WSL2/container environments

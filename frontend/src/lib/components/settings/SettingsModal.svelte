@@ -178,7 +178,7 @@
 
     // ── Passkeys ─────────────────────────────────────────────────────────────
     interface Passkey {
-        id: string;
+        id: number;
         name: string;
         createdAt: string;
         lastUsedAt?: string;
@@ -209,7 +209,7 @@
     async function loadPasskeys() {
         passkeysLoading = true;
         try {
-            passkeys = (await auth.listPasskeys()) as Passkey[];
+            passkeys = await auth.listPasskeys();
         } catch {
             toastStore.error('Failed to load passkeys');
         } finally {
@@ -262,7 +262,7 @@
         }
     }
 
-    async function deletePasskey(id: string) {
+    async function deletePasskey(id: number) {
         if (!confirm('Remove this passkey? You will no longer be able to use it to sign in.'))
             return;
         try {

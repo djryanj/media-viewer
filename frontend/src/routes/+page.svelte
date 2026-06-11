@@ -38,8 +38,13 @@
         galleryStore.refresh();
     }
 
+    // Tracks whether any worker is currently active, so the empty-gallery
+    // state can show "Indexing…" instead of "This folder is empty."
+    let indexerRunning = $state(false);
+
     // When the indexer finishes a run, refresh so newly indexed files appear.
     function handleIndexerComplete() {
+        indexerRunning = false;
         galleryStore.refresh();
     }
 
@@ -49,6 +54,7 @@
     // < 30 s elapsed).  StatusFooter fires this event on every 3 s status poll
     // while a worker is active, so we get automatic progressive refresh.
     function handleIndexerRunning() {
+        indexerRunning = true;
         if (!galleryStore.loading && galleryStore.items.length === 0 && !galleryStore.error) {
             galleryStore.refresh();
         }
@@ -172,7 +178,12 @@
         </div>
     {:else if galleryStore.items.length === 0}
         <div class="state-message" role="status">
-            <p>This folder is empty.</p>
+            {#if indexerRunning}
+                <div class="spinner" aria-hidden="true"></div>
+                <span>Indexing your library…</span>
+            {:else}
+                <p>This folder is empty.</p>
+            {/if}
         </div>
     {:else if galleryStore.filteredItems.length === 0}
         <div class="state-message" role="status">

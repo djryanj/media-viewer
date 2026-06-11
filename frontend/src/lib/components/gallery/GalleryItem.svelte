@@ -168,6 +168,7 @@
     onpointerleave={(e) => {
         if (e.pointerType !== 'touch') clearPress();
     }}
+    oncontextmenu={(e) => e.preventDefault()}
     onclick={handleClick}
     onkeydown={handleKeyDown}
     aria-label="{item.name}{selected ? ' (selected)' : ''}"

@@ -110,22 +110,22 @@ async function stubSettingsApis(page: Page): Promise<void> {
             body: JSON.stringify(EMPTY_FILES)
         });
     });
-    // Passkeys tab: return a non-empty list.  The component's $effect re-triggers
-    // loadPasskeys() whenever passkeys.length === 0 && !passkeysLoading — returning
-    // [] creates an infinite polling loop.  One fake passkey satisfies length > 0
-    // so the effect never fires again.
+    // Passkeys tab: return a non-empty list wrapped in the {passkeys:[…]} envelope
+    // that the backend returns and listPasskeys() unwraps.  id is an int64 (number).
     await page.route('**/api/auth/webauthn/passkeys', (route) =>
         route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify([
-                {
-                    id: 'example-passkey-id',
-                    name: 'Example Passkey',
-                    createdAt: '2026-01-15T10:00:00Z',
-                    lastUsedAt: '2026-01-15T10:30:00Z'
-                }
-            ])
+            body: JSON.stringify({
+                passkeys: [
+                    {
+                        id: 1,
+                        name: 'Example Passkey',
+                        createdAt: '2026-01-15T10:00:00Z',
+                        lastUsedAt: '2026-01-15T10:30:00Z'
+                    }
+                ]
+            })
         })
     );
     // Tags tab: same pattern — return non-empty list to prevent the $effect from
