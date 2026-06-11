@@ -59,7 +59,19 @@
     });
 
     // ── Playback preferences (toggled by keyboard shortcuts L) ──────────────
-    let loopEnabled = $state(false);
+    // Initialize from saved preference so mobile users (who can't use 'L') get
+    // the right default without having to open Settings first.
+    let loopEnabled = $state(
+        (() => {
+            try {
+                const raw = localStorage.getItem('mediaViewerPreferences');
+                if (raw) return (JSON.parse(raw).mediaLoop as boolean) ?? true;
+            } catch {
+                /* ignore */
+            }
+            return true; // default matches SettingsModal default
+        })()
+    );
 
     // ── Slideshow (auto-advance; A key) ──────────────────────────────────────
     const SLIDESHOW_DELAY = 4000;
@@ -422,6 +434,7 @@
                 const p = JSON.parse(raw) as Record<string, unknown>;
                 clockEnabled = (p.clockEnabled as boolean) ?? true;
                 clockFormat = (p.clockFormat as string) === '24' ? '24' : '12';
+                loopEnabled = (p.mediaLoop as boolean) ?? true;
             }
         } catch {
             /* ignore */

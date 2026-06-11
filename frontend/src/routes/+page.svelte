@@ -5,6 +5,7 @@
     import { galleryStore } from '$lib/stores/gallery.svelte';
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import { settingsStore } from '$lib/stores/settings.svelte';
+    import { createPullToRefresh } from '$lib/utils/pullToRefresh';
     import type { PathPart } from '$lib/api/types';
     import Gallery from '$lib/components/gallery/Gallery.svelte';
     import Breadcrumb from '$lib/components/gallery/Breadcrumb.svelte';
@@ -37,14 +38,70 @@
         galleryStore.refresh();
     }
 
+    // When the indexer finishes a run, refresh so newly indexed files appear.
+    function handleIndexerComplete() {
+        galleryStore.refresh();
+    }
+
+    // While indexing is running, retry the gallery fetch if it came back empty.
+    // This handles the common NFS case where the first query returns 0 items
+    // because the indexer hasn't committed its first batch yet (< 500 files or
+    // < 30 s elapsed).  StatusFooter fires this event on every 3 s status poll
+    // while a worker is active, so we get automatic progressive refresh.
+    function handleIndexerRunning() {
+        if (!galleryStore.loading && galleryStore.items.length === 0 && !galleryStore.error) {
+            galleryStore.refresh();
+        }
+    }
+
+    // ── Pull-to-refresh ────────────────────────────────────────────────────────
+    let pullIndicator = $state(false);
+
     onMount(() => {
         const path = $page.url.searchParams.get('path') ?? '';
         galleryStore.navigate(path);
+
         window.addEventListener('connectivity:restored', handleConnectivityRestored);
+        window.addEventListener('indexer:complete', handleIndexerComplete);
+        window.addEventListener('indexer:running', handleIndexerRunning);
+
+        // Attach pull-to-refresh touch handlers to the main scroll container.
+        const mainEl = document.getElementById('main-content');
+        if (mainEl) {
+            const ptr = createPullToRefresh({
+                getScrollTop: () => mainEl.scrollTop,
+                onRefresh: () => galleryStore.refresh()
+            });
+
+            const onTS = (e: TouchEvent) => ptr.onTouchStart(e.touches[0].clientY);
+            const onTM = (e: TouchEvent) => {
+                pullIndicator = ptr.onTouchMove(e.touches[0].clientY);
+            };
+            const onTE = () => {
+                const wasPulling = pullIndicator;
+                pullIndicator = false;
+                ptr.onTouchEnd(wasPulling);
+            };
+
+            mainEl.addEventListener('touchstart', onTS, { passive: true });
+            mainEl.addEventListener('touchmove', onTM, { passive: true });
+            mainEl.addEventListener('touchend', onTE, { passive: true });
+            mainEl.addEventListener('touchcancel', onTE, { passive: true });
+
+            return () => {
+                mainEl.removeEventListener('touchstart', onTS);
+                mainEl.removeEventListener('touchmove', onTM);
+                mainEl.removeEventListener('touchend', onTE);
+                mainEl.removeEventListener('touchcancel', onTE);
+                ptr.destroy();
+            };
+        }
     });
 
     onDestroy(() => {
         window.removeEventListener('connectivity:restored', handleConnectivityRestored);
+        window.removeEventListener('indexer:complete', handleIndexerComplete);
+        window.removeEventListener('indexer:running', handleIndexerRunning);
     });
 
     // Build breadcrumb from the current path string
@@ -87,6 +144,12 @@
 </svelte:head>
 
 <div class="gallery-page">
+    {#if pullIndicator}
+        <div class="pull-indicator" aria-hidden="true" aria-label="Release to refresh">
+            <div class="pull-spinner"></div>
+        </div>
+    {/if}
+
     {#if breadcrumb.length > 1}
         <Breadcrumb parts={breadcrumb} />
     {/if}
@@ -125,6 +188,25 @@
 <style>
     .gallery-page {
         min-height: 100%;
+    }
+
+    /* Pull-to-refresh indicator — appears at the top of the gallery page while
+     * the user is dragging down past the threshold. */
+    .pull-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-3) 0;
+        color: var(--color-primary);
+    }
+
+    .pull-spinner {
+        width: 24px;
+        height: 24px;
+        border: 2px solid var(--color-border);
+        border-top-color: var(--color-primary);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
     }
 
     .state-message {

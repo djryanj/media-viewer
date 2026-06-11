@@ -200,9 +200,7 @@
         passkeyRegLoading = true;
         try {
             const { options, sessionId } = await auth.webauthnRegisterBegin();
-            const publicKey = prepareCreateOptions(
-                options as unknown as PublicKeyCredentialCreationOptions
-            );
+            const publicKey = prepareCreateOptions(options.publicKey);
             const cred = (await navigator.credentials.create({
                 publicKey
             })) as PublicKeyCredential | null;

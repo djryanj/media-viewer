@@ -1,6 +1,7 @@
 <script lang="ts">
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
+    import { features } from '$lib/features';
 
     const tabs = [
         {
@@ -33,26 +34,28 @@
 
 <nav class="bottom-nav" aria-label="Main navigation">
     {#each tabs as tab}
-        <button
-            class="nav-item"
-            class:active={isActive(tab.href)}
-            onclick={() => goto(tab.href)}
-            aria-label={tab.label}
-            aria-current={isActive(tab.href) ? 'page' : undefined}
-        >
-            <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
+        {#if tab.href !== '/collections' || features.albums}
+            <button
+                class="nav-item"
+                class:active={isActive(tab.href)}
+                onclick={() => goto(tab.href)}
+                aria-label={tab.label}
+                aria-current={isActive(tab.href) ? 'page' : undefined}
             >
-                {@html tab.icon}
-            </svg>
-            <span class="nav-label">{tab.label}</span>
-        </button>
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    {@html tab.icon}
+                </svg>
+                <span class="nav-label">{tab.label}</span>
+            </button>
+        {/if}
     {/each}
 </nav>
 

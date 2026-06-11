@@ -3,7 +3,7 @@
 Tags are labels you assign to media items for organization and quick retrieval. Media Viewer provides a flexible tagging system that supports individual and bulk operations.
 
 <div align="center">
-  <img src="../../images/bulk-tagging-mobile.gif" alt="Bulk tagging in action" width="400">
+  <img src="../../images/bulk-tagging-mobile.png" alt="Bulk tagging in action" width="400">
   <p><em>Selection mode enables efficient bulk tagging on mobile</em></p>
 </div>
 
@@ -303,7 +303,7 @@ details, including whether a pass is still in progress and when it last
 completed.
 
 <div align="center">
-  <img src="../../images/settings-tab-cache.png" alt="Settings System tab showing the Auto-Tagger worker card and Run Now action in the Background Activity section" width="700">
+  <img src="../../images/settings-tab-system.png" alt="Settings System tab showing the Auto-Tagger worker card and Run Now action in the Background Activity section" width="700">
   <p><em>The System tab lets you trigger an on-demand auto-tagger pass while also showing whether the worker is running or idle.</em></p>
 </div>
 

@@ -128,7 +128,7 @@ export const auth = {
     // WebAuthn
     webauthnAvailable: () => request<{ available: boolean }>('/api/auth/webauthn/available'),
     webauthnRegisterBegin: () =>
-        request<{ options: PublicKeyCredentialCreationOptions; sessionId: string }>(
+        request<{ options: { publicKey: PublicKeyCredentialCreationOptions }; sessionId: string }>(
             '/api/auth/webauthn/register/begin',
             { method: 'POST' }
         ),
@@ -138,7 +138,7 @@ export const auth = {
             ...json({ sessionId, credential: serializeCredential(credential) })
         }),
     webauthnLoginBegin: () =>
-        request<{ options: PublicKeyCredentialRequestOptions; sessionId: string }>(
+        request<{ options: { publicKey: PublicKeyCredentialRequestOptions }; sessionId: string }>(
             '/api/auth/webauthn/login/begin',
             { method: 'POST' }
         ),

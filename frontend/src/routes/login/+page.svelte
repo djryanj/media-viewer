@@ -65,9 +65,7 @@
         passkeyLoading = true;
         try {
             const { options, sessionId } = await authApi.webauthnLoginBegin();
-            const publicKey = prepareGetOptions(
-                options as unknown as PublicKeyCredentialRequestOptions
-            );
+            const publicKey = prepareGetOptions(options.publicKey);
             const credential = (await navigator.credentials.get({
                 publicKey
             })) as PublicKeyCredential | null;
@@ -99,9 +97,7 @@
 
         try {
             const { options, sessionId } = await authApi.webauthnLoginBegin();
-            const publicKey = prepareGetOptions(
-                options as unknown as PublicKeyCredentialRequestOptions
-            );
+            const publicKey = prepareGetOptions(options.publicKey);
             conditionalUIAbort = new AbortController();
             const credential = (await navigator.credentials.get({
                 publicKey,

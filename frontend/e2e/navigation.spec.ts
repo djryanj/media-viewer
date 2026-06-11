@@ -61,12 +61,12 @@ test('@smoke @navigation bottom-nav Search tab navigates to /search', async ({ p
     await expect(page).toHaveURL('/search');
 });
 
-test('@smoke @navigation bottom-nav Albums tab navigates to /collections', async ({
+test('@smoke @navigation bottom-nav Albums tab is hidden (feature flag off)', async ({
     page,
 }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    await page.getByRole('button', { name: 'Albums', exact: true }).click({ force: true });
-    await expect(page).toHaveURL('/collections');
+    // Albums is behind features.albums = false; the tab must not appear in the nav.
+    await expect(page.getByRole('button', { name: 'Albums', exact: true })).toHaveCount(0);
 });

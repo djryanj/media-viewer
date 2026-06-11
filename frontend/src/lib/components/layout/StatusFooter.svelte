@@ -20,6 +20,22 @@
                 status.autotagger.summary.running)
     );
 
+    // Dispatch window events so other components can react to indexer state changes
+    // without importing this component directly.
+    //   indexer:running  — fired on every status poll while a worker is active
+    //   indexer:complete — fired once when all workers transition from running → idle
+    let wasRunning = false;
+    $effect(() => {
+        const running = anyRunning;
+        if (status === null) return; // not yet polled — skip
+        if (running) {
+            window.dispatchEvent(new CustomEvent('indexer:running'));
+        } else if (wasRunning) {
+            window.dispatchEvent(new CustomEvent('indexer:complete'));
+        }
+        wasRunning = running;
+    });
+
     async function fetchStatus() {
         try {
             status = await system.status();

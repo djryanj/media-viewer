@@ -53,6 +53,39 @@ const config: PlaywrightTestConfig = {
                 },
             },
         },
+        {
+            // Separate project for docs-screenshots: runs Chromium headed under an
+            // Xvfb virtual display (xvfb-run is injected by the npm script).  Headless
+            // Chrome's compositor never commits a frame to the display surface when
+            // the page is idle, so Page.captureScreenshot (called internally by
+            // locator.screenshot) hangs indefinitely.  A headed browser connected to a
+            // real (virtual) display surface always has an active compositor and
+            // screenshots complete in < 1 s.
+            name: 'chromium-screenshots',
+            testMatch: '**/docs-screenshots.spec.ts',
+            use: {
+                browserName: 'chromium',
+                headless: false,
+                launchOptions: {
+                    args: ['--disable-dev-shm-usage', '--no-sandbox'],
+                },
+            },
+        },
+        {
+            // Visual-regression project — same headed+Xvfb approach as chromium-screenshots.
+            // toHaveScreenshot() calls Page.captureScreenshot internally; the compositor
+            // hang and the --disable-gpu stability-check hang both disappear when the
+            // browser is headed against a real virtual display.
+            name: 'chromium-visual',
+            testMatch: '**/visual-regression.spec.ts',
+            use: {
+                browserName: 'chromium',
+                headless: false,
+                launchOptions: {
+                    args: ['--disable-dev-shm-usage', '--no-sandbox'],
+                },
+            },
+        },
     ],
 
     // Retry once on failure — WSL2/container timing issues cause occasional

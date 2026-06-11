@@ -57,7 +57,7 @@ FORCE ?= 0
         frontend-test frontend-test-unit frontend-test-integration \
         frontend-test-integration-auto frontend-test-e2e-auto \
 			frontend-test-e2e frontend-test-e2e-smoke frontend-test-e2e-smoke-auto frontend-test-e2e-runtime-smoke frontend-test-e2e-runtime-smoke-auto \
-			frontend-test-e2e-visual frontend-test-e2e-visual-auto frontend-test-e2e-visual-baselines \
+			frontend-test-e2e-visual frontend-test-e2e-visual-auto frontend-test-e2e-visual-baselines frontend-test-e2e-visual-baselines-auto \
 			frontend-test-e2e-performance frontend-test-e2e-performance-auto \
 			frontend-test-e2e-performance-smoke frontend-test-e2e-performance-smoke-auto frontend-test-e2e-performance-soak \
 		frontend-test-e2e-docs-screenshots frontend-test-e2e-docs-screenshots-auto \
@@ -671,11 +671,21 @@ frontend-test-e2e:
 	cd $(FRONTEND_DIR) && npm run test:e2e 2>&1 | tee ../e2e.log
 
 # Run frontend visual regression E2E tests against committed snapshot baselines.
+# Uses the chromium-visual Playwright project (headed + Xvfb) so that
+# toHaveScreenshot()/Page.captureScreenshot never hangs in this WSL2 environment.
 frontend-test-e2e-visual:
 	@echo "Running frontend E2E visual regression suite..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-auto' for automatic server)"
 	@echo "Logging to ../e2e-visual.log"
-	cd $(FRONTEND_DIR) && npm run test:e2e:visual 2>&1 | tee ../e2e-visual.log
+	@DISPLAY_NUM=99; \
+	while [ -f "/tmp/.X$${DISPLAY_NUM}-lock" ]; do DISPLAY_NUM=$$((DISPLAY_NUM + 1)); done; \
+	Xvfb :$${DISPLAY_NUM} -screen 0 1440x1100x24 -nolisten tcp & \
+	XVFB_PID=$$!; \
+	sleep 1; \
+	DISPLAY=:$${DISPLAY_NUM} bash -c 'set -o pipefail; cd $(FRONTEND_DIR) && npm run test:e2e:visual 2>&1 | tee ../e2e-visual.log'; \
+	EXIT=$$?; \
+	kill $$XVFB_PID 2>/dev/null || true; \
+	exit $$EXIT
 
 # Run frontend visual regression E2E tests with an ephemeral test server
 frontend-test-e2e-visual-auto:
@@ -684,10 +694,27 @@ frontend-test-e2e-visual-auto:
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-visual 2>&1 | tee e2e-visual-auto.log
 
 # Generate/update visual regression snapshot baselines from the live UI state.
+# Uses the chromium-visual Playwright project (headed + Xvfb) — same reason as
+# frontend-test-e2e-visual: toHaveScreenshot hangs in headless Chrome.
 frontend-test-e2e-visual-baselines:
 	@echo "Generating frontend visual regression snapshot baselines..."
-	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-auto' first if needed)"
-	cd $(FRONTEND_DIR) && npm run test:e2e:visual:baselines
+	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-baselines-auto' for automatic server)"
+	@echo "Logging to ../e2e-visual-baselines.log"
+	@DISPLAY_NUM=99; \
+	while [ -f "/tmp/.X$${DISPLAY_NUM}-lock" ]; do DISPLAY_NUM=$$((DISPLAY_NUM + 1)); done; \
+	Xvfb :$${DISPLAY_NUM} -screen 0 1440x1100x24 -nolisten tcp & \
+	XVFB_PID=$$!; \
+	sleep 1; \
+	DISPLAY=:$${DISPLAY_NUM} bash -c 'set -o pipefail; cd $(FRONTEND_DIR) && npm run test:e2e:visual:baselines 2>&1 | tee ../e2e-visual-baselines.log'; \
+	EXIT=$$?; \
+	kill $$XVFB_PID 2>/dev/null || true; \
+	exit $$EXIT
+
+# Generate/update visual regression snapshot baselines with an ephemeral test server.
+frontend-test-e2e-visual-baselines-auto:
+	@echo "Generating frontend visual regression snapshot baselines with ephemeral test server..."
+	@echo "Logging to e2e-visual-baselines-auto.log"
+	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-visual-baselines 2>&1 | tee e2e-visual-baselines-auto.log
 
 # Run the stable Chromium Playwright smoke suite (requires backend at TEST_BASE_URL or localhost:8080)
 frontend-test-e2e-smoke:
@@ -762,10 +789,23 @@ frontend-test-e2e-performance-soak-auto:
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-performance-soak 2>&1 | tee e2e-performance-soak-auto.log
 
 # Generate documentation screenshots from a dedicated Playwright workflow.
+# The chromium-screenshots Playwright project runs Chromium headed (headless: false)
+# so the display compositor is fully active and locator.screenshot() completes
+# instantly.  We spin up an Xvfb virtual display for the duration of the run and
+# tear it down afterwards — no xauth needed because Xvfb started without -auth
+# accepts all local connections from the same user.
 frontend-test-e2e-docs-screenshots:
 	@echo "Generating documentation screenshots from Playwright..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-docs-screenshots-auto' for automatic server)"
-	cd $(FRONTEND_DIR) && npm run test:e2e:docs-screenshots
+	@DISPLAY_NUM=99; \
+	while [ -f "/tmp/.X$${DISPLAY_NUM}-lock" ]; do DISPLAY_NUM=$$((DISPLAY_NUM + 1)); done; \
+	Xvfb :$${DISPLAY_NUM} -screen 0 1440x1100x24 -nolisten tcp & \
+	XVFB_PID=$$!; \
+	sleep 1; \
+	DISPLAY=:$${DISPLAY_NUM} sh -c 'cd $(FRONTEND_DIR) && npm run test:e2e:docs-screenshots'; \
+	EXIT=$$?; \
+	kill $$XVFB_PID 2>/dev/null || true; \
+	exit $$EXIT
 
 # Generate documentation screenshots with an ephemeral test server.
 frontend-test-e2e-docs-screenshots-auto:

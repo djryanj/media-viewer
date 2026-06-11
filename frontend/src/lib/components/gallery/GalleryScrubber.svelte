@@ -283,11 +283,15 @@
         touch-action: none;
     }
 
-    /* On mobile: narrower, labels hidden */
+    /* On mobile: wider hit area acts as a touch guard — prevents accidental
+     * gallery-item taps when reaching for the scrubber.  The extra space to
+     * the left of the track is transparent but intercepts all pointer events
+     * (z-index 60), so touching anywhere in the 44 px zone lands on the
+     * scrubber rather than an image behind it. */
     @media (max-width: 1023px) {
         .scrubber {
             bottom: calc(var(--nav-height, 60px) + var(--safe-area-inset-bottom, 0px) + 44px);
-            width: 18px;
+            width: 44px;
         }
     }
 
@@ -329,6 +333,18 @@
     @media (max-width: 1023px) {
         .ticks {
             display: none;
+        }
+
+        /* Slightly larger thumb on mobile to give visual feedback that the
+         * scrubber was grabbed rather than a gallery item. */
+        .thumb {
+            width: 12px;
+            height: 12px;
+        }
+
+        .thumb.dragging {
+            width: 16px;
+            height: 16px;
         }
     }
 
