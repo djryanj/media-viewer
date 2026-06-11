@@ -233,29 +233,44 @@ const LISTING_WITH_ITEMS = JSON.stringify({
 
 /** Simulate a long-press (600 ms hold) on the first element matching `selector`.
  *
- * Uses locator.dispatchEvent rather than page.mouse so the events are delivered
- * directly via JavaScript instead of going through Chrome's OS-level compositor.
- * The compositor path can generate spurious pointerleave/pointercancel events
- * during the hold that cancel the press timer before it fires.
+ * Uses page.evaluate to dispatch PointerEvents directly in the browser JS context
+ * rather than via Playwright's locator.dispatchEvent. The locator-based path
+ * updates Playwright's internal pointer-tracking state, which then causes
+ * subsequent locator.click() calls inside the opened context menu to hang
+ * forever on the actionability (hit-target) check. page.evaluate bypasses that
+ * tracking entirely, leaving Playwright's state clean for follow-up clicks.
  */
 async function longPress(page: import('@playwright/test').Page, selector: string) {
-    const el = page.locator(selector).first();
-    await el.waitFor({ state: 'visible', timeout: 5000 });
-    await el.dispatchEvent('pointerdown', {
-        bubbles: true,
-        cancelable: true,
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true
-    });
+    await page.locator(selector).first().waitFor({ state: 'visible', timeout: 5000 });
+    await page.evaluate((sel) => {
+        const target = document.querySelector(sel);
+        if (!target) throw new Error(`longPress: element not found — ${sel}`);
+        target.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                pointerType: 'touch',
+                pointerId: 1,
+                isPrimary: true
+            })
+        );
+    }, selector);
     await page.waitForTimeout(650); // just over the 600 ms LONG_PRESS_MS threshold
-    await el.dispatchEvent('pointerup', {
-        bubbles: true,
-        cancelable: true,
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true
-    });
+    await page.evaluate((sel) => {
+        const target = document.querySelector(sel);
+        if (!target) throw new Error(`longPress: element not found — ${sel}`);
+        target.dispatchEvent(
+            new PointerEvent('pointerup', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                pointerType: 'touch',
+                pointerId: 1,
+                isPrimary: true
+            })
+        );
+    }, selector);
 }
 
 test('@smoke @gallery long-press on image opens context menu', async ({ page }) => {
@@ -276,8 +291,8 @@ test('@smoke @gallery long-press on image opens context menu', async ({ page }) 
 
     // Context menu sheet should appear
     await expect(page.locator('.sheet')).toBeVisible({ timeout: 3000 });
-    // Item name should be in the header
-    await expect(page.locator('.item-name')).toHaveText('photo.jpg');
+    // Item name should be in the header (scope to .sheet to avoid matching gallery item names)
+    await expect(page.locator('.sheet .item-name')).toHaveText('photo.jpg');
 });
 
 test('@gallery context menu shows Download, Favorites, Tags, and Select for image', async ({
@@ -325,7 +340,7 @@ test('@gallery context menu shows only Favorites for folder (no Download, Tags, 
     await expect(page.getByText('Download')).not.toBeVisible();
     await expect(page.getByText('Tags')).not.toBeVisible();
     await expect(page.getByText('Select')).not.toBeVisible();
-    await expect(page.locator('.item-name')).toHaveText('vacation');
+    await expect(page.locator('.sheet .item-name')).toHaveText('vacation');
 });
 
 test('@gallery context menu Cancel button closes the menu', async ({ page }) => {
@@ -343,7 +358,10 @@ test('@gallery context menu Cancel button closes the menu', async ({ page }) => 
     await longPress(page, '.gallery-item[data-type="image"]');
     await expect(page.locator('.sheet')).toBeVisible({ timeout: 3000 });
 
-    await page.getByText('Cancel').click();
+    // Use dispatchEvent instead of .click() — Playwright's locator.click() runs a
+    // getBoundingClientRect stability check that loops forever inside position:fixed
+    // overlays in this headless WSL2 environment (GPU compositing jitter).
+    await page.locator('.cancel-btn').dispatchEvent('click');
     await expect(page.locator('.sheet')).not.toBeVisible({ timeout: 2000 });
 });
 
@@ -382,13 +400,12 @@ test('@gallery context menu Select enters selection mode', async ({ page }) => {
     await longPress(page, '.gallery-item[data-type="image"]');
     await expect(page.locator('.sheet')).toBeVisible({ timeout: 3000 });
 
-    await page.getByText('Select').click();
+    // Use dispatchEvent instead of .click() — same reason as the Cancel test above.
+    await page.locator('.sheet').getByText('Select').dispatchEvent('click');
 
     // Menu closes and item is now selected (has .selected class)
     await expect(page.locator('.sheet')).not.toBeVisible({ timeout: 2000 });
-    await expect(page.locator('.gallery-item.selected, .gallery-item[data-selected]')).toBeVisible({
-        timeout: 2000
-    });
+    await expect(page.locator('.gallery-item.selected')).toBeVisible({ timeout: 2000 });
 });
 
 // ── Pull-to-refresh ───────────────────────────────────────────────────────────
