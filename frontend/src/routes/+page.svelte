@@ -48,18 +48,8 @@
     // because the indexer hasn't committed its first batch yet (< 500 files or
     // < 30 s elapsed).  StatusFooter fires this event on every 3 s status poll
     // while a worker is active, so we get automatic progressive refresh.
-    // Throttled to at most once per 10 s to avoid a storm of identical requests
-    // on an empty database where the 304-cached response returns instantly.
-    let lastIndexerRefresh = 0;
     function handleIndexerRunning() {
-        const now = Date.now();
-        if (
-            !galleryStore.loading &&
-            galleryStore.items.length === 0 &&
-            !galleryStore.error &&
-            now - lastIndexerRefresh > 10_000
-        ) {
-            lastIndexerRefresh = now;
+        if (!galleryStore.loading && galleryStore.items.length === 0 && !galleryStore.error) {
             galleryStore.refresh();
         }
     }
