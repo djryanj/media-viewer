@@ -37,6 +37,10 @@
             prefMediaLoop = (loadPrefs().mediaLoop as boolean) ?? true;
             prefClockEnabled = (loadPrefs().clockEnabled as boolean) ?? true;
             prefClockFormat = (loadPrefs().clockFormat as string) === '24' ? '24' : '12';
+            // Reset passkey state so the list reloads on next visit to that tab
+            passkeys = [];
+            passkeysHaveBeenLoaded = false;
+            newPasskeyName = derivePasskeyName();
         }
     });
 
@@ -182,7 +186,25 @@
     let passkeys: Passkey[] = $state([]);
     let passkeysLoading = $state(false);
     let passkeyRegLoading = $state(false);
-    let newPasskeyName = $state('');
+    // Tracks whether we've completed at least one load attempt this modal session.
+    // Without this, the auto-load $effect loops forever when the passkey list is
+    // empty: loadPasskeys() returns [] → length===0 still true → fires again.
+    let passkeysHaveBeenLoaded = $state(false);
+
+    function derivePasskeyName(): string {
+        if (typeof navigator === 'undefined') return 'My Passkey';
+        const ua = navigator.userAgent;
+        if (/iPhone/i.test(ua)) return 'iPhone';
+        if (/iPad/i.test(ua)) return 'iPad';
+        if (/Android/i.test(ua)) return /Mobile/.test(ua) ? 'Android Phone' : 'Android Tablet';
+        const platform = navigator.platform ?? '';
+        if (/Mac/.test(platform)) return 'Mac';
+        if (/Win/.test(platform)) return 'Windows PC';
+        if (/Linux/.test(platform)) return 'Linux';
+        return 'My Passkey';
+    }
+
+    let newPasskeyName = $state(derivePasskeyName());
 
     async function loadPasskeys() {
         passkeysLoading = true;
@@ -192,11 +214,17 @@
             toastStore.error('Failed to load passkeys');
         } finally {
             passkeysLoading = false;
+            passkeysHaveBeenLoaded = true;
         }
     }
 
     async function registerPasskey() {
         if (passkeyRegLoading || !webauthnSupported) return;
+        const name = newPasskeyName.trim();
+        if (!name) {
+            toastStore.error('Please enter a name for this passkey');
+            return;
+        }
         passkeyRegLoading = true;
         try {
             const { options, sessionId } = await auth.webauthnRegisterBegin();
@@ -205,7 +233,6 @@
                 publicKey
             })) as PublicKeyCredential | null;
             if (!cred) return;
-            const name = newPasskeyName.trim() || 'Passkey';
             // Call finish with the credential serialized; name is passed via JSON body
             await fetch('/api/auth/webauthn/register/finish', {
                 method: 'POST',
@@ -220,7 +247,7 @@
                 if (!r.ok) throw new Error('Registration failed');
             });
             toastStore.success('Passkey registered');
-            newPasskeyName = '';
+            newPasskeyName = derivePasskeyName();
             await loadPasskeys();
         } catch (err) {
             if ((err as Error)?.name === 'NotAllowedError') {
@@ -247,12 +274,15 @@
         }
     }
 
+    // Load passkeys lazily when the tab becomes active for the first time this
+    // modal session. passkeysHaveBeenLoaded prevents re-triggering when the
+    // list is empty (otherwise returning [] keeps the condition true and loops).
     $effect(() => {
         if (
             webauthnSupported &&
             activeTab === 'passkeys' &&
             settingsStore.open &&
-            passkeys.length === 0 &&
+            !passkeysHaveBeenLoaded &&
             !passkeysLoading
         ) {
             loadPasskeys();
@@ -503,13 +533,14 @@
                             <h3 class="section-title">Add a passkey</h3>
                             <div class="form">
                                 <div class="field">
-                                    <label for="passkey-name">Passkey name (optional)</label>
+                                    <label for="passkey-name">Passkey name</label>
                                     <input
                                         id="passkey-name"
                                         type="text"
                                         bind:value={newPasskeyName}
                                         placeholder="e.g. MacBook Touch ID"
                                         maxlength="50"
+                                        required
                                     />
                                 </div>
                                 <button

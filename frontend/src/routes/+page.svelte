@@ -48,8 +48,18 @@
     // because the indexer hasn't committed its first batch yet (< 500 files or
     // < 30 s elapsed).  StatusFooter fires this event on every 3 s status poll
     // while a worker is active, so we get automatic progressive refresh.
+    // Throttled to at most once per 10 s to avoid a storm of identical requests
+    // on an empty database where the 304-cached response returns instantly.
+    let lastIndexerRefresh = 0;
     function handleIndexerRunning() {
-        if (!galleryStore.loading && galleryStore.items.length === 0 && !galleryStore.error) {
+        const now = Date.now();
+        if (
+            !galleryStore.loading &&
+            galleryStore.items.length === 0 &&
+            !galleryStore.error &&
+            now - lastIndexerRefresh > 10_000
+        ) {
+            lastIndexerRefresh = now;
             galleryStore.refresh();
         }
     }
@@ -143,7 +153,7 @@
     >
 </svelte:head>
 
-<div class="gallery-page">
+<div class="gallery-page" class:has-scrubber={galleryStore.totalItems > 100}>
     {#if pullIndicator}
         <div class="pull-indicator" aria-hidden="true" aria-label="Release to refresh">
             <div class="pull-spinner"></div>
@@ -188,6 +198,19 @@
 <style>
     .gallery-page {
         min-height: 100%;
+    }
+
+    /* Reserve space for the scrubber so thumbnails don't slide under it.
+     * Values match the scrubber's width (28px mobile / 32px desktop) plus a
+     * small gap so the track doesn't kiss the last thumbnail column. */
+    .gallery-page.has-scrubber {
+        padding-right: 32px;
+    }
+
+    @media (min-width: 1024px) {
+        .gallery-page.has-scrubber {
+            padding-right: 40px;
+        }
     }
 
     /* Pull-to-refresh indicator — appears at the top of the gallery page while

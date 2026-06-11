@@ -144,6 +144,9 @@
     }
 
     // ── Pointer events ───────────────────────────────────────────────────────
+    /** Hit-zone element — narrower than the full scrubber, captures pointer events. */
+    let hitZoneEl: HTMLElement | undefined = $state();
+
     function fractionFromPointer(e: PointerEvent): number {
         if (!scrubberEl) return 0;
         const rect = scrubberEl.getBoundingClientRect();
@@ -153,7 +156,7 @@
     function handlePointerDown(e: PointerEvent) {
         e.preventDefault();
         isDragging = true;
-        scrubberEl?.setPointerCapture(e.pointerId);
+        hitZoneEl?.setPointerCapture(e.pointerId);
         jumpToFraction(fractionFromPointer(e));
     }
 
@@ -213,23 +216,13 @@
 </script>
 
 {#if visible}
-    <div
-        class="scrubber"
-        bind:this={scrubberEl}
-        onpointerdown={handlePointerDown}
-        onpointermove={handlePointerMove}
-        onpointerup={handlePointerUp}
-        onpointerleave={handlePointerLeave}
-        role="scrollbar"
-        tabindex="0"
-        aria-controls="main-content"
-        aria-label="Gallery position"
-        aria-orientation="vertical"
-        aria-valuenow={Math.round(thumbFrac * 100)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-    >
-        <!-- Tick labels (hidden on mobile) -->
+    <!--
+        Outer element: full-width positioning reference for the thumb fraction
+        calculation and tick/tooltip layout. pointer-events:none so the scrubber
+        doesn't block thumbnail clicks — only the hit-zone inside intercepts events.
+    -->
+    <div class="scrubber" bind:this={scrubberEl} aria-hidden="true">
+        <!-- Tick labels (desktop only) -->
         <div class="ticks" aria-hidden="true">
             {#each ticks as tick (tick.label + tick.fraction)}
                 <div class="tick" style:top="{tick.fraction * 100}%">
@@ -239,25 +232,46 @@
             {/each}
         </div>
 
-        <!-- Track -->
-        <div class="track">
-            <!-- Loaded region (bright highlight) -->
-            <div
-                class="region loaded"
-                style:top="{loadedStart * 100}%"
-                style:height="{Math.max(0, loadedEnd - loadedStart) * 100}%"
-            ></div>
+        <!--
+            Hit-zone: the interactive strip. Narrower than the full scrubber so
+            only the rightmost edge intercepts pointer events.
+        -->
+        <div
+            class="hit-zone"
+            bind:this={hitZoneEl}
+            onpointerdown={handlePointerDown}
+            onpointermove={handlePointerMove}
+            onpointerup={handlePointerUp}
+            onpointerleave={handlePointerLeave}
+            role="scrollbar"
+            tabindex="0"
+            aria-controls="main-content"
+            aria-label="Gallery position"
+            aria-orientation="vertical"
+            aria-valuenow={Math.round(thumbFrac * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+        >
+            <!-- Track (visual bar, narrower than hit-zone) -->
+            <div class="track">
+                <!-- Loaded region (bright highlight) -->
+                <div
+                    class="region loaded"
+                    style:top="{loadedStart * 100}%"
+                    style:height="{Math.max(0, loadedEnd - loadedStart) * 100}%"
+                ></div>
 
-            <!-- Thumb -->
-            <div class="thumb" class:dragging={isDragging} style:top="{thumbFrac * 100}%"></div>
+                <!-- Thumb -->
+                <div class="thumb" class:dragging={isDragging} style:top="{thumbFrac * 100}%"></div>
 
-            <!-- Hover line -->
-            {#if hoverFraction !== null}
-                <div class="hover-line" style:top="{hoverFraction * 100}%"></div>
-            {/if}
+                <!-- Hover line -->
+                {#if hoverFraction !== null}
+                    <div class="hover-line" style:top="{hoverFraction * 100}%"></div>
+                {/if}
+            </div>
         </div>
 
-        <!-- Hover tooltip -->
+        <!-- Hover tooltip (positioned relative to outer scrubber) -->
         {#if hoverFraction !== null && tooltipLabel}
             <div class="tooltip" style:top="{Math.min(hoverFraction * 100, 92)}%">
                 {tooltipLabel}
@@ -267,35 +281,36 @@
 {/if}
 
 <style>
+    /* ── Outer container ─────────────────────────────────────────────────────
+       Full-width positioning reference for layout + tick/tooltip placement.
+       pointer-events:none so only the hit-zone captures input — gallery
+       thumbnails remain fully clickable even where the scrubber visually
+       overlaps the padding gutter. */
     .scrubber {
         position: fixed;
         right: 0;
         top: var(--header-height, 56px);
         bottom: calc(var(--nav-height, 0px) + 40px);
+        /* Desktop: room for tick labels (20px) + hit-zone (12px) */
         width: 32px;
         z-index: 60;
         display: flex;
         flex-direction: row;
         align-items: stretch;
-        cursor: pointer;
+        pointer-events: none;
         user-select: none;
         -webkit-user-select: none;
-        touch-action: none;
     }
 
-    /* On mobile: wider hit area acts as a touch guard — prevents accidental
-     * gallery-item taps when reaching for the scrubber.  The extra space to
-     * the left of the track is transparent but intercepts all pointer events
-     * (z-index 60), so touching anywhere in the 44 px zone lands on the
-     * scrubber rather than an image behind it. */
     @media (max-width: 1023px) {
         .scrubber {
             bottom: calc(var(--nav-height, 60px) + var(--safe-area-inset-bottom, 0px) + 44px);
-            width: 44px;
+            /* Mobile: no tick labels, just the hit-zone */
+            width: 28px;
         }
     }
 
-    /* ── Tick labels ── */
+    /* ── Tick labels (desktop only) ── */
     .ticks {
         flex: 1;
         position: relative;
@@ -329,33 +344,42 @@
         flex-shrink: 0;
     }
 
-    /* Hide labels on mobile */
     @media (max-width: 1023px) {
         .ticks {
             display: none;
         }
+    }
 
-        /* Slightly larger thumb on mobile to give visual feedback that the
-         * scrubber was grabbed rather than a gallery item. */
-        .thumb {
-            width: 12px;
-            height: 12px;
-        }
+    /* ── Hit-zone ────────────────────────────────────────────────────────────
+       The only element that captures pointer events. Sits at the right edge of
+       the scrubber; the visual track lives inside it, aligned to the right. */
+    .hit-zone {
+        flex-shrink: 0;
+        /* Desktop: 12px gives a comfortable mouse target without eating content */
+        width: 12px;
+        position: relative;
+        pointer-events: auto;
+        cursor: pointer;
+        touch-action: none;
+    }
 
-        .thumb.dragging {
-            width: 16px;
-            height: 16px;
+    @media (max-width: 1023px) {
+        .hit-zone {
+            /* Mobile: full scrubber width — all 28px is the touch target */
+            width: 28px;
         }
     }
 
-    /* ── Track ── */
+    /* ── Track (visual bar) ── */
     .track {
+        position: absolute;
+        /* Align to right edge of hit-zone with a small margin */
+        right: 4px;
+        top: 4px;
+        bottom: 4px;
         width: 4px;
-        flex-shrink: 0;
-        position: relative;
         background: var(--color-surface-3);
         border-radius: 2px;
-        margin: 4px 4px 4px 0;
         overflow: visible;
     }
 
@@ -392,9 +416,21 @@
         height: 14px;
     }
 
-    .scrubber:hover .thumb {
+    .hit-zone:hover .thumb {
         width: 12px;
         height: 12px;
+    }
+
+    @media (max-width: 1023px) {
+        .thumb {
+            width: 12px;
+            height: 12px;
+        }
+
+        .thumb.dragging {
+            width: 16px;
+            height: 16px;
+        }
     }
 
     /* ── Hover line ── */

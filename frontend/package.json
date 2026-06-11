@@ -22,6 +22,7 @@
         "test:integration": "vitest run --reporter=verbose",
         "test:e2e": "PLAYWRIGHT_HTML_OPEN=never playwright test --project=chromium",
         "test:e2e:smoke": "PLAYWRIGHT_HTML_OPEN=never playwright test --project=chromium --grep @smoke",
+        "test:e2e:runtime-smoke": "PLAYWRIGHT_HTML_OPEN=never playwright test --project=chromium --grep @smoke",
         "test:e2e:visual": "PLAYWRIGHT_HTML_OPEN=never playwright test --project=chromium-visual",
         "test:e2e:visual:baselines": "PLAYWRIGHT_HTML_OPEN=never playwright test --project=chromium-visual --update-snapshots",
         "test:e2e:docs-screenshots": "PLAYWRIGHT_HTML_OPEN=never playwright test --project=chromium-screenshots",

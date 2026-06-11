@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +13,17 @@ import (
 
 	"media-viewer/internal/logging"
 )
+
+// thumbnailURL builds the /api/thumbnail/ URL for a media file path.
+// Each path segment is percent-encoded so that characters like '#', '?', and
+// spaces are safe as URL path components. Directory separators are preserved.
+func thumbnailURL(path string) string {
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return "/api/thumbnail/" + strings.Join(segments, "/")
+}
 
 // SortField specifies which field to sort by.
 type SortField string
@@ -440,7 +452,7 @@ func (d *Database) scanDirectoryItems(rows *sql.Rows) ([]MediaFile, error) {
 		}
 
 		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
-			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+			file.ThumbnailURL = thumbnailURL(file.Path)
 		}
 
 		file.IsFavorite = isFavorite == 1
@@ -702,7 +714,7 @@ func (d *Database) searchByTagFilters(ctx context.Context, opts SearchOptions, i
 		}
 
 		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
-			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+			file.ThumbnailURL = thumbnailURL(file.Path)
 		}
 
 		file.IsFavorite = isFavorite == 1
@@ -908,7 +920,7 @@ func (d *Database) searchWithTagFilters(ctx context.Context, opts SearchOptions,
 		}
 
 		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
-			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+			file.ThumbnailURL = thumbnailURL(file.Path)
 		}
 
 		file.IsFavorite = isFavorite == 1
@@ -1377,7 +1389,7 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		if mimeType.Valid {
 			file.MimeType = mimeType.String
 		}
-		file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		file.ThumbnailURL = thumbnailURL(file.Path)
 		file.IsFavorite = isFavorite == 1
 
 		if tagsString.Valid && tagsString.String != "" {
@@ -1524,7 +1536,7 @@ func (d *Database) GetMediaInDirectoryPaged(ctx context.Context, parentPath stri
 		if mimeType.Valid {
 			file.MimeType = mimeType.String
 		}
-		file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		file.ThumbnailURL = thumbnailURL(file.Path)
 		file.IsFavorite = isFavorite == 1
 
 		if tagsString.Valid && tagsString.String != "" {

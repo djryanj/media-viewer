@@ -44,22 +44,22 @@
         }
     }
 
-    function startPolling() {
-        pollTimer = setInterval(fetchStatus, anyRunning ? 3000 : 15000);
-    }
-
-    // Re-schedule whenever running state changes so the interval adapts
+    // Re-schedule whenever running state changes so the interval adapts.
+    // Return a cleanup so Svelte clears the interval on re-run and on destroy.
     $effect(() => {
         const _running = anyRunning; // track reactively
-        if (pollTimer) clearInterval(pollTimer);
-        pollTimer = setInterval(fetchStatus, _running ? 3000 : 15000);
+        const timer = setInterval(fetchStatus, _running ? 3000 : 15000);
+        pollTimer = timer;
+        return () => {
+            clearInterval(timer);
+        };
     });
 
     onMount(async () => {
+        // Initial fetch so the footer doesn't wait a full interval cycle.
         [buildInfo] = await Promise.allSettled([versionApi.get(), fetchStatus()]).then(([v]) => [
             v.status === 'fulfilled' ? v.value : null
         ]);
-        startPolling();
     });
 
     onDestroy(() => {
