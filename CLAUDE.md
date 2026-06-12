@@ -46,7 +46,10 @@ make lint-fix
 
 # Pre-PR gate — runs lint/test/race for Go changes; check/unit/integration/smoke for frontend changes
 make pr-check
-make pr-check-fix   # same, but with Go lint autofix
+make pr-check-fix        # same, but with Go lint autofix
+make pr-check-backend    # backend (Go) checks only
+make pr-check-backend-fix  # backend checks with lint autofix
+make pr-check-frontend   # frontend checks only
 ```
 
 Frontend tests (from `frontend/` directory):

@@ -49,6 +49,7 @@ FORCE ?= 0
         test-unit test-integration test-all \
         test-clean \
 		pr-check pr-check-fix pr-check-all \
+		pr-check-backend pr-check-backend-fix pr-check-frontend \
         frontend-install \
         frontend-lint frontend-lint-js frontend-lint-css \
         frontend-lint-fix frontend-lint-css-fix \
@@ -470,14 +471,18 @@ _CHANGED_FILES = $(shell \
 	} | sort -u)
 
 # Go backend changes (matches CI "go" filter)
+# BACKEND_ONLY=1 forces backend, FRONTEND_ONLY=1 skips backend, FORCE=1 forces both.
 _HAS_GO_CHANGES = $(shell \
-	if [ "$(FORCE)" = "1" ]; then echo "1"; \
+	if [ "$(BACKEND_ONLY)" = "1" ] || [ "$(FORCE)" = "1" ]; then echo "1"; \
+	elif [ "$(FRONTEND_ONLY)" = "1" ]; then echo ""; \
 	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '\.go$$|^go\.(mod|sum)$$|^Makefile$$'; then echo "1"; \
 	else echo ""; fi)
 
 # Frontend changes (matches CI "frontend" filter — covers both legacy static/ and new SvelteKit frontend/)
+# FRONTEND_ONLY=1 forces frontend, BACKEND_ONLY=1 skips frontend, FORCE=1 forces both.
 _HAS_FRONTEND_CHANGES = $(shell \
-	if [ "$(FORCE)" = "1" ]; then echo "1"; \
+	if [ "$(FRONTEND_ONLY)" = "1" ] || [ "$(FORCE)" = "1" ]; then echo "1"; \
+	elif [ "$(BACKEND_ONLY)" = "1" ]; then echo ""; \
 	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^static/.*\.(js|css|html)$$|^static/package(-lock)?\.json$$|^frontend/.*\.(ts|svelte|js|css|html)$$|^frontend/package(-lock)?\.json$$'; then echo "1"; \
 	else echo ""; fi)
 
@@ -551,6 +556,18 @@ pr-check-fix:
 # Force-run all PR checks regardless of changes
 pr-check-all:
 	@$(MAKE) pr-check FORCE=1
+
+# Run only backend (Go) PR checks
+pr-check-backend:
+	@$(MAKE) pr-check BACKEND_ONLY=1 PR_BASE=$(PR_BASE)
+
+# Run only backend PR checks with Go lint autofix
+pr-check-backend-fix:
+	@$(MAKE) pr-check BACKEND_ONLY=1 PR_CHECK_GO_LINT_TARGET=lint-fix PR_BASE=$(PR_BASE)
+
+# Run only frontend PR checks
+pr-check-frontend:
+	@$(MAKE) pr-check FRONTEND_ONLY=1 PR_BASE=$(PR_BASE)
 
 # =============================================================================
 # Go Lint Targets

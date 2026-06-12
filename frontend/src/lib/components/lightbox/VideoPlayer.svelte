@@ -70,6 +70,7 @@
 
     // ── HLS / source management ───────────────────────────────────────────────
     let hlsInstance: Hls | null = null;
+    let hlsEndedListener: ((e: Event) => void) | null = null;
     let loadId = 0;
 
     function encPath(p: string) {
@@ -77,6 +78,10 @@
     }
 
     function cleanupPrev() {
+        if (hlsEndedListener && videoEl) {
+            videoEl.removeEventListener('ended', hlsEndedListener);
+            hlsEndedListener = null;
+        }
         if (hlsInstance) {
             hlsInstance.destroy();
             hlsInstance = null;
@@ -145,6 +150,7 @@
         const hls = new Hls({
             debug: false,
             lowLatencyMode: false,
+            startPosition: 0,
             manifestLoadingTimeOut: 20000,
             levelLoadingTimeOut: 20000,
             fragLoadingTimeOut: 60000
@@ -160,17 +166,21 @@
                 return;
             }
             applyVolumeToVideo();
-            if (autoplay) videoEl?.play().catch(() => {});
+            if (autoplay) {
+                if (videoEl) videoEl.currentTime = 0;
+                videoEl?.play().catch(() => {});
+            }
         });
 
         // hls.js ignores native loop — handle manually.
         // Only loop when there is no onEnded callback; if onEnded is provided it
         // takes priority (e.g. playlist auto-advance) and we let it run instead.
-        videoEl.addEventListener('ended', function hlsLoopHandler() {
+        hlsEndedListener = () => {
             if (!videoEl?.loop || onEnded) return;
             videoEl.currentTime = 0;
             videoEl.play().catch(() => {});
-        });
+        };
+        videoEl.addEventListener('ended', hlsEndedListener);
 
         hls.on(Hls.Events.ERROR, (_ev, data) => {
             if (!data.fatal) return;
@@ -203,6 +213,7 @@
 
         videoEl.src = sessionData.playlistUrl;
         videoEl.load();
+        videoEl.currentTime = 0;
         applyVolumeToVideo();
         if (autoplay) videoEl.play().catch(() => {});
     }
@@ -211,6 +222,7 @@
         if (id !== loadId || !videoEl) return;
         videoEl.src = `/api/stream/${encPath(p)}`;
         videoEl.load();
+        videoEl.currentTime = 0;
         applyVolumeToVideo();
         if (autoplay) videoEl.play().catch(() => {});
     }
@@ -464,7 +476,7 @@
         bind:this={videoEl}
         class="vp-video"
         playsinline
-        preload="auto"
+        preload="metadata"
         onplay={onPlay}
         onpause={onPause}
         ontimeupdate={onTimeUpdate}

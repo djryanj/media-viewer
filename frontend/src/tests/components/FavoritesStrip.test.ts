@@ -280,6 +280,32 @@ describe('FavoritesStrip', () => {
         });
     });
 
+    it('tapping strip-item while overlay is showing dismisses overlay without removing', async () => {
+        vi.useFakeTimers();
+        const { container } = render(FavoritesStrip, { items: [imageItem] });
+        const stripItem = container.querySelector('.strip-item') as HTMLElement;
+
+        await fireEvent.pointerDown(stripItem, { pointerType: 'touch', clientX: 40, clientY: 40 });
+        vi.advanceTimersByTime(650);
+        await tick();
+        vi.useRealTimers();
+
+        expect(container.querySelector('.remove-overlay')).toBeTruthy();
+
+        // The click that fires at the end of a long-press is suppressed (suppressNextClick),
+        // so the overlay stays visible on the first tap.
+        await fireEvent.click(stripItem);
+        await tick();
+        expect(container.querySelector('.remove-overlay')).toBeTruthy();
+
+        // A second distinct tap dismisses the overlay without triggering remove or navigation.
+        await fireEvent.click(stripItem);
+        await tick();
+        expect(container.querySelector('.remove-overlay')).toBeNull();
+        expect(galleryStore.removeFavorite).not.toHaveBeenCalled();
+        expect(goto).not.toHaveBeenCalled();
+    });
+
     it('long-press does not show overlay when pointer moves more than 8px', async () => {
         vi.useFakeTimers();
         const { container } = render(FavoritesStrip, { items: [imageItem] });

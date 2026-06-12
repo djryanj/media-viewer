@@ -11,10 +11,15 @@
     let loading = $state(true);
     let currentIndex = $state(0);
     let sidebarOpen = $state(false);
+    let isFullscreen = $state(false);
     let playerPageEl = $state<HTMLDivElement | undefined>(undefined);
     // Swipe-to-reveal sidebar on mobile
     let touchStartX = 0;
     let touchStartY = 0;
+
+    function onFullscreenChange() {
+        isFullscreen = !!document.fullscreenElement;
+    }
 
     const playlistName = $derived($page.params.name ?? '');
     const currentItem = $derived(playlist?.items[currentIndex] ?? null);
@@ -33,8 +38,8 @@
 
     function selectItem(index: number) {
         currentIndex = index;
-        // On mobile, auto-close sidebar when an item is selected
-        if (window.innerWidth < 768) sidebarOpen = false;
+        // Auto-close sidebar when an item is selected in overlay mode
+        if (window.innerWidth < 1024 || isFullscreen) sidebarOpen = false;
     }
 
     function prev() {
@@ -116,6 +121,7 @@
     onkeydown={handleKeydown}
     ontouchstart={handleTouchStart}
     ontouchend={handleTouchEnd}
+    onfullscreenchange={onFullscreenChange}
 />
 
 <div class="player-page" bind:this={playerPageEl}>
@@ -204,7 +210,12 @@
         <!-- Sidebar -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <aside class="sidebar" class:open={sidebarOpen} aria-label="Playlist items">
+        <aside
+            class="sidebar"
+            class:open={sidebarOpen}
+            class:fullscreen={isFullscreen}
+            aria-label="Playlist items"
+        >
             <div class="sidebar-header">
                 <span class="sidebar-title">Playlist</span>
                 <button
@@ -259,11 +270,15 @@
             </ul>
         </aside>
 
-        <!-- Sidebar backdrop (mobile) -->
+        <!-- Sidebar backdrop (mobile and fullscreen) -->
         {#if sidebarOpen}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <div class="sidebar-backdrop" onclick={() => (sidebarOpen = false)}></div>
+            <div
+                class="sidebar-backdrop"
+                class:fullscreen={isFullscreen}
+                onclick={() => (sidebarOpen = false)}
+            ></div>
         {/if}
     </div>
 </div>
@@ -581,5 +596,33 @@
             background: rgba(0, 0, 0, 0.5);
             z-index: 9;
         }
+    }
+
+    /* ── Fullscreen: sidebar always overlays regardless of viewport width ─────── */
+    .sidebar.fullscreen {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: min(300px, 85vw);
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+        z-index: 10;
+    }
+
+    .sidebar.fullscreen.open {
+        transform: translateX(0);
+    }
+
+    .sidebar.fullscreen .sidebar-close {
+        display: flex;
+    }
+
+    .sidebar-backdrop.fullscreen {
+        display: block;
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9;
     }
 </style>

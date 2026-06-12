@@ -94,7 +94,7 @@
 
     function startItemPress(e: PointerEvent, path: string) {
         if (removalPending) {
-            removalPending = null;
+            // Overlay is showing; let handleItemClick dismiss it on the ensuing click.
             return;
         }
         pressStartX = e.clientX;
@@ -230,15 +230,13 @@
 
                 <!-- Long-press remove overlay -->
                 {#if removalPending === item.path}
-                    <!-- svelte-ignore a11y_autofocus -->
                     <button
                         class="remove-overlay"
-                        autofocus
+                        onpointerdown={(e) => e.stopPropagation()}
                         onclick={(e) => {
                             e.stopPropagation();
                             executeRemove(item.path);
                         }}
-                        onblur={() => (removalPending = null)}
                         aria-label="Remove {item.name} from favorites"
                     >
                         <svg
