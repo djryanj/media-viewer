@@ -11,6 +11,7 @@
     let loading = $state(true);
     let currentIndex = $state(0);
     let sidebarOpen = $state(false);
+    let playerPageEl = $state<HTMLDivElement | undefined>(undefined);
     // Swipe-to-reveal sidebar on mobile
     let touchStartX = 0;
     let touchStartY = 0;
@@ -85,6 +86,8 @@
         if (e.key === 'ArrowLeft') prev();
         else if (e.key === 'ArrowRight') next();
         else if (e.key === 'Escape') {
+            // When fullscreen is active, let the browser exit it; don't navigate away.
+            if (document.fullscreenElement) return;
             if (sidebarOpen) sidebarOpen = false;
             else goto('/');
         } else if (e.key === 'p' || e.key === 'P') sidebarOpen = !sidebarOpen;
@@ -113,7 +116,7 @@
     ontouchend={handleTouchEnd}
 />
 
-<div class="player-page">
+<div class="player-page" bind:this={playerPageEl}>
     <!-- Header -->
     <header class="player-header">
         <button class="header-back" onclick={() => goto('/')} aria-label="Back to gallery">
@@ -174,16 +177,16 @@
                     {/if}
                 </div>
             {:else if isVideo(currentItem)}
-                {#key currentItem.path}
-                    <VideoPlayer
-                        path={currentItem.path}
-                        autoplay={true}
-                        loop={false}
-                        showNav={true}
-                        onPrev={currentIndex > 0 ? prev : undefined}
-                        onNext={currentIndex < (playlist?.items.length ?? 0) - 1 ? next : undefined}
-                    />
-                {/key}
+                <VideoPlayer
+                    path={currentItem.path}
+                    autoplay={true}
+                    loop={false}
+                    showNav={true}
+                    onPrev={currentIndex > 0 ? prev : undefined}
+                    onNext={currentIndex < (playlist?.items.length ?? 0) - 1 ? next : undefined}
+                    onEnded={currentIndex < (playlist?.items.length ?? 0) - 1 ? next : undefined}
+                    fullscreenTarget={playerPageEl}
+                />
             {:else}
                 <!-- Non-video (audio) fallback -->
                 <!-- svelte-ignore a11y_media_has_caption -->

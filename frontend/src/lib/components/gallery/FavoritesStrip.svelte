@@ -114,7 +114,7 @@
                 ondrop={(e) => handleDrop(e, idx)}
                 ondragend={handleDragEnd}
             >
-                {#if item.thumbnailUrl && item.type !== 'folder' && item.type !== 'playlist'}
+                {#if item.thumbnailUrl && item.type !== 'playlist'}
                     <img src={item.thumbnailUrl} alt={item.name} loading="lazy" decoding="async" />
                 {:else if item.type === 'playlist'}
                     <div class="strip-placeholder">
@@ -139,6 +139,11 @@
                             />
                         </svg>
                     </div>
+                {/if}
+
+                <!-- Name label for folders and playlists (no thumbnail to identify them) -->
+                {#if item.type === 'folder' || item.type === 'playlist'}
+                    <div class="strip-name" title={item.name}>{item.name}</div>
                 {/if}
 
                 <!-- Drag handle hint -->
@@ -244,6 +249,23 @@
         width: 28px;
         height: 28px;
         opacity: 0.4;
+    }
+
+    .strip-name {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 3px 4px 4px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        font-size: 10px;
+        line-height: 1.2;
+        text-align: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        pointer-events: none;
     }
 
     .drag-handle {

@@ -92,12 +92,26 @@ describe('FavoritesStrip', () => {
         expect((img as HTMLImageElement).src).toContain('/thumb/photo.jpg');
     });
 
-    it('folder item renders folder placeholder (no img)', () => {
+    it('folder item without thumbnail renders folder placeholder (no img)', () => {
         const { container } = render(FavoritesStrip, { items: [folderItem] });
         const img = container.querySelector('.strip-item img');
         expect(img).toBeNull();
         const placeholder = container.querySelector('.strip-placeholder');
         expect(placeholder).toBeTruthy();
+    });
+
+    it('folder item with thumbnail renders an <img>', () => {
+        const folderWithThumb = makeItem({
+            id: 10,
+            name: 'thumbed-folder',
+            path: '/thumbed-folder',
+            type: 'folder',
+            thumbnailUrl: '/thumb/thumbed-folder'
+        });
+        const { container } = render(FavoritesStrip, { items: [folderWithThumb] });
+        const img = container.querySelector('.strip-item img') as HTMLImageElement | null;
+        expect(img).toBeTruthy();
+        expect(img?.src).toContain('/thumb/thumbed-folder');
     });
 
     it('playlist item renders playlist placeholder (no img)', () => {
@@ -181,6 +195,32 @@ describe('FavoritesStrip', () => {
     it('favorites strip shows the Favorites label', () => {
         render(FavoritesStrip, { items: [imageItem] });
         expect(screen.getByText('Favorites')).toBeTruthy();
+    });
+
+    it('folder item shows a strip-name label with the folder name', () => {
+        const { container } = render(FavoritesStrip, { items: [folderItem] });
+        const nameEl = container.querySelector('.strip-name');
+        expect(nameEl).toBeTruthy();
+        expect(nameEl?.textContent).toBe('myfolder');
+    });
+
+    it('playlist item shows a strip-name label with the playlist name', () => {
+        const { container } = render(FavoritesStrip, { items: [playlistItem] });
+        const nameEl = container.querySelector('.strip-name');
+        expect(nameEl).toBeTruthy();
+        expect(nameEl?.textContent).toBe('playlist.m3u8');
+    });
+
+    it('image item does not show a strip-name label', () => {
+        const { container } = render(FavoritesStrip, { items: [imageItem] });
+        const nameEl = container.querySelector('.strip-name');
+        expect(nameEl).toBeNull();
+    });
+
+    it('strip-name title attribute matches the item name for tooltip', () => {
+        const { container } = render(FavoritesStrip, { items: [folderItem] });
+        const nameEl = container.querySelector('.strip-name') as HTMLElement | null;
+        expect(nameEl?.getAttribute('title')).toBe('myfolder');
     });
 
     it('gallery store setFavorites is called after successful reorder', async () => {

@@ -115,11 +115,9 @@ const IDLE_STATUS = JSON.stringify({
     autotagger: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } }
 });
 
-test('@smoke @gallery refreshes when indexer:running fires on empty gallery', async ({ page }) => {
-    // Stub /api/files to return an empty listing so the gallery loads with 0 items.
-    // handleIndexerRunning only calls refresh() when items.length === 0 && !loading.
-    // Also stub system/status idle so StatusFooter doesn't fire its own indexer:running
-    // events and set indexerRunning=true before our manual dispatch.
+test('@smoke @gallery shows indexing message on indexer:running without extra API requests', async ({ page }) => {
+    // indexer:running must show "Indexing your library…" without triggering a /api/files
+    // refresh — repeated polling from StatusFooter used to cause a 304 storm.
     await page.route('**/api/files**', (route) =>
         route.fulfill({ status: 200, contentType: 'application/json', body: EMPTY_LISTING })
     );
@@ -130,23 +128,29 @@ test('@smoke @gallery refreshes when indexer:running fires on empty gallery', as
     await page.goto('/');
     await page.waitForLoadState('load', { timeout: 10000 });
     await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 10000 });
-    // Confirm gallery is fully loaded and empty (loading=false, items=[], indexerRunning=false).
     await expect(page.getByText('This folder is empty.')).toBeVisible({ timeout: 5000 });
 
-    const refreshed = page.waitForResponse(
-        (r) => {
-            const url = r.url();
-            return url.includes('/api/files') && !url.includes('/api/files/') && r.request().method() === 'GET';
-        },
-        { timeout: 5000 }
-    );
+    // Count /api/files requests from this point forward.
+    let extraRequests = 0;
+    await page.route('**/api/files**', (route) => {
+        extraRequests++;
+        route.fulfill({ status: 200, contentType: 'application/json', body: EMPTY_LISTING });
+    });
 
     await page.evaluate(() =>
         window.dispatchEvent(new CustomEvent('indexer:running'))
     );
 
-    await refreshed;
-    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
+    // The indexing indicator must appear immediately — no refresh required.
+    await expect(page.getByText('Indexing your library…')).toBeVisible({ timeout: 2000 });
+
+    // Dispatch a second event to confirm repeated firing doesn't trigger more requests.
+    await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent('indexer:running'))
+    );
+    await page.waitForTimeout(200);
+
+    expect(extraRequests).toBe(0);
 });
 
 test('@gallery shows "Indexing your library…" when indexer is running and gallery is empty', async ({
@@ -168,24 +172,11 @@ test('@gallery shows "Indexing your library…" when indexer is running and gall
     await expect(page.getByText('This folder is empty.')).toBeVisible({ timeout: 5000 });
     await expect(page.getByText('Indexing your library…')).not.toBeVisible();
 
-    // Set up the response trap BEFORE dispatching so we don't miss a fast stub reply.
-    // Exclude /api/files/summary (GalleryScrubber) — same prefix, different endpoint.
-    // If the trap resolves on summary, loading is still true and the text assertion fails.
-    const refreshDone = page.waitForResponse(
-        (r) => {
-            const url = r.url();
-            return url.includes('/api/files') && !url.includes('/api/files/') && r.request().method() === 'GET';
-        },
-        { timeout: 5000 }
-    );
-
     // Simulate an indexer:running event (as StatusFooter would fire during indexing).
+    // handleIndexerRunning sets indexerRunning=true — no API refresh is triggered.
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('indexer:running')));
 
-    // Wait for the refresh triggered by handleIndexerRunning to complete (loading → false).
-    await refreshDone;
-
-    // The empty-state slot switches to the indexing indicator.
+    // The empty-state slot switches to the indexing indicator immediately (state change only).
     await expect(page.getByText('Indexing your library…')).toBeVisible({ timeout: 2000 });
     await expect(page.getByText('This folder is empty.')).not.toBeVisible();
 

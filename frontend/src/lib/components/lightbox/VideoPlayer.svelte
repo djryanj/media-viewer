@@ -9,6 +9,10 @@
         showNav?: boolean;
         onPrev?: () => void;
         onNext?: () => void;
+        onEnded?: () => void;
+        /** When set, fullscreen targets this element instead of the .vp container.
+         *  Use this in playlist mode to keep the header/sidebar inside fullscreen. */
+        fullscreenTarget?: HTMLElement;
         onclick?: (e: MouseEvent) => void;
     }
 
@@ -19,6 +23,8 @@
         showNav = false,
         onPrev,
         onNext,
+        onEnded,
+        fullscreenTarget,
         onclick
     }: Props = $props();
 
@@ -157,9 +163,11 @@
             if (autoplay) videoEl?.play().catch(() => {});
         });
 
-        // hls.js ignores native loop — handle manually
-        videoEl.addEventListener('ended', function onEnded() {
-            if (!videoEl?.loop) return;
+        // hls.js ignores native loop — handle manually.
+        // Only loop when there is no onEnded callback; if onEnded is provided it
+        // takes priority (e.g. playlist auto-advance) and we let it run instead.
+        videoEl.addEventListener('ended', function hlsLoopHandler() {
+            if (!videoEl?.loop || onEnded) return;
             videoEl.currentTime = 0;
             videoEl.play().catch(() => {});
         });
@@ -324,9 +332,10 @@
     let isFullscreen = $state(false);
 
     function toggleFullscreen() {
-        if (!containerEl) return;
+        const target = fullscreenTarget ?? containerEl;
+        if (!target) return;
         if (!document.fullscreenElement) {
-            containerEl.requestFullscreen().catch(() => {});
+            target.requestFullscreen().catch(() => {});
         } else {
             document.exitFullscreen().catch(() => {});
         }
@@ -393,7 +402,10 @@
         unload();
         cancelHide();
         releaseWakeLock();
-        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        // Don't call exitFullscreen here — the browser exits fullscreen automatically
+        // when the fullscreen element is removed from the DOM. Calling it explicitly
+        // would also prematurely exit fullscreen when switching playlist items (where
+        // the VideoPlayer remounts but the fullscreen container stays in the tree).
     });
 
     // ── Video event handlers ──────────────────────────────────────────────────
@@ -416,6 +428,12 @@
     }
     function onError() {
         hasError = true;
+    }
+    function onEndedHandler() {
+        // Always call onEnded when provided — an explicit advance callback (e.g.
+        // playlist next) takes priority over the loop setting.  When there is no
+        // callback the video simply stops, which is the correct non-playlist behavior.
+        onEnded?.();
     }
 </script>
 
@@ -452,6 +470,7 @@
         ontimeupdate={onTimeUpdate}
         ondurationchange={onDurationChange}
         onerror={onError}
+        onended={onEndedHandler}
         onclick={(e) => {
             e.stopPropagation();
             togglePlay();

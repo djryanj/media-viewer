@@ -48,16 +48,13 @@
         galleryStore.refresh();
     }
 
-    // While indexing is running, retry the gallery fetch if it came back empty.
-    // This handles the common NFS case where the first query returns 0 items
-    // because the indexer hasn't committed its first batch yet (< 500 files or
-    // < 30 s elapsed).  StatusFooter fires this event on every 3 s status poll
-    // while a worker is active, so we get automatic progressive refresh.
     function handleIndexerRunning() {
         indexerRunning = true;
-        if (!galleryStore.loading && galleryStore.items.length === 0 && !galleryStore.error) {
-            galleryStore.refresh();
-        }
+        // Don't refresh here — StatusFooter fires this every 3 s while running,
+        // so calling refresh() would cause a 304 storm while showing nothing.
+        // The "Indexing your library…" message is sufficient feedback.
+        // indexer:complete fires within one poll cycle of the indexer finishing
+        // and calls galleryStore.refresh() to load the newly indexed items.
     }
 
     // ── Pull-to-refresh ────────────────────────────────────────────────────────
