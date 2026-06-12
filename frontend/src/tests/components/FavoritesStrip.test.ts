@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { tick } from 'svelte';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import FavoritesStrip from '$lib/components/gallery/FavoritesStrip.svelte';
 import type { MediaFile } from '$lib/api/types';
@@ -16,13 +17,15 @@ vi.mock('$lib/stores/lightbox.svelte', () => ({
 vi.mock('$lib/stores/gallery.svelte', () => ({
     galleryStore: {
         addFavorite: vi.fn(),
-        setFavorites: vi.fn()
+        setFavorites: vi.fn(),
+        removeFavorite: vi.fn()
     }
 }));
 
 vi.mock('$lib/api/client', () => ({
     favorites: {
-        order: vi.fn().mockResolvedValue(undefined)
+        order: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined)
     }
 }));
 
@@ -238,5 +241,57 @@ describe('FavoritesStrip', () => {
         await vi.waitFor(() => {
             expect(galleryStore.setFavorites).toHaveBeenCalled();
         });
+    });
+
+    // ── Long-press to remove ───────────────────────────────────────────────────
+
+    it('long-press on a strip item shows the remove overlay', async () => {
+        vi.useFakeTimers();
+        const { container } = render(FavoritesStrip, { items: [imageItem] });
+        const stripItem = container.querySelector('.strip-item') as HTMLElement;
+
+        await fireEvent.pointerDown(stripItem, { pointerType: 'touch', clientX: 40, clientY: 40 });
+        vi.advanceTimersByTime(650);
+        await tick(); // flush $state update
+
+        const overlay = container.querySelector('.remove-overlay');
+        expect(overlay).toBeTruthy();
+
+        vi.useRealTimers();
+    });
+
+    it('clicking the remove overlay calls favApi.remove and galleryStore.removeFavorite', async () => {
+        vi.useFakeTimers();
+        const { container } = render(FavoritesStrip, { items: [imageItem] });
+        const stripItem = container.querySelector('.strip-item') as HTMLElement;
+
+        await fireEvent.pointerDown(stripItem, { pointerType: 'touch', clientX: 40, clientY: 40 });
+        vi.advanceTimersByTime(650);
+        await tick(); // flush $state update
+        vi.useRealTimers();
+
+        const overlay = container.querySelector('.remove-overlay') as HTMLButtonElement;
+        expect(overlay).toBeTruthy();
+        await fireEvent.click(overlay);
+
+        expect(galleryStore.removeFavorite).toHaveBeenCalledWith('/photo.jpg');
+        await vi.waitFor(() => {
+            expect(favApi.remove).toHaveBeenCalledWith('/photo.jpg');
+        });
+    });
+
+    it('long-press does not show overlay when pointer moves more than 8px', async () => {
+        vi.useFakeTimers();
+        const { container } = render(FavoritesStrip, { items: [imageItem] });
+        const stripItem = container.querySelector('.strip-item') as HTMLElement;
+
+        await fireEvent.pointerDown(stripItem, { pointerType: 'touch', clientX: 40, clientY: 40 });
+        // Move finger before timer fires
+        await fireEvent.pointerMove(stripItem, { pointerType: 'touch', clientX: 55, clientY: 40 });
+        vi.advanceTimersByTime(650);
+        await tick();
+
+        expect(container.querySelector('.remove-overlay')).toBeNull();
+        vi.useRealTimers();
     });
 });

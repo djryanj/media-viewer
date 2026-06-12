@@ -72,7 +72,7 @@ describe('GalleryContextMenu', () => {
         expect(screen.getByText(/Add to Favorites|Remove from Favorites/)).toBeTruthy();
     });
 
-    it('shows Favorites, Tags, and Select for playlist items (no Download)', () => {
+    it('shows only Favorites for playlist items (no Download, Tags, or Select)', () => {
         render(GalleryContextMenu, {
             item: makeItem({ type: 'playlist', name: 'my-playlist.m3u' }),
             onclose: vi.fn(),
@@ -81,8 +81,8 @@ describe('GalleryContextMenu', () => {
         });
         expect(screen.queryByText('Download')).toBeNull();
         expect(screen.getByText(/Add to Favorites|Remove from Favorites/)).toBeTruthy();
-        expect(screen.getByText('Tags')).toBeTruthy();
-        expect(screen.getByText('Select')).toBeTruthy();
+        expect(screen.queryByText('Tags')).toBeNull();
+        expect(screen.queryByText('Select')).toBeNull();
     });
 
     it('shows video items with Download action', () => {

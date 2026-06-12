@@ -56,8 +56,10 @@
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
 
-        // Swipe up to exit the playlist player
-        if (dy < -80 && absDy > absDx) {
+        // Swipe up to exit the playlist player.
+        // Skip when the sidebar is open — the user is scrolling the item list, not
+        // trying to exit, and this gesture should not fire through the sidebar.
+        if (!sidebarOpen && dy < -80 && absDy > absDx) {
             goto('/');
             return;
         }
@@ -476,6 +478,7 @@
         flex: 1;
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+        overscroll-behavior: contain;
     }
 
     .item {

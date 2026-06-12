@@ -157,6 +157,73 @@ func TestGetFavoritesIntegration(t *testing.T) {
 	}
 }
 
+func TestGetFavoritesThumbnailURLIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	items := []struct {
+		path     string
+		name     string
+		fileType FileType
+	}{
+		{"photos/sunset.jpg", "sunset.jpg", FileTypeImage},
+		{"videos/clip.mp4", "clip.mp4", FileTypeVideo},
+		{"albums/vacation", "vacation", FileTypeFolder},
+		{"playlists/mix.m3u8", "mix.m3u8", FileTypePlaylist},
+	}
+
+	tx, _ := db.BeginBatch(ctx)
+	for _, item := range items {
+		file := &MediaFile{
+			Name:       item.name,
+			Path:       item.path,
+			ParentPath: "",
+			Type:       item.fileType,
+			Size:       1024,
+			ModTime:    time.Now(),
+		}
+		_ = tx.UpsertFile(ctx, file)
+	}
+	_ = db.EndBatch(tx, nil)
+
+	for _, item := range items {
+		if err := db.AddFavorite(ctx, item.path, item.name, item.fileType); err != nil {
+			t.Fatalf("AddFavorite failed for %s: %v", item.path, err)
+		}
+	}
+
+	favs, err := db.GetFavorites(ctx)
+	if err != nil {
+		t.Fatalf("GetFavorites failed: %v", err)
+	}
+
+	byPath := make(map[string]MediaFile)
+	for _, f := range favs {
+		byPath[f.Path] = f
+	}
+
+	// Images and videos must have a thumbnail URL.
+	if byPath["photos/sunset.jpg"].ThumbnailURL == "" {
+		t.Error("expected ThumbnailURL for image favorite, got empty string")
+	}
+	if byPath["videos/clip.mp4"].ThumbnailURL == "" {
+		t.Error("expected ThumbnailURL for video favorite, got empty string")
+	}
+	// Folders must now also have a thumbnail URL (for the favorites strip).
+	if byPath["albums/vacation"].ThumbnailURL == "" {
+		t.Error("expected ThumbnailURL for folder favorite, got empty string")
+	}
+	// Playlists should not have a thumbnail URL.
+	if byPath["playlists/mix.m3u8"].ThumbnailURL != "" {
+		t.Errorf("expected no ThumbnailURL for playlist favorite, got %q", byPath["playlists/mix.m3u8"].ThumbnailURL)
+	}
+}
+
 func TestGetFavoritesEmptyIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

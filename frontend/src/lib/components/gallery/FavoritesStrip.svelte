@@ -82,6 +82,71 @@
         const mediaItems = orderedItems.filter((i) => i.type !== 'folder' && i.type !== 'playlist');
         lightboxStore.show(item, mediaItems);
     }
+
+    // ── Long-press to remove ──────────────────────────────────────────────────
+    let removalPending = $state<string | null>(null);
+    let pressTimer: ReturnType<typeof setTimeout> | null = null;
+    let pressStartX = 0;
+    let pressStartY = 0;
+    let suppressNextClick = false;
+
+    const LONG_PRESS_MS = 600;
+
+    function startItemPress(e: PointerEvent, path: string) {
+        if (removalPending) {
+            removalPending = null;
+            return;
+        }
+        pressStartX = e.clientX;
+        pressStartY = e.clientY;
+        suppressNextClick = false;
+        pressTimer = setTimeout(() => {
+            pressTimer = null;
+            suppressNextClick = true;
+            removalPending = path;
+        }, LONG_PRESS_MS);
+    }
+
+    function cancelItemPress() {
+        if (pressTimer !== null) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+    }
+
+    function handleItemPointerMove(e: PointerEvent) {
+        if (pressTimer === null || e.pointerType !== 'touch') return;
+        const dx = e.clientX - pressStartX;
+        const dy = e.clientY - pressStartY;
+        if (Math.sqrt(dx * dx + dy * dy) > 8) cancelItemPress();
+    }
+
+    function handleItemClick(e: MouseEvent, item: MediaFile) {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            return;
+        }
+        if (removalPending === item.path) {
+            removalPending = null;
+            return;
+        }
+        if (removalPending) {
+            removalPending = null;
+            return;
+        }
+        handleTap(item);
+    }
+
+    async function executeRemove(path: string) {
+        removalPending = null;
+        galleryStore.removeFavorite(path);
+        orderedItems = orderedItems.filter((i) => i.path !== path);
+        try {
+            await favApi.remove(path);
+        } catch {
+            toastStore.error('Failed to remove from favorites');
+        }
+    }
 </script>
 
 <section class="favorites-strip" aria-label="Favorites">
@@ -104,11 +169,19 @@
                 class="strip-item"
                 class:drag-over={overIndex === idx && dragIndex !== idx}
                 class:dragging={dragIndex === idx}
+                class:removal-pending={removalPending === item.path}
                 role="img"
                 aria-label={item.name}
                 draggable="true"
-                onclick={() => handleTap(item)}
-                ondragstart={(e) => handleDragStart(e, idx)}
+                onpointerdown={(e) => startItemPress(e, item.path)}
+                onpointermove={handleItemPointerMove}
+                onpointerup={cancelItemPress}
+                onpointercancel={cancelItemPress}
+                onclick={(e) => handleItemClick(e, item)}
+                ondragstart={(e) => {
+                    removalPending = null;
+                    handleDragStart(e, idx);
+                }}
                 ondragover={(e) => handleDragOver(e, idx)}
                 ondragleave={handleDragLeave}
                 ondrop={(e) => handleDrop(e, idx)}
@@ -154,6 +227,34 @@
                         <circle cx="9" cy="17" r="1.5" /><circle cx="15" cy="17" r="1.5" />
                     </svg>
                 </div>
+
+                <!-- Long-press remove overlay -->
+                {#if removalPending === item.path}
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <button
+                        class="remove-overlay"
+                        autofocus
+                        onclick={(e) => {
+                            e.stopPropagation();
+                            executeRemove(item.path);
+                        }}
+                        onblur={() => (removalPending = null)}
+                        aria-label="Remove {item.name} from favorites"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                        </svg>
+                    </button>
+                {/if}
             </div>
         {/each}
     </div>
@@ -290,5 +391,39 @@
 
     .strip-item:hover .drag-handle {
         opacity: 1;
+    }
+
+    .remove-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(180, 0, 0, 0.82);
+        border: none;
+        color: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        z-index: 2;
+        animation: fade-in-overlay 0.12s ease;
+    }
+
+    .remove-overlay svg {
+        width: 22px;
+        height: 22px;
+        pointer-events: none;
+    }
+
+    .strip-item.removal-pending {
+        outline: 2px solid rgba(200, 0, 0, 0.6);
+    }
+
+    @keyframes fade-in-overlay {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
     }
 </style>

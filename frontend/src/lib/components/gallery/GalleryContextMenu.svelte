@@ -19,6 +19,7 @@
     const isFolder = $derived(item.type === 'folder');
     const isPlaylist = $derived(item.type === 'playlist');
     const canDownload = $derived(!isFolder && !isPlaylist);
+    const canTagOrSelect = $derived(!isFolder && !isPlaylist);
 
     // ── Tag editing sub-panel ─────────────────────────────────────────────────
     let tagEditing = $state(false);
@@ -150,7 +151,7 @@
                     </button>
                 </li>
 
-                {#if !isFolder}
+                {#if canTagOrSelect}
                     <li>
                         <button class="menu-action" type="button" onclick={openTagEditor}>
                             <svg
@@ -170,7 +171,7 @@
                     </li>
                 {/if}
 
-                {#if !isFolder}
+                {#if canTagOrSelect}
                     <li>
                         <button
                             class="menu-action"
