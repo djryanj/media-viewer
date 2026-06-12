@@ -18,6 +18,51 @@
         }
     });
 
+    // ── Wake lock — keep screen on while viewing media ───────────────────────
+    let wakeLock: WakeLockSentinel | null = null;
+    const wakeLockSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
+
+    async function acquireWakeLock() {
+        if (!wakeLockSupported || wakeLock !== null) return;
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => {
+                wakeLock = null;
+            });
+        } catch {
+            /* not fatal — page may not be visible yet */
+        }
+    }
+
+    async function releaseWakeLock() {
+        if (!wakeLock) return;
+        try {
+            await wakeLock.release();
+        } catch {
+            /* ignore */
+        }
+        wakeLock = null;
+    }
+
+    $effect(() => {
+        if (lightboxStore.open) {
+            acquireWakeLock();
+        } else {
+            releaseWakeLock();
+        }
+    });
+
+    // Reacquire after the tab returns to foreground
+    $effect(() => {
+        function onVisibilityChange() {
+            if (document.visibilityState === 'visible' && lightboxStore.open) {
+                acquireWakeLock();
+            }
+        }
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    });
+
     // ── Idle-fade controls ───────────────────────────────────────────────────
     const IDLE_TIMEOUT = 3500;
     let controlsVisible = $state(true);
@@ -372,6 +417,7 @@
     onDestroy(() => {
         preloadCache.clear();
         clearIdleTimer();
+        releaseWakeLock();
     });
 
     // ── Favorite toggle ──────────────────────────────────────────────────────
@@ -423,6 +469,7 @@
     // ── Clock ────────────────────────────────────────────────────────────────
     const PREFS_KEY = 'mediaViewerPreferences';
     let clockEnabled = $state(true);
+    let clockAlwaysVisible = $state(false);
     let clockFormat = $state<'12' | '24'>('12');
     let clockTime = $state('');
     let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -433,6 +480,7 @@
             if (raw) {
                 const p = JSON.parse(raw) as Record<string, unknown>;
                 clockEnabled = (p.clockEnabled as boolean) ?? true;
+                clockAlwaysVisible = (p.clockAlwaysVisible as boolean) ?? false;
                 clockFormat = (p.clockFormat as string) === '24' ? '24' : '12';
                 loopEnabled = (p.mediaLoop as boolean) ?? true;
             }
@@ -509,11 +557,17 @@
     <div
         class="lightbox"
         class:controls-hidden={!controlsVisible}
+        class:clock-always-visible={clockEnabled && clockAlwaysVisible}
         role="dialog"
         aria-modal="true"
         aria-label={item.name}
         tabindex="-1"
     >
+        <!-- Clock — lives outside the topbar so it can stay visible independently -->
+        {#if clockEnabled && clockTime}
+            <span class="lb-clock" aria-label="Current time">{clockTime}</span>
+        {/if}
+
         <!-- Top bar -->
         <div class="lightbox-topbar">
             <button class="lb-btn" onclick={() => lightboxStore.close()} aria-label="Close">
@@ -527,10 +581,6 @@
                     <path d="M18 6 6 18M6 6l12 12" />
                 </svg>
             </button>
-
-            {#if clockEnabled && clockTime}
-                <span class="lb-clock" aria-label="Current time">{clockTime}</span>
-            {/if}
 
             <span class="lb-title">{item.name}</span>
 
@@ -663,6 +713,7 @@
                         autoplay={true}
                         loop={loopEnabled}
                         showNav={lightboxStore.hasPrev || lightboxStore.hasNext}
+                        showClock={false}
                         onPrev={lightboxStore.hasPrev ? lightboxStore.prev : undefined}
                         onNext={lightboxStore.hasNext ? lightboxStore.next : undefined}
                         onclick={(e) => e.stopPropagation()}
@@ -776,11 +827,26 @@
     }
 
     .lb-clock {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        z-index: 2;
         font-size: var(--text-sm);
         color: rgba(255, 255, 255, 0.75);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
-        flex-shrink: 0;
+        pointer-events: none;
+        transition: opacity 0.35s ease;
+    }
+
+    /* Clock fades with controls by default */
+    .lightbox.controls-hidden .lb-clock {
+        opacity: 0;
+    }
+
+    /* "Always keep clock visible" overrides the fade */
+    .lightbox.clock-always-visible.controls-hidden .lb-clock {
+        opacity: 1;
     }
 
     .lb-title {

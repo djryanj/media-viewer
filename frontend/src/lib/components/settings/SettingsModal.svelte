@@ -37,6 +37,7 @@
             prefMediaLoop = (loadPrefs().mediaLoop as boolean) ?? true;
             prefClockEnabled = (loadPrefs().clockEnabled as boolean) ?? true;
             prefClockFormat = (loadPrefs().clockFormat as string) === '24' ? '24' : '12';
+            prefClockAlwaysVisible = (loadPrefs().clockAlwaysVisible as boolean) ?? false;
             // Reset passkey state so the list reloads on next visit to that tab
             passkeys = [];
             passkeysHaveBeenLoaded = false;
@@ -100,6 +101,7 @@
     let prefClockFormat = $state<'12' | '24'>(
         (loadPrefs().clockFormat as string) === '24' ? '24' : '12'
     );
+    let prefClockAlwaysVisible = $state((loadPrefs().clockAlwaysVisible as boolean) ?? false);
 
     function saveLibraryPrefs() {
         savePrefs({
@@ -108,7 +110,8 @@
             videoAutoplay: prefVideoAutoplay,
             mediaLoop: prefMediaLoop,
             clockEnabled: prefClockEnabled,
-            clockFormat: prefClockFormat
+            clockFormat: prefClockFormat,
+            clockAlwaysVisible: prefClockAlwaysVisible
         });
         // Sync the live gallery store so the change takes effect immediately.
         galleryStore.setSort(
@@ -631,6 +634,18 @@
                                         <option value="24">24-hour (e.g. 15:45)</option>
                                     </select>
                                 </div>
+                            </div>
+                            <div class="toggle-row" style="margin-top: var(--spacing-3)">
+                                <div>
+                                    <span class="toggle-label">Always keep clock visible</span>
+                                    <span class="toggle-desc"
+                                        >Keep clock visible even when other controls fade out</span
+                                    >
+                                </div>
+                                <label class="switch" aria-label="Always keep clock visible">
+                                    <input type="checkbox" bind:checked={prefClockAlwaysVisible} />
+                                    <span class="slider"></span>
+                                </label>
                             </div>
                         {/if}
                         <button class="btn-primary" onclick={saveLibraryPrefs}

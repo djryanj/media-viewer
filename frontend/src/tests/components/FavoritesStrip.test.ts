@@ -18,7 +18,8 @@ vi.mock('$lib/stores/gallery.svelte', () => ({
     galleryStore: {
         addFavorite: vi.fn(),
         setFavorites: vi.fn(),
-        removeFavorite: vi.fn()
+        removeFavorite: vi.fn(),
+        updateItem: vi.fn()
     }
 }));
 
@@ -275,6 +276,7 @@ describe('FavoritesStrip', () => {
         await fireEvent.click(overlay);
 
         expect(galleryStore.removeFavorite).toHaveBeenCalledWith('/photo.jpg');
+        expect(galleryStore.updateItem).toHaveBeenCalledWith('/photo.jpg', { isFavorite: false });
         await vi.waitFor(() => {
             expect(favApi.remove).toHaveBeenCalledWith('/photo.jpg');
         });

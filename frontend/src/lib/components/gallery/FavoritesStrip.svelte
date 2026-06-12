@@ -140,6 +140,7 @@
     async function executeRemove(path: string) {
         removalPending = null;
         galleryStore.removeFavorite(path);
+        galleryStore.updateItem(path, { isFavorite: false });
         orderedItems = orderedItems.filter((i) => i.path !== path);
         try {
             await favApi.remove(path);

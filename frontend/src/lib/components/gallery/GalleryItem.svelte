@@ -3,6 +3,7 @@
     import type { MediaFile } from '$lib/api/types';
     import { lazyLoad } from '$lib/utils/intersection';
     import { galleryStore } from '$lib/stores/gallery.svelte';
+    import TagOverflowPopover from './TagOverflowPopover.svelte';
 
     let {
         item,
@@ -118,6 +119,20 @@
     const isVideo = $derived(item.type === 'video');
     const isPlaylist = $derived(item.type === 'playlist');
     const hasThumb = $derived(!!item.thumbnailUrl);
+
+    // ── Tag overflow popover ──────────────────────────────────────────────────
+    const MAX_VISIBLE_TAGS = 2;
+    const itemTags = $derived(item.tags ?? []);
+    const visibleTags = $derived(itemTags.slice(0, MAX_VISIBLE_TAGS));
+    const overflowCount = $derived(Math.max(0, itemTags.length - MAX_VISIBLE_TAGS));
+
+    let tagPopoverAnchor = $state<HTMLElement | undefined>(undefined);
+
+    function openTagPopover(e: MouseEvent, el: HTMLElement) {
+        e.stopPropagation();
+        e.preventDefault();
+        tagPopoverAnchor = tagPopoverAnchor === el ? undefined : el;
+    }
 
     function handleCheckboxClick(e: MouseEvent) {
         e.stopPropagation();
@@ -319,8 +334,42 @@
     <!-- File name beneath thumbnail -->
     <div class="item-label">
         <span class="item-name">{item.name}</span>
+        {#if itemTags.length > 0}
+            <div class="item-tags">
+                {#each visibleTags as tag (tag)}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <span
+                        class="item-tag"
+                        title={tag}
+                        onclick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            goto(`/search?q=${encodeURIComponent(tag)}`);
+                        }}>{tag}</span
+                    >
+                {/each}
+                {#if overflowCount > 0}
+                    <button
+                        class="item-tag more-tag"
+                        type="button"
+                        onclick={(e) => openTagPopover(e, e.currentTarget as HTMLElement)}
+                        aria-label="Show {overflowCount} more tags">+{overflowCount}</button
+                    >
+                {/if}
+            </div>
+        {/if}
     </div>
 </div>
+
+{#if tagPopoverAnchor}
+    <TagOverflowPopover
+        allTags={itemTags}
+        itemPath={item.path}
+        anchor={tagPopoverAnchor}
+        onclose={() => (tagPopoverAnchor = undefined)}
+    />
+{/if}
 
 <style>
     .gallery-item {
@@ -622,5 +671,44 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    .item-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        margin-top: 3px;
+    }
+
+    .item-tag {
+        display: inline-block;
+        font-size: 0.65rem;
+        line-height: 1.4;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: var(--color-surface-3);
+        color: var(--color-text-muted);
+        border: 1px solid var(--color-border);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 80px;
+        cursor: pointer;
+        transition:
+            background var(--transition-fast),
+            color var(--transition-fast);
+    }
+
+    .item-tag:hover {
+        background: var(--color-primary);
+        color: #fff;
+        border-color: var(--color-primary);
+    }
+
+    .more-tag {
+        background: none;
+        font-weight: 600;
+        max-width: none;
+        flex-shrink: 0;
     }
 </style>

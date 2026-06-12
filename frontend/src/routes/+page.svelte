@@ -58,7 +58,13 @@
     }
 
     // ── Pull-to-refresh ────────────────────────────────────────────────────────
-    let pullIndicator = $state(false);
+    // pullProgress: 0 = not pulling, 1 = at threshold, >1 clamped to 1
+    let pullProgress = $state(0);
+    let pullExceeded = $state(false);
+
+    const PTR_THRESHOLD = 70;
+    const PTR_MAX_VISUAL = 110; // max px before resistance caps the visual
+    const PTR_RESISTANCE = 0.45;
 
     onMount(() => {
         const path = $page.url.searchParams.get('path') ?? '';
@@ -71,18 +77,30 @@
         // Attach pull-to-refresh touch handlers to the main scroll container.
         const mainEl = document.getElementById('main-content');
         if (mainEl) {
+            let ptrStartY = 0;
+
             const ptr = createPullToRefresh({
                 getScrollTop: () => mainEl.scrollTop,
                 onRefresh: () => galleryStore.refresh()
             });
 
-            const onTS = (e: TouchEvent) => ptr.onTouchStart(e.touches[0].clientY);
+            const onTS = (e: TouchEvent) => {
+                ptrStartY = e.touches[0].clientY;
+                ptr.onTouchStart(ptrStartY);
+            };
             const onTM = (e: TouchEvent) => {
-                pullIndicator = ptr.onTouchMove(e.touches[0].clientY);
+                const dy = e.touches[0].clientY - ptrStartY;
+                const resisted = Math.min(dy * PTR_RESISTANCE, PTR_MAX_VISUAL * PTR_RESISTANCE);
+                pullProgress = Math.min(
+                    Math.max(resisted / (PTR_THRESHOLD * PTR_RESISTANCE), 0),
+                    1.2
+                );
+                pullExceeded = ptr.onTouchMove(e.touches[0].clientY);
             };
             const onTE = () => {
-                const wasPulling = pullIndicator;
-                pullIndicator = false;
+                const wasPulling = pullExceeded;
+                pullProgress = 0;
+                pullExceeded = false;
                 ptr.onTouchEnd(wasPulling);
             };
 
@@ -147,9 +165,26 @@
 </svelte:head>
 
 <div class="gallery-page" class:has-scrubber={galleryStore.totalItems > 100}>
-    {#if pullIndicator}
-        <div class="pull-indicator" aria-hidden="true" aria-label="Release to refresh">
-            <div class="pull-spinner"></div>
+    {#if pullProgress > 0.05}
+        <div
+            class="pull-indicator"
+            class:pull-ready={pullExceeded}
+            aria-hidden="true"
+            style="opacity: {Math.min(pullProgress, 1)}"
+        >
+            <div class="pull-icon" style="transform: rotate({Math.min(pullProgress, 1) * 180}deg)">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    aria-hidden="true"
+                >
+                    <path d="M23 4v6h-6" />
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+            </div>
+            <span class="pull-text">{pullExceeded ? 'Release to refresh' : 'Pull to refresh'}</span>
         </div>
     {/if}
 
@@ -211,23 +246,38 @@
         }
     }
 
-    /* Pull-to-refresh indicator — appears at the top of the gallery page while
-     * the user is dragging down past the threshold. */
+    /* Pull-to-refresh indicator */
     .pull-indicator {
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: var(--spacing-2);
         padding: var(--spacing-3) 0;
+        color: var(--color-text-muted);
+        transition: color var(--transition-fast);
+    }
+
+    .pull-indicator.pull-ready {
         color: var(--color-primary);
     }
 
-    .pull-spinner {
-        width: 24px;
-        height: 24px;
-        border: 2px solid var(--color-border);
-        border-top-color: var(--color-primary);
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
+    .pull-icon {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.05s linear;
+    }
+
+    .pull-icon svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .pull-text {
+        font-size: var(--text-xs);
+        font-weight: 500;
     }
 
     .state-message {

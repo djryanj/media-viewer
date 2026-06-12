@@ -7,6 +7,8 @@
         autoplay?: boolean;
         loop?: boolean;
         showNav?: boolean;
+        /** Show a clock overlay. Set to false when a parent already renders a clock. */
+        showClock?: boolean;
         onPrev?: () => void;
         onNext?: () => void;
         onEnded?: () => void;
@@ -21,6 +23,7 @@
         autoplay = true,
         loop = false,
         showNav = false,
+        showClock = true,
         onPrev,
         onNext,
         onEnded,
@@ -404,6 +407,67 @@
 
     export { togglePlay };
 
+    // ── Clock ─────────────────────────────────────────────────────────────────
+    const PREFS_KEY = 'mediaViewerPreferences';
+    let clockEnabled = $state(true);
+    let clockAlwaysVisible = $state(false);
+    let clockFormat = $state<'12' | '24'>('12');
+    let clockTime = $state('');
+    let clockTimer: ReturnType<typeof setInterval> | null = null;
+
+    function readClockPrefs() {
+        try {
+            const raw = localStorage.getItem(PREFS_KEY);
+            if (raw) {
+                const p = JSON.parse(raw) as Record<string, unknown>;
+                clockEnabled = (p.clockEnabled as boolean) ?? true;
+                clockAlwaysVisible = (p.clockAlwaysVisible as boolean) ?? false;
+                clockFormat = (p.clockFormat as string) === '24' ? '24' : '12';
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+
+    function updateClock() {
+        const now = new Date();
+        const m = now.getMinutes().toString().padStart(2, '0');
+        if (clockFormat === '24') {
+            clockTime = `${now.getHours().toString().padStart(2, '0')}:${m}`;
+        } else {
+            const h = now.getHours();
+            clockTime = `${h % 12 || 12}:${m} ${h >= 12 ? 'PM' : 'AM'}`;
+        }
+    }
+
+    $effect(() => {
+        if (showClock && clockEnabled) {
+            readClockPrefs();
+            updateClock();
+            clockTimer = setInterval(updateClock, 1000);
+        } else {
+            if (clockTimer) {
+                clearInterval(clockTimer);
+                clockTimer = null;
+            }
+        }
+        return () => {
+            if (clockTimer) {
+                clearInterval(clockTimer);
+                clockTimer = null;
+            }
+        };
+    });
+
+    $effect(() => {
+        function onPrefChanged() {
+            readClockPrefs();
+            updateClock();
+        }
+        window.addEventListener('clockPreferenceChanged', onPrefChanged);
+        return () => window.removeEventListener('clockPreferenceChanged', onPrefChanged);
+    });
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     $effect(() => {
         if (path && videoEl) loadSource(path);
@@ -491,6 +555,13 @@
 
     {#if hasError}
         <div class="vp-error">Failed to load video</div>
+    {/if}
+
+    <!-- Clock overlay -->
+    {#if showClock && clockEnabled && clockTime}
+        <span class="vp-clock" class:always-visible={clockAlwaysVisible} aria-label="Current time"
+            >{clockTime}</span
+        >
     {/if}
 
     <!-- Controls overlay -->
@@ -729,6 +800,27 @@
         position: absolute;
         color: rgba(255, 255, 255, 0.7);
         font-size: 0.875rem;
+    }
+
+    /* Clock */
+    .vp-clock {
+        position: absolute;
+        top: 12px;
+        right: 14px;
+        z-index: 2;
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.75);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 1;
+        transition: opacity 0.2s;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Clock fades with controls by default */
+    .controls-hidden .vp-clock:not(.always-visible) {
+        opacity: 0;
     }
 
     /* Controls */

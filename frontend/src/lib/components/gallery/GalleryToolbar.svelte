@@ -2,6 +2,7 @@
     import { galleryStore, type TypeFilter } from '$lib/stores/gallery.svelte';
     import { favorites, tags } from '$lib/api/client';
     import { toastStore } from '$lib/stores/toast.svelte';
+    import { tagClipboard } from '$lib/stores/tagClipboard.svelte';
     import TagEditor from '$lib/components/ui/TagEditor.svelte';
     import CollectionsPanel from '$lib/components/lightbox/CollectionsPanel.svelte';
 
@@ -97,6 +98,34 @@
         }
     }
 
+    async function bulkPasteTags() {
+        const items = galleryStore.getSelectedItems();
+        if (!items.length || !tagClipboard.hasContent) return;
+        let totalAdded = 0;
+        const errors: string[] = [];
+        await Promise.all(
+            items.map(async (item) => {
+                const merged = tagClipboard.merge(item.tags ?? []);
+                const added = merged.length - (item.tags?.length ?? 0);
+                if (added === 0) return;
+                try {
+                    await tags.setForFile(item.path, merged);
+                    galleryStore.updateItem(item.path, { tags: merged });
+                    totalAdded += added;
+                } catch {
+                    errors.push(item.name);
+                }
+            })
+        );
+        if (errors.length) {
+            toastStore.error(`Failed to paste tags to: ${errors.slice(0, 2).join(', ')}`);
+        } else if (totalAdded > 0) {
+            toastStore.success(`Pasted tags to ${items.length} item(s)`);
+        } else {
+            toastStore.success('Tags already up to date');
+        }
+    }
+
     async function bulkFavorite() {
         const items = galleryStore.getSelectedItems();
         if (!items.length) return;
@@ -183,6 +212,28 @@
                     </svg>
                     Tag
                 </button>
+                {#if tagClipboard.hasContent}
+                    <button
+                        class="tb-btn paste-btn"
+                        onclick={bulkPasteTags}
+                        aria-label="Paste tags to selected"
+                        title="Paste {tagClipboard.tags.length} tag(s) to selected items"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+                            />
+                            <rect x="8" y="2" width="8" height="4" rx="1" />
+                        </svg>
+                        Paste Tags
+                    </button>
+                {/if}
                 <button class="tb-btn" onclick={bulkFavorite} aria-label="Add to favorites">
                     <svg
                         viewBox="0 0 24 24"
@@ -407,6 +458,16 @@
 
     .tb-btn.cancel {
         color: var(--color-text-muted);
+    }
+
+    .paste-btn {
+        color: var(--color-primary);
+        border-color: var(--color-primary);
+        background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    }
+
+    .paste-btn:hover {
+        background: color-mix(in srgb, var(--color-primary) 20%, transparent);
     }
 
     .tb-btn.active {
