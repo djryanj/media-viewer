@@ -8,6 +8,30 @@
 
     let { items }: { items: MediaFile[] } = $props();
 
+    // ── Scroll fade indicators ────────────────────────────────────────────────
+    let scrollEl = $state<HTMLDivElement | undefined>(undefined);
+    let canScrollLeft = $state(false);
+    let canScrollRight = $state(false);
+
+    function updateScrollFades() {
+        if (!scrollEl) return;
+        canScrollLeft = scrollEl.scrollLeft > 0;
+        canScrollRight = scrollEl.scrollLeft + scrollEl.clientWidth < scrollEl.scrollWidth - 1;
+    }
+
+    $effect(() => {
+        if (!scrollEl) return;
+        updateScrollFades();
+        const el = scrollEl;
+        el.addEventListener('scroll', updateScrollFades, { passive: true });
+        const ro = new ResizeObserver(updateScrollFades);
+        ro.observe(el);
+        return () => {
+            el.removeEventListener('scroll', updateScrollFades);
+            ro.disconnect();
+        };
+    });
+
     // Local mutable order (optimistic)
     let orderedItems = $state<MediaFile[]>([]);
     $effect(() => {
@@ -162,100 +186,111 @@
             <span class="strip-saving" aria-live="polite">saving…</span>
         {/if}
     </div>
-    <div class="strip-scroll">
-        {#each orderedItems as item, idx (item.path)}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <div
-                class="strip-item"
-                class:drag-over={overIndex === idx && dragIndex !== idx}
-                class:dragging={dragIndex === idx}
-                class:removal-pending={removalPending === item.path}
-                role="img"
-                aria-label={item.name}
-                draggable="true"
-                onpointerdown={(e) => startItemPress(e, item.path)}
-                onpointermove={handleItemPointerMove}
-                onpointerup={cancelItemPress}
-                onpointercancel={cancelItemPress}
-                onclick={(e) => handleItemClick(e, item)}
-                ondragstart={(e) => {
-                    removalPending = null;
-                    handleDragStart(e, idx);
-                }}
-                ondragover={(e) => handleDragOver(e, idx)}
-                ondragleave={handleDragLeave}
-                ondrop={(e) => handleDrop(e, idx)}
-                ondragend={handleDragEnd}
-            >
-                {#if item.thumbnailUrl && item.type !== 'playlist'}
-                    <img src={item.thumbnailUrl} alt={item.name} loading="lazy" decoding="async" />
-                {:else if item.type === 'playlist'}
-                    <div class="strip-placeholder">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            aria-hidden="true"
+    <div
+        class="strip-scroll-wrap"
+        class:fade-left={canScrollLeft}
+        class:fade-right={canScrollRight}
+    >
+        <div class="strip-scroll" bind:this={scrollEl}>
+            {#each orderedItems as item, idx (item.path)}
+                <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <div
+                    class="strip-item"
+                    class:drag-over={overIndex === idx && dragIndex !== idx}
+                    class:dragging={dragIndex === idx}
+                    class:removal-pending={removalPending === item.path}
+                    role="img"
+                    aria-label={item.name}
+                    draggable="true"
+                    onpointerdown={(e) => startItemPress(e, item.path)}
+                    onpointermove={handleItemPointerMove}
+                    onpointerup={cancelItemPress}
+                    onpointercancel={cancelItemPress}
+                    onclick={(e) => handleItemClick(e, item)}
+                    ondragstart={(e) => {
+                        removalPending = null;
+                        handleDragStart(e, idx);
+                    }}
+                    ondragover={(e) => handleDragOver(e, idx)}
+                    ondragleave={handleDragLeave}
+                    ondrop={(e) => handleDrop(e, idx)}
+                    ondragend={handleDragEnd}
+                >
+                    {#if item.thumbnailUrl && item.type !== 'playlist'}
+                        <img
+                            src={item.thumbnailUrl}
+                            alt={item.name}
+                            loading="lazy"
+                            decoding="async"
+                        />
+                    {:else if item.type === 'playlist'}
+                        <div class="strip-placeholder">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.5"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14"
+                                />
+                                <rect x="2" y="6" width="13" height="12" rx="2" />
+                            </svg>
+                        </div>
+                    {:else}
+                        <div class="strip-placeholder">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path
+                                    d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+                                />
+                            </svg>
+                        </div>
+                    {/if}
+
+                    <!-- Name label for folders and playlists (no thumbnail to identify them) -->
+                    {#if item.type === 'folder' || item.type === 'playlist'}
+                        <div class="strip-name" title={item.name}>{item.name}</div>
+                    {/if}
+
+                    <!-- Drag handle hint -->
+                    <div class="drag-handle" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="9" cy="7" r="1.5" /><circle cx="15" cy="7" r="1.5" />
+                            <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+                            <circle cx="9" cy="17" r="1.5" /><circle cx="15" cy="17" r="1.5" />
+                        </svg>
+                    </div>
+
+                    <!-- Long-press remove overlay -->
+                    {#if removalPending === item.path}
+                        <button
+                            class="remove-overlay"
+                            onpointerdown={(e) => e.stopPropagation()}
+                            onclick={(e) => {
+                                e.stopPropagation();
+                                executeRemove(item.path);
+                            }}
+                            aria-label="Remove {item.name} from favorites"
                         >
-                            <path
-                                d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14"
-                            />
-                            <rect x="2" y="6" width="13" height="12" rx="2" />
-                        </svg>
-                    </div>
-                {:else}
-                    <div class="strip-placeholder">
-                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <path
-                                d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
-                            />
-                        </svg>
-                    </div>
-                {/if}
-
-                <!-- Name label for folders and playlists (no thumbnail to identify them) -->
-                {#if item.type === 'folder' || item.type === 'playlist'}
-                    <div class="strip-name" title={item.name}>{item.name}</div>
-                {/if}
-
-                <!-- Drag handle hint -->
-                <div class="drag-handle" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="9" cy="7" r="1.5" /><circle cx="15" cy="7" r="1.5" />
-                        <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
-                        <circle cx="9" cy="17" r="1.5" /><circle cx="15" cy="17" r="1.5" />
-                    </svg>
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                aria-hidden="true"
+                            >
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                <path d="M10 11v6M14 11v6" />
+                                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                        </button>
+                    {/if}
                 </div>
-
-                <!-- Long-press remove overlay -->
-                {#if removalPending === item.path}
-                    <button
-                        class="remove-overlay"
-                        onpointerdown={(e) => e.stopPropagation()}
-                        onclick={(e) => {
-                            e.stopPropagation();
-                            executeRemove(item.path);
-                        }}
-                        aria-label="Remove {item.name} from favorites"
-                    >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            aria-hidden="true"
-                        >
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                            <path d="M10 11v6M14 11v6" />
-                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                        </svg>
-                    </button>
-                {/if}
-            </div>
-        {/each}
+            {/each}
+        </div>
     </div>
 </section>
 
@@ -286,6 +321,41 @@
         font-weight: 400;
         color: var(--color-text-subtle);
         margin-left: auto;
+    }
+
+    .strip-scroll-wrap {
+        position: relative;
+    }
+
+    .strip-scroll-wrap::before,
+    .strip-scroll-wrap::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: var(--spacing-3);
+        width: 40px;
+        pointer-events: none;
+        z-index: 1;
+        opacity: 0;
+        transition: opacity var(--transition-fast);
+    }
+
+    .strip-scroll-wrap::before {
+        left: 0;
+        background: linear-gradient(to right, var(--color-bg), transparent);
+    }
+
+    .strip-scroll-wrap::after {
+        right: 0;
+        background: linear-gradient(to left, var(--color-bg), transparent);
+    }
+
+    .strip-scroll-wrap.fade-left::before {
+        opacity: 1;
+    }
+
+    .strip-scroll-wrap.fade-right::after {
+        opacity: 1;
     }
 
     .strip-scroll {

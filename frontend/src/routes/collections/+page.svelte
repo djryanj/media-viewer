@@ -20,13 +20,13 @@
 </script>
 
 <svelte:head>
-    <title>Albums — Media Viewer</title>
+    <title>Collections — Media Viewer</title>
 </svelte:head>
 
 <div class="page-header">
-    <h2 class="page-title">Albums</h2>
+    <h2 class="page-title">Collections</h2>
     {#if !loading}
-        <span class="page-count">{items.length} albums</span>
+        <span class="page-count">{items.length} collections</span>
     {/if}
 </div>
 
@@ -35,7 +35,7 @@
 {:else if error}
     <div class="state-msg error">{error}</div>
 {:else if items.length === 0}
-    <div class="state-msg">No albums yet.</div>
+    <div class="state-msg">No collections yet.</div>
 {:else}
     <div class="collections-grid">
         {#each items as col (col.id)}

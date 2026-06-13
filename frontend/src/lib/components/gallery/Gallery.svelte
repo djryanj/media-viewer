@@ -77,6 +77,14 @@
         collectionsItem = item;
     }
 
+    const collectionsItemPaths = $derived.by(() => {
+        if (!collectionsItem) return [];
+        if (galleryStore.selectionMode && galleryStore.selectedCount > 0) {
+            return galleryStore.getSelectedItems().map((i) => i.path);
+        }
+        return [collectionsItem.path];
+    });
+
     function handleLongPress(item: MediaFile) {
         // Show context menu for all item types (including folders).
         contextItem = item;
@@ -86,7 +94,7 @@
     function handleContextSelect(item: MediaFile) {
         if (item.type === 'folder') return;
         galleryStore.toggleSelection(item.path);
-        if (galleryEl) galleryEl.style.touchAction = 'none';
+        if (galleryEl) galleryEl.style.touchAction = 'pan-y';
     }
 
     // ── Drag-to-select ───────────────────────────────────────────────────────
@@ -97,9 +105,10 @@
     let dragStartY = 0;
     let dragPointerType = 'mouse';
 
-    // Sync touch-action to the DOM imperatively whenever selectionMode changes
+    // Allow vertical scroll in selection mode; horizontal gestures and the
+    // pointer-capture path in handleGalleryPointerMove handle drag-to-select.
     $effect(() => {
-        if (galleryEl) galleryEl.style.touchAction = galleryStore.selectionMode ? 'none' : '';
+        if (galleryEl) galleryEl.style.touchAction = galleryStore.selectionMode ? 'pan-y' : '';
     });
 
     function handleGalleryPointerDown(e: PointerEvent) {
@@ -237,7 +246,7 @@
 {/if}
 
 {#if collectionsItem}
-    <CollectionsPanel itemPaths={[collectionsItem.path]} onclose={() => (collectionsItem = null)} />
+    <CollectionsPanel itemPaths={collectionsItemPaths} onclose={() => (collectionsItem = null)} />
 {/if}
 
 {#if contextItem}

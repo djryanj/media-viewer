@@ -7,7 +7,6 @@
     import { settingsStore } from '$lib/stores/settings.svelte';
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import SearchBar from '../ui/SearchBar.svelte';
-    import { features } from '$lib/features';
 
     let showSearch = $state(false);
     let searchBarRef = $state<{ focus: () => void } | undefined>(undefined);
@@ -68,18 +67,10 @@
             >
             <button
                 class="nav-link"
-                class:active={$page.url.pathname === '/favorites'}
-                onclick={() => goto('/favorites')}
-                aria-label="Favorites">Favorites</button
+                class:active={$page.url.pathname.startsWith('/collections')}
+                onclick={() => goto('/collections')}
+                aria-label="Collections">Collections</button
             >
-            {#if features.albums}
-                <button
-                    class="nav-link"
-                    class:active={$page.url.pathname === '/collections'}
-                    onclick={() => goto('/collections')}
-                    aria-label="Albums">Albums</button
-                >
-            {/if}
         </nav>
 
         <!-- Header actions -->

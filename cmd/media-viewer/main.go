@@ -327,6 +327,7 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	auth.HandleFunc("/webauthn/login/finish", h.FinishWebAuthnLogin).Methods("POST")
 	auth.HandleFunc("/webauthn/passkeys", h.ListPasskeys).Methods("GET")
 	auth.HandleFunc("/webauthn/passkeys", h.DeletePasskey).Methods("DELETE")
+	auth.HandleFunc("/webauthn/passkeys/rename", h.RenamePasskey).Methods("PATCH")
 
 	// Protected API routes
 	api := r.PathPrefix("/api").Subrouter()

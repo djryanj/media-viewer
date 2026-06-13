@@ -1,7 +1,6 @@
 <script lang="ts">
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
-    import { features } from '$lib/features';
 
     const tabs = [
         {
@@ -10,19 +9,14 @@
             icon: `<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`
         },
         {
-            href: '/favorites',
-            label: 'Favorites',
-            icon: `<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>`
+            href: '/collections',
+            label: 'Collections',
+            icon: `<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>`
         },
         {
             href: '/search',
             label: 'Search',
             icon: `<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>`
-        },
-        {
-            href: '/collections',
-            label: 'Albums',
-            icon: `<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>`
         }
     ] as const;
 
@@ -34,28 +28,26 @@
 
 <nav class="bottom-nav" aria-label="Main navigation">
     {#each tabs as tab}
-        {#if tab.href !== '/collections' || features.albums}
-            <button
-                class="nav-item"
-                class:active={isActive(tab.href)}
-                onclick={() => goto(tab.href)}
-                aria-label={tab.label}
-                aria-current={isActive(tab.href) ? 'page' : undefined}
+        <button
+            class="nav-item"
+            class:active={isActive(tab.href)}
+            onclick={() => goto(tab.href)}
+            aria-label={tab.label}
+            aria-current={isActive(tab.href) ? 'page' : undefined}
+        >
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    {@html tab.icon}
-                </svg>
-                <span class="nav-label">{tab.label}</span>
-            </button>
-        {/if}
+                {@html tab.icon}
+            </svg>
+            <span class="nav-label">{tab.label}</span>
+        </button>
     {/each}
 </nav>
 

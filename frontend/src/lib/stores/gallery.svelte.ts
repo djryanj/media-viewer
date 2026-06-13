@@ -3,8 +3,9 @@
  * selection state. Supports infinite-scroll + scrubber jump for large libraries.
  */
 
-import { media as mediaApi } from '$lib/api/client';
+import { media as mediaApi, collections as collectionsApi } from '$lib/api/client';
 import type { MediaFile, DirectoryListing } from '$lib/api/types';
+import { stableGroupedSort } from '$lib/utils/collectionSort';
 
 type SortField = 'name' | 'size' | 'date';
 type SortOrder = 'asc' | 'desc';
@@ -94,12 +95,32 @@ function saveFolderSort(path: string, sort: SortField, order: SortOrder) {
     }
 }
 
+function clearFolderSort(path: string) {
+    if (typeof localStorage === 'undefined' || !path) return;
+    try {
+        const raw = localStorage.getItem(PREFS_KEY);
+        if (!raw) return;
+        const prefs = JSON.parse(raw) as Record<string, unknown>;
+        const folderSorts = prefs.folderSorts as
+            | Record<string, { sort: SortField; order: SortOrder }>
+            | undefined;
+        if (folderSorts) {
+            delete folderSorts[path];
+            prefs.folderSorts = folderSorts;
+            localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 // Per-session caches: keyed by path.
+// Favorites are NOT cached per-path — they are global state that persists
+// across navigations and is only refreshed by fresh API fetches.
 type PathCacheEntry = {
     items: MediaFile[];
     totalItems: number;
     loadOffset: number;
-    favorites: MediaFile[];
 };
 const pathCache = new Map<string, PathCacheEntry>();
 const scrollPositions = new Map<string, number>();
@@ -221,8 +242,7 @@ function createGalleryStore() {
                 pathCache.set(state.path, {
                     items: [...state.items],
                     totalItems: state.totalItems,
-                    loadOffset: state.loadOffset,
-                    favorites: [...state.favorites]
+                    loadOffset: state.loadOffset
                 });
             }
 
@@ -252,7 +272,7 @@ function createGalleryStore() {
                     state.items = cached.items;
                     state.totalItems = cached.totalItems;
                     state.loadOffset = cached.loadOffset;
-                    state.favorites = cached.favorites;
+                    // favorites are global — not restored from path cache
                     state.listing = null;
                     state.loading = false;
                     state.error = null;
@@ -286,7 +306,43 @@ function createGalleryStore() {
             } finally {
                 state.loading = false;
             }
+            // Apply collection ordering in the background so initial render is
+            // not delayed, then items snap into collection order.
+            void this.applyCollectionOrdering();
             return false;
+        },
+
+        /**
+         * Re-order currently loaded items so that items belonging to a
+         * collection appear in their saved collection order, grouped at the
+         * position of the first collection item in the sorted list.
+         * Multiple collections are applied in ascending ID order.
+         * Errors are swallowed so the gallery always shows something.
+         */
+        async applyCollectionOrdering() {
+            const pathAtStart = state.path;
+            const nonFolderPaths = state.items
+                .filter((i) => i.type !== 'folder')
+                .map((i) => i.path);
+            if (nonFolderPaths.length === 0) return;
+            try {
+                const memberships = await collectionsApi.memberships(nonFolderPaths);
+                if (state.path !== pathAtStart) return;
+                const colIds = [...new Set(Object.values(memberships).flat() as number[])].sort(
+                    (a, b) => a - b
+                );
+                if (colIds.length === 0) return;
+                let reordered = [...state.items];
+                for (const colId of colIds) {
+                    const detail = await collectionsApi.get(colId);
+                    if (state.path !== pathAtStart) return;
+                    reordered = stableGroupedSort(reordered, detail.items);
+                }
+                if (state.path !== pathAtStart) return;
+                state.items = reordered;
+            } catch {
+                // Silently fall back to original order
+            }
         },
 
         /** Force-reload the current path, bypassing the cache. */
@@ -325,6 +381,7 @@ function createGalleryStore() {
             } finally {
                 state.loadingMore = false;
             }
+            void this.applyCollectionOrdering();
         },
 
         /**
@@ -430,6 +487,20 @@ function createGalleryStore() {
             state.order = order;
             saveSortPrefs(field, order);
             saveFolderSort(state.path, field, order);
+            if (state.listing) {
+                this.navigate(state.path);
+            }
+        },
+
+        get hasFolderSort() {
+            return loadFolderSort(state.path) !== null;
+        },
+
+        resetFolderSort() {
+            clearFolderSort(state.path);
+            const global = loadSortPrefs();
+            state.sort = global.sort;
+            state.order = global.order;
             if (state.listing) {
                 this.navigate(state.path);
             }

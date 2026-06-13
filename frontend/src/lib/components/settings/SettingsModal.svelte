@@ -50,6 +50,9 @@
     let newPassword = $state('');
     let confirmPassword = $state('');
     let pwLoading = $state(false);
+    let showCurrentPw = $state(false);
+    let showNewPw = $state(false);
+    let showConfirmPw = $state(false);
 
     async function handlePasswordChange(e: SubmitEvent) {
         e.preventDefault();
@@ -265,6 +268,30 @@
         }
     }
 
+    let renamingPasskeyId = $state<number | null>(null);
+    let renamePasskeyValue = $state('');
+
+    function startRenamePasskey(pk: { id: number; name: string }) {
+        renamingPasskeyId = pk.id;
+        renamePasskeyValue = pk.name;
+    }
+
+    async function submitRenamePasskey(id: number) {
+        const name = renamePasskeyValue.trim();
+        if (!name) {
+            toastStore.error('Name cannot be empty');
+            return;
+        }
+        try {
+            await auth.renamePasskey(id, name);
+            passkeys = passkeys.map((p) => (p.id === id ? { ...p, name } : p));
+            renamingPasskeyId = null;
+            toastStore.success('Passkey renamed');
+        } catch {
+            toastStore.error('Failed to rename passkey');
+        }
+    }
+
     async function deletePasskey(id: number) {
         if (!confirm('Remove this passkey? You will no longer be able to use it to sign in.'))
             return;
@@ -435,35 +462,141 @@
                         <form class="form" onsubmit={handlePasswordChange}>
                             <div class="field">
                                 <label for="current-pw">Current password</label>
-                                <input
-                                    id="current-pw"
-                                    type="password"
-                                    bind:value={currentPassword}
-                                    autocomplete="current-password"
-                                    required
-                                />
+                                <div class="pw-wrap">
+                                    <input
+                                        id="current-pw"
+                                        type={showCurrentPw ? 'text' : 'password'}
+                                        bind:value={currentPassword}
+                                        autocomplete="current-password"
+                                        required
+                                    />
+                                    <button
+                                        type="button"
+                                        class="pw-toggle"
+                                        onclick={() => (showCurrentPw = !showCurrentPw)}
+                                        aria-label={showCurrentPw
+                                            ? 'Hide password'
+                                            : 'Show password'}
+                                    >
+                                        {#if showCurrentPw}
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                aria-hidden="true"
+                                                ><path
+                                                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+                                                /><path
+                                                    d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"
+                                                /><line x1="1" y1="1" x2="23" y2="23" /></svg
+                                            >
+                                        {:else}
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                aria-hidden="true"
+                                                ><path
+                                                    d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                                                /><circle cx="12" cy="12" r="3" /></svg
+                                            >
+                                        {/if}
+                                    </button>
+                                </div>
                             </div>
                             <div class="field">
                                 <label for="new-pw">New password</label>
-                                <input
-                                    id="new-pw"
-                                    type="password"
-                                    bind:value={newPassword}
-                                    autocomplete="new-password"
-                                    minlength="6"
-                                    required
-                                />
+                                <div class="pw-wrap">
+                                    <input
+                                        id="new-pw"
+                                        type={showNewPw ? 'text' : 'password'}
+                                        bind:value={newPassword}
+                                        autocomplete="new-password"
+                                        minlength="6"
+                                        required
+                                    />
+                                    <button
+                                        type="button"
+                                        class="pw-toggle"
+                                        onclick={() => (showNewPw = !showNewPw)}
+                                        aria-label={showNewPw ? 'Hide password' : 'Show password'}
+                                    >
+                                        {#if showNewPw}
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                aria-hidden="true"
+                                                ><path
+                                                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+                                                /><path
+                                                    d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"
+                                                /><line x1="1" y1="1" x2="23" y2="23" /></svg
+                                            >
+                                        {:else}
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                aria-hidden="true"
+                                                ><path
+                                                    d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                                                /><circle cx="12" cy="12" r="3" /></svg
+                                            >
+                                        {/if}
+                                    </button>
+                                </div>
                             </div>
                             <div class="field">
                                 <label for="confirm-pw">Confirm new password</label>
-                                <input
-                                    id="confirm-pw"
-                                    type="password"
-                                    bind:value={confirmPassword}
-                                    autocomplete="new-password"
-                                    minlength="6"
-                                    required
-                                />
+                                <div class="pw-wrap">
+                                    <input
+                                        id="confirm-pw"
+                                        type={showConfirmPw ? 'text' : 'password'}
+                                        bind:value={confirmPassword}
+                                        autocomplete="new-password"
+                                        minlength="6"
+                                        required
+                                    />
+                                    <button
+                                        type="button"
+                                        class="pw-toggle"
+                                        onclick={() => (showConfirmPw = !showConfirmPw)}
+                                        aria-label={showConfirmPw
+                                            ? 'Hide password'
+                                            : 'Show password'}
+                                    >
+                                        {#if showConfirmPw}
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                aria-hidden="true"
+                                                ><path
+                                                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+                                                /><path
+                                                    d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"
+                                                /><line x1="1" y1="1" x2="23" y2="23" /></svg
+                                            >
+                                        {:else}
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                aria-hidden="true"
+                                                ><path
+                                                    d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                                                /><circle cx="12" cy="12" r="3" /></svg
+                                            >
+                                        {/if}
+                                    </button>
+                                </div>
                             </div>
                             <button class="btn-primary" type="submit" disabled={pwLoading}>
                                 {pwLoading ? 'Saving…' : 'Change password'}
@@ -513,19 +646,55 @@
                                                     <path d="m17 10 2-2" />
                                                     <path d="m15 12 2 2" />
                                                 </svg>
-                                                <div>
-                                                    <span class="passkey-name">{pk.name}</span>
-                                                    <span class="passkey-date"
-                                                        >Added {new Date(
-                                                            pk.createdAt
-                                                        ).toLocaleDateString()}</span
-                                                    >
+                                                <div class="passkey-text">
+                                                    {#if renamingPasskeyId === pk.id}
+                                                        <form
+                                                            class="rename-form"
+                                                            onsubmit={(e) => {
+                                                                e.preventDefault();
+                                                                submitRenamePasskey(pk.id);
+                                                            }}
+                                                        >
+                                                            <input
+                                                                class="rename-input"
+                                                                type="text"
+                                                                bind:value={renamePasskeyValue}
+                                                                maxlength="50"
+                                                                aria-label="Passkey name"
+                                                            />
+                                                            <button class="action-btn" type="submit"
+                                                                >Save</button
+                                                            >
+                                                            <button
+                                                                class="action-btn"
+                                                                type="button"
+                                                                onclick={() =>
+                                                                    (renamingPasskeyId = null)}
+                                                                >Cancel</button
+                                                            >
+                                                        </form>
+                                                    {:else}
+                                                        <span class="passkey-name">{pk.name}</span>
+                                                        <span class="passkey-date"
+                                                            >Added {new Date(
+                                                                pk.createdAt
+                                                            ).toLocaleDateString()}</span
+                                                        >
+                                                    {/if}
                                                 </div>
                                             </div>
-                                            <button
-                                                class="action-btn danger"
-                                                onclick={() => deletePasskey(pk.id)}>Remove</button
-                                            >
+                                            {#if renamingPasskeyId !== pk.id}
+                                                <button
+                                                    class="action-btn"
+                                                    onclick={() => startRenamePasskey(pk)}
+                                                    aria-label="Rename {pk.name}">Rename</button
+                                                >
+                                                <button
+                                                    class="action-btn danger"
+                                                    onclick={() => deletePasskey(pk.id)}
+                                                    >Remove</button
+                                                >
+                                            {/if}
                                         </li>
                                     {/each}
                                 </ul>
@@ -1134,6 +1303,7 @@
     }
 
     input[type='password'],
+    input[type='text'],
     select {
         width: 100%;
         padding: var(--spacing-2) var(--spacing-3);
@@ -1147,8 +1317,46 @@
     }
 
     input[type='password']:focus,
+    input[type='text']:focus,
     select:focus {
         border-color: var(--color-primary);
+    }
+
+    .pw-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .pw-wrap input {
+        padding-right: 40px;
+    }
+
+    .pw-toggle {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: var(--color-text-muted);
+        border-radius: var(--radius-sm);
+        transition: color var(--transition-fast);
+    }
+
+    .pw-toggle:hover {
+        color: var(--color-text);
+    }
+
+    .pw-toggle svg {
+        width: 16px;
+        height: 16px;
     }
 
     /* ── Buttons ────────────────────────────────────────────────────────── */
@@ -1551,6 +1759,32 @@
         font-size: var(--text-xs);
         color: var(--color-text-muted);
         margin-top: 1px;
+    }
+
+    .passkey-text {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .rename-form {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2);
+    }
+
+    .rename-input {
+        padding: var(--spacing-1) var(--spacing-2);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        color: var(--color-text);
+        font-size: var(--text-sm);
+        width: 160px;
+    }
+
+    .rename-input:focus {
+        outline: none;
+        border-color: var(--color-primary);
     }
 
     input[type='text'] {

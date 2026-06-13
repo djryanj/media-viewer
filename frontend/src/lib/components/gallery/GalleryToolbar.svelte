@@ -278,6 +278,25 @@
             </div>
 
             <div class="tb-right">
+                {#if galleryStore.hasFolderSort}
+                    <button
+                        class="tb-btn reset-sort-btn"
+                        onclick={() => galleryStore.resetFolderSort()}
+                        title="Reset to default sort"
+                        aria-label="Reset folder sort to default"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-3.14" />
+                        </svg>
+                        Default
+                    </button>
+                {/if}
                 <!-- Sort dropdown -->
                 <div class="sort-wrap">
                     <button
@@ -540,6 +559,17 @@
     }
 
     /* Sort dropdown */
+    .reset-sort-btn {
+        color: var(--color-text-muted);
+        border-style: dashed;
+        font-size: var(--text-xs);
+    }
+
+    .reset-sort-btn svg {
+        width: 13px;
+        height: 13px;
+    }
+
     .sort-wrap {
         position: relative;
     }

@@ -468,6 +468,15 @@ func (d *Database) AddItemsToCollection(ctx context.Context, id int64, paths []s
 	).Scan(&maxPos)
 
 	for i, p := range normalizedPaths {
+		// One-collection-per-item: remove the path from any other collection
+		// before inserting into this one.
+		if _, err = tx.ExecContext(ctx,
+			`DELETE FROM collection_items WHERE file_path = ? AND collection_id != ?`,
+			p, id,
+		); err != nil {
+			done(err)
+			return err
+		}
 		if _, err = tx.ExecContext(ctx,
 			`INSERT OR IGNORE INTO collection_items (collection_id, file_path, position) VALUES (?, ?, ?)`,
 			id, p, maxPos+1+i,

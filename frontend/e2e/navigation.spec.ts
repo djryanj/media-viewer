@@ -41,15 +41,14 @@ test('@smoke @navigation bottom-nav Library tab navigates to /', async ({ page }
     await expect(page).toHaveURL('/');
 });
 
-test('@smoke @navigation bottom-nav Favorites tab navigates to /favorites', async ({
+test('@smoke @navigation bottom-nav Collections tab navigates to /collections', async ({
     page,
 }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    // Use exact match to avoid partial hits on gallery "Add to favorites" buttons
-    await page.getByRole('button', { name: 'Favorites', exact: true }).click({ force: true });
-    await expect(page).toHaveURL('/favorites');
+    await page.getByRole('button', { name: 'Collections', exact: true }).click({ force: true });
+    await expect(page).toHaveURL('/collections');
 });
 
 test('@smoke @navigation bottom-nav Search tab navigates to /search', async ({ page }) => {
@@ -61,12 +60,13 @@ test('@smoke @navigation bottom-nav Search tab navigates to /search', async ({ p
     await expect(page).toHaveURL('/search');
 });
 
-test('@smoke @navigation bottom-nav Albums tab is hidden (feature flag off)', async ({
+test('@smoke @navigation bottom-nav does not show an Albums or Favorites tab', async ({
     page,
 }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    // Albums is behind features.albums = false; the tab must not appear in the nav.
+    // Albums was removed and Favorites nav button was replaced by the in-gallery strip.
     await expect(page.getByRole('button', { name: 'Albums', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Favorites', exact: true })).toHaveCount(0);
 });

@@ -272,6 +272,9 @@
     let touchStartY = 0;
     let touchOriginEl: Element | null = null;
     let swipeHandled = false;
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
 
     function handleTouchStart(e: TouchEvent) {
         if (!lightboxStore.open) return;
@@ -348,16 +351,41 @@
             return;
         }
 
-        // Block swipe gestures while zoomed in
-        if (zoom > 1) return;
-
         const dx = e.changedTouches[0].clientX - touchStartX;
         const dy = e.changedTouches[0].clientY - touchStartY;
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
+        const tapX = e.changedTouches[0].clientX;
+        const tapY = e.changedTouches[0].clientY;
 
-        // Swipe up to close (upward, predominantly vertical, 80 px minimum)
-        if (dy < -80 && absDy > absDx) {
+        // Double-tap to zoom (toggle 1× ↔ 2.5×)
+        if (absDx < 12 && absDy < 12) {
+            const now = Date.now();
+            const nearPrev = Math.abs(tapX - lastTapX) < 40 && Math.abs(tapY - lastTapY) < 40;
+            if (now - lastTapTime < 300 && nearPrev) {
+                // Double-tap detected
+                lastTapTime = 0;
+                if (zoom > 1) {
+                    zoom = 1;
+                    panX = 0;
+                    panY = 0;
+                } else {
+                    zoom = 2.5;
+                    panX = 0;
+                    panY = 0;
+                }
+                return;
+            }
+            lastTapTime = now;
+            lastTapX = tapX;
+            lastTapY = tapY;
+        }
+
+        // Block swipe gestures while zoomed in
+        if (zoom > 1) return;
+
+        // Swipe down to close (downward, predominantly vertical, 80 px minimum)
+        if (dy > 80 && absDy > absDx) {
             swipeHandled = true;
             lightboxStore.close();
             requestAnimationFrame(() => {
@@ -830,7 +858,8 @@
     .lb-clock {
         position: absolute;
         top: 14px;
-        right: 14px;
+        left: 50%;
+        transform: translateX(-50%);
         z-index: 2;
         font-size: var(--text-sm);
         color: rgba(255, 255, 255, 0.75);

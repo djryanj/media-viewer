@@ -152,7 +152,12 @@ export const auth = {
             passkeys: Array<{ id: number; name: string; createdAt: string; lastUsedAt?: string }>;
         }>('/api/auth/webauthn/passkeys').then((r) => r.passkeys),
     deletePasskey: (id: number) =>
-        request<void>('/api/auth/webauthn/passkeys', { method: 'DELETE', ...json({ id }) })
+        request<void>('/api/auth/webauthn/passkeys', { method: 'DELETE', ...json({ id }) }),
+    renamePasskey: (id: number, name: string) =>
+        request<void>('/api/auth/webauthn/passkeys/rename', {
+            method: 'PATCH',
+            ...json({ id, name })
+        })
 };
 
 // ─── Media / Directory ───────────────────────────────────────────────────────

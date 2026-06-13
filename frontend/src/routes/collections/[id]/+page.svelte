@@ -12,6 +12,28 @@
     let loading = $state(true);
     let error = $state('');
 
+    // Rename state
+    let renaming = $state(false);
+    let renameValue = $state('');
+
+    function startRename() {
+        if (!detail) return;
+        renameValue = detail.name;
+        renaming = true;
+    }
+
+    async function submitRename() {
+        const name = renameValue.trim();
+        if (!name || !detail) return;
+        try {
+            await collectionsApi.rename(id, name);
+            detail = { ...detail, name };
+            renaming = false;
+        } catch {
+            toastStore.error('Failed to rename collection');
+        }
+    }
+
     // Reorder state
     let reorderMode = $state(false);
     let reorderedItems = $state<MediaFile[]>([]);
@@ -93,10 +115,6 @@
         dragFromIdx = -1;
         dragOverIdx = -1;
     }
-
-    function thumbUrl(item: MediaFile): string {
-        return `/thumbnails/${encodeURIComponent(item.path)}`;
-    }
 </script>
 
 <svelte:head>
@@ -104,7 +122,7 @@
 </svelte:head>
 
 <div class="page-header">
-    <button class="back-btn" onclick={() => goto('/collections')} aria-label="Back to albums">
+    <button class="back-btn" onclick={() => goto('/collections')} aria-label="Back to collections">
         <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -117,19 +135,68 @@
         </svg>
     </button>
     {#if detail}
-        <h2 class="page-title">{detail.name}</h2>
-        <span class="page-count">{detail.items.length} items</span>
-        {#if !reorderMode && detail.items.length > 1}
-            <button class="action-btn" onclick={enterReorder}>Reorder</button>
-        {:else if reorderMode}
-            <button
-                class="action-btn action-btn--cancel"
-                onclick={cancelReorder}
-                disabled={savingOrder}>Cancel</button
+        {#if renaming}
+            <form
+                class="rename-form"
+                onsubmit={(e) => {
+                    e.preventDefault();
+                    submitRename();
+                }}
             >
-            <button class="action-btn action-btn--save" onclick={saveOrder} disabled={savingOrder}>
-                {savingOrder ? 'Saving…' : 'Save'}
-            </button>
+                <input
+                    class="rename-input"
+                    type="text"
+                    bind:value={renameValue}
+                    aria-label="Collection name"
+                    maxlength="100"
+                />
+                <button class="action-btn action-btn--save" type="submit">Save</button>
+                <button
+                    class="action-btn action-btn--cancel"
+                    type="button"
+                    onclick={() => (renaming = false)}>Cancel</button
+                >
+            </form>
+        {:else}
+            <h2 class="page-title">{detail.name}</h2>
+            <span class="page-count">{detail.items.length} items</span>
+            {#if !reorderMode}
+                <button
+                    class="action-btn icon-btn"
+                    onclick={startRename}
+                    aria-label="Rename collection"
+                    title="Rename"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                </button>
+                {#if detail.items.length > 1}
+                    <button class="action-btn" onclick={enterReorder}>Reorder</button>
+                {/if}
+            {:else}
+                <button
+                    class="action-btn action-btn--cancel"
+                    onclick={cancelReorder}
+                    disabled={savingOrder}>Cancel</button
+                >
+                <button
+                    class="action-btn action-btn--save"
+                    onclick={saveOrder}
+                    disabled={savingOrder}
+                >
+                    {savingOrder ? 'Saving…' : 'Save'}
+                </button>
+            {/if}
         {/if}
     {/if}
 </div>
@@ -161,15 +228,16 @@
                     </svg>
                 </span>
 
-                <img
-                    class="reorder-thumb"
-                    src={thumbUrl(item)}
-                    alt={item.name}
-                    loading="lazy"
-                    onerror={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
-                    }}
-                />
+                {#if item.thumbnailUrl}
+                    <img
+                        class="reorder-thumb"
+                        src={item.thumbnailUrl}
+                        alt={item.name}
+                        loading="lazy"
+                    />
+                {:else}
+                    <div class="reorder-thumb reorder-thumb--placeholder" aria-hidden="true"></div>
+                {/if}
 
                 <span class="reorder-name">{item.name}</span>
 
@@ -215,7 +283,7 @@
         {/each}
     </ul>
 {:else if detail}
-    <Gallery items={detail.items} />
+    <Gallery items={detail.items} externalScroll />
 {/if}
 
 <style>
@@ -265,6 +333,27 @@
         flex-shrink: 0;
     }
 
+    .rename-form {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2);
+        flex: 1;
+        min-width: 0;
+    }
+
+    .rename-input {
+        flex: 1;
+        min-width: 0;
+        padding: var(--spacing-1) var(--spacing-2);
+        background: var(--color-surface);
+        border: 1px solid var(--color-primary);
+        border-radius: var(--radius-md);
+        color: var(--color-text);
+        font-size: var(--text-base);
+        font-weight: 700;
+        outline: none;
+    }
+
     .action-btn {
         flex-shrink: 0;
         padding: var(--spacing-1) var(--spacing-3);
@@ -274,6 +363,20 @@
         color: var(--color-text);
         font-size: var(--text-sm);
         cursor: pointer;
+    }
+
+    .icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+    }
+
+    .icon-btn svg {
+        width: 15px;
+        height: 15px;
     }
 
     .action-btn:hover:not(:disabled) {
@@ -347,12 +450,16 @@
     }
 
     .reorder-thumb {
-        width: 44px;
-        height: 44px;
+        width: 64px;
+        height: 64px;
         object-fit: cover;
         border-radius: var(--radius-sm);
         flex-shrink: 0;
         background: var(--color-surface-2);
+    }
+
+    .reorder-thumb--placeholder {
+        background: var(--color-surface-3);
     }
 
     .reorder-name {

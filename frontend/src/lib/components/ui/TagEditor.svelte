@@ -39,6 +39,26 @@
     } = $props();
 
     // ── Known tags & recents ──────────────────────────────────────────────────
+    const RECENT_TAGS_KEY = 'mediaViewerRecentTags';
+
+    function loadRecentTags(): string[] {
+        try {
+            const raw = localStorage.getItem(RECENT_TAGS_KEY);
+            if (raw) return JSON.parse(raw) as string[];
+        } catch {
+            /* ignore */
+        }
+        return [];
+    }
+
+    function saveRecentTags(names: string[]) {
+        try {
+            localStorage.setItem(RECENT_TAGS_KEY, JSON.stringify(names));
+        } catch {
+            /* ignore */
+        }
+    }
+
     let knownTags: Tag[] = $state([]);
     let recentTagNames: string[] = $state([]);
     let relatedSuggestions: RelatedTagSuggestion[] = $state([]);
@@ -51,6 +71,7 @@
     });
 
     onMount(async () => {
+        recentTagNames = loadRecentTags();
         if (!allTagsProp) {
             try {
                 knownTags = await tagsApi.list();
@@ -176,7 +197,9 @@
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     function markRecent(name: string) {
-        recentTagNames = [name, ...recentTagNames.filter((n) => n !== name)].slice(0, 10);
+        const next = [name, ...recentTagNames.filter((n) => n !== name)].slice(0, 10);
+        recentTagNames = next;
+        saveRecentTags(next);
     }
 
     function addTag(name: string) {
