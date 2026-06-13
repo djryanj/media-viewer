@@ -102,6 +102,21 @@
 
     onMount(() => {
         load();
+
+        // Lock the main-content scroll container while the player is open.
+        // On Android Chrome, overflow:auto on a parent can bleed scroll events
+        // through position:fixed children, causing the underlying gallery to
+        // scroll under the player overlay.
+        const mainEl = document.getElementById('main-content');
+        const prevOverflow = mainEl?.style.overflow ?? '';
+        if (mainEl) {
+            mainEl.scrollTop = 0;
+            mainEl.style.overflow = 'hidden';
+        }
+
+        return () => {
+            if (mainEl) mainEl.style.overflow = prevOverflow;
+        };
     });
 
     function encPath(p: string) {
@@ -284,10 +299,6 @@
 </div>
 
 <style>
-    :global(body) {
-        overflow: hidden;
-    }
-
     .player-page {
         position: fixed;
         inset: 0;
@@ -296,6 +307,7 @@
         background: #000;
         color: #fff;
         z-index: 200;
+        overscroll-behavior: none;
     }
 
     /* Header */

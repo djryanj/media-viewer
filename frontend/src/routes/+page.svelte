@@ -78,6 +78,9 @@
         const mainEl = document.getElementById('main-content');
         if (mainEl) {
             let ptrStartY = 0;
+            // Only animate the pull indicator when the gesture actually started at
+            // the top of the scroll container (where PTR activates).
+            let ptrStarted = false;
 
             const ptr = createPullToRefresh({
                 getScrollTop: () => mainEl.scrollTop,
@@ -86,9 +89,11 @@
 
             const onTS = (e: TouchEvent) => {
                 ptrStartY = e.touches[0].clientY;
+                ptrStarted = mainEl.scrollTop <= 0;
                 ptr.onTouchStart(ptrStartY);
             };
             const onTM = (e: TouchEvent) => {
+                if (!ptrStarted) return;
                 const dy = e.touches[0].clientY - ptrStartY;
                 const resisted = Math.min(dy * PTR_RESISTANCE, PTR_MAX_VISUAL * PTR_RESISTANCE);
                 pullProgress = Math.min(
@@ -101,6 +106,7 @@
                 const wasPulling = pullExceeded;
                 pullProgress = 0;
                 pullExceeded = false;
+                ptrStarted = false;
                 ptr.onTouchEnd(wasPulling);
             };
 
