@@ -258,7 +258,13 @@
             case 'Tab':
                 if (showSuggestions) {
                     e.preventDefault();
-                    confirmHighlighted();
+                    // Complete the first suggestion when nothing is explicitly
+                    // highlighted; arrow-keyed selection still wins.
+                    if (highlightedIdx < 0) {
+                        addTag(suggestions[0].name);
+                    } else {
+                        confirmHighlighted();
+                    }
                 }
                 break;
             case 'ArrowDown':

@@ -49,6 +49,7 @@
             acquireWakeLock();
         } else {
             releaseWakeLock();
+            collectionsOpen = false;
         }
     });
 
