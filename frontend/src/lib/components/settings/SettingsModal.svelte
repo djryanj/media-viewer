@@ -38,10 +38,12 @@
             prefClockEnabled = (loadPrefs().clockEnabled as boolean) ?? true;
             prefClockFormat = (loadPrefs().clockFormat as string) === '24' ? '24' : '12';
             prefClockAlwaysVisible = (loadPrefs().clockAlwaysVisible as boolean) ?? false;
-            // Reset passkey state so the list reloads on next visit to that tab
+            // Reset passkey/tag state so lists reload on next visit to those tabs
             passkeys = [];
             passkeysHaveBeenLoaded = false;
             newPasskeyName = derivePasskeyName();
+            allTags = [];
+            tagsHaveBeenLoaded = false;
         }
     });
 
@@ -128,6 +130,9 @@
     // ── Tags manager ─────────────────────────────────────────────────────────
     let allTags: Tag[] = $state([]);
     let tagsLoading = $state(false);
+    // Without this, the auto-load $effect loops forever when the tag list is
+    // empty: loadTags() returns [] → length===0 still true → fires again.
+    let tagsHaveBeenLoaded = $state(false);
     let tagSearch = $state('');
     let renamingTag = $state<string | null>(null);
     let renameValue = $state('');
@@ -146,6 +151,7 @@
             toastStore.error('Failed to load tags');
         } finally {
             tagsLoading = false;
+            tagsHaveBeenLoaded = true;
         }
     }
 
@@ -405,9 +411,11 @@
         return w.summary.running ? 'running' : 'idle';
     }
 
-    // Load tags lazily when that tab becomes active (and modal is open)
+    // Load tags lazily when the tab becomes active for the first time this
+    // modal session. tagsHaveBeenLoaded prevents re-triggering when the list
+    // is empty (same pattern as passkeysHaveBeenLoaded).
     $effect(() => {
-        if (activeTab === 'tags' && settingsStore.open && allTags.length === 0 && !tagsLoading) {
+        if (activeTab === 'tags' && settingsStore.open && !tagsHaveBeenLoaded && !tagsLoading) {
             loadTags();
         }
     });
