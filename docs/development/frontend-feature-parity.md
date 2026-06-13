@@ -216,10 +216,10 @@ Comprehensive comparison of the legacy vanilla-JS frontend (`static/`) test suit
 | Tag clipboard: copy from lightbox | ⚠️ | No unit test |
 | Tag clipboard: paste to item (with confirmation) | ⚠️ | No unit test |
 | Bulk tag (apply to all selected items) | ⚠️ | No unit test |
-| Tag manager: list all tags | ⚠️ | Exists in Settings → Tags tab; no dedicated unit test |
-| Tag manager: rename tag | ⚠️ | No unit test |
-| Tag manager: delete tag | ⚠️ | No unit test |
-| Tag manager: search / filter tags | ⚠️ | No unit test |
+| Tag manager: list all tags | ✅ | `SettingsModal.tags.test.ts` |
+| Tag manager: rename tag | ✅ | `SettingsModal.tags-actions.test.ts` |
+| Tag manager: delete tag | ✅ | `SettingsModal.tags-actions.test.ts` |
+| Tag manager: search / filter tags | ✅ | `SettingsModal.tags.test.ts` |
 
 ---
 
@@ -289,7 +289,7 @@ Comprehensive comparison of the legacy vanilla-JS frontend (`static/`) test suit
 | Settings dialog closes via close button | ✅ | `settings.spec.ts` E2E |
 | Settings dialog closes via Escape | ✅ | `settings.spec.ts` E2E |
 | Tabs: Security / Passkeys / Library / Tags / System / About | ⚠️ | Tabs render; only Passkeys tab fully unit-tested |
-| Security tab: password change | ⚠️ | No unit test |
+| Security tab: password change | ✅ | `SettingsModal.test.ts` |
 | Security tab: sign out | ✅ | `auth.spec.ts` E2E |
 | Passkeys tab: list passkeys | ✅ | `SettingsModal.test.ts` unit |
 | Passkeys tab: empty state | ✅ | `SettingsModal.test.ts` unit |
@@ -297,22 +297,22 @@ Comprehensive comparison of the legacy vanilla-JS frontend (`static/`) test suit
 | Passkeys tab: add passkey (name validation) | ✅ | `SettingsModal.test.ts` unit |
 | Passkeys tab: loading state | ✅ | `SettingsModal.test.ts` unit |
 | Passkeys tab: delete passkey | ⚠️ | No unit test |
-| Library tab: clock on/off | ⚠️ | No unit test |
-| Library tab: 12/24h clock format | ⚠️ | No unit test |
-| Library tab: default sort field | ⚠️ | No unit test |
-| Library tab: default sort order | ⚠️ | No unit test |
-| Library tab: media autoplay | ⚠️ | No unit test |
-| Library tab: media loop | ⚠️ | No unit test |
-| Tags tab: list all tags | ⚠️ | No unit test |
-| Tags tab: rename tag | ⚠️ | No unit test |
-| Tags tab: delete tag | ⚠️ | No unit test |
-| Tags tab: filter tags by name | ⚠️ | No unit test |
-| System tab: worker status (indexer / thumbnails / autotagger) | ⚠️ | No unit test |
-| System tab: library stats (file counts, cache sizes) | ⚠️ | No unit test |
-| System tab: rebuild thumbnail cache | ⚠️ | No unit test |
-| System tab: clear transcode cache | ⚠️ | No unit test |
-| About tab: version and build info | ⚠️ | No unit test |
-| About tab: library statistics | ⚠️ | No unit test |
+| Library tab: clock on/off | ✅ | `SettingsModal.library.test.ts` |
+| Library tab: 12/24h clock format | ✅ | `SettingsModal.library.test.ts` |
+| Library tab: default sort field | ✅ | `SettingsModal.library.test.ts` |
+| Library tab: default sort order | ✅ | `SettingsModal.library.test.ts` |
+| Library tab: media autoplay | ✅ | `SettingsModal.library.test.ts` |
+| Library tab: media loop | ✅ | `SettingsModal.library.test.ts` |
+| Tags tab: list all tags | ✅ | `SettingsModal.tags.test.ts` |
+| Tags tab: rename tag | ✅ | `SettingsModal.tags-actions.test.ts` |
+| Tags tab: delete tag | ✅ | `SettingsModal.tags-actions.test.ts` |
+| Tags tab: filter tags by name | ✅ | `SettingsModal.tags.test.ts` |
+| System tab: worker status (indexer / thumbnails / autotagger) | ✅ | `SettingsModal.system.test.ts` |
+| System tab: library stats (file counts, cache sizes) | ✅ | `SettingsModal.system.test.ts` |
+| System tab: rebuild thumbnail cache | ✅ | `SettingsModal.system.test.ts` |
+| System tab: clear transcode cache | ✅ | `SettingsModal.system.test.ts` |
+| About tab: version and build info | ✅ | `SettingsModal.about.test.ts` |
+| About tab: library statistics | ✅ | `SettingsModal.about.test.ts` |
 | Password visibility toggle (show/hide password) | ✅ | `SettingsPasswordToggle.test.ts` unit |
 
 ---
