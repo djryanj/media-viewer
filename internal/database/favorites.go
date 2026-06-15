@@ -109,8 +109,8 @@ func (d *Database) getFavorites(ctx context.Context) ([]MediaFile, error) {
 		}
 		file.IsFavorite = true
 
-		if file.Type == FileTypeImage || file.Type == FileTypeVideo {
-			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
+			file.ThumbnailURL = thumbnailURL(file.Path)
 		}
 
 		if file.Type == FileTypeFolder {

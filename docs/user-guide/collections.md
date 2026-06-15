@@ -5,7 +5,7 @@ Collections let you save your own named groups of images and videos so you can c
 <div align="center">
 	<video autoplay loop muted playsinline width="700">
 		<source src="../../images/collections-workflow.mp4" type="video/mp4">
-		<img src="../../images/collections-workflow.gif" alt="Collections workflow" width="700">
+		<img src="../../images/collections-workflow.png" alt="Collections workflow" width="700">
 	</video>
 	<p><em>Collections support quick filtering, secondary actions, and repeat curation workflows from a single panel.</em></p>
 </div>

@@ -868,10 +868,10 @@ func TestAuthMiddlewarePublicPaths(t *testing.T) {
 	publicPaths := []string{
 		"/api/auth/login",
 		"/api/auth/setup",
-		"/login.html",
-		"/css/login.css",
-		"/js/login.js",
-		"/js/webauthn.js",
+		"/login",
+		"/",
+		"/_app/immutable/entry.js",
+		"/_app/immutable/chunks/index.js",
 		"/health",
 		"/healthz",
 		"/livez",
@@ -946,8 +946,8 @@ func TestAuthMiddlewareNonAPIWithoutCookie(t *testing.T) {
 	if w.Code != http.StatusFound {
 		t.Errorf("expected 302 redirect for non-API without cookie, got %d", w.Code)
 	}
-	if loc := w.Header().Get("Location"); loc != "/login.html" {
-		t.Errorf("expected redirect to /login.html, got %q", loc)
+	if loc := w.Header().Get("Location"); loc != "/login" {
+		t.Errorf("expected redirect to /login, got %q", loc)
 	}
 }
 

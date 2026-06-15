@@ -2,6 +2,17 @@
 # NVIDIA GPU-optimized Dockerfile using Debian base for glibc compatibility
 # Alpine Linux is incompatible with NVIDIA drivers (musl vs glibc)
 
+# Frontend build stage
+FROM node:22-bookworm-slim AS frontend-builder
+
+WORKDIR /app
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --prefer-offline
+
+COPY frontend/ ./
+RUN npm run build
+
 # Build stage - Use Debian-based Go image for glibc compatibility
 FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
 
@@ -111,8 +122,8 @@ RUN mkdir -p /media /cache /database && \
 COPY --from=builder /app/media-viewer /app/media-viewer
 COPY --from=builder /app/resetpw /app/resetpw
 
-# Copy static files
-COPY --from=builder /app/static /app/static
+# Copy SvelteKit frontend build
+COPY --from=frontend-builder /app/build /app/frontend/build
 
 # Set ownership of application files
 RUN chown -R nobody:nogroup /app

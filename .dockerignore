@@ -43,6 +43,18 @@ jsconfig.json
 **/node_modules
 package.json
 package-lock.json
+# Re-include SvelteKit frontend package files needed by the frontend-builder stage
+!frontend/package.json
+!frontend/package-lock.json
+frontend/.svelte-kit/
+frontend/node_modules/
+frontend/dist/
+frontend/tests/
+frontend/.gitignore
+frontend/.prettierrc
+frontend/.eslint.config.js
+frontend/playwrite.config.ts
+frontend/tsconfig.json
 
 # Linting and code quality
 .golangci.yml

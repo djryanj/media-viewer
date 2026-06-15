@@ -5,12 +5,25 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"media-viewer/internal/logging"
 )
+
+// thumbnailURL builds the /api/thumbnail/ URL for a media file path.
+// Each path segment is percent-encoded so that characters like '#', '?', and
+// spaces are safe as URL path components. Directory separators are preserved.
+func thumbnailURL(path string) string {
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return "/api/thumbnail/" + strings.Join(segments, "/")
+}
 
 // SortField specifies which field to sort by.
 type SortField string
@@ -45,6 +58,8 @@ const (
 	TagExcludePrefix = "-tag:"
 	// sortFieldModTime is the canonical DB field name for modification-time sorting.
 	sortFieldModTime = "mod_time"
+	// sortColumnNameCI is the qualified SQL expression for case-insensitive name sorting.
+	sortColumnNameCI = "f.name COLLATE NOCASE"
 	// sortColumnModTime is the qualified SQL expression for modification-time sorting.
 	sortColumnModTime = "f.mod_time"
 	// sortColumnSize is the qualified SQL expression for size sorting.
@@ -82,6 +97,163 @@ type SearchOptions struct {
 type TagFilter struct {
 	Name     string
 	Excluded bool
+}
+
+// summaryRow is the minimal data fetched for building scrubber label groups.
+type summaryRow struct {
+	name    string
+	typ     string
+	modTime int64
+}
+
+// GetDirectorySummary returns label groups for the gallery scrubber so the
+// client can display axis labels (letters for name sort, years for date sort)
+// across the full dataset without fetching every item.
+func (d *Database) GetDirectorySummary(ctx context.Context, path string, sort SortField, order SortOrder) (*DirectorySummary, error) {
+	done := d.observeQuery("directory_summary")
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	orderDir := "ASC"
+	if order == SortDesc {
+		orderDir = "DESC"
+	}
+
+	// ORDER BY must match fetchDirectoryItems: folders first, then by sort field.
+	var sortExpr string
+	switch sort {
+	case SortByName:
+		sortExpr = sortColumnNameCI
+	case SortByDate:
+		sortExpr = sortColumnModTime
+	case SortBySize:
+		sortExpr = sortColumnSize
+	case SortByType:
+		sortExpr = sortColumnType
+	}
+
+	//nolint:gosec // sortExpr and orderDir are derived from validated constants, not user input
+	q := fmt.Sprintf(`
+		SELECT f.name, f.type, f.mod_time
+		FROM files f
+		WHERE f.parent_path = ?
+		ORDER BY CASE WHEN f.type = 'folder' THEN 0 ELSE 1 END ASC, %s %s
+	`, sortExpr, orderDir)
+
+	rows, err := d.reader.QueryContext(ctx, q, path)
+	if err != nil {
+		done(err)
+		return nil, fmt.Errorf("summary query failed: %w", err)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			logging.Error("summary query: error closing rows: %v", cerr)
+		}
+	}()
+
+	var all []summaryRow
+	for rows.Next() {
+		var r summaryRow
+		if err := rows.Scan(&r.name, &r.typ, &r.modTime); err != nil {
+			done(err)
+			return nil, err
+		}
+		all = append(all, r)
+	}
+	if err := rows.Err(); err != nil {
+		done(err)
+		return nil, err
+	}
+
+	groups := buildSummaryGroups(all, sort)
+
+	done(nil)
+	return &DirectorySummary{
+		Sort:   string(sort),
+		Order:  string(order),
+		Total:  len(all),
+		Groups: groups,
+	}, nil
+}
+
+// buildSummaryGroups groups items into labeled buckets for the scrubber.
+func buildSummaryGroups(rows []summaryRow, sort SortField) []SummaryGroup {
+	if len(rows) == 0 {
+		return nil
+	}
+	switch sort {
+	case SortByName:
+		return groupRowsByFirstLetter(rows)
+	case SortByDate:
+		return groupRowsByYear(rows)
+	case SortBySize, SortByType:
+		// No label groups for size/type sort — scrubber shows position only.
+	}
+	return nil
+}
+
+// groupRowsByFirstLetter groups rows by the first letter of the name (A–Z, else "#").
+func groupRowsByFirstLetter(rows []summaryRow) []SummaryGroup {
+	var groups []SummaryGroup
+	lastLabel := ""
+	lastStart := 0
+	lastCount := 0
+	for i, r := range rows {
+		letter := firstLetterLabel(r.name)
+		if letter != lastLabel {
+			if lastLabel != "" {
+				groups = append(groups, SummaryGroup{Label: lastLabel, Offset: lastStart, Count: lastCount})
+			}
+			lastLabel = letter
+			lastStart = i
+			lastCount = 1
+		} else {
+			lastCount++
+		}
+	}
+	if lastLabel != "" {
+		groups = append(groups, SummaryGroup{Label: lastLabel, Offset: lastStart, Count: lastCount})
+	}
+	return groups
+}
+
+// firstLetterLabel returns the uppercase first letter of name, or "#" for non-alpha.
+func firstLetterLabel(name string) string {
+	runes := []rune(name)
+	if len(runes) == 0 {
+		return "#"
+	}
+	ch := strings.ToUpper(string(runes[0]))
+	if ch >= "A" && ch <= "Z" {
+		return ch
+	}
+	return "#"
+}
+
+// groupRowsByYear groups rows by the calendar year of their modification time.
+func groupRowsByYear(rows []summaryRow) []SummaryGroup {
+	var groups []SummaryGroup
+	lastYear := 0
+	lastStart := 0
+	lastCount := 0
+	for i, r := range rows {
+		y := time.Unix(r.modTime, 0).Year()
+		if y != lastYear {
+			if lastYear != 0 {
+				groups = append(groups, SummaryGroup{Label: strconv.Itoa(lastYear), Offset: lastStart, Count: lastCount})
+			}
+			lastYear = y
+			lastStart = i
+			lastCount = 1
+		} else {
+			lastCount++
+		}
+	}
+	if lastYear != 0 {
+		groups = append(groups, SummaryGroup{Label: strconv.Itoa(lastYear), Offset: lastStart, Count: lastCount})
+	}
+	return groups
 }
 
 // ListDirectory returns a paginated directory listing.
@@ -280,7 +452,7 @@ func (d *Database) scanDirectoryItems(rows *sql.Rows) ([]MediaFile, error) {
 		}
 
 		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
-			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+			file.ThumbnailURL = thumbnailURL(file.Path)
 		}
 
 		file.IsFavorite = isFavorite == 1
@@ -340,7 +512,7 @@ func (d *Database) buildDirectoryListing(ctx context.Context, opts ListOptions, 
 		TotalPages: totalPages,
 	}
 
-	if opts.Path == "" && opts.Page == 1 {
+	if opts.Page == 1 {
 		favorites, err := d.getFavorites(ctx)
 		if err == nil && len(favorites) > 0 {
 			listing.Favorites = favorites
@@ -542,7 +714,7 @@ func (d *Database) searchByTagFilters(ctx context.Context, opts SearchOptions, i
 		}
 
 		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
-			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+			file.ThumbnailURL = thumbnailURL(file.Path)
 		}
 
 		file.IsFavorite = isFavorite == 1
@@ -748,7 +920,7 @@ func (d *Database) searchWithTagFilters(ctx context.Context, opts SearchOptions,
 		}
 
 		if file.Type == FileTypeImage || file.Type == FileTypeVideo || file.Type == FileTypeFolder {
-			file.ThumbnailURL = "/api/thumbnail/" + file.Path
+			file.ThumbnailURL = thumbnailURL(file.Path)
 		}
 
 		file.IsFavorite = isFavorite == 1
@@ -1217,7 +1389,7 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		if mimeType.Valid {
 			file.MimeType = mimeType.String
 		}
-		file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		file.ThumbnailURL = thumbnailURL(file.Path)
 		file.IsFavorite = isFavorite == 1
 
 		if tagsString.Valid && tagsString.String != "" {
@@ -1364,7 +1536,7 @@ func (d *Database) GetMediaInDirectoryPaged(ctx context.Context, parentPath stri
 		if mimeType.Valid {
 			file.MimeType = mimeType.String
 		}
-		file.ThumbnailURL = "/api/thumbnail/" + file.Path
+		file.ThumbnailURL = thumbnailURL(file.Path)
 		file.IsFavorite = isFavorite == 1
 
 		if tagsString.Valid && tagsString.String != "" {

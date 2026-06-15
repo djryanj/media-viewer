@@ -1,7 +1,7 @@
 # WebAuthn (Passkey) Authentication User Guide
 
 <div align="center">
-  <img src="../../images/passkeys-mobile.gif" alt="Passkey authentication flow" width="400">
+  <img src="../../images/passkeys-mobile.png" alt="Passkey authentication flow" width="400">
   <p><em>Secure biometric authentication with passkeys</em></p>
 </div>
 

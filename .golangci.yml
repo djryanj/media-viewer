@@ -222,8 +222,10 @@ linters:
               text: 'avoid package names that conflict'
 
         paths:
-            # apparently node can use go code now (e.g., the flatted package), so we need to exclude node_modules to avoid a huge number of irrelevant linting errors
+            # node packages occasionally ship Go implementations alongside their JS code
+            # (e.g., flatted ships a golang/ port). Exclude both frontend and legacy node_modules.
             - static/node_modules
+            - frontend/node_modules
 
 issues:
     max-issues-per-linter: 50

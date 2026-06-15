@@ -103,7 +103,7 @@ make pr-check
 This runs:
 
 1. Backend checks when Go-related files changed: lint (`make lint`), backend tests (`make test`), and race detection (`make test-race`)
-2. Frontend checks when frontend files changed: static checks (`make frontend-check`), frontend unit tests (`make frontend-test-unit`), frontend integration tests with an ephemeral server (`make frontend-test-integration-auto`), and the Chromium smoke suite with an ephemeral server (`make frontend-test-e2e-smoke-auto`)
+2. Frontend checks when frontend files changed: ESLint (`make frontend-lint`), Prettier format check (`make frontend-format-check`), and svelte-check/TypeScript types (`make frontend-check`), followed by frontend unit tests (`make frontend-test-unit`) and the Chromium smoke suite with an ephemeral server (`make frontend-test-e2e-smoke-auto`)
 3. No-op when no Go or frontend-tracked files changed, unless you force it with `make pr-check FORCE=1`
 
 Use `make pr-check-fix` when you want the same flow but with Go lint autofixes applied before the backend tests run.
@@ -181,7 +181,7 @@ make frontend-test-e2e-docs-screenshots
 Notes:
 
 - `make frontend-test-e2e` / `npm run test:e2e` excludes `@performance` specs and docs screenshot-generation specs by default.
-- Visual regression is a separate lane that compares deterministic DOM/style JSON snapshots in `static/e2e/baselines/tagging/`.
+- Visual regression is a separate lane that compares Playwright screenshot baselines stored as PNGs in `frontend/e2e/snapshots/`.
 - Docs screenshot generation is also separate and should only be run when documentation images in `docs/images/` need to be refreshed.
 - All integration, E2E, visual, and docs screenshot commands require a backend unless you use the corresponding `*-auto` Make targets.
 

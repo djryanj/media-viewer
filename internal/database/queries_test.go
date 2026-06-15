@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestBuildBreadcrumb tests breadcrumb navigation construction from file paths.
@@ -1383,6 +1384,158 @@ func TestExtractTagName(t *testing.T) {
 				t.Errorf("extractTagName(%q, %d) = %q, want %q", tt.input, tt.start, tag, tt.wantTag)
 			}
 		})
+	}
+}
+
+// TestBuildSummaryGroupsName tests buildSummaryGroups with SortByName.
+func TestBuildSummaryGroupsName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		rows []summaryRow
+		want []SummaryGroup
+	}{
+		{
+			name: "empty input returns nil",
+			rows: nil,
+			want: nil,
+		},
+		{
+			name: "single item",
+			rows: []summaryRow{{name: "Apple"}},
+			want: []SummaryGroup{{Label: "A", Offset: 0, Count: 1}},
+		},
+		{
+			name: "same letter grouped together",
+			rows: []summaryRow{
+				{name: "Apple"},
+				{name: "Avocado"},
+				{name: "Banana"},
+			},
+			want: []SummaryGroup{
+				{Label: "A", Offset: 0, Count: 2},
+				{Label: "B", Offset: 2, Count: 1},
+			},
+		},
+		{
+			name: "non-alpha items grouped under hash",
+			rows: []summaryRow{
+				{name: "123"},
+				{name: "456"},
+				{name: "Apple"},
+			},
+			want: []SummaryGroup{
+				{Label: "#", Offset: 0, Count: 2},
+				{Label: "A", Offset: 2, Count: 1},
+			},
+		},
+		{
+			name: "case-insensitive grouping",
+			rows: []summaryRow{
+				{name: "apple"},
+				{name: "Avocado"},
+				{name: "ALMOND"},
+			},
+			want: []SummaryGroup{
+				{Label: "A", Offset: 0, Count: 3},
+			},
+		},
+		{
+			name: "multiple distinct letters",
+			rows: []summaryRow{
+				{name: "Banana"},
+				{name: "Cherry"},
+				{name: "Date"},
+			},
+			want: []SummaryGroup{
+				{Label: "B", Offset: 0, Count: 1},
+				{Label: "C", Offset: 1, Count: 1},
+				{Label: "D", Offset: 2, Count: 1},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildSummaryGroups(tt.rows, SortByName)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d groups, want %d: %v", len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("group[%d]: got %+v, want %+v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestBuildSummaryGroupsDate tests buildSummaryGroups with SortByDate.
+func TestBuildSummaryGroupsDate(t *testing.T) {
+	t.Parallel()
+
+	y2023 := time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC).Unix()
+	y2024a := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	y2024b := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC).Unix()
+	y2025 := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC).Unix()
+
+	tests := []struct {
+		name string
+		rows []summaryRow
+		want []SummaryGroup
+	}{
+		{
+			name: "empty input returns nil",
+			rows: nil,
+			want: nil,
+		},
+		{
+			name: "single year",
+			rows: []summaryRow{{modTime: y2024a}, {modTime: y2024b}},
+			want: []SummaryGroup{{Label: "2024", Offset: 0, Count: 2}},
+		},
+		{
+			name: "multiple years",
+			rows: []summaryRow{
+				{modTime: y2023},
+				{modTime: y2024a},
+				{modTime: y2024b},
+				{modTime: y2025},
+			},
+			want: []SummaryGroup{
+				{Label: "2023", Offset: 0, Count: 1},
+				{Label: "2024", Offset: 1, Count: 2},
+				{Label: "2025", Offset: 3, Count: 1},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildSummaryGroups(tt.rows, SortByDate)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d groups, want %d: %v", len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("group[%d]: got %+v, want %+v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestBuildSummaryGroupsSizeReturnsNil tests that SortBySize yields no groups.
+func TestBuildSummaryGroupsSizeReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	rows := []summaryRow{{name: "a.jpg"}, {name: "b.jpg"}}
+	got := buildSummaryGroups(rows, SortBySize)
+	if got != nil {
+		t.Errorf("expected nil groups for size sort, got %v", got)
 	}
 }
 

@@ -64,9 +64,9 @@ The bottom bar displays live library information including total images, videos,
 
 ## Settings
 
-Access the Settings modal by clicking the gear icon in the header. It provides tabs for managing your password, passkeys, cache tools, display preferences, tags, and library information.
+Access the Settings modal by clicking the gear icon in the header. It provides tabs for managing your password, passkeys, library preferences, tags, system status, and app info.
 
-The Cache tab includes a **Background Activity** section with live cards for the indexer, thumbnail generator, auto-tagger, and transcode cache, alongside maintenance actions such as reindexing, thumbnail rebuilds, clearing cached video transcodes, and on-demand auto-tagger runs.
+The **System** tab shows live cards for the indexer, thumbnail generator, auto-tagger, and transcode cache, alongside maintenance actions such as reindexing, thumbnail rebuilds, clearing cached video transcodes, and on-demand auto-tagger runs. The **Library** tab controls default sort order, clock settings, and video autoplay preferences.
 
 The **About** tab shows the application version and a summary of your library contents, including total files, images, videos, and folders.
 

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -524,6 +525,58 @@ func (h *Handlers) ListPasskeys(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, map[string]interface{}{
 		"passkeys": passkeys,
+	})
+}
+
+// RenamePasskey updates the display name of a registered passkey
+func (h *Handlers) RenamePasskey(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	_, err = h.db.ValidateSession(ctx, cookie.Value)
+	if err != nil {
+		http.Error(w, "Invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		http.Error(w, "Name cannot be empty", http.StatusBadRequest)
+		return
+	}
+	if len(name) > 50 {
+		http.Error(w, "Name too long (max 50 characters)", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.db.GetWebAuthnUser(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.db.RenameWebAuthnCredential(ctx, user.GetUser().ID, req.ID, name); err != nil {
+		http.Error(w, "Failed to rename passkey", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, map[string]interface{}{
+		responseKeySuccess: true,
 	})
 }
 

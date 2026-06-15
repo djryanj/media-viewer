@@ -207,7 +207,7 @@ histogram_quantile(0.99, rate(media_viewer_filesystem_retry_duration_seconds_buc
 
 1. Confirm `EXIF_TAGGING_ENABLED` is not set to `false` (it defaults to `true`)
 2. Allow time for an auto-tagging pass to complete — it runs after every index pass and on the `EXIF_TAG_INTERVAL` schedule (default: 24 hours)
-3. Trigger an immediate run from **Settings → Cache → Auto-Tagger → Run Now**
+3. Trigger an immediate run from **Settings → System → Auto-Tagger → Run Now**
 4. Check server logs for lines beginning with `exif` or `autotagger` — progress and errors are logged at INFO level
 5. Confirm your files contain tags in a supported field (IPTC Keywords, XMP Subject, EXIF ImageDescription, or equivalent fields written by Lightroom, digiKam, Apple Photos, etc.)
 6. Monitor `media_viewer_exif_tag_running` and `media_viewer_exif_tag_errors_total` in [Prometheus metrics](admin/metrics.md#auto-tagger-metrics) to track pass progress and errors

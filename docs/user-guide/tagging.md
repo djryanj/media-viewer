@@ -3,7 +3,7 @@
 Tags are labels you assign to media items for organization and quick retrieval. Media Viewer provides a flexible tagging system that supports individual and bulk operations.
 
 <div align="center">
-  <img src="../../images/bulk-tagging-mobile.gif" alt="Bulk tagging in action" width="400">
+  <img src="../../images/bulk-tagging-mobile.png" alt="Bulk tagging in action" width="400">
   <p><em>Selection mode enables efficient bulk tagging on mobile</em></p>
 </div>
 
@@ -294,7 +294,7 @@ Tags are applied:
 
 1. **After each index run** — files changed since the last pass are processed automatically
 2. **On a periodic timer** (`EXIF_TAG_INTERVAL`, default `24h`) — ensures all files are eventually processed even if they were not caught by an incremental pass
-3. **On demand** — use **Settings → Cache → Auto-Tagger → Run Now** to trigger an immediate full pass
+3. **On demand** — use **Settings → System → Auto-Tagger → Run Now** to trigger an immediate full pass
 
 If you need to monitor an on-demand pass from automation or external tooling,
 the API exposes `GET /api/system/status`. Check `autotagger.summary` for the
@@ -303,8 +303,8 @@ details, including whether a pass is still in progress and when it last
 completed.
 
 <div align="center">
-  <img src="../../images/settings-tab-cache.png" alt="Settings Cache tab showing the Auto-Tagger worker card and Run Now action in the Background Activity section" width="700">
-  <p><em>The Cache tab lets you trigger an on-demand auto-tagger pass while also showing whether the worker is running or idle.</em></p>
+  <img src="../../images/settings-tab-system.png" alt="Settings System tab showing the Auto-Tagger worker card and Run Now action in the Background Activity section" width="700">
+  <p><em>The System tab lets you trigger an on-demand auto-tagger pass while also showing whether the worker is running or idle.</em></p>
 </div>
 
 ### Conflict Resolution

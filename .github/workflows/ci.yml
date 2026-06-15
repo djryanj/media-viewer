@@ -42,14 +42,13 @@ jobs:
                         - 'go.sum'
                         - 'Makefile'
                       frontend:
-                        - 'static/**/*.js'
-                        - 'static/**/*.css'
-                        - 'static/**/*.html'
-                        - 'static/package.json'
-                        - 'static/package-lock.json'
-                        - 'static/vitest.config.js'
-                        - 'static/playwright.config.js'
-                        - 'static/eslint.config.js'
+                        - 'frontend/**/*.ts'
+                        - 'frontend/**/*.svelte'
+                        - 'frontend/**/*.js'
+                        - 'frontend/**/*.css'
+                        - 'frontend/**/*.html'
+                        - 'frontend/package.json'
+                        - 'frontend/package-lock.json'
                       static_only:
                         - 'static/**'
                       docker:
@@ -140,14 +139,14 @@ jobs:
               with:
                   node-version: '24.15.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Install frontend dependencies
-              working-directory: ./static
+              working-directory: ./frontend
               run: npm ci
 
             - name: Archive frontend dependencies
-              run: tar -czf frontend-deps.tgz -C static node_modules
+              run: tar -czf frontend-deps.tgz -C frontend node_modules
 
             - name: Upload frontend dependency artifact
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -234,7 +233,7 @@ jobs:
               with:
                   node-version: '24.15.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -244,20 +243,20 @@ jobs:
 
             - name: Extract frontend dependency artifact
               run: |
-                  rm -rf ./static/node_modules
-                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
+                  rm -rf ./frontend/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./frontend
 
-            - name: Run ESLint (JavaScript)
-              working-directory: ./static
+            - name: Run ESLint (JavaScript/TypeScript/Svelte)
+              working-directory: ./frontend
               run: npm run lint:js
 
-            - name: Run Stylelint (CSS)
-              working-directory: ./static
-              run: npm run lint:css
-
             - name: Check formatting (Prettier)
-              working-directory: ./static
+              working-directory: ./frontend
               run: npm run format:check
+
+            - name: Run svelte-check (TypeScript type checking)
+              working-directory: ./frontend
+              run: npm run check
 
     # ──────────────────────────────────────────────
     # STAGE 2: Backend binary build + Unit Tests (gated on lint)
@@ -362,7 +361,7 @@ jobs:
               with:
                   node-version: '24.15.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -372,11 +371,11 @@ jobs:
 
             - name: Extract frontend dependency artifact
               run: |
-                  rm -rf ./static/node_modules
-                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
+                  rm -rf ./frontend/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./frontend
 
             - name: Run frontend unit tests with coverage
-              working-directory: ./static
+              working-directory: ./frontend
               run: npm run test:unit:coverage
 
             - name: Generate frontend unit coverage summary
@@ -384,9 +383,9 @@ jobs:
               run: |
                   echo "## Frontend Unit Test Coverage" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
-                  if [ -f static/coverage/coverage-summary.json ]; then
+                  if [ -f frontend/coverage/coverage-summary.json ]; then
                     echo '```json' >> $GITHUB_STEP_SUMMARY
-                    cat static/coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
+                    cat frontend/coverage/coverage-summary.json >> $GITHUB_STEP_SUMMARY
                     echo '```' >> $GITHUB_STEP_SUMMARY
                   else
                     echo "No coverage report generated" >> $GITHUB_STEP_SUMMARY
@@ -396,7 +395,7 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: frontend-unit-test-results
-                  path: static/coverage/
+                  path: frontend/coverage/
 
     # ──────────────────────────────────────────────
     # STAGE 3: Integration / Expensive Tests
@@ -511,7 +510,7 @@ jobs:
               with:
                   node-version: '24.15.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -521,8 +520,8 @@ jobs:
 
             - name: Extract frontend dependency artifact
               run: |
-                  rm -rf ./static/node_modules
-                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
+                  rm -rf ./frontend/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./frontend
 
             - name: Download backend binary
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -568,7 +567,7 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: frontend-integration-test-results
-                  path: static/test-results/vitest-results.json
+                  path: frontend/test-results/vitest-results.json
 
     test-frontend-e2e-smoke:
         name: Frontend Playwright Smoke
@@ -606,7 +605,7 @@ jobs:
               with:
                   node-version: '24.15.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -616,11 +615,11 @@ jobs:
 
             - name: Extract frontend dependency artifact
               run: |
-                  rm -rf ./static/node_modules
-                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
+                  rm -rf ./frontend/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./frontend
 
             - name: Install Playwright Chromium
-              working-directory: ./static
+              working-directory: ./frontend
               run: npx playwright install --with-deps chromium
 
             - name: Download backend binary
@@ -668,14 +667,14 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: frontend-e2e-smoke-results
-                  path: static/e2e/test-results/
+                  path: frontend/e2e/test-results/
 
             - name: Upload Playwright smoke report
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: playwright-smoke-report
-                  path: static/e2e/playwright-report/
+                  path: frontend/e2e/playwright-report/
                   retention-days: 30
 
     test-docker-runtime-e2e:
@@ -711,7 +710,7 @@ jobs:
               with:
                   node-version: '24.15.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -721,11 +720,11 @@ jobs:
 
             - name: Extract frontend dependency artifact
               run: |
-                  rm -rf ./static/node_modules
-                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
+                  rm -rf ./frontend/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./frontend
 
             - name: Install Playwright Chromium
-              working-directory: ./static
+              working-directory: ./frontend
               run: npx playwright install --with-deps chromium
 
             - name: Restore sample media cache
@@ -763,15 +762,15 @@ jobs:
               with:
                   name: docker-runtime-playwright-results
                   path: |
-                      static/e2e/test-results/
-                      static/e2e/test-results/report.json
+                      frontend/e2e/test-results/
+                      frontend/e2e/test-results/report.json
 
             - name: Upload Docker runtime Playwright report
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: docker-runtime-playwright-report
-                  path: static/e2e/playwright-report/
+                  path: frontend/e2e/playwright-report/
                   retention-days: 30
 
     test-docker-runtime-e2e-nvidia:
@@ -807,7 +806,7 @@ jobs:
               with:
                   node-version: '24.15.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
               uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -817,11 +816,11 @@ jobs:
 
             - name: Extract frontend dependency artifact
               run: |
-                  rm -rf ./static/node_modules
-                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./static
+                  rm -rf ./frontend/node_modules
+                  tar -xzf ./artifacts/frontend-deps/frontend-deps.tgz -C ./frontend
 
             - name: Install Playwright Chromium
-              working-directory: ./static
+              working-directory: ./frontend
               run: npx playwright install --with-deps chromium
 
             - name: Restore sample media cache
@@ -859,15 +858,15 @@ jobs:
               with:
                   name: docker-runtime-playwright-results-nvidia
                   path: |
-                      static/e2e/test-results/
-                      static/e2e/test-results/report.json
+                      frontend/e2e/test-results/
+                      frontend/e2e/test-results/report.json
 
             - name: Upload NVIDIA Docker runtime Playwright report
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: docker-runtime-playwright-report-nvidia
-                  path: static/e2e/playwright-report/
+                  path: frontend/e2e/playwright-report/
                   retention-days: 30
 
     # ──────────────────────────────────────────────

@@ -304,13 +304,11 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	r.HandleFunc("/version", h.GetVersion).Methods("GET")
 
 	// PWA assets (must be accessible without auth for install prompts)
-	r.HandleFunc("/manifest.json", serveStaticFile("./static/manifest.json", "application/manifest+json")).Methods("GET")
-	r.HandleFunc("/favicon.ico", serveStaticFile("./static/icons/favicon.ico", "image/x-icon")).Methods("GET")
-	r.PathPrefix("/icons/").Handler(http.StripPrefix("/icons/", http.FileServer(http.Dir("./static/icons"))))
-	r.HandleFunc("/sw.js", serveStaticFile("./static/sw.js", "application/javascript")).Methods("GET")
-
-	// Login page (needs to be accessible without auth)
-	r.HandleFunc("/login.html", serveStaticFile("./static/login.html", "text/html; charset=utf-8")).Methods("GET")
+	// These are served from the SvelteKit build output.
+	r.HandleFunc("/manifest.json", serveStaticFile("./frontend/build/manifest.json", "application/manifest+json")).Methods("GET")
+	r.HandleFunc("/favicon.ico", serveStaticFile("./frontend/build/favicon.ico", "image/x-icon")).Methods("GET")
+	r.PathPrefix("/icons/").Handler(http.StripPrefix("/icons/", http.FileServer(http.Dir("./frontend/build/icons"))))
+	r.HandleFunc("/sw.js", serveStaticFile("./frontend/build/sw.js", "application/javascript")).Methods("GET")
 
 	// Auth routes
 	auth := r.PathPrefix("/api/auth").Subrouter()
@@ -329,11 +327,13 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	auth.HandleFunc("/webauthn/login/finish", h.FinishWebAuthnLogin).Methods("POST")
 	auth.HandleFunc("/webauthn/passkeys", h.ListPasskeys).Methods("GET")
 	auth.HandleFunc("/webauthn/passkeys", h.DeletePasskey).Methods("DELETE")
+	auth.HandleFunc("/webauthn/passkeys/rename", h.RenamePasskey).Methods("PATCH")
 
 	// Protected API routes
 	api := r.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/files", h.ListFiles).Methods("GET")
 	api.HandleFunc("/files/paths", h.ListFilePaths).Methods("GET")
+	api.HandleFunc("/files/summary", h.GetDirectorySummary).Methods("GET")
 	api.HandleFunc("/files/{path:.*}", h.GetFile).Methods("GET")
 	api.HandleFunc("/media", h.GetMediaFiles).Methods("GET")
 	api.HandleFunc("/playlists", h.ListPlaylists).Methods("GET")
@@ -385,7 +385,9 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/tags/{tag}", h.RenameTagEverywhere).Methods("PUT")
 
 	// Thumbnails
+	// Note: database queries emit /api/thumbnail/ (singular); both forms are supported.
 	api.HandleFunc("/thumbnails/{path:.*}", h.GetThumbnail).Methods("GET")
+	api.HandleFunc("/thumbnail/{path:.*}", h.GetThumbnail).Methods("GET")
 	api.HandleFunc("/thumbnails/{path:.*}", h.InvalidateThumbnail).Methods("DELETE")
 	api.HandleFunc("/thumbnails/invalidate", h.InvalidateAllThumbnails).Methods("POST")
 	api.HandleFunc("/thumbnails/rebuild", h.RebuildAllThumbnails).Methods("POST")
@@ -395,8 +397,8 @@ func setupRouter(h *handlers.Handlers) *mux.Router {
 	api.HandleFunc("/autotagger/run", h.RunAutoTagger).Methods("POST")
 	api.HandleFunc("/system/status", h.GetSystemStatus).Methods("GET")
 
-	// Static files
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))
+	// Static files — SvelteKit build output with SPA fallback
+	r.PathPrefix("/").Handler(spaFileServer("./frontend/build"))
 
 	return r
 }
@@ -478,4 +480,22 @@ func serveStaticFile(filepath, contentType string) http.HandlerFunc {
 		w.Header().Set("Content-Type", contentType)
 		http.ServeFile(w, r, filepath)
 	}
+}
+
+// spaFileServer serves static files from dir, falling back to index.html for
+// unknown paths so that the SvelteKit SPA can handle client-side routing.
+func spaFileServer(dir string) http.Handler {
+	fs := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Attempt to stat the requested file.
+		// r.URL.Path is cleaned by net/http before reaching handlers, so traversal is not possible.
+		path := dir + r.URL.Path
+		if _, err := os.Stat(path); os.IsNotExist(err) { //nolint:gosec // G703: path is net/http-cleaned, not raw user input
+			// Serve index.html so the SPA router handles the path
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			http.ServeFile(w, r, dir+"/index.html")
+			return
+		}
+		fs.ServeHTTP(w, r)
+	})
 }

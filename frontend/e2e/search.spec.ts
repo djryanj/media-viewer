@@ -1,0 +1,101 @@
+import { test, expect } from '@playwright/test';
+import { STORAGE_STATE } from './global-setup';
+
+test.use({ storageState: STORAGE_STATE });
+
+test('@smoke @search search page loads with correct title', async ({ page }) => {
+    await page.goto('/search');
+    await expect(page).toHaveTitle(/Search/);
+});
+
+test('@smoke @search shows prompt when no query is given', async ({ page }) => {
+    await page.goto('/search');
+    await expect(page.getByText('Enter a search term above.')).toBeVisible();
+});
+
+test('@smoke @search search heading is visible', async ({ page }) => {
+    await page.goto('/search');
+    await expect(page.getByRole('heading', { name: /search/i })).toBeVisible();
+});
+
+test('@smoke @search submitting a query updates the URL', async ({ page }) => {
+    await page.goto('/search');
+
+    // The header search bar (role="combobox") is always visible at desktop widths.
+    // Scope to .search-wrap to avoid any ambiguity with other combobox elements.
+    const searchInput = page.locator('.search-wrap').getByRole('combobox');
+    await expect(searchInput).toBeVisible({ timeout: 5000 });
+    await searchInput.fill('vacation');
+    await searchInput.press('Enter');
+
+    await expect(page).toHaveURL(/\/search\?q=vacation/);
+});
+
+test('@smoke @search shows no-results message for an unknown query', async ({ page }) => {
+    await page.goto('/search?q=zzz_no_match_xyz');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/no results found/i)).toBeVisible();
+});
+
+test('@smoke @search title updates to reflect the active query', async ({ page }) => {
+    await page.goto('/search?q=nature');
+    await expect(page).toHaveTitle(/nature/i);
+});
+
+// ── Selection (Ctrl+A / Escape) on search results ────────────────────────────
+
+const SEARCH_TWO_ITEMS = JSON.stringify({
+    items: [
+        { id: 1, name: 'a.jpg', path: '/a.jpg', parentPath: '/', type: 'image', size: 0, modTime: '' },
+        { id: 2, name: 'b.jpg', path: '/b.jpg', parentPath: '/', type: 'image', size: 0, modTime: '' }
+    ],
+    totalItems: 2
+});
+
+test('@smoke @search Ctrl+A selects all items on the search results page', async ({ page }) => {
+    await page.route('**/api/search**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: SEARCH_TWO_ITEMS })
+    );
+
+    await page.goto('/search?q=test');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('.gallery-item')).toHaveCount(2, { timeout: 5000 });
+
+    // SearchBar auto-focuses its input on mount; blur it so the Ctrl+A
+    // shortcut fires on the page (not inside an input where it selects text).
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.keyboard.press('Control+a');
+    await expect(page.locator('.gallery-item.selected')).toHaveCount(2, { timeout: 2000 });
+});
+
+test('@smoke @search Escape clears selection on the search results page', async ({ page }) => {
+    await page.route('**/api/search**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: SEARCH_TWO_ITEMS })
+    );
+
+    await page.goto('/search?q=test');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('.gallery-item')).toHaveCount(2, { timeout: 5000 });
+
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.keyboard.press('Control+a');
+    await expect(page.locator('.gallery-item.selected')).toHaveCount(2, { timeout: 2000 });
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.gallery-item.selected')).toHaveCount(0, { timeout: 2000 });
+});
+
+test('@search GalleryToolbar renders on the search page when in selection mode', async ({ page }) => {
+    await page.route('**/api/search**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: SEARCH_TWO_ITEMS })
+    );
+
+    await page.goto('/search?q=test');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('.gallery-item')).toHaveCount(2, { timeout: 5000 });
+
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.keyboard.press('Control+a');
+    // In selection mode the toolbar shows the item count and bulk-action buttons
+    await expect(page.getByText(/2 selected/i)).toBeVisible({ timeout: 2000 });
+});

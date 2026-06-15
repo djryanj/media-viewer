@@ -270,6 +270,34 @@ func (d *Database) UpdateCredentialSignCount(ctx context.Context, credentialID [
 	return err
 }
 
+// RenameWebAuthnCredential updates the display name of a passkey.
+func (d *Database) RenameWebAuthnCredential(ctx context.Context, userID, credentialID int64, name string) error {
+	done := d.observeQuery("rename_webauthn_credential")
+
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	result, err := d.writer.ExecContext(ctx, `
+		UPDATE webauthn_credentials SET name = ? WHERE id = ? AND user_id = ?
+	`, name, credentialID, userID)
+	if err != nil {
+		logging.Error("Failed to rename WebAuthn credential: %v", err)
+		done(err)
+		return fmt.Errorf("failed to rename credential: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		err = fmt.Errorf("credential not found")
+		done(err)
+		return err
+	}
+
+	logging.Info("Renamed WebAuthn credential ID %d for user %d to %q", credentialID, userID, name)
+	done(nil)
+	return nil
+}
+
 // DeleteWebAuthnCredential deletes a WebAuthn credential for a user.
 func (d *Database) DeleteWebAuthnCredential(ctx context.Context, userID, credentialID int64) error {
 	done := d.observeQuery("delete_webauthn_credential")

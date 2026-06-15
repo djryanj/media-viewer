@@ -13,19 +13,19 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
 ### Desktop Interface
 
 <div align="center">
-  <img src="images/basics-desktop.gif" alt="Desktop browsing and viewing" width="800">
+  <img src="images/basics-desktop.png" alt="Desktop browsing and viewing" width="800">
   <p><em>Gallery browsing, lightbox viewer, and favorites on desktop</em></p>
 </div>
 
 <div align="center">
-  <img src="images/search-desktop.gif" alt="Search functionality" width="800">
+  <img src="images/search-desktop.png" alt="Search functionality" width="800">
   <p><em>Full-text search with tag filtering</em></p>
 </div>
 
 <div align="center">
   <video autoplay loop muted playsinline width="800">
     <source src="images/collections-workflow.mp4" type="video/mp4">
-    <img src="images/collections-workflow.gif" alt="Collections workflow" width="800">
+    <img src="images/collections-workflow.png" alt="Collections workflow" width="800">
   </video>
   <p><em>Collections keep curation, browsing, and ordering close together.</em></p>
 </div>
@@ -33,15 +33,15 @@ Media Viewer is a self-hosted web application for browsing, organizing, and view
 ### Mobile Experience
 
 <div align="center">
-  <img src="images/basics-mobile.gif" alt="Mobile browsing" width="300" style="display: inline-block; margin: 10px;">
-  <img src="images/bulk-tagging-mobile.gif" alt="Bulk tagging" width="300" style="display: inline-block; margin: 10px;">
+  <img src="images/basics-mobile.png" alt="Mobile browsing" width="300" style="display: inline-block; margin: 10px;">
+  <img src="images/bulk-tagging-mobile.png" alt="Bulk tagging" width="300" style="display: inline-block; margin: 10px;">
 </div>
 <div align="center">
   <p><em>Responsive mobile interface with selection mode and bulk tagging</em></p>
 </div>
 
 <div align="center">
-  <img src="images/passkeys-mobile.gif" alt="Passkey authentication" width="300">
+  <img src="images/passkeys-mobile.png" alt="Passkey authentication" width="300">
   <p><em>Biometric authentication with passkeys</em></p>
 </div>
 

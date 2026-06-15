@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/indexer"
@@ -4041,4 +4042,115 @@ func TestGetMediaFilesETagChangesOnTypeChangeIntegration(t *testing.T) {
 	if w3.Code == http.StatusNotModified {
 		t.Error("stale ETag from before type change incorrectly returned 304 Not Modified")
 	}
+}
+
+// TestGetDirectorySummaryHandler tests the GET /api/files/summary handler.
+func TestGetDirectorySummaryHandler(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	h, cleanup := setupMediaIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	base := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	files := []database.MediaFile{
+		{Name: "Apple.jpg", Path: "Apple.jpg", ParentPath: "", Type: database.FileTypeImage, Size: 100, ModTime: base},
+		{Name: "Avocado.jpg", Path: "Avocado.jpg", ParentPath: "", Type: database.FileTypeImage, Size: 100, ModTime: base.AddDate(0, 1, 0)},
+		{Name: "Banana.jpg", Path: "Banana.jpg", ParentPath: "", Type: database.FileTypeImage, Size: 100, ModTime: base.AddDate(-1, 0, 0)},
+	}
+	tx, err := h.db.BeginBatch(ctx)
+	if err != nil {
+		t.Fatalf("BeginBatch: %v", err)
+	}
+	for i := range files {
+		if err := tx.UpsertFile(ctx, &files[i]); err != nil {
+			t.Fatalf("UpsertFile: %v", err)
+		}
+	}
+	if err := h.db.EndBatch(tx, nil); err != nil {
+		t.Fatalf("EndBatch: %v", err)
+	}
+
+	t.Run("default sort returns 200 with groups", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files/summary?path=", http.NoBody)
+		w := httptest.NewRecorder()
+		h.GetDirectorySummary(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var summary database.DirectorySummary
+		if err := json.NewDecoder(w.Body).Decode(&summary); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if summary.Total != 3 {
+			t.Errorf("expected total=3, got %d", summary.Total)
+		}
+		if summary.Sort != string(database.SortByName) {
+			t.Errorf("expected default sort=name, got %q", summary.Sort)
+		}
+		if len(summary.Groups) == 0 {
+			t.Error("expected non-empty groups")
+		}
+	})
+
+	t.Run("explicit sort and order", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files/summary?sort=date&order=asc", http.NoBody)
+		w := httptest.NewRecorder()
+		h.GetDirectorySummary(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var summary database.DirectorySummary
+		if err := json.NewDecoder(w.Body).Decode(&summary); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if summary.Sort != string(database.SortByDate) {
+			t.Errorf("expected sort=date, got %q", summary.Sort)
+		}
+		if summary.Order != string(database.SortAsc) {
+			t.Errorf("expected order=asc, got %q", summary.Order)
+		}
+	})
+
+	t.Run("ETag set and 304 on match", func(t *testing.T) {
+		req1 := httptest.NewRequest(http.MethodGet, "/api/files/summary", http.NoBody)
+		w1 := httptest.NewRecorder()
+		h.GetDirectorySummary(w1, req1)
+
+		etag := w1.Header().Get("ETag")
+		if etag == "" {
+			t.Fatal("expected ETag in response")
+		}
+
+		req2 := httptest.NewRequest(http.MethodGet, "/api/files/summary", http.NoBody)
+		req2.Header.Set("If-None-Match", etag)
+		w2 := httptest.NewRecorder()
+		h.GetDirectorySummary(w2, req2)
+
+		if w2.Code != http.StatusNotModified {
+			t.Errorf("expected 304 on matching ETag, got %d", w2.Code)
+		}
+	})
+
+	t.Run("empty directory returns empty groups", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files/summary?path=nonexistent", http.NoBody)
+		w := httptest.NewRecorder()
+		h.GetDirectorySummary(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+		var summary database.DirectorySummary
+		if err := json.NewDecoder(w.Body).Decode(&summary); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if summary.Total != 0 {
+			t.Errorf("expected total=0, got %d", summary.Total)
+		}
+	})
 }

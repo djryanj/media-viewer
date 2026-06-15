@@ -275,3 +275,82 @@ func TestRemoveCollectionItemsBulkRemovesItems(t *testing.T) {
 		t.Fatalf("expected item count 1, got %d", stored.ItemCount)
 	}
 }
+
+func TestReorderCollectionItemsReordersItems(t *testing.T) {
+	t.Parallel()
+	h, db := setupCollectionsHandlerTest(t)
+
+	seedCollectionsHandlerFiles(t, db, []database.MediaFile{
+		{Name: "a1.jpg", Path: "folder-a/a1.jpg", ParentPath: "folder-a", Type: database.FileTypeImage, ModTime: time.Now()},
+		{Name: "a2.jpg", Path: "folder-a/a2.jpg", ParentPath: "folder-a", Type: database.FileTypeImage, ModTime: time.Now()},
+		{Name: "a3.jpg", Path: "folder-a/a3.jpg", ParentPath: "folder-a", Type: database.FileTypeImage, ModTime: time.Now()},
+	})
+
+	collection, err := db.CreateCollection(context.Background(), "Trip",
+		[]string{"folder-a/a1.jpg", "folder-a/a2.jpg", "folder-a/a3.jpg"}, nil)
+	if err != nil {
+		t.Fatalf("CreateCollection setup failed: %v", err)
+	}
+
+	// Reorder: a3 → a1 → a2
+	body := bytes.NewBufferString(`{"paths":["folder-a/a3.jpg","folder-a/a1.jpg","folder-a/a2.jpg"]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/collections/1/order", body)
+	req = mux.SetURLVars(req, map[string]string{"id": "1"})
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.ReorderCollectionItems(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify order is persisted via GetCollectionItems (sorted by position ASC).
+	items, err := db.GetCollectionItems(context.Background(), collection.ID)
+	if err != nil {
+		t.Fatalf("GetCollectionItems failed: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+	want := []string{"folder-a/a3.jpg", "folder-a/a1.jpg", "folder-a/a2.jpg"}
+	for i, path := range want {
+		if items[i].Path != path {
+			t.Errorf("items[%d]: want %q, got %q", i, path, items[i].Path)
+		}
+	}
+}
+
+func TestReorderCollectionItemsRejectsEmptyPaths(t *testing.T) {
+	t.Parallel()
+	h, _ := setupCollectionsHandlerTest(t)
+
+	body := bytes.NewBufferString(`{"paths":[]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/collections/1/order", body)
+	req = mux.SetURLVars(req, map[string]string{"id": "1"})
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.ReorderCollectionItems(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestReorderCollectionItemsRejectsInvalidID(t *testing.T) {
+	t.Parallel()
+	h, _ := setupCollectionsHandlerTest(t)
+
+	body := bytes.NewBufferString(`{"paths":["a.jpg"]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/collections/abc/order", body)
+	req = mux.SetURLVars(req, map[string]string{"id": "abc"})
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.ReorderCollectionItems(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}

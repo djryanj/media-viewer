@@ -31,22 +31,22 @@ The thumbnail cache can grow significantly for large libraries. Plan storage acc
 ## Cache Management
 
 <div align="center">
-  <img src="../../images/settings-tab-cache.png" alt="Settings Cache tab showing the Background Activity section with live cards for the indexer, thumbnails, auto-tagger, and transcode cache" width="700">
-  <p><em>The Cache tab now groups maintenance actions with live worker status in the Background Activity section.</em></p>
+  <img src="../../images/settings-tab-system.png" alt="Settings System tab showing the Background Activity section with live cards for the indexer, thumbnails, auto-tagger, and transcode cache" width="700">
+  <p><em>The System tab groups maintenance actions with live worker status.</em></p>
 </div>
 
 ### Viewing Cache Status
 
 The stats bar at the bottom of the gallery shows library totals, index freshness, version/build information, and a compact worker summary for the indexer, thumbnails, and auto-tagger.
 
-For detailed maintenance visibility, open **Settings → Cache**. The **Background Activity** section expands that same status into live cards for the indexer, thumbnail generator, auto-tagger, and transcode cache utility.
+For detailed maintenance visibility, open **Settings → System**. The **Background Activity** section expands that same status into live cards for the indexer, thumbnail generator, auto-tagger, and transcode cache utility.
 
 ### Rebuilding Thumbnails
 
 To clear and rebuild all thumbnails:
 
 1. Open **Settings** (⚙️ icon)
-2. Go to the **Cache** tab
+2. Go to the **System** tab
 3. In **Background Activity**, use the **Thumbnails** card and click **Rebuild Thumbnails**
 4. Confirm the action — thumbnails regenerate in the background
 
@@ -61,7 +61,7 @@ This is useful when:
 To remove cached transcoded videos and free disk space:
 
 1. Open **Settings** (⚙️ icon)
-2. Go to the **Cache** tab
+2. Go to the **System** tab
 3. In **Background Activity**, use the **Transcode Cache** card and click **Clear Cache**
 4. Confirm the action — Media Viewer reports the space freed after deletion
 
