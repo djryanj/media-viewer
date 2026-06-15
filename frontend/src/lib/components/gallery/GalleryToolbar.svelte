@@ -1,10 +1,12 @@
 <script lang="ts">
+    import { tick } from 'svelte';
     import { galleryStore, type TypeFilter } from '$lib/stores/gallery.svelte';
     import { favorites, tags } from '$lib/api/client';
     import { toastStore } from '$lib/stores/toast.svelte';
     import { tagClipboard } from '$lib/stores/tagClipboard.svelte';
     import TagEditor from '$lib/components/ui/TagEditor.svelte';
     import CollectionsPanel from '$lib/components/lightbox/CollectionsPanel.svelte';
+    import MergeTagsModal from '$lib/components/gallery/MergeTagsModal.svelte';
 
     const typeFilters: { value: TypeFilter; label: string }[] = [
         { value: 'all', label: 'All' },
@@ -17,8 +19,13 @@
     let sortOpen = $state(false);
     let tagPanelOpen = $state(false);
     let collectionsPanelOpen = $state(false);
+    let mergeTagsOpen = $state(false);
+    let tagEditorRef = $state<{ focus: () => void } | undefined>(undefined);
 
     const selectedPaths = $derived(galleryStore.getSelectedItems().map((i) => i.path));
+    const nonFolderCount = $derived(
+        galleryStore.getSelectedItems().filter((i) => i.type !== 'folder').length
+    );
     let bulkTagValue: string[] = $state([]);
 
     const sortOptions = [
@@ -35,12 +42,14 @@
             ?.label ?? 'Sort'
     );
 
-    function openTagModal() {
+    async function openTagModal() {
         // Pre-populate with union of all selected items' existing tags
         const selected = galleryStore.getSelectedItems();
         const union = [...new Set(selected.flatMap((i) => i.tags ?? []))];
         bulkTagValue = union;
         tagPanelOpen = true;
+        await tick();
+        tagEditorRef?.focus();
     }
 
     async function bulkApplyTag(tag: string) {
@@ -81,6 +90,27 @@
         for (const tag of removed) await bulkRemoveTag(tag);
     }
 
+    // Capture-phase listener fires before +page.svelte's bubble-phase svelte:window handler.
+    // When a panel is open, we close it and stop propagation so the page doesn't also clear
+    // the gallery selection. Reads happen at event time so $effect only runs once on mount.
+    $effect(() => {
+        function captureKeydown(e: KeyboardEvent) {
+            if (e.key !== 'Escape' || !galleryStore.selectionMode) return;
+            if (tagPanelOpen) {
+                tagPanelOpen = false;
+                e.stopImmediatePropagation();
+            } else if (collectionsPanelOpen) {
+                collectionsPanelOpen = false;
+                e.stopImmediatePropagation();
+            } else if (mergeTagsOpen) {
+                mergeTagsOpen = false;
+                e.stopImmediatePropagation();
+            }
+        }
+        window.addEventListener('keydown', captureKeydown, true);
+        return () => window.removeEventListener('keydown', captureKeydown, true);
+    });
+
     function handleKeydown(e: KeyboardEvent) {
         if (!galleryStore.selectionMode) return;
         const target = e.target as HTMLElement;
@@ -90,11 +120,6 @@
             e.preventDefault();
             if (tagPanelOpen) tagPanelOpen = false;
             else openTagModal();
-        }
-        if (e.key === 'Escape') {
-            if (tagPanelOpen) tagPanelOpen = false;
-            else if (collectionsPanelOpen) collectionsPanelOpen = false;
-            else galleryStore.clearSelection();
         }
     }
 
@@ -232,6 +257,31 @@
                             <rect x="8" y="2" width="8" height="4" rx="1" />
                         </svg>
                         Paste Tags
+                    </button>
+                {/if}
+                {#if nonFolderCount >= 2}
+                    <button
+                        class="tb-btn"
+                        class:active={mergeTagsOpen}
+                        onclick={() => (mergeTagsOpen = !mergeTagsOpen)}
+                        aria-label="Merge tags across selected items"
+                        title="Merge tags across {nonFolderCount} items"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                        >
+                            <path d="M8 6l4-4 4 4" />
+                            <path d="M12 2v10.3" />
+                            <path d="M8 18l4 4 4-4" />
+                            <path d="M12 21.7V11.7" />
+                            <path d="M3 12h4" />
+                            <path d="M17 12h4" />
+                        </svg>
+                        Merge Tags
                     </button>
                 {/if}
                 <button class="tb-btn" onclick={bulkFavorite} aria-label="Add to favorites">
@@ -376,13 +426,21 @@
             </button>
         </div>
         <div class="tag-modal-body">
-            <TagEditor tags={bulkTagValue} onchange={handleBulkTagChange} />
+            <TagEditor
+                bind:this={tagEditorRef}
+                tags={bulkTagValue}
+                onchange={handleBulkTagChange}
+            />
         </div>
     </div>
 {/if}
 
 {#if collectionsPanelOpen && selectedPaths.length > 0}
     <CollectionsPanel itemPaths={selectedPaths} onclose={() => (collectionsPanelOpen = false)} />
+{/if}
+
+{#if mergeTagsOpen}
+    <MergeTagsModal onclose={() => (mergeTagsOpen = false)} />
 {/if}
 
 <style>

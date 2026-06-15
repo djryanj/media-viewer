@@ -572,6 +572,13 @@ function createGalleryStore() {
             state.selectionMode = state.selected.size > 0;
         },
 
+        /** Replace the current item list without touching navigation state.
+         *  Used by pages (e.g. search) that manage their own item lists but still
+         *  want galleryStore selection, bulk actions, and GalleryToolbar to work. */
+        setItems(items: MediaFile[]) {
+            state.items = items;
+        },
+
         clearSelection() {
             state.selected = new Set();
             state.selectionMode = false;

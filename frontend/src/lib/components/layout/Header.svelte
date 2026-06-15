@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { tick } from 'svelte';
     import { goto } from '$app/navigation';
     import { page } from '$app/stores';
     import { galleryStore } from '$lib/stores/gallery.svelte';
@@ -8,7 +7,6 @@
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import SearchBar from '../ui/SearchBar.svelte';
 
-    let showSearch = $state(false);
     let searchBarRef = $state<{ focus: () => void } | undefined>(undefined);
 
     function handleLogo() {
@@ -21,12 +19,6 @@
         goto('/login');
     }
 
-    async function openSearch() {
-        showSearch = true;
-        await tick();
-        searchBarRef?.focus();
-    }
-
     function handleKeydown(e: KeyboardEvent) {
         if (lightboxStore.open) return;
         const target = e.target as HTMLElement;
@@ -34,10 +26,10 @@
             return;
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
             e.preventDefault();
-            openSearch();
+            searchBarRef?.focus();
         } else if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
             e.preventDefault();
-            openSearch();
+            searchBarRef?.focus();
         }
     }
 </script>
@@ -52,9 +44,9 @@
             <span class="logo-text">Media Viewer</span>
         </button>
 
-        <!-- Search (desktop: always visible; mobile: toggle) -->
-        <div class="search-wrap" class:visible={showSearch}>
-            <SearchBar bind:this={searchBarRef} onclose={() => (showSearch = false)} />
+        <!-- Search bar — always visible -->
+        <div class="search-wrap">
+            <SearchBar bind:this={searchBarRef} />
         </div>
 
         <!-- Desktop nav links (hidden on mobile — BottomNav handles those) -->
@@ -75,18 +67,6 @@
 
         <!-- Header actions -->
         <div class="header-actions">
-            <button
-                class="icon-btn"
-                onclick={() => (showSearch = !showSearch)}
-                aria-label="Toggle search"
-                aria-expanded={showSearch}
-            >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.35-4.35" />
-                </svg>
-            </button>
-
             {#if galleryStore.selectionMode}
                 <button
                     class="icon-btn selection-clear"
@@ -235,12 +215,7 @@
 
     .search-wrap {
         flex: 1;
-        /* Hidden on mobile until toggled */
         display: none;
-    }
-
-    .search-wrap.visible {
-        display: flex;
     }
 
     @media (min-width: 768px) {

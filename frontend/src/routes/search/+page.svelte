@@ -4,8 +4,10 @@
     import { goto } from '$app/navigation';
     import { media } from '$lib/api/client';
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
+    import { galleryStore } from '$lib/stores/gallery.svelte';
     import type { MediaFile } from '$lib/api/types';
     import Gallery from '$lib/components/gallery/Gallery.svelte';
+    import GalleryToolbar from '$lib/components/gallery/GalleryToolbar.svelte';
 
     const PAGE_SIZE = 100;
 
@@ -18,10 +20,15 @@
     let currentQuery = $state('');
     let currentPage = $state(1);
 
+    // editableQuery reflects the URL; stays in sync so the user can see
+    // and edit the full search string including tag filters added by the pill buttons.
+    let editableQuery = $state('');
+
     $effect(() => {
         const q = $page.url.searchParams.get('q') ?? '';
         if (q !== currentQuery) {
             currentQuery = q;
+            editableQuery = q;
             if (q) runSearch(q);
             else {
                 items = [];
@@ -37,6 +44,7 @@
         currentPage = 1;
         items = [];
         hasMore = false;
+        galleryStore.clearSelection();
         try {
             const result = await media.search(q, 1, PAGE_SIZE);
             items = result.items;
@@ -46,6 +54,27 @@
             error = 'Search failed. Please try again.';
         } finally {
             loading = false;
+        }
+    }
+
+    // Keep galleryStore in sync so selectAll(), getSelectedItems(), GalleryToolbar
+    // bulk actions, and shift-click range selection all work on search results.
+    $effect(() => {
+        galleryStore.setItems(items);
+    });
+
+    function handleKeydown(e: KeyboardEvent) {
+        if (lightboxStore.open) return;
+        const target = e.target as HTMLElement;
+        const inInput =
+            target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !inInput) {
+            e.preventDefault();
+            galleryStore.selectAll();
+            return;
+        }
+        if (e.key === 'Escape' && galleryStore.selectionMode && !inInput) {
+            galleryStore.clearSelection();
         }
     }
 
@@ -138,18 +167,31 @@
     onDestroy(() => observer?.disconnect());
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <svelte:head>
     <title>{currentQuery ? `Search: ${currentQuery}` : 'Search'} — Media Viewer</title>
 </svelte:head>
 
+<GalleryToolbar />
+
 <div class="page-header">
-    <h2 class="page-title">
-        {#if currentQuery}
-            Results for <em>"{currentQuery}"</em>
-        {:else}
-            Search
-        {/if}
-    </h2>
+    <h2 class="page-title">Search</h2>
+    <input
+        class="search-query-input"
+        type="search"
+        enterkeyhint="search"
+        autocomplete="off"
+        bind:value={editableQuery}
+        placeholder="Search files and tags…"
+        aria-label="Search query"
+        onkeydown={(e) => {
+            if (e.key === 'Enter') {
+                const val = editableQuery.trim();
+                if (val) goto(`/search?q=${encodeURIComponent(val)}`);
+            }
+        }}
+    />
     {#if !loading && currentQuery}
         <span class="page-count">{totalItems} item(s)</span>
     {/if}
@@ -217,7 +259,7 @@
 <style>
     .page-header {
         display: flex;
-        align-items: baseline;
+        align-items: center;
         gap: var(--spacing-3);
         padding: var(--spacing-4) var(--spacing-4) var(--spacing-2);
         flex-wrap: wrap;
@@ -226,11 +268,29 @@
     .page-title {
         font-size: var(--text-xl);
         font-weight: 700;
+        flex-shrink: 0;
     }
 
-    .page-title em {
-        font-style: normal;
-        color: var(--color-primary);
+    .search-query-input {
+        flex: 1;
+        min-width: 180px;
+        max-width: 480px;
+        background: var(--color-surface-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-full);
+        padding: var(--spacing-2) var(--spacing-3);
+        font-size: var(--text-sm);
+        color: var(--color-text);
+        outline: none;
+        transition: border-color var(--transition-fast);
+    }
+
+    .search-query-input:focus {
+        border-color: var(--color-primary);
+    }
+
+    .search-query-input::-webkit-search-cancel-button {
+        -webkit-appearance: none;
     }
 
     .page-count {

@@ -66,16 +66,14 @@ describe('SearchBar', () => {
         render(SearchBar);
         const input = screen.getByRole('combobox');
         await fireEvent.input(input, { target: { value: 'nature' } });
-        const form = input.closest('form')!;
-        await fireEvent.submit(form);
+        await fireEvent.keyDown(input, { key: 'Enter' });
         expect(goto).toHaveBeenCalledWith('/search?q=nature');
     });
 
     it('submitting an empty query does not navigate', async () => {
         render(SearchBar);
         const input = screen.getByRole('combobox');
-        const form = input.closest('form')!;
-        await fireEvent.submit(form);
+        await fireEvent.keyDown(input, { key: 'Enter' });
         expect(goto).not.toHaveBeenCalled();
     });
 
@@ -83,8 +81,7 @@ describe('SearchBar', () => {
         render(SearchBar);
         const input = screen.getByRole('combobox');
         await fireEvent.input(input, { target: { value: 'beach & sun' } });
-        const form = input.closest('form')!;
-        await fireEvent.submit(form);
+        await fireEvent.keyDown(input, { key: 'Enter' });
         expect(goto).toHaveBeenCalledWith('/search?q=beach%20%26%20sun');
     });
 
@@ -101,8 +98,7 @@ describe('SearchBar', () => {
         render(SearchBar, { props: { onclose } });
         const input = screen.getByRole('combobox');
         await fireEvent.input(input, { target: { value: 'query' } });
-        const form = input.closest('form')!;
-        await fireEvent.submit(form);
+        await fireEvent.keyDown(input, { key: 'Enter' });
         expect(onclose).toHaveBeenCalledOnce();
     });
 

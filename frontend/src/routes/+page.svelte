@@ -152,9 +152,24 @@
     );
 
     function handleKeydown(e: KeyboardEvent) {
+        const target = e.target as HTMLElement;
+        const inInput =
+            target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+        // Ctrl/Cmd+A: select all loaded items when not typing in an input
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !inInput) {
+            e.preventDefault();
+            galleryStore.selectAll();
+            return;
+        }
+
         if (e.key !== 'Escape') return;
-        // Let other consumers handle their own Escape cases first.
-        if (galleryStore.selectionMode || lightboxStore.open || settingsStore.open) return;
+        if (lightboxStore.open || settingsStore.open) return;
+        // Escape in selection mode clears selection rather than navigating up
+        if (galleryStore.selectionMode) {
+            galleryStore.clearSelection();
+            return;
+        }
         const path = galleryStore.path;
         if (!path) return;
         const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';

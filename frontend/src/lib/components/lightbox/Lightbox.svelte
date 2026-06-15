@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onDestroy } from 'svelte';
-    import { beforeNavigate } from '$app/navigation';
+    import { beforeNavigate, goto } from '$app/navigation';
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import { favorites, tags } from '$lib/api/client';
     import { galleryStore } from '$lib/stores/gallery.svelte';
@@ -11,9 +11,13 @@
     import CollectionsPanel from '$lib/components/lightbox/CollectionsPanel.svelte';
 
     // ── Back-button: cancel any navigation while lightbox is open ────────────
-    beforeNavigate(({ cancel }) => {
+    // willUnload is true when the tab/page is being closed or hard-navigated away.
+    // cancel() is a no-op in that case, but SvelteKit still sets e.returnValue
+    // if should_block gets set — so we must guard against it to avoid the
+    // "Leave site?" browser dialog.
+    beforeNavigate(({ cancel, willUnload }) => {
         if (lightboxStore.open) {
-            cancel();
+            if (!willUnload) cancel();
             lightboxStore.close();
         }
     });
@@ -119,6 +123,14 @@
         })()
     );
 
+    // ── Tag panel ─────────────────────────────────────────────────────────────
+    let tagsOpen = $state(false);
+
+    // Close tag panel when the lightbox itself closes
+    $effect(() => {
+        if (!lightboxStore.open) tagsOpen = false;
+    });
+
     // ── Slideshow (auto-advance; A key) ──────────────────────────────────────
     const SLIDESHOW_DELAY = 4000;
     let slideshowActive = $state(false);
@@ -167,6 +179,9 @@
     // ── VideoPlayer ref (for Space play/pause relay) ──────────────────────
     let videoPlayerRef = $state<{ togglePlay?: () => void } | undefined>(undefined);
 
+    // ── TagEditor ref (for 't' shortcut focus) ────────────────────────────
+    let tagEditorRef = $state<{ focus: () => void } | undefined>(undefined);
+
     // ── Keyboard navigation ──────────────────────────────────────────────────
     function handleKeydown(e: KeyboardEvent) {
         if (!lightboxStore.open) return;
@@ -186,7 +201,11 @@
                 lightboxStore.next();
                 break;
             case 'Escape':
-                lightboxStore.close();
+                if (tagsOpen) {
+                    tagsOpen = false;
+                } else {
+                    lightboxStore.close();
+                }
                 break;
             case 'c':
             case 'C':
@@ -217,6 +236,17 @@
                 if (isVideo) {
                     e.preventDefault();
                     videoPlayerRef?.togglePlay?.();
+                }
+                break;
+            case 't':
+            case 'T':
+                e.preventDefault();
+                if (!tagsOpen) {
+                    tagsOpen = true;
+                    // Focus the input on the next frame after the panel renders
+                    requestAnimationFrame(() => tagEditorRef?.focus());
+                } else {
+                    tagEditorRef?.focus();
                 }
                 break;
         }
@@ -270,7 +300,6 @@
     // ── Touch/swipe — window-level so works from anywhere on screen ──────────
     let touchStartX = 0;
     let touchStartY = 0;
-    let touchOriginEl: Element | null = null;
     let swipeHandled = false;
     let lastTapTime = 0;
     let lastTapX = 0;
@@ -278,9 +307,9 @@
 
     function handleTouchStart(e: TouchEvent) {
         if (!lightboxStore.open) return;
-        showControls();
 
         if (e.touches.length === 2) {
+            showControls(); // pinch is a deliberate interaction — show controls
             // Begin pinch
             isPinching = true;
             pinchStartDist = touchDist(e.touches[0], e.touches[1]);
@@ -293,6 +322,9 @@
         }
 
         if (e.touches.length === 1) {
+            // Don't call showControls() here — we can't yet tell if this is a
+            // tap (should show controls) or a swipe (should navigate silently).
+            // showControls() is deferred to handleTouchEnd once we know.
             if (zoom > 1) {
                 // Track for panning
                 singlePanStartTouchX = e.touches[0].clientX;
@@ -302,7 +334,6 @@
             }
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
-            touchOriginEl = e.target as Element | null;
             swipeHandled = false;
         }
     }
@@ -358,12 +389,12 @@
         const tapX = e.changedTouches[0].clientX;
         const tapY = e.changedTouches[0].clientY;
 
-        // Double-tap to zoom (toggle 1× ↔ 2.5×)
+        // Tap (very little movement)
         if (absDx < 12 && absDy < 12) {
             const now = Date.now();
             const nearPrev = Math.abs(tapX - lastTapX) < 40 && Math.abs(tapY - lastTapY) < 40;
             if (now - lastTapTime < 300 && nearPrev) {
-                // Double-tap detected
+                // Double-tap: toggle zoom (1× ↔ 2.5×)
                 lastTapTime = 0;
                 if (zoom > 1) {
                     zoom = 1;
@@ -379,6 +410,18 @@
             lastTapTime = now;
             lastTapX = tapX;
             lastTapY = tapY;
+
+            // Single tap — show controls if hidden. Use swipeHandled to suppress
+            // the synthetic onclick that fires after touchend, which would otherwise
+            // close the lightbox (the backdrop sees controlsVisible=true by then).
+            if (!controlsVisible) {
+                showControls();
+                swipeHandled = true;
+                requestAnimationFrame(() => {
+                    swipeHandled = false;
+                });
+            }
+            return;
         }
 
         // Block swipe gestures while zoomed in
@@ -397,13 +440,14 @@
         // Horizontal swipe for prev/next — require predominantly horizontal
         if (absDx < 50 || absDy > absDx * 0.75) return;
 
-        // Don't steal swipes from video controls
-        if (touchOriginEl?.closest('video')) return;
-
+        // Navigate — swipe works regardless of whether controls are visible.
+        // If controls were visible, reset the idle timer so they don't disappear
+        // immediately on the newly-loaded item. If controls were hidden, keep them
+        // hidden (no flash) so navigation feels seamless.
         swipeHandled = true;
         if (dx < 0) lightboxStore.next();
         else lightboxStore.prev();
-        // Clear flag after a frame so any synthetic click is suppressed
+        if (controlsVisible) showControls(); // reset idle timer only when already visible
         requestAnimationFrame(() => {
             swipeHandled = false;
         });
@@ -489,6 +533,40 @@
         } catch {
             toastStore.error('Failed to update tags');
         }
+    }
+
+    function handleTagClick(tag: string) {
+        lightboxStore.close();
+        goto(`/search?q=${encodeURIComponent(`tag:${tag}`)}`);
+    }
+
+    async function handlePasteToSelected(clipboardTags: string[]) {
+        const selected = [...galleryStore.selected];
+        if (selected.length <= 1) {
+            // Single item — standard merge into the current lightbox item
+            const merged = [...new Set([...itemTags, ...clipboardTags])];
+            await handleTagsChange(merged);
+            return;
+        }
+        // Multi-item: apply clipboard to every selected item
+        const allItems = galleryStore.items;
+        await Promise.all(
+            selected.map(async (path) => {
+                const file = allItems.find((i) => i.path === path);
+                const existing = file?.tags ?? [];
+                const merged = [...new Set([...existing, ...clipboardTags])];
+                try {
+                    await tags.setForFile(path, merged);
+                    galleryStore.updateItem(path, { tags: merged });
+                } catch {
+                    /* individual failures are silent; a toast would flood */
+                }
+            })
+        );
+        // Reflect the change on the currently-open lightbox item too
+        const merged = [...new Set([...itemTags, ...clipboardTags])];
+        lightboxStore.updateCurrent({ tags: merged });
+        toastStore.show(`Tags applied to ${selected.length} items`);
     }
 
     const item = $derived(lightboxStore.item);
@@ -710,6 +788,32 @@
                     </svg>
                 </button>
 
+                <!-- Tags toggle (T) -->
+                <button
+                    class="lb-btn"
+                    class:active={tagsOpen}
+                    onclick={() => {
+                        tagsOpen = !tagsOpen;
+                        if (tagsOpen) requestAnimationFrame(() => tagEditorRef?.focus());
+                    }}
+                    aria-label={tagsOpen ? 'Close tag editor' : 'Edit tags'}
+                    aria-pressed={tagsOpen}
+                    title="Tags (T)"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                        />
+                        <line x1="7" y1="7" x2="7.01" y2="7" />
+                    </svg>
+                </button>
+
                 <a
                     class="lb-btn"
                     href="/api/files/{encodedPath(item.path)}?download=true"
@@ -811,16 +915,29 @@
             <CollectionsPanel itemPaths={[item.path]} onclose={() => (collectionsOpen = false)} />
         {/if}
 
-        <!-- Info bar -->
+        <!-- Info bar — file metadata only; tags are in the toggle panel below -->
         <div class="lb-info">
             <div class="lb-meta">
                 <span>{formatBytes(item.size)}</span>
                 <span>{formatDate(item.modTime)}</span>
             </div>
-            <div class="lb-tag-row">
-                <TagEditor tags={itemTags} onchange={handleTagsChange} compact />
-            </div>
         </div>
+
+        <!-- Tag panel — fixed overlay so it never affects image layout -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        {#if tagsOpen}
+            <div class="lb-tag-panel" onclick={(e) => e.stopPropagation()}>
+                <TagEditor
+                    tags={itemTags}
+                    onchange={handleTagsChange}
+                    compact
+                    bind:this={tagEditorRef}
+                    ontagclick={handleTagClick}
+                    onpaste={handlePasteToSelected}
+                />
+            </div>
+        {/if}
     </div>
 {/if}
 
@@ -995,12 +1112,9 @@
     }
 
     .lb-info {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-2);
         padding: var(--spacing-2) var(--spacing-4);
         padding-bottom: calc(var(--spacing-3) + var(--safe-area-inset-bottom));
-        background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
         transition: opacity 0.35s ease;
     }
 
@@ -1025,7 +1139,19 @@
         color: rgba(255, 255, 255, 0.6);
     }
 
-    .lb-tag-row {
-        color: var(--color-text);
+    /* Tag panel — fixed overlay at the bottom; sits above lb-info so it
+       never affects the image layout regardless of how many tags there are. */
+    .lb-tag-panel {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: var(--spacing-3) var(--spacing-4);
+        padding-bottom: calc(var(--spacing-3) + var(--safe-area-inset-bottom));
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        z-index: 305;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
     }
 </style>

@@ -111,9 +111,7 @@ describe('SettingsModal — tags tab (actions)', () => {
         await fireEvent.input(input, { target: { value: 'landscape' } });
         await fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
-        await waitFor(() =>
-            expect(mocks.tagsRename).toHaveBeenCalledWith('nature', 'landscape')
-        );
+        await waitFor(() => expect(mocks.tagsRename).toHaveBeenCalledWith('nature', 'landscape'));
         expect(mocks.toastSuccess).toHaveBeenCalledWith('Tag renamed to "landscape"');
         expect(mocks.tagsList).toHaveBeenCalledTimes(2);
     });

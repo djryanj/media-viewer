@@ -1,7 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
-    import { goto } from '$app/navigation';
     import { collections as collectionsApi } from '$lib/api/client';
     import type { CollectionDetail, MediaFile } from '$lib/api/types';
     import Gallery from '$lib/components/gallery/Gallery.svelte';
@@ -122,7 +121,7 @@
 </svelte:head>
 
 <div class="page-header">
-    <button class="back-btn" onclick={() => goto('/collections')} aria-label="Back to collections">
+    <button class="back-btn" onclick={() => history.back()} aria-label="Back">
         <svg
             viewBox="0 0 24 24"
             fill="none"

@@ -24,7 +24,7 @@
     const mediaItems = $derived(items.filter((i) => i.type !== 'folder'));
 
     function handleTap(item: MediaFile, shiftKey: boolean) {
-        if (galleryStore.selectionMode) {
+        if (galleryStore.selectionMode || shiftKey) {
             if (shiftKey) {
                 galleryStore.selectRange(item.path);
             } else {

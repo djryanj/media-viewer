@@ -78,7 +78,15 @@ vi.mock('$lib/stores/gallery.svelte', () => ({
         updateItem: vi.fn(),
         addFavorite: vi.fn(),
         removeFavorite: vi.fn(),
-        favorites: []
+        favorites: [],
+        clearSelection: vi.fn(),
+        selectAll: vi.fn(),
+        setItems: vi.fn(),
+        getSelectedItems: vi.fn().mockReturnValue([]),
+        setSort: vi.fn(),
+        setTypeFilter: vi.fn(),
+        sort: 'name',
+        order: 'asc'
     }
 }));
 

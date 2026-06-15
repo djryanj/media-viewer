@@ -11,22 +11,33 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn()
 }));
 
-vi.mock('$lib/api/client', () => ({
-    collections: {
-        list: mocks.list,
-        memberships: mocks.memberships,
-        addItems: mocks.addItems,
-        removeItems: mocks.removeItems,
-        create: mocks.create
-    }
-}));
+vi.mock('$lib/api/client', async (importOriginal) => {
+    const { ApiError } = await importOriginal<typeof import('$lib/api/client')>();
+    return {
+        ApiError,
+        collections: {
+            list: mocks.list,
+            memberships: mocks.memberships,
+            addItems: mocks.addItems,
+            removeItems: mocks.removeItems,
+            create: mocks.create
+        }
+    };
+});
 
 vi.mock('$lib/stores/toast.svelte', () => ({
     toastStore: { error: vi.fn(), success: vi.fn() }
 }));
 
+import { ApiError } from '$lib/api/client';
+import { toastStore } from '$lib/stores/toast.svelte';
+
 function makeCollection(id: number, name: string, itemCount = 0): Collection {
     return { id, name, itemCount, createdAt: '', updatedAt: '' };
+}
+
+function makeCollectionInFolder(id: number, name: string, folderPath: string): Collection {
+    return { id, name, itemCount: 0, createdAt: '', updatedAt: '', folderPath };
 }
 
 const col1 = makeCollection(1, 'Vacation', 3);
@@ -88,6 +99,14 @@ describe('CollectionsPanel', () => {
         await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
         const backdrop = container.querySelector('.cp-backdrop') as HTMLElement;
         await fireEvent.click(backdrop);
+        expect(onclose).toHaveBeenCalledOnce();
+    });
+
+    it('pressing Escape calls onclose', async () => {
+        const onclose = vi.fn();
+        render(CollectionsPanel, { itemPaths: ['/photo.jpg'], onclose });
+        await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+        await fireEvent.keyDown(document.body, { key: 'Escape' });
         expect(onclose).toHaveBeenCalledOnce();
     });
 
@@ -183,5 +202,130 @@ describe('CollectionsPanel', () => {
         await fireEvent.input(input, { target: { value: 'Road Trip' } });
         await fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('Road Trip', ['/photo.jpg']));
+    });
+});
+
+describe('CollectionsPanel — folder filtering', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.memberships.mockResolvedValue({});
+    });
+
+    it('shows collections with no folderPath for any item folder', async () => {
+        mocks.list.mockResolvedValue([makeCollection(1, 'Global')]);
+        render(CollectionsPanel, { itemPaths: ['/vacation/photo.jpg'], onclose: vi.fn() });
+        await waitFor(() => expect(screen.getByText('Global')).toBeTruthy());
+    });
+
+    it('shows collections whose folderPath matches the item folder', async () => {
+        mocks.list.mockResolvedValue([makeCollectionInFolder(1, 'Vacation Album', '/vacation')]);
+        render(CollectionsPanel, { itemPaths: ['/vacation/photo.jpg'], onclose: vi.fn() });
+        await waitFor(() => expect(screen.getByText('Vacation Album')).toBeTruthy());
+    });
+
+    it('hides collections whose folderPath does not match the item folder', async () => {
+        mocks.list.mockResolvedValue([makeCollectionInFolder(1, 'Events', '/events')]);
+        render(CollectionsPanel, { itemPaths: ['/vacation/photo.jpg'], onclose: vi.fn() });
+        await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+        expect(screen.queryByText('Events')).toBeNull();
+    });
+
+    it('hides root-scoped collections (folderPath="") when viewing items in a subfolder', async () => {
+        // Root-scoped collections have folderPath='' — must not be treated as unconstrained
+        mocks.list.mockResolvedValue([{ ...makeCollection(1, 'Root Album'), folderPath: '' }]);
+        render(CollectionsPanel, { itemPaths: ['/vacation/photo.jpg'], onclose: vi.fn() });
+        await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+        expect(screen.queryByText('Root Album')).toBeNull();
+    });
+
+    it('shows root-scoped collections when viewing root-level items', async () => {
+        mocks.list.mockResolvedValue([{ ...makeCollection(1, 'Root Album'), folderPath: '' }]);
+        render(CollectionsPanel, { itemPaths: ['/photo.jpg'], onclose: vi.fn() });
+        await waitFor(() => expect(screen.getByText('Root Album')).toBeTruthy());
+    });
+
+    it('shows "No collections in this folder." when all collections are from other folders', async () => {
+        mocks.list.mockResolvedValue([makeCollectionInFolder(1, 'Events', '/events')]);
+        render(CollectionsPanel, { itemPaths: ['/vacation/photo.jpg'], onclose: vi.fn() });
+        await waitFor(() =>
+            expect(screen.getByText('No collections in this folder.')).toBeTruthy()
+        );
+        expect(screen.queryByText('No collections yet.')).toBeNull();
+    });
+
+    it('non-member items render no checkbox indicator', async () => {
+        mocks.list.mockResolvedValue([makeCollection(1, 'Vacation')]);
+        const { container } = render(CollectionsPanel, {
+            itemPaths: ['/vacation/photo.jpg'],
+            onclose: vi.fn()
+        });
+        await waitFor(() => expect(screen.getByText('Vacation')).toBeTruthy());
+        expect(container.querySelector('.cp-empty-check')).toBeNull();
+    });
+});
+
+describe('CollectionsPanel — error messages', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.list.mockResolvedValue([col1, col2]);
+        mocks.memberships.mockResolvedValue({ '/photo.jpg': [] });
+        mocks.addItems.mockResolvedValue(undefined);
+        mocks.removeItems.mockResolvedValue(undefined);
+        mocks.create.mockResolvedValue({
+            id: 3,
+            name: 'New',
+            itemCount: 1,
+            createdAt: '',
+            updatedAt: ''
+        });
+    });
+
+    it('shows specific backend error from ApiError JSON body when addItems fails', async () => {
+        mocks.addItems.mockRejectedValue(
+            new ApiError(400, JSON.stringify({ error: "Collections can't span multiple folders." }))
+        );
+        const { container } = render(CollectionsPanel, {
+            itemPaths: ['/photo.jpg'],
+            onclose: vi.fn()
+        });
+        await waitFor(() => expect(screen.getByText('Vacation')).toBeTruthy());
+        await fireEvent.click(container.querySelector('.cp-item') as HTMLElement);
+        await waitFor(() =>
+            expect(toastStore.error).toHaveBeenCalledWith(
+                "Collections can't span multiple folders."
+            )
+        );
+    });
+
+    it('falls back to generic error when ApiError body is not JSON', async () => {
+        mocks.addItems.mockRejectedValue(new ApiError(500, 'Internal Server Error'));
+        const { container } = render(CollectionsPanel, {
+            itemPaths: ['/photo.jpg'],
+            onclose: vi.fn()
+        });
+        await waitFor(() => expect(screen.getByText('Vacation')).toBeTruthy());
+        await fireEvent.click(container.querySelector('.cp-item') as HTMLElement);
+        await waitFor(() =>
+            expect(toastStore.error).toHaveBeenCalledWith('Failed to add to "Vacation"')
+        );
+    });
+
+    it('shows specific backend error when createCollection fails with ApiError', async () => {
+        mocks.create.mockRejectedValue(
+            new ApiError(
+                409,
+                JSON.stringify({ error: 'A collection with that name already exists.' })
+            )
+        );
+        render(CollectionsPanel, { itemPaths: ['/photo.jpg'], onclose: vi.fn() });
+        await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+        const input = screen.getByPlaceholderText('New collection…');
+        await fireEvent.input(input, { target: { value: 'Vacation' } });
+        await fireEvent.click(screen.getByRole('button', { name: /create collection/i }));
+        await waitFor(() =>
+            expect(toastStore.error).toHaveBeenCalledWith(
+                'A collection with that name already exists.'
+            )
+        );
     });
 });

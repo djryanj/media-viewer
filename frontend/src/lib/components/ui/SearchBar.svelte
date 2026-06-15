@@ -81,6 +81,15 @@
             onclose?.();
             return;
         }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeIndex >= 0 && suggestions[activeIndex]) {
+                handleSuggestion(suggestions[activeIndex]);
+            } else {
+                handleSubmit();
+            }
+            return;
+        }
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             if (!suggestions.length) return;
@@ -134,29 +143,22 @@
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
         </svg>
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <form
-            onsubmit={(e) => {
-                e.preventDefault();
-                handleSubmit();
-            }}
-        >
-            <input
-                bind:this={inputEl}
-                bind:value={query}
-                type="search"
-                placeholder="Search files and tags…"
-                autocomplete="off"
-                class="search-input"
-                role="combobox"
-                aria-expanded={suggestions.length > 0}
-                aria-autocomplete="list"
-                aria-controls="search-suggestions"
-                aria-activedescendant={activeIndex >= 0 ? `sug-${activeIndex}` : undefined}
-                oninput={handleInput}
-                onkeydown={handleKeydown}
-            />
-        </form>
+        <input
+            bind:this={inputEl}
+            bind:value={query}
+            type="search"
+            enterkeyhint="search"
+            placeholder="Search files and tags…"
+            autocomplete="off"
+            class="search-input"
+            role="combobox"
+            aria-expanded={suggestions.length > 0}
+            aria-autocomplete="list"
+            aria-controls="search-suggestions"
+            aria-activedescendant={activeIndex >= 0 ? `sug-${activeIndex}` : undefined}
+            oninput={handleInput}
+            onkeydown={handleKeydown}
+        />
         {#if query}
             <button
                 class="clear-btn"
@@ -282,11 +284,6 @@
         height: 16px;
         color: var(--color-text-muted);
         flex-shrink: 0;
-    }
-
-    .input-wrap form {
-        flex: 1;
-        display: flex;
     }
 
     .search-input {

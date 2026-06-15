@@ -449,3 +449,122 @@ test('@smoke @gallery pull-to-refresh gesture triggers gallery reload', async ({
     await refreshed;
     await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
 });
+
+// ── Merge Tags ────────────────────────────────────────────────────────────────
+
+/** Two images (no folders) — required so Merge Tags button becomes visible. */
+const LISTING_TWO_IMAGES = JSON.stringify({
+    path: '',
+    name: '',
+    breadcrumb: [],
+    items: [
+        {
+            id: 1,
+            name: 'photo1.jpg',
+            path: '/photo1.jpg',
+            parentPath: '/',
+            type: 'image',
+            size: 1024,
+            modTime: '2024-01-01T00:00:00Z',
+            isFavorite: false
+        },
+        {
+            id: 2,
+            name: 'photo2.jpg',
+            path: '/photo2.jpg',
+            parentPath: '/',
+            type: 'image',
+            size: 1024,
+            modTime: '2024-01-01T00:00:00Z',
+            isFavorite: false
+        }
+    ],
+    favorites: [],
+    totalItems: 2,
+    page: 0,
+    pageSize: 500,
+    totalPages: 1
+});
+
+test('@gallery "Merge Tags" button appears when 2 non-folder items are selected', async ({
+    page
+}) => {
+    await page.route('**/api/files**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: LISTING_TWO_IMAGES })
+    );
+    await page.route('**/api/system/status**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: IDLE_STATUS })
+    );
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    await page.locator('.gallery-item').first().waitFor({ state: 'visible', timeout: 5000 });
+
+    // Enter selection mode via long-press → Select on first item
+    await longPress(page, '.gallery-item[data-type="image"]');
+    await expect(page.locator('.sheet')).toBeVisible({ timeout: 3000 });
+    await page.locator('.sheet').getByText('Select').dispatchEvent('click');
+    await expect(page.locator('.gallery-item.selected')).toHaveCount(1, { timeout: 2000 });
+
+    // Select the second item (click works in selection mode without the sheet overlay)
+    await page.locator('.gallery-item').nth(1).dispatchEvent('click');
+    await expect(page.locator('.gallery-item.selected')).toHaveCount(2, { timeout: 2000 });
+
+    // Merge Tags button must now be visible in the toolbar
+    await expect(page.getByRole('button', { name: /merge tags/i })).toBeVisible({ timeout: 2000 });
+});
+
+test('@gallery "Merge Tags" button is absent when only 1 item is selected', async ({ page }) => {
+    await page.route('**/api/files**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: LISTING_TWO_IMAGES })
+    );
+    await page.route('**/api/system/status**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: IDLE_STATUS })
+    );
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    await page.locator('.gallery-item').first().waitFor({ state: 'visible', timeout: 5000 });
+
+    await longPress(page, '.gallery-item[data-type="image"]');
+    await expect(page.locator('.sheet')).toBeVisible({ timeout: 3000 });
+    await page.locator('.sheet').getByText('Select').dispatchEvent('click');
+    await expect(page.locator('.gallery-item.selected')).toHaveCount(1, { timeout: 2000 });
+
+    await expect(page.getByRole('button', { name: /merge tags/i })).not.toBeVisible();
+});
+
+test('@gallery MergeTagsModal opens and can be cancelled', async ({ page }) => {
+    await page.route('**/api/files**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: LISTING_TWO_IMAGES })
+    );
+    await page.route('**/api/system/status**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: IDLE_STATUS })
+    );
+    await page.route('**/api/tags/batch**', (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ '/photo1.jpg': ['vacation'], '/photo2.jpg': ['vacation'] })
+        })
+    );
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    await page.locator('.gallery-item').first().waitFor({ state: 'visible', timeout: 5000 });
+
+    // Select 2 items
+    await longPress(page, '.gallery-item[data-type="image"]');
+    await expect(page.locator('.sheet')).toBeVisible({ timeout: 3000 });
+    await page.locator('.sheet').getByText('Select').dispatchEvent('click');
+    await page.locator('.gallery-item').nth(1).dispatchEvent('click');
+    await expect(page.locator('.gallery-item.selected')).toHaveCount(2, { timeout: 2000 });
+
+    // Open modal
+    await page.getByRole('button', { name: /merge tags/i }).dispatchEvent('click');
+    await expect(page.getByRole('dialog', { name: /merge tags/i })).toBeVisible({ timeout: 3000 });
+
+    // Cancel closes the modal
+    await page.getByRole('button', { name: /cancel/i }).dispatchEvent('click');
+    await expect(page.getByRole('dialog', { name: /merge tags/i })).not.toBeVisible({ timeout: 2000 });
+});

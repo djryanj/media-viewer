@@ -103,15 +103,27 @@ describe('SettingsModal — about tab', () => {
     it('renders library stats when systemStatus is available', async () => {
         mocks.systemStatus.mockResolvedValue({
             library: {
-                totalFiles: 1234, totalImages: 800, totalVideos: 200,
-                totalFolders: 50, totalPlaylists: 3, totalTags: 42,
+                totalFiles: 1234,
+                totalImages: 800,
+                totalVideos: 200,
+                totalFolders: 50,
+                totalPlaylists: 3,
+                totalTags: 42,
                 totalFavorites: 7,
-                thumbnailCacheFiles: 800, thumbnailCacheBytes: 0,
-                transcodeCacheFiles: 0, transcodeCacheBytes: 0
+                thumbnailCacheFiles: 800,
+                thumbnailCacheBytes: 0,
+                transcodeCacheFiles: 0,
+                transcodeCacheBytes: 0
             },
-            indexer:    { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
-            thumbnails: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
-            autotagger: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } }
+            indexer: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
+            thumbnails: {
+                summary: { running: false, enabled: true },
+                metrics: { processedItems: 0 }
+            },
+            autotagger: {
+                summary: { running: false, enabled: true },
+                metrics: { processedItems: 0 }
+            }
         });
 
         render(SettingsModal);
@@ -138,7 +150,11 @@ describe('SettingsModal — about tab', () => {
 
     it('does not re-fetch build info when switching back to the about tab', async () => {
         mocks.versionGet.mockResolvedValue({
-            version: 'v1.0.0', commit: 'aaa', goVersion: 'go1', os: 'linux', arch: 'amd64'
+            version: 'v1.0.0',
+            commit: 'aaa',
+            goVersion: 'go1',
+            os: 'linux',
+            arch: 'amd64'
         });
 
         render(SettingsModal);

@@ -164,15 +164,27 @@ describe('SettingsModal — system tab', () => {
     it('shows cache sizes when systemStatus is available', async () => {
         mocks.systemStatus.mockResolvedValue({
             library: {
-                totalFiles: 100, totalImages: 80, totalVideos: 20,
-                totalFolders: 5, totalPlaylists: 0, totalTags: 10,
+                totalFiles: 100,
+                totalImages: 80,
+                totalVideos: 20,
+                totalFolders: 5,
+                totalPlaylists: 0,
+                totalTags: 10,
                 totalFavorites: 3,
-                thumbnailCacheFiles: 80, thumbnailCacheBytes: 1048576,
-                transcodeCacheFiles: 2, transcodeCacheBytes: 2097152
+                thumbnailCacheFiles: 80,
+                thumbnailCacheBytes: 1048576,
+                transcodeCacheFiles: 2,
+                transcodeCacheBytes: 2097152
             },
-            indexer:    { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
-            thumbnails: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
-            autotagger: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } }
+            indexer: { summary: { running: false, enabled: true }, metrics: { processedItems: 0 } },
+            thumbnails: {
+                summary: { running: false, enabled: true },
+                metrics: { processedItems: 0 }
+            },
+            autotagger: {
+                summary: { running: false, enabled: true },
+                metrics: { processedItems: 0 }
+            }
         });
 
         render(SettingsModal);

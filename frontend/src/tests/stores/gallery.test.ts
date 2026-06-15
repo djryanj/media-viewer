@@ -145,6 +145,29 @@ describe('galleryStore — selection', () => {
         expect(selected[0].path).toBe('/alpha.jpg');
     });
 
+    it('selectRange selects items between anchor and target (inclusive)', () => {
+        galleryStore.toggleSelection('/alpha.jpg'); // sets anchor
+        galleryStore.selectRange('/beta.jpg');
+        expect(galleryStore.isSelected('/alpha.jpg')).toBe(true);
+        expect(galleryStore.isSelected('/beta.jpg')).toBe(true);
+        expect(galleryStore.selectedCount).toBe(2);
+    });
+
+    it('selectRange skips folders in the range', () => {
+        galleryStore.toggleSelection('/alpha.jpg'); // anchor at idx 0
+        galleryStore.selectRange('/myfolder'); // target at idx 2
+        expect(galleryStore.isSelected('/alpha.jpg')).toBe(true);
+        expect(galleryStore.isSelected('/beta.jpg')).toBe(true);
+        expect(galleryStore.isSelected('/myfolder')).toBe(false);
+    });
+
+    it('selectRange with no anchor falls back to toggleSelection', () => {
+        // No prior toggleSelection; lastAnchorPath is null
+        galleryStore.selectRange('/beta.jpg');
+        expect(galleryStore.isSelected('/beta.jpg')).toBe(true);
+        expect(galleryStore.selectedCount).toBe(1);
+    });
+
     it('updateItem patches matching item and leaves others untouched', () => {
         galleryStore.updateItem('/alpha.jpg', { isFavorite: true });
         const alpha = galleryStore.items.find((i) => i.path === '/alpha.jpg');

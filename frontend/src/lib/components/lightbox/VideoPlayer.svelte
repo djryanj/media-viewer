@@ -731,6 +731,7 @@
                         max="1"
                         step="0.02"
                         value={muted ? 0 : volume}
+                        style="--vol-pct: {(muted ? 0 : volume) * 100}%"
                         oninput={(e) => setVolume(parseFloat((e.target as HTMLInputElement).value))}
                         aria-label="Volume"
                     />
@@ -802,19 +803,20 @@
         font-size: 0.875rem;
     }
 
-    /* Clock */
+    /* Clock — centered at top, matching the Lightbox clock position */
     .vp-clock {
         position: absolute;
-        top: 12px;
-        right: 14px;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
         z-index: 2;
-        font-size: 0.8rem;
+        font-size: 0.875rem;
         color: rgba(255, 255, 255, 0.75);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
         pointer-events: none;
         opacity: 1;
-        transition: opacity 0.2s;
+        transition: opacity 0.35s ease;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
     }
 
@@ -1003,30 +1005,57 @@
 
     .vp-volume {
         width: 72px;
-        height: 4px;
+        height: 18px;
         appearance: none;
-        background: rgba(255, 255, 255, 0.3);
-        border-radius: 2px;
+        background: transparent;
         outline: none;
         cursor: pointer;
     }
 
+    .vp-volume::-webkit-slider-runnable-track {
+        height: 4px;
+        background: linear-gradient(
+            to right,
+            var(--color-primary, #c8ff00) 0%,
+            var(--color-primary, #c8ff00) var(--vol-pct, 100%),
+            rgba(255, 255, 255, 0.3) var(--vol-pct, 100%),
+            rgba(255, 255, 255, 0.3) 100%
+        );
+        border-radius: 2px;
+    }
+
+    .vp-volume::-moz-range-track {
+        height: 4px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+        border: none;
+    }
+
+    .vp-volume::-moz-range-progress {
+        height: 4px;
+        background: var(--color-primary, #c8ff00);
+        border-radius: 2px;
+    }
+
     .vp-volume::-webkit-slider-thumb {
         appearance: none;
-        width: 12px;
-        height: 12px;
+        width: 14px;
+        height: 14px;
         background: #fff;
         border-radius: 50%;
         cursor: pointer;
+        margin-top: -5px;
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
     }
 
     .vp-volume::-moz-range-thumb {
-        width: 12px;
-        height: 12px;
+        width: 14px;
+        height: 14px;
         background: #fff;
         border-radius: 50%;
         border: none;
         cursor: pointer;
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
     }
 
     .vp-time {

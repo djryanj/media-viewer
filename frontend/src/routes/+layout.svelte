@@ -7,6 +7,7 @@
     import { sessionStore } from '$lib/stores/session.svelte';
     import { connectivityStore } from '$lib/stores/connectivity.svelte';
     import { toastStore } from '$lib/stores/toast.svelte';
+    import { galleryStore } from '$lib/stores/gallery.svelte';
     import { createBackButtonHandler } from '$lib/utils/backButton';
     import AppShell from '$lib/components/layout/AppShell.svelte';
     import Lightbox from '$lib/components/lightbox/Lightbox.svelte';
@@ -28,12 +29,17 @@
         navigate: (path) => goto(path)
     });
 
-    afterNavigate(({ from, type }) => {
+    afterNavigate(({ from, type, to }) => {
         if (!from) return; // initial page load — depth starts at 0
         if (type === 'popstate') {
             inAppNavDepth = Math.max(0, inAppNavDepth - 1);
         } else {
             inAppNavDepth++;
+        }
+        // Clear multi-select state when entering the collections area so selected
+        // items from the gallery don't carry over into a different context.
+        if (to?.url.pathname.startsWith('/collections')) {
+            galleryStore.clearSelection();
         }
     });
 

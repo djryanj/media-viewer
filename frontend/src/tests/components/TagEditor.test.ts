@@ -264,3 +264,53 @@ describe('TagEditor — ArrowDown/Up navigation', () => {
         expect(onchange).toHaveBeenCalledWith(['vacation']);
     });
 });
+
+describe('TagEditor — ontagclick, onpaste, and focus()', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('chips get .clickable class when ontagclick is provided', () => {
+        const { container } = render(TagEditor, {
+            tags: ['nature'],
+            onchange: vi.fn(),
+            ontagclick: vi.fn()
+        });
+        expect(container.querySelector('.chip.clickable')).toBeTruthy();
+    });
+
+    it('clicking a chip calls ontagclick with the tag name', async () => {
+        const ontagclick = vi.fn();
+        const { container } = render(TagEditor, {
+            tags: ['nature', 'portrait'],
+            onchange: vi.fn(),
+            ontagclick
+        });
+        await fireEvent.click(container.querySelector('.chip') as HTMLElement);
+        expect(ontagclick).toHaveBeenCalledWith('nature');
+    });
+
+    it('onpaste override is called with clipboard content instead of merging', async () => {
+        // Populate the module-level clipboard via copy action in a first instance
+        const { container: c1 } = render(TagEditor, {
+            tags: ['sunset', 'beach'],
+            onchange: vi.fn()
+        });
+        await fireEvent.click(c1.querySelector('[aria-label="Copy tags"]') as HTMLElement);
+
+        // Second instance with onpaste override receives the clipboard
+        const onpaste = vi.fn();
+        const { container: c2 } = render(TagEditor, {
+            tags: [],
+            onchange: vi.fn(),
+            onpaste
+        });
+        await fireEvent.click(c2.querySelector('[aria-label="Paste tags"]') as HTMLElement);
+        expect(onpaste).toHaveBeenCalledWith(['sunset', 'beach']);
+    });
+
+    it('exported focus() focuses the tag input', () => {
+        const { component, container } = render(TagEditor, { tags: [], onchange: vi.fn() });
+        const input = container.querySelector('input') as HTMLInputElement;
+        (component as unknown as { focus: () => void }).focus();
+        expect(document.activeElement).toBe(input);
+    });
+});

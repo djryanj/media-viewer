@@ -1,7 +1,4 @@
 <script module lang="ts">
-    // Module-level clipboard shared across all TagEditor instances
-    // (enables copy in lightbox → paste in bulk modal, etc.)
-    let _clipboard: string[] = $state([]);
 </script>
 
 <!--
@@ -25,17 +22,22 @@
     import { onMount } from 'svelte';
     import { tags as tagsApi } from '$lib/api/client';
     import type { Tag, RelatedTagSuggestion } from '$lib/api/types';
+    import { tagClipboard } from '$lib/stores/tagClipboard.svelte';
 
     let {
         tags = [],
         onchange,
         compact = false,
-        allTags: allTagsProp = undefined
+        allTags: allTagsProp = undefined,
+        ontagclick = undefined,
+        onpaste: onpasteOverride = undefined
     }: {
         tags?: string[];
         onchange: (tags: string[]) => void;
         compact?: boolean;
         allTags?: Tag[];
+        ontagclick?: (tag: string) => void;
+        onpaste?: (clipboardTags: string[]) => void;
     } = $props();
 
     // ── Known tags & recents ──────────────────────────────────────────────────
@@ -240,15 +242,22 @@
 
     function copyTags() {
         if (tags.length === 0) return;
-        _clipboard = [...tags];
+        tagClipboard.copy(tags);
         // Also try system clipboard (best-effort)
         navigator.clipboard?.writeText(tags.join(', ')).catch(() => {});
     }
 
     function pasteTags() {
-        if (_clipboard.length === 0) return;
-        const merged = [...new Set([...tags, ..._clipboard])];
-        onchange(merged);
+        if (!tagClipboard.hasContent) return;
+        if (onpasteOverride) {
+            onpasteOverride([...tagClipboard.tags]);
+            return;
+        }
+        onchange(tagClipboard.merge(tags));
+    }
+
+    export function focus() {
+        inputEl?.focus();
     }
 
     // ── Highlight match in text ───────────────────────────────────────────────
@@ -352,7 +361,18 @@
     aria-label="Tag editor"
 >
     {#each tags as tag (tag)}
-        <span class="chip">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span
+            class="chip"
+            class:clickable={!!ontagclick}
+            onclick={(e) => {
+                if (ontagclick) {
+                    e.stopPropagation();
+                    ontagclick(tag);
+                }
+            }}
+        >
             {tag}
             <button
                 class="chip-remove"
@@ -487,7 +507,7 @@
         <button
             class="action-btn"
             title="Paste tags (Ctrl+V)"
-            disabled={_clipboard.length === 0}
+            disabled={!tagClipboard.hasContent}
             onclick={pasteTags}
             type="button"
             tabindex="-1"
@@ -557,9 +577,25 @@
         line-height: 1.6;
     }
 
+    .chip.clickable {
+        cursor: pointer;
+        transition: opacity var(--transition-fast);
+    }
+
+    .chip.clickable:hover {
+        opacity: 0.8;
+    }
+
     .compact .chip {
         font-size: 11px;
         padding: 0 5px 0 7px;
+    }
+
+    /* In compact mode (lightbox bottom bar) the suggestions open upward so they
+       don't get clipped off the bottom of the viewport. */
+    .compact .suggestions {
+        top: auto;
+        bottom: calc(100% + 4px);
     }
 
     .chip-remove {
@@ -623,6 +659,8 @@
         top: calc(100% + 4px);
         left: -6px;
         min-width: 220px;
+        max-height: 260px;
+        overflow-y: auto;
         background: var(--color-surface);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
@@ -655,9 +693,12 @@
         transition: background var(--transition-fast);
     }
 
-    .suggestion:hover,
-    .suggestion.active {
+    .suggestion:hover {
         background: var(--color-surface-2);
+    }
+
+    .suggestion.active {
+        background: color-mix(in srgb, var(--color-primary, #c8ff00) 18%, transparent);
     }
 
     .expansion-preview {

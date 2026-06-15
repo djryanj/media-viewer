@@ -21,7 +21,7 @@ vi.mock('$lib/stores/gallery.svelte', () => ({
 
 vi.mock('$lib/api/client', () => ({
     favorites: { bulkAdd: vi.fn(), bulkRemove: vi.fn() },
-    tags: { bulkAdd: vi.fn(), bulkRemove: vi.fn() },
+    tags: { bulkAdd: vi.fn(), bulkRemove: vi.fn(), getBatch: vi.fn().mockResolvedValue({}) },
     collections: { list: vi.fn().mockResolvedValue([]), memberships: vi.fn().mockResolvedValue({}) }
 }));
 
@@ -160,5 +160,116 @@ describe('GalleryToolbar — bulk Collections button in selection mode', () => {
         expect(btn.getAttribute('aria-pressed')).toBe('true');
         await fireEvent.keyDown(document.body, { key: 'Escape' });
         expect(btn.getAttribute('aria-pressed')).toBe('false');
+    });
+});
+
+describe('GalleryToolbar — Merge Tags button visibility', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockStore.typeFilter = 'all';
+        mockStore.selectionMode = true;
+        mockStore.selectedCount = 2;
+    });
+
+    it('shows "Merge Tags" button when ≥2 non-folder items are selected', () => {
+        mockStore.getSelectedItems.mockReturnValue([
+            {
+                path: '/a.jpg',
+                name: 'a.jpg',
+                type: 'image',
+                id: 1,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            },
+            {
+                path: '/b.jpg',
+                name: 'b.jpg',
+                type: 'image',
+                id: 2,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            }
+        ]);
+        render(GalleryToolbar);
+        expect(screen.getByRole('button', { name: /merge tags/i })).toBeTruthy();
+    });
+
+    it('hides "Merge Tags" button when only 1 non-folder item is selected', () => {
+        mockStore.selectedCount = 1;
+        mockStore.getSelectedItems.mockReturnValue([
+            {
+                path: '/a.jpg',
+                name: 'a.jpg',
+                type: 'image',
+                id: 1,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            }
+        ]);
+        render(GalleryToolbar);
+        expect(screen.queryByRole('button', { name: /merge tags/i })).toBeNull();
+    });
+
+    it('hides "Merge Tags" button when all selected items are folders', () => {
+        mockStore.getSelectedItems.mockReturnValue([
+            {
+                path: '/pics',
+                name: 'pics',
+                type: 'folder',
+                id: 1,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            },
+            {
+                path: '/vids',
+                name: 'vids',
+                type: 'folder',
+                id: 2,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            }
+        ]);
+        render(GalleryToolbar);
+        expect(screen.queryByRole('button', { name: /merge tags/i })).toBeNull();
+    });
+
+    it('shows "Merge Tags" when mix of folder and 2+ non-folder items selected', () => {
+        mockStore.selectedCount = 3;
+        mockStore.getSelectedItems.mockReturnValue([
+            {
+                path: '/pics',
+                name: 'pics',
+                type: 'folder',
+                id: 1,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            },
+            {
+                path: '/a.jpg',
+                name: 'a.jpg',
+                type: 'image',
+                id: 2,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            },
+            {
+                path: '/b.jpg',
+                name: 'b.jpg',
+                type: 'image',
+                id: 3,
+                parentPath: '',
+                size: 0,
+                modTime: ''
+            }
+        ]);
+        render(GalleryToolbar);
+        expect(screen.getByRole('button', { name: /merge tags/i })).toBeTruthy();
     });
 });

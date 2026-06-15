@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { collections as collectionsApi } from '$lib/api/client';
+    import { collections as collectionsApi, ApiError } from '$lib/api/client';
     import { toastStore } from '$lib/stores/toast.svelte';
     import type { Collection } from '$lib/api/types';
 
@@ -55,6 +55,17 @@
         if (itemPaths.length) load();
     });
 
+    /** Extract the human-readable message from an ApiError whose body is JSON. */
+    function apiErrorMessage(err: unknown): string | null {
+        if (!(err instanceof ApiError)) return null;
+        try {
+            const body = JSON.parse(err.message) as { error?: string };
+            return body.error ?? null;
+        } catch {
+            return null;
+        }
+    }
+
     async function toggle(col: Collection) {
         if (toggling.has(col.id)) return;
         toggling = new Set([...toggling, col.id]);
@@ -80,8 +91,11 @@
                 partial.delete(col.id);
                 partialMemberIds = partial;
             }
-        } catch {
-            toastStore.error(`Failed to ${isFullMember ? 'remove from' : 'add to'} "${col.name}"`);
+        } catch (err) {
+            const specific = apiErrorMessage(err);
+            toastStore.error(
+                specific ?? `Failed to ${isFullMember ? 'remove from' : 'add to'} "${col.name}"`
+            );
         } finally {
             const next = new Set(toggling);
             next.delete(col.id);
@@ -100,12 +114,47 @@
             await collectionsApi.create(name, itemPaths);
             newColName = '';
             await load();
-        } catch {
-            toastStore.error('Failed to create collection');
+        } catch (err) {
+            const specific = apiErrorMessage(err);
+            toastStore.error(specific ?? 'Failed to create collection');
         } finally {
             creating = false;
         }
     }
+
+    // Derive the folder of the current items (all items must share a folder for
+    // collections to work, so we use the first path as a representative).
+    const itemFolder = $derived(
+        (() => {
+            if (!itemPaths.length) return '';
+            const p = itemPaths[0];
+            const idx = p.lastIndexOf('/');
+            return idx > 0 ? p.slice(0, idx) : '';
+        })()
+    );
+
+    // Capture phase fires before +page.svelte's bubble-phase handler, so Escape closes
+    // this panel instead of triggering the page's navigate-up or clear-selection logic.
+    $effect(() => {
+        function captureKeydown(e: KeyboardEvent) {
+            if (e.key === 'Escape') {
+                e.stopImmediatePropagation();
+                onclose();
+            }
+        }
+        window.addEventListener('keydown', captureKeydown, true);
+        return () => window.removeEventListener('keydown', captureKeydown, true);
+    });
+
+    // Only show collections that are folder-compatible with the current items.
+    // `folderPath === undefined` means the collection has no folder constraint (DB NULL).
+    // An empty-string folderPath means the collection belongs to the root folder; it
+    // must NOT fall through the !col.folderPath guard because '' is falsy.
+    const visibleCollections = $derived(
+        allCollections.filter(
+            (col) => col.folderPath === undefined || col.folderPath === itemFolder
+        )
+    );
 
     const isBulk = $derived(itemPaths.length > 1);
     const title = $derived(isBulk ? `Collections — ${itemPaths.length} items` : 'Collections');
@@ -134,11 +183,15 @@
     <div class="cp-body">
         {#if loading}
             <div class="cp-state">Loading…</div>
-        {:else if allCollections.length === 0}
-            <div class="cp-state cp-state--empty">No collections yet.</div>
+        {:else if visibleCollections.length === 0}
+            <div class="cp-state cp-state--empty">
+                {allCollections.length === 0
+                    ? 'No collections yet.'
+                    : 'No collections in this folder.'}
+            </div>
         {:else}
             <ul class="cp-list">
-                {#each allCollections as col}
+                {#each visibleCollections as col}
                     {@const isFull = fullMemberIds.has(col.id)}
                     {@const isPartial = partialMemberIds.has(col.id)}
                     {@const isToggling = toggling.has(col.id)}
@@ -173,8 +226,6 @@
                                     >
                                         <line x1="5" y1="12" x2="19" y2="12" />
                                     </svg>
-                                {:else}
-                                    <span class="cp-empty-check"></span>
                                 {/if}
                             </span>
                             <span class="cp-name">{col.name}</span>
@@ -322,14 +373,6 @@
 
     .cp-item.partial .cp-check {
         color: var(--color-text-muted);
-    }
-
-    .cp-empty-check {
-        display: block;
-        width: 14px;
-        height: 14px;
-        border: 1.5px solid var(--color-border);
-        border-radius: 3px;
     }
 
     .cp-name {
