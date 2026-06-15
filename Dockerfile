@@ -89,7 +89,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o resetpw ./cmd/resetpw
 
 # Runtime stage
-FROM alpine:3.23
+FROM alpine:3.24
 
 ARG TARGETARCH
 
