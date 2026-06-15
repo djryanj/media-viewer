@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update dependency eslint-plugin-jsdoc to v63 ([#553](https://github.com/djryanj/media-viewer/pull/553))
 - build(deps): bump mikepenz/release-changelog-builder-action from 6.2.1 to 6.2.2 ([#550](https://github.com/djryanj/media-viewer/pull/550))
 - fix(deps): update go modules ([#551](https://github.com/djryanj/media-viewer/pull/551))
 - fix(deps): update all non-major dependencies ([#549](https://github.com/djryanj/media-viewer/pull/549))
