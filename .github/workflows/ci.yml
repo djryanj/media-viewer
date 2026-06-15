@@ -27,7 +27,7 @@ jobs:
             ci_config: ${{ steps.filter.outputs.ci_config }}
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
               with:
                   fetch-depth: 0
 
@@ -82,7 +82,7 @@ jobs:
             )
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Check if sample media cache exists
               id: cache-check
@@ -132,12 +132,12 @@ jobs:
             )
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -165,7 +165,7 @@ jobs:
             needs.changes.outputs.go == 'false'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install libvips
               run: |
@@ -200,7 +200,7 @@ jobs:
         if: needs.changes.outputs.go == 'true' || needs.changes.outputs.ci_config == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install libvips
               run: |
@@ -213,7 +213,7 @@ jobs:
                   cache: true
 
             - name: Run golangci-lint
-              uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
+              uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
               with:
                   # renovate: datasource=go depName=github.com/golangci/golangci-lint
                   version: v2.12.2
@@ -226,12 +226,12 @@ jobs:
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci_config == 'true'
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -273,7 +273,7 @@ jobs:
             (needs.changes.outputs.go == 'true' || needs.changes.outputs.ci_config == 'true')
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install libvips
               run: |
@@ -311,7 +311,7 @@ jobs:
             (needs.changes.outputs.go == 'true' || needs.changes.outputs.ci_config == 'true')
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install libvips
               run: |
@@ -354,12 +354,12 @@ jobs:
             (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci_config == 'true')
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -412,7 +412,7 @@ jobs:
             (needs.changes.outputs.go == 'true' || needs.changes.outputs.ci_config == 'true')
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install system dependencies
               run: |
@@ -460,7 +460,7 @@ jobs:
             (needs.changes.outputs.go == 'true' || needs.changes.outputs.ci_config == 'true')
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install libvips, ffmpeg, and exiftool
               run: |
@@ -499,7 +499,7 @@ jobs:
             (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci_config == 'true')
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install system dependencies
               run: |
@@ -508,7 +508,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -593,7 +593,7 @@ jobs:
             (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci_config == 'true')
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install system dependencies
               run: |
@@ -603,7 +603,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -695,7 +695,7 @@ jobs:
             )
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install system dependencies
               run: |
@@ -703,12 +703,12 @@ jobs:
                   sudo apt-get install -y ffmpeg libimage-exiftool-perl
 
             - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+              uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -734,7 +734,7 @@ jobs:
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
             - name: Build Docker image for smoke tests
-              uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+              uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
               with:
                   context: .
                   file: Dockerfile
@@ -791,7 +791,7 @@ jobs:
             )
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install system dependencies
               run: |
@@ -799,12 +799,12 @@ jobs:
                   sudo apt-get install -y ffmpeg libimage-exiftool-perl
 
             - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+              uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -830,7 +830,7 @@ jobs:
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
 
             - name: Build NVIDIA Docker image for smoke tests
-              uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+              uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
               with:
                   context: .
                   file: Dockerfile.nvidia

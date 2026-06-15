@@ -25,7 +25,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Check if sample media cache exists
               id: cache-check
@@ -61,7 +61,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install libvips
               run: |
@@ -90,7 +90,7 @@ jobs:
         needs: [prepare-sample-media, build-binary]
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install system dependencies
               run: |
@@ -100,7 +100,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
@@ -188,7 +188,7 @@ jobs:
             (github.event_name == 'workflow_dispatch' && inputs.run_soak)
         steps:
             - name: Checkout repository
-              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - name: Install system dependencies
               run: |
@@ -198,7 +198,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.15.0'
+                  node-version: '24.16.0'
                   cache: 'npm'
                   cache-dependency-path: static/package-lock.json
 
