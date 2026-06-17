@@ -57,6 +57,41 @@
     // ── WebAuthn ──────────────────────────────────────────────────────────────
     let conditionalUIAbort: AbortController | null = null;
 
+    async function autoLoginWithPasskey() {
+        if (!webauthnSupported) return;
+        error = '';
+        passkeyLoading = true;
+        try {
+            const { options, sessionId } = await authApi.webauthnLoginBegin();
+            const publicKey = prepareGetOptions(options.publicKey);
+            conditionalUIAbort = new AbortController();
+            const credential = (await navigator.credentials.get({
+                publicKey,
+                signal: conditionalUIAbort.signal
+            })) as PublicKeyCredential | null;
+            if (!credential) {
+                startConditionalUI();
+                return;
+            }
+            await authApi.webauthnLoginFinish(sessionId, credential);
+            await authStore.check();
+            goto('/');
+        } catch (err) {
+            const name = (err as Error)?.name;
+            if (name === 'AbortError') return;
+            if (name !== 'NotAllowedError') {
+                if (err instanceof ApiError) {
+                    error = err.message || 'Passkey authentication failed';
+                } else {
+                    error = 'Passkey authentication failed';
+                }
+            }
+            startConditionalUI();
+        } finally {
+            passkeyLoading = false;
+        }
+    }
+
     async function loginWithPasskey() {
         if (passkeyLoading || !webauthnSupported) return;
         conditionalUIAbort?.abort();
@@ -121,7 +156,7 @@
             try {
                 const { available } = await authApi.webauthnAvailable();
                 passkeyAvailable = available;
-                if (available) startConditionalUI();
+                if (available) autoLoginWithPasskey();
             } catch {
                 /* ignore */
             }
