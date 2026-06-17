@@ -98,8 +98,8 @@ copy_media_source() {
 	fi
 
 	if [ ! -d "$TEST_MEDIA_SOURCE_DIR" ]; then
-		echo "TEST_MEDIA_SOURCE_DIR does not exist or is not a directory: $TEST_MEDIA_SOURCE_DIR" >&2
-		return 1
+		echo "Warning: TEST_MEDIA_SOURCE_DIR does not exist or is not a directory: $TEST_MEDIA_SOURCE_DIR (continuing without sample media)" >&2
+		return 0
 	fi
 
 	echo "Seeding Docker test media from: $TEST_MEDIA_SOURCE_DIR"
