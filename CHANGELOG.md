@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump node from 22-bookworm-slim to 26-bookworm-slim ([#569](https://github.com/djryanj/media-viewer/pull/569))
 - build(deps): bump alpine from 3.23 to 3.24 ([#565](https://github.com/djryanj/media-viewer/pull/565))
 - chore(deps): update dependency eslint-plugin-jsdoc to v63 ([#553](https://github.com/djryanj/media-viewer/pull/553))
 - build(deps): bump mikepenz/release-changelog-builder-action from 6.2.1 to 6.2.2 ([#550](https://github.com/djryanj/media-viewer/pull/550))
