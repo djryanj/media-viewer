@@ -1,6 +1,6 @@
 # Frontend Feature Parity
 
-Comprehensive comparison of the legacy vanilla-JS frontend (`static/`) test suite against the new SvelteKit frontend (`frontend/`) test suite.
+Historical comparison of the legacy vanilla-JS frontend (`static/`) test suite against the SvelteKit frontend (`frontend/`) test suite. The `static/` directory has since been removed; this document is preserved for reference.
 
 **Legend**
 

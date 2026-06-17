@@ -830,7 +830,7 @@ Tests use the same build tags as the main application:
 
 - Migrated frontend from vanilla JS to SvelteKit (Svelte 5, TypeScript)
 - Frontend test suite migrated from JSDOM/eval-based Vitest to `@testing-library/svelte` component tests
-- Playwright E2E tests rewritten for SvelteKit DOM structure; old `static/e2e/` specs preserved but not run in CI
+- Playwright E2E tests rewritten for SvelteKit DOM structure
 - Added visual regression lane (`@visual`) with Playwright `toHaveScreenshot()` and PNG baselines in `frontend/e2e/snapshots/`
 - Added docs screenshot lane (`@docs-screenshots`) that writes PNGs directly to `docs/images/`
 - `make pr-check` now runs ESLint + Prettier + svelte-check (was only svelte-check before)

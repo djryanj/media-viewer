@@ -56,13 +56,12 @@ media-viewer/
 │   ├── streaming/        # Video streaming utilities
 │   ├── transcoder/       # Video transcoding
 │   └── workers/          # Worker pool utilities
-├── frontend/             # SvelteKit frontend (active)
-│   ├── src/
-│   │   ├── routes/       # SvelteKit file-based routes
-│   │   └── lib/          # Components, stores, API client
-│   ├── e2e/              # Playwright E2E tests + baselines
-│   └── build/            # Compiled output (served by Go)
-└── static/               # Legacy vanilla JS frontend (preserved, not developed)
+└── frontend/             # SvelteKit frontend
+    ├── src/
+    │   ├── routes/       # SvelteKit file-based routes
+    │   └── lib/          # Components, stores, API client
+    ├── e2e/              # Playwright E2E tests + baselines
+    └── build/            # Compiled output (served by Go)
 ```
 
 ### Core Components

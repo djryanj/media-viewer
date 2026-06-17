@@ -102,14 +102,14 @@ jobs:
               with:
                   node-version: '24.16.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Install frontend dependencies
-              working-directory: ./static
+              working-directory: ./frontend
               run: npm ci
 
             - name: Install Playwright Chromium
-              working-directory: ./static
+              working-directory: ./frontend
               run: npx playwright install --with-deps chromium
 
             - name: Download backend binary
@@ -168,15 +168,15 @@ jobs:
               with:
                   name: frontend-e2e-performance-smoke-results
                   path: |
-                      static/e2e/test-results/
-                      static/e2e/test-results/report.json
+                      frontend/e2e/test-results/
+                      frontend/e2e/test-results/report.json
 
             - name: Upload performance smoke report
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: playwright-performance-smoke-report
-                  path: static/e2e/playwright-report/
+                  path: frontend/e2e/playwright-report/
                   retention-days: 30
 
     performance-soak:
@@ -200,14 +200,14 @@ jobs:
               with:
                   node-version: '24.16.0'
                   cache: 'npm'
-                  cache-dependency-path: static/package-lock.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Install frontend dependencies
-              working-directory: ./static
+              working-directory: ./frontend
               run: npm ci
 
             - name: Install Playwright Chromium
-              working-directory: ./static
+              working-directory: ./frontend
               run: npx playwright install --with-deps chromium
 
             - name: Download backend binary
@@ -266,13 +266,13 @@ jobs:
               with:
                   name: frontend-e2e-performance-soak-results
                   path: |
-                      static/e2e/test-results/
-                      static/e2e/test-results/report.json
+                      frontend/e2e/test-results/
+                      frontend/e2e/test-results/report.json
 
             - name: Upload soak report
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: playwright-performance-soak-report
-                  path: static/e2e/playwright-report/
+                  path: frontend/e2e/playwright-report/
                   retention-days: 30

@@ -69,8 +69,6 @@ sample-media/
 **/testdata
 
 # Frontend test files and directories
-static/tests/
-static/e2e/
 vitest.config.js
 playwright.config.js
 *.test.js
@@ -79,10 +77,6 @@ playwright.config.js
 # Test results and reports
 coverage.out
 coverage.html
-static/coverage/
-static/e2e/playwright-report/
-static/e2e/test-results/
-static/e2e/test-results.json
 .nyc_output/
 test-results/
 playwright-report/
