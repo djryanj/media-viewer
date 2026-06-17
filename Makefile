@@ -15,7 +15,6 @@ LDFLAGS := -X 'media-viewer/internal/startup.Version=$(VERSION)' \
 
 DIST_DIR := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
-STATIC_DIR := static
 # SvelteKit frontend directory
 FRONTEND_DIR := frontend
 
@@ -71,7 +70,6 @@ FORCE ?= 0
         svelte-install svelte-dev svelte-build svelte-preview \
         svelte-lint svelte-lint-fix svelte-check svelte-format svelte-format-check \
         svelte-test svelte-test-unit svelte-test-unit-watch svelte-test-e2e svelte-test-e2e-auto \
-        svelte-sync-icons
 		fmt gofmt lint lint-fix lint-all lint-fix-all format-all check-all \
         clean clean-all \
 		docker-build docker-build-dev docker-run \
@@ -144,7 +142,7 @@ _check-version:
 	}
 
 # prepare-release VERSION=vX.Y.Z
-#   Creates a release/vX.Y.Z branch from a clean main, bumps static/package.json,
+#   Creates a release/vX.Y.Z branch from a clean main, bumps frontend/package.json,
 #   stamps the changelog date, commits, and pushes. Run this before opening the
 #   release PR.
 prepare-release: _check-version
@@ -478,12 +476,12 @@ _HAS_GO_CHANGES = $(shell \
 	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '\.go$$|^go\.(mod|sum)$$|^Makefile$$'; then echo "1"; \
 	else echo ""; fi)
 
-# Frontend changes (matches CI "frontend" filter — covers both legacy static/ and new SvelteKit frontend/)
+# Frontend changes (matches CI "frontend" filter — covers the SvelteKit frontend/)
 # FRONTEND_ONLY=1 forces frontend, BACKEND_ONLY=1 skips frontend, FORCE=1 forces both.
 _HAS_FRONTEND_CHANGES = $(shell \
 	if [ "$(FRONTEND_ONLY)" = "1" ] || [ "$(FORCE)" = "1" ]; then echo "1"; \
 	elif [ "$(BACKEND_ONLY)" = "1" ]; then echo ""; \
-	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^static/.*\.(js|css|html)$$|^static/package(-lock)?\.json$$|^frontend/.*\.(ts|svelte|js|css|html)$$|^frontend/package(-lock)?\.json$$'; then echo "1"; \
+	elif echo "$(_CHANGED_FILES)" | tr ' ' '\n' | grep -qE '^frontend/.*\.(ts|svelte|js|css|html)$$|^frontend/package(-lock)?\.json$$'; then echo "1"; \
 	else echo ""; fi)
 
 PR_CHECK_GO_LINT_TARGET ?= lint
@@ -1083,7 +1081,6 @@ clean:
 
 clean-all: clean
 	@echo "Cleaning all artifacts including node_modules..."
-	rm -rf $(STATIC_DIR)/node_modules
 	rm -rf $(FRONTEND_DIR)/node_modules
 
 # =============================================================================
@@ -1160,15 +1157,9 @@ svelte-dev:
 	cd $(FRONTEND_DIR) && npm run dev
 
 # Build SvelteKit frontend for production
-svelte-build: svelte-sync-icons
+svelte-build:
 	@echo "Building SvelteKit frontend..."
 	cd $(FRONTEND_DIR) && npm run build
-
-# Sync PWA icons from static/ into frontend/static/icons/
-svelte-sync-icons:
-	@mkdir -p $(FRONTEND_DIR)/static/icons
-	@rsync -a --delete $(STATIC_DIR)/icons/ $(FRONTEND_DIR)/static/icons/
-	@[ -f $(STATIC_DIR)/sw.js ] && cp $(STATIC_DIR)/sw.js $(FRONTEND_DIR)/static/sw.js || true
 
 # Preview the production SvelteKit build
 svelte-preview:

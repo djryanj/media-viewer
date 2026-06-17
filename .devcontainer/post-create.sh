@@ -128,22 +128,13 @@ tmp_dir = "tmp"
   cmd = "go build -tags 'fts5' -o ./tmp/main ./cmd/media-viewer"
   bin = "./tmp/main"
   include_ext = ["go", "html", "css", "js"]
-  exclude_dir = ["tmp", "sample-media", "vendor", "static/node_modules", "static/tests", "static/e2e", "site", "docs"]
+  exclude_dir = ["tmp", "sample-media", "vendor", "site", "docs"]
   delay = 1000
 
 [misc]
   clean_on_exit = true
 EOF
     echo -e "${GREEN}[SUCCESS] air configuration created${NC}"
-fi
-
-# Install npm stuff for frontend (if applicable)
-if [ -f "static/package.json" ]; then
-    echo -e "${BLUE}[INFO] Installing npm dependencies...${NC}"
-    cd static
-    npm install
-    echo -e "${GREEN}[SUCCESS] npm dependencies installed${NC}"
-    cd ..
 fi
 
 # Install Playwright system dependencies and browsers

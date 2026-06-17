@@ -121,8 +121,6 @@ Structure:
 
 Settings modal tabs: **Security** · **Passkeys** · **Library** (clock, sort, worker status) · **Tags** · **System** · **About**
 
-> **Note:** The `static/` directory contains the legacy vanilla JS frontend. It still runs at the same URL but is no longer being developed. All active frontend work is in `frontend/`.
-
 **Docker build note:** `.dockerignore` must include `frontend/vite.config.ts` only if you want to exclude it — currently it is *not* excluded, which is required so that the SvelteKit Vite plugin is present during the Docker `npm run build` step. Excluding `vite.config.ts` causes a "Could not resolve entry module 'index.html'" error.
 
 ### Database Schema

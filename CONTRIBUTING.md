@@ -206,7 +206,7 @@ Two `make` targets handle the full release workflow.
 make prepare-release VERSION=v0.15.0
 ```
 
-This creates `release/v0.15.0`, bumps `static/package.json` to `0.15.0`, stamps the `CHANGELOG.md` date, commits both files, and pushes the branch. Open a PR from `release/v0.15.0` → `main`, review it, then merge.
+This creates `release/v0.15.0`, bumps `frontend/package.json` to `0.15.0`, stamps the `CHANGELOG.md` date, commits both files, and pushes the branch. Open a PR from `release/v0.15.0` → `main`, review it, then merge.
 
 **Step 2 — tag** (run from `main` after the PR is merged):
 

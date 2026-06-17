@@ -223,8 +223,7 @@ linters:
 
         paths:
             # node packages occasionally ship Go implementations alongside their JS code
-            # (e.g., flatted ships a golang/ port). Exclude both frontend and legacy node_modules.
-            - static/node_modules
+            # (e.g., flatted ships a golang/ port). Exclude frontend node_modules.
             - frontend/node_modules
 
 issues:

@@ -37,12 +37,9 @@ Use these as project-level defaults when editing or testing this repository.
 
 ## Docs Screenshots And Visual Baselines
 
-- Docs screenshots live under `static/e2e/specs/workflows/` and write directly to `docs/images/`.
-- Visual regressions live under `static/e2e/specs/visual/` and compare deterministic JSON snapshots stored in `static/e2e/baselines/`.
+- Docs screenshots live under `frontend/e2e/` and write directly to `docs/images/`.
+- Visual regressions live under `frontend/e2e/` and compare PNG baselines stored in `frontend/e2e/snapshots/`.
 - Both lanes are Chromium-only. Keep screenshot and visual states deterministic with API seeding or explicit runtime state setup before capture.
-- For library docs playlist capture, do not assert that `#playlist-title` equals the playlist name. `Playlist.open()` sets the playlist name briefly, then `playCurrentVideo()` replaces it with the current media filename.
-- For playlist-load readiness in docs screenshots, prefer `window.Playlist.playlist.name` plus `#playlist-items li` count over sidebar visibility or header title text.
-- Focused rerun command for playlist docs screenshots: `make frontend-test-e2e-file-auto e2e/specs/workflows/library-docs-screenshots.spec.js`.
 
 ## SQLite And Storage Safety
 

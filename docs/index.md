@@ -1,7 +1,7 @@
 # Media Viewer
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/djryanj/media-viewer/main/static/icons/icon-192x192.png" alt="Media Viewer Icon" width="192" height="192">
+  <img src="https://raw.githubusercontent.com/djryanj/media-viewer/main/frontend/static/icons/icon-192x192.png" alt="Media Viewer Icon" width="192" height="192">
 </div>
 
 <br>

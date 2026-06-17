@@ -1,7 +1,7 @@
 # Media Viewer
 
 <div align="center">
-  <img src="static/icons/icon-192x192.png" alt="Media Viewer Logo">
+  <img src="frontend/static/icons/icon-192x192.png" alt="Media Viewer Logo">
 </div>
 
 A lightweight, containerized, single-user web application for browsing, organizing, and viewing images, videos, and playlists from a mounted media directory.

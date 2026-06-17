@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.19.1] - Unreleased
 
 - build(deps): bump node from 22-bookworm-slim to 26-bookworm-slim ([#569](https://github.com/djryanj/media-viewer/pull/569))
+- chore: clean up old legacy vanilla JS code ([#572](https://github.com/djryanj/media-viewer/issues/572))
 
 ## [0.19.0] - 06-15-2026
 

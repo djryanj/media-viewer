@@ -77,8 +77,6 @@ cd frontend && npm run test:unit:watch
 
 The default `make frontend-test-e2e` / `npm run test:e2e` path excludes `@performance` and `@docs-screenshots` specs so normal developer and PR runs stay fast and predictable. Visual regression and docs screenshot generation are separate opt-in workflows.
 
-> **Legacy:** `static/e2e/` contains the old vanilla-JS Playwright suite that targeted the pre-SvelteKit frontend. Those tests rely on `window.MediaApp`, `window.Lightbox`, etc., which no longer exist in the SvelteKit app. They are preserved for reference but are not run in CI.
-
 The `*-auto` frontend targets all route through `hack/run-with-test-server.sh`. That shared helper is also used by CI, so local auto runs, `make pr-check`, release smoke, and scheduled performance jobs now use the same backend startup and readiness checks.
 
 ## Continuous Integration
