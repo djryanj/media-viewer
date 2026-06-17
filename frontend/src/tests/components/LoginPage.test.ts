@@ -133,7 +133,11 @@ describe('Login page — passkey auto-trigger', () => {
         render(LoginPage);
         await waitFor(() => {
             expect(
-                (screen.getByRole('button', { name: /sign in with a passkey/i }) as HTMLButtonElement).disabled
+                (
+                    screen.getByRole('button', {
+                        name: /sign in with a passkey/i
+                    }) as HTMLButtonElement
+                ).disabled
             ).toBe(false);
         });
         expect(screen.queryByRole('alert')).toBeNull();
@@ -157,7 +161,11 @@ describe('Login page — passkey auto-trigger', () => {
         // Wait for auto-trigger to fail silently and re-enable the button
         await waitFor(() => {
             expect(
-                (screen.getByRole('button', { name: /sign in with a passkey/i }) as HTMLButtonElement).disabled
+                (
+                    screen.getByRole('button', {
+                        name: /sign in with a passkey/i
+                    }) as HTMLButtonElement
+                ).disabled
             ).toBe(false);
         });
 
