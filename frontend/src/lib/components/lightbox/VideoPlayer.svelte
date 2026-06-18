@@ -43,6 +43,8 @@
     let isDragging = $state(false);
     let isInteractingWithBar = $state(false);
     let hasError = $state(false);
+    let loading = $state(false);
+    let transcoding = $state(false);
 
     // ── Volume (persisted) ────────────────────────────────────────────────────
     let volume = $state(loadVolume());
@@ -102,6 +104,8 @@
 
         cleanupPrev();
         hasError = false;
+        loading = true;
+        transcoding = false;
 
         if (!videoEl) return;
 
@@ -118,6 +122,7 @@
         if (stale() || !videoEl) return;
 
         if (info?.needsTranscode) {
+            transcoding = true;
             if (Hls.isSupported()) {
                 await loadViaHls(p, id);
                 return;
@@ -486,6 +491,8 @@
 
     // ── Video event handlers ──────────────────────────────────────────────────
     function onPlay() {
+        loading = false;
+        transcoding = false;
         paused = false;
         scheduleHide();
         acquireWakeLock();
@@ -500,9 +507,15 @@
         if (!isDragging && videoEl) currentTime = videoEl.currentTime;
     }
     function onDurationChange() {
-        if (videoEl) duration = videoEl.duration;
+        if (videoEl) {
+            duration = videoEl.duration;
+            loading = false;
+            transcoding = false;
+        }
     }
     function onError() {
+        loading = false;
+        transcoding = false;
         hasError = true;
     }
     function onEndedHandler() {
@@ -555,6 +568,19 @@
 
     {#if hasError}
         <div class="vp-error">Failed to load video</div>
+    {/if}
+
+    {#if loading && !hasError}
+        <div
+            class="vp-loading"
+            aria-live="polite"
+            aria-label={transcoding ? 'Transcoding video' : 'Loading video'}
+        >
+            <div class="vp-spinner" aria-hidden="true"></div>
+            {#if transcoding}
+                <span class="vp-loading-label">Transcoding video…</span>
+            {/if}
+        </div>
     {/if}
 
     <!-- Clock overlay -->
@@ -801,6 +827,38 @@
         position: absolute;
         color: rgba(255, 255, 255, 0.7);
         font-size: 0.875rem;
+    }
+
+    .vp-loading {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        pointer-events: none;
+    }
+
+    .vp-spinner {
+        width: 36px;
+        height: 36px;
+        border: 3px solid rgba(255, 255, 255, 0.2);
+        border-top-color: rgba(255, 255, 255, 0.8);
+        border-radius: 50%;
+        animation: vp-spin 0.75s linear infinite;
+    }
+
+    .vp-loading-label {
+        font-size: 0.8125rem;
+        color: rgba(255, 255, 255, 0.65);
+        letter-spacing: 0.01em;
+    }
+
+    @keyframes vp-spin {
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     /* Clock — centered at top, matching the Lightbox clock position */
