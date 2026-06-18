@@ -9,6 +9,13 @@
     );
 
     let buildInfo = $state<BuildInfo | null>(null);
+    const displayVersion = $derived(
+        buildInfo
+            ? /^\d/.test(buildInfo.version)
+                ? `v${buildInfo.version}`
+                : buildInfo.version
+            : null
+    );
     let status = $state<SystemStatus | null>(null);
     let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -108,8 +115,8 @@
 
     <!-- Right: version -->
     <span class="right">
-        {#if buildInfo}
-            v{buildInfo.version}
+        {#if displayVersion}
+            {displayVersion}
         {/if}
     </span>
 </footer>
