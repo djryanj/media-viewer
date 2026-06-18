@@ -453,6 +453,22 @@
         });
     }
 
+    // ── Scroll-to-item on close ──────────────────────────────────────────────
+    let lastViewedPath: string | null = null;
+
+    $effect(() => {
+        if (lightboxStore.item) lastViewedPath = lightboxStore.item.path;
+    });
+
+    $effect(() => {
+        if (!lightboxStore.open && lastViewedPath) {
+            const el = document.querySelector<HTMLElement>(
+                `[data-path="${CSS.escape(lastViewedPath)}"]`
+            );
+            el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+    });
+
     // ── Preloading ───────────────────────────────────────────────────────────
     // Hold strong refs so the browser doesn't GC the objects before caching.
     const preloadCache = new Map<string, HTMLImageElement | HTMLVideoElement>();

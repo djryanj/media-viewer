@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import Lightbox from '$lib/components/lightbox/Lightbox.svelte';
@@ -253,5 +253,119 @@ describe('Lightbox — collections panel', () => {
         expect(
             screen.getByRole('button', { name: 'Collections' }).getAttribute('aria-pressed')
         ).toBe('false');
+    });
+});
+
+describe('Lightbox — scroll to item on close', () => {
+    let scrollIntoView1: ReturnType<typeof vi.fn>;
+    let el1: HTMLElement;
+
+    beforeEach(() => {
+        lightboxStore.close();
+        vi.clearAllMocks();
+
+        scrollIntoView1 = vi.fn();
+        el1 = document.createElement('div');
+        el1.dataset.path = img1.path;
+        el1.scrollIntoView = scrollIntoView1 as unknown as typeof el1.scrollIntoView;
+        document.body.appendChild(el1);
+    });
+
+    afterEach(() => {
+        el1.remove();
+    });
+
+    it('calls scrollIntoView on the matching gallery element when the lightbox closes', async () => {
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+
+        lightboxStore.close();
+        await tick();
+
+        expect(scrollIntoView1).toHaveBeenCalledOnce();
+    });
+
+    it('passes { block: "nearest", inline: "nearest" } to scrollIntoView', async () => {
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+
+        lightboxStore.close();
+        await tick();
+
+        expect(scrollIntoView1).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+    });
+
+    it('scrolls to the last navigated item, not the originally opened one', async () => {
+        const scrollIntoView2 = vi.fn();
+        const el2 = document.createElement('div');
+        el2.dataset.path = img2.path;
+        el2.scrollIntoView = scrollIntoView2 as unknown as typeof el2.scrollIntoView;
+        document.body.appendChild(el2);
+
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+
+        lightboxStore.next(); // navigate to img2
+        await tick();
+
+        lightboxStore.close();
+        await tick();
+
+        expect(scrollIntoView2).toHaveBeenCalledOnce();
+        expect(scrollIntoView1).not.toHaveBeenCalled();
+
+        el2.remove();
+    });
+
+    it('does nothing when no gallery element with a matching data-path exists', async () => {
+        el1.remove(); // no element in the DOM for img1
+
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+
+        // Should not throw
+        expect(() => lightboxStore.close()).not.toThrow();
+        await tick();
+    });
+
+    it('does not call scrollIntoView while the lightbox is open', async () => {
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+
+        lightboxStore.next();
+        await tick();
+
+        expect(scrollIntoView1).not.toHaveBeenCalled();
+    });
+
+    it('scrolls to the correct item across multiple open/close cycles', async () => {
+        const scrollIntoView2 = vi.fn();
+        const el2 = document.createElement('div');
+        el2.dataset.path = img2.path;
+        el2.scrollIntoView = scrollIntoView2 as unknown as typeof el2.scrollIntoView;
+        document.body.appendChild(el2);
+
+        render(Lightbox);
+
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+        lightboxStore.close();
+        await tick();
+        expect(scrollIntoView1).toHaveBeenCalledTimes(1);
+        expect(scrollIntoView2).not.toHaveBeenCalled();
+
+        lightboxStore.show(img2, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+        lightboxStore.close();
+        await tick();
+        expect(scrollIntoView2).toHaveBeenCalledTimes(1);
+        expect(scrollIntoView1).toHaveBeenCalledTimes(1); // still only once from first cycle
+
+        el2.remove();
     });
 });
