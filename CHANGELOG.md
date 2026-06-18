@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.19.2] - Unreleased
 
 - fix(ui): there are 2 "s"'s in the version display ([#577](https://github.com/djryanj/media-viewer/issues/577))
+- fix(ui): when loading a video that needs transcoding on the server, there was just a long pause rather than some kind of notification that it was loading. ([#578](https://github.com/djryanj/media-viewer/issues/578))
 
 ## [0.19.1] - 06-18-2026
 
