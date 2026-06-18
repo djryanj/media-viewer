@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - build(deps): bump node from 22-bookworm-slim to 26-bookworm-slim ([#569](https://github.com/djryanj/media-viewer/pull/569))
 - chore: clean up old legacy vanilla JS code ([#572](https://github.com/djryanj/media-viewer/issues/572))
-- fix(ui): passkey authorization flow will auto-trigger if available. ([#570](https://github.com/djryanj/media-viewer/issues/570))
+- fix(ui): passkey authorization flow will auto-trigger if available ([#570](https://github.com/djryanj/media-viewer/issues/570))
+- fix(ui): when exiting the lightbox, the gallery view should be centered on the last item viewed. [#571](https://github.com/djryanj/media-viewer/issues/571)
 
 ## [0.19.0] - 06-15-2026
 
