@@ -185,9 +185,9 @@ export const media = {
 
     get: (path: string) => request<MediaFile>(`/api/media/file?path=${encodeURIComponent(path)}`),
 
-    search: (q: string, page = 1, pageSize = 50) =>
+    search: (q: string, page = 1, pageSize = 50, sort = 'name', order = 'asc') =>
         request<SearchResult>(
-            `/api/search?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`
+            `/api/search?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}&sort=${sort}&order=${order}`
         ),
 
     suggest: (q: string) =>

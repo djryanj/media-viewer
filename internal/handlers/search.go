@@ -7,20 +7,42 @@ import (
 	"media-viewer/internal/database"
 )
 
+const (
+	// DateStr is date
+	DateStr = "date"
+	// SizeStr is size
+	SizeStr = "size"
+	// DescStr is desc
+	DescStr = "desc"
+)
+
 // Search searches for media files matching a query
 func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
 	opts := database.SearchOptions{
-		Query:      r.URL.Query().Get("q"),
-		FilterType: r.URL.Query().Get("type"),
+		Query:      q.Get("q"),
+		FilterType: q.Get("type"),
 		Page:       1,
 		PageSize:   100,
+		SortField:  database.SortByName,
+		SortOrder:  database.SortAsc,
 	}
 
-	if page, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && page > 0 {
+	if page, err := strconv.Atoi(q.Get("page")); err == nil && page > 0 {
 		opts.Page = page
 	}
-	if pageSize, err := strconv.Atoi(r.URL.Query().Get("pageSize")); err == nil && pageSize > 0 {
+	if pageSize, err := strconv.Atoi(q.Get("pageSize")); err == nil && pageSize > 0 {
 		opts.PageSize = pageSize
+	}
+
+	switch q.Get("sort") {
+	case DateStr:
+		opts.SortField = database.SortByDate
+	case SizeStr:
+		opts.SortField = database.SortBySize
+	}
+	if q.Get("order") == DescStr {
+		opts.SortOrder = database.SortDesc
 	}
 
 	if opts.Query == "" {

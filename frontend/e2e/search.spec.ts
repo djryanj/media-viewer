@@ -85,6 +85,95 @@ test('@smoke @search Escape clears selection on the search results page', async 
     await expect(page.locator('.gallery-item.selected')).toHaveCount(0, { timeout: 2000 });
 });
 
+// ── Sort ──────────────────────────────────────────────────────────────────────
+
+const SEARCH_THREE_ITEMS = JSON.stringify({
+    items: [
+        { id: 1, name: 'alpha.jpg', path: '/alpha.jpg', parentPath: '/', type: 'image', size: 100, modTime: '2024-01-01T00:00:00Z' },
+        { id: 2, name: 'beta.jpg',  path: '/beta.jpg',  parentPath: '/', type: 'image', size: 200, modTime: '2024-01-02T00:00:00Z' },
+        { id: 3, name: 'gamma.jpg', path: '/gamma.jpg', parentPath: '/', type: 'image', size: 300, modTime: '2024-01-03T00:00:00Z' }
+    ],
+    totalItems: 3
+});
+
+test('@smoke @search sort dropdown is visible on search results', async ({ page }) => {
+    await page.route('**/api/search**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: SEARCH_THREE_ITEMS })
+    );
+    await page.goto('/search?q=test');
+    await page.waitForLoadState('networkidle');
+
+    // The sort button label should be visible
+    await expect(page.getByRole('button', { name: /Name \(A–Z\)|Name \(Z–A\)|Newest|Oldest|Largest|Smallest|Sort/i }).first()).toBeVisible({ timeout: 5000 });
+});
+
+test('@search changing sort option triggers a new API call with sort params', async ({ page }) => {
+    const requests: string[] = [];
+    await page.route('**/api/search**', (route) => {
+        requests.push(route.request().url());
+        return route.fulfill({ status: 200, contentType: 'application/json', body: SEARCH_THREE_ITEMS });
+    });
+
+    await page.goto('/search?q=test');
+    await page.waitForLoadState('networkidle');
+
+    // Clear collected requests from initial load
+    requests.length = 0;
+
+    // Open sort dropdown and click "Newest first"
+    await page.getByRole('button', { name: /Name \(A–Z\)|Sort/i }).first().click();
+    await page.getByRole('button', { name: 'Newest first' }).click();
+
+    // Wait for a new API call with sort=date&order=desc
+    await expect.poll(() => requests.some(u => u.includes('sort=date') && u.includes('order=desc')), {
+        timeout: 5000
+    }).toBe(true);
+});
+
+test('@search sort request includes correct sort and order params', async ({ page }) => {
+    const captured: URL[] = [];
+    await page.route('**/api/search**', (route) => {
+        captured.push(new URL(route.request().url()));
+        return route.fulfill({ status: 200, contentType: 'application/json', body: SEARCH_THREE_ITEMS });
+    });
+
+    await page.goto('/search?q=test');
+    await page.waitForLoadState('networkidle');
+    captured.length = 0;
+
+    // Select "Largest first" (sort=size, order=desc)
+    await page.getByRole('button', { name: /Name \(A–Z\)|Sort/i }).first().click();
+    await page.getByRole('button', { name: 'Largest first' }).click();
+
+    await expect.poll(() => captured.length > 0, { timeout: 5000 }).toBe(true);
+    const url = captured[0];
+    expect(url.searchParams.get('sort')).toBe('size');
+    expect(url.searchParams.get('order')).toBe('desc');
+});
+
+// ── Status bar ────────────────────────────────────────────────────────────────
+
+test('@smoke @search status bar shows correct item count from search results', async ({ page }) => {
+    const body = JSON.stringify({
+        items: [
+            { id: 1, name: 'photo.jpg', path: '/photo.jpg', parentPath: '/', type: 'image', size: 100, modTime: '2024-01-01T00:00:00Z' }
+        ],
+        totalItems: 42
+    });
+    await page.route('**/api/search**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body })
+    );
+
+    await page.goto('/search?q=test');
+    await page.waitForLoadState('networkidle');
+
+    // Status footer should show "42 items" — the totalItems from the search
+    // result, not a stale directory count.
+    await expect(page.locator('.status-footer')).toContainText('42 items', { timeout: 5000 });
+});
+
+// ── GalleryToolbar ────────────────────────────────────────────────────────────
+
 test('@search GalleryToolbar renders on the search page when in selection mode', async ({ page }) => {
     await page.route('**/api/search**', (route) =>
         route.fulfill({ status: 200, contentType: 'application/json', body: SEARCH_TWO_ITEMS })
