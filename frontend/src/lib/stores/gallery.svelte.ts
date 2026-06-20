@@ -579,6 +579,18 @@ function createGalleryStore() {
             state.items = items;
         },
 
+        /** Update the total item count independently of the loaded window.
+         *  Used by the search page so StatusFooter shows the search result count. */
+        setTotalItems(total: number) {
+            state.totalItems = total;
+        },
+
+        /** Clear the active folder listing so setSort won't trigger a folder
+         *  re-navigation. Called by pages (e.g. search) that own their item list. */
+        clearListing() {
+            state.listing = null;
+        },
+
         clearSelection() {
             state.selected = new Set();
             state.selectionMode = false;

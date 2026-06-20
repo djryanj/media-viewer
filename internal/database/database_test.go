@@ -635,16 +635,16 @@ func TestBuildListDirQuery(t *testing.T) {
 		sortDir    string
 		withFilter bool
 	}{
-		{"name asc no filter", NameCollationStr, SortAscStr, false},
-		{"name desc no filter", NameCollationStr, SortDescStr, false},
-		{"modtime asc no filter", "f.mod_time", SortAscStr, false},
-		{"modtime desc no filter", "f.mod_time", SortDescStr, false},
-		{"size asc no filter", "f.size", SortAscStr, false},
-		{"size desc no filter", "f.size", SortDescStr, false},
-		{"type asc no filter", "f.type", SortAscStr, false},
-		{"name asc with filter", NameCollationStr, SortAscStr, true},
-		{"modtime desc with filter", "f.mod_time", SortDescStr, true},
-		{"size asc with filter", "f.size", SortAscStr, true},
+		{"name asc no filter", NameCollationStr, SortAscUpper, false},
+		{"name desc no filter", NameCollationStr, SortDescUpper, false},
+		{"modtime asc no filter", "f.mod_time", SortAscUpper, false},
+		{"modtime desc no filter", "f.mod_time", SortDescUpper, false},
+		{"size asc no filter", "f.size", SortAscUpper, false},
+		{"size desc no filter", "f.size", SortDescUpper, false},
+		{"type asc no filter", "f.type", SortAscUpper, false},
+		{"name asc with filter", NameCollationStr, SortAscUpper, true},
+		{"modtime desc with filter", "f.mod_time", SortDescUpper, true},
+		{"size asc with filter", "f.size", SortAscUpper, true},
 	}
 
 	const (

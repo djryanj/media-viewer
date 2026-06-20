@@ -1556,4 +1556,230 @@ func TestGetDirectorySummaryIntegration(t *testing.T) {
 	})
 }
 
+// =============================================================================
+// Search sort integration tests
+// =============================================================================
+
+// TestSearchSortByName verifies that Search returns results sorted by filename.
+func TestSearchSortByName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now()
+	files := []MediaFile{
+		{Name: "zebra.jpg", Path: "zebra.jpg", ParentPath: "", Type: FileTypeImage, Size: 300, ModTime: now},
+		{Name: "alpha.jpg", Path: "alpha.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: now},
+		{Name: "mango.jpg", Path: "mango.jpg", ParentPath: "", Type: FileTypeImage, Size: 200, ModTime: now},
+	}
+	tx, _ := db.BeginBatch(ctx)
+	for i := range files {
+		_ = tx.UpsertFile(ctx, &files[i])
+	}
+	_ = db.EndBatch(tx, nil)
+
+	// tag all three so we can search for them
+	_, _ = db.GetOrCreateTag(ctx, "photo")
+	for _, f := range files {
+		_ = db.AddTagToFile(ctx, f.Path, "photo")
+	}
+
+	t.Run("name asc", func(t *testing.T) {
+		res, err := db.Search(ctx, SearchOptions{Query: "tag:photo", Page: 1, PageSize: 10, SortField: SortByName, SortOrder: SortAsc})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(res.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(res.Items))
+		}
+		names := []string{res.Items[0].Name, res.Items[1].Name, res.Items[2].Name}
+		want := []string{"alpha.jpg", "mango.jpg", "zebra.jpg"}
+		for i, n := range names {
+			if n != want[i] {
+				t.Errorf("name asc: item[%d] = %q, want %q", i, n, want[i])
+			}
+		}
+	})
+
+	t.Run("name desc", func(t *testing.T) {
+		res, err := db.Search(ctx, SearchOptions{Query: "tag:photo", Page: 1, PageSize: 10, SortField: SortByName, SortOrder: SortDesc})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(res.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(res.Items))
+		}
+		if res.Items[0].Name != "zebra.jpg" {
+			t.Errorf("name desc: first item = %q, want zebra.jpg", res.Items[0].Name)
+		}
+		if res.Items[2].Name != "alpha.jpg" {
+			t.Errorf("name desc: last item = %q, want alpha.jpg", res.Items[2].Name)
+		}
+	})
+}
+
+// TestSearchSortBySize verifies that Search returns results sorted by file size.
+func TestSearchSortBySize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now()
+	files := []MediaFile{
+		{Name: "big.jpg", Path: "big.jpg", ParentPath: "", Type: FileTypeImage, Size: 9000, ModTime: now},
+		{Name: "tiny.jpg", Path: "tiny.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: now},
+		{Name: "medium.jpg", Path: "medium.jpg", ParentPath: "", Type: FileTypeImage, Size: 5000, ModTime: now},
+	}
+	tx, _ := db.BeginBatch(ctx)
+	for i := range files {
+		_ = tx.UpsertFile(ctx, &files[i])
+	}
+	_ = db.EndBatch(tx, nil)
+
+	_, _ = db.GetOrCreateTag(ctx, "size-test")
+	for _, f := range files {
+		_ = db.AddTagToFile(ctx, f.Path, "size-test")
+	}
+
+	t.Run("size asc (smallest first)", func(t *testing.T) {
+		res, err := db.Search(ctx, SearchOptions{Query: "tag:size-test", Page: 1, PageSize: 10, SortField: SortBySize, SortOrder: SortAsc})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(res.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(res.Items))
+		}
+		if res.Items[0].Name != "tiny.jpg" {
+			t.Errorf("size asc: first = %q, want tiny.jpg", res.Items[0].Name)
+		}
+		if res.Items[2].Name != "big.jpg" {
+			t.Errorf("size asc: last = %q, want big.jpg", res.Items[2].Name)
+		}
+	})
+
+	t.Run("size desc (largest first)", func(t *testing.T) {
+		res, err := db.Search(ctx, SearchOptions{Query: "tag:size-test", Page: 1, PageSize: 10, SortField: SortBySize, SortOrder: SortDesc})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(res.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(res.Items))
+		}
+		if res.Items[0].Name != "big.jpg" {
+			t.Errorf("size desc: first = %q, want big.jpg", res.Items[0].Name)
+		}
+		if res.Items[2].Name != "tiny.jpg" {
+			t.Errorf("size desc: last = %q, want tiny.jpg", res.Items[2].Name)
+		}
+	})
+}
+
+// TestSearchSortByDate verifies that Search returns results sorted by mod time.
+func TestSearchSortByDate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	files := []MediaFile{
+		{Name: "newest.jpg", Path: "newest.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: base.Add(48 * time.Hour)},
+		{Name: "oldest.jpg", Path: "oldest.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: base},
+		{Name: "middle.jpg", Path: "middle.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: base.Add(24 * time.Hour)},
+	}
+	tx, _ := db.BeginBatch(ctx)
+	for i := range files {
+		_ = tx.UpsertFile(ctx, &files[i])
+	}
+	_ = db.EndBatch(tx, nil)
+
+	_, _ = db.GetOrCreateTag(ctx, "date-test")
+	for _, f := range files {
+		_ = db.AddTagToFile(ctx, f.Path, "date-test")
+	}
+
+	t.Run("date desc (newest first)", func(t *testing.T) {
+		res, err := db.Search(ctx, SearchOptions{Query: "tag:date-test", Page: 1, PageSize: 10, SortField: SortByDate, SortOrder: SortDesc})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(res.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(res.Items))
+		}
+		if res.Items[0].Name != "newest.jpg" {
+			t.Errorf("date desc: first = %q, want newest.jpg", res.Items[0].Name)
+		}
+		if res.Items[2].Name != "oldest.jpg" {
+			t.Errorf("date desc: last = %q, want oldest.jpg", res.Items[2].Name)
+		}
+	})
+
+	t.Run("date asc (oldest first)", func(t *testing.T) {
+		res, err := db.Search(ctx, SearchOptions{Query: "tag:date-test", Page: 1, PageSize: 10, SortField: SortByDate, SortOrder: SortAsc})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(res.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(res.Items))
+		}
+		if res.Items[0].Name != "oldest.jpg" {
+			t.Errorf("date asc: first = %q, want oldest.jpg", res.Items[0].Name)
+		}
+		if res.Items[2].Name != "newest.jpg" {
+			t.Errorf("date asc: last = %q, want newest.jpg", res.Items[2].Name)
+		}
+	})
+}
+
+// TestSearchSortDefaultFallback verifies that zero-value SortField falls back
+// to name ascending (same as the handler default).
+func TestSearchSortDefaultFallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db, _ := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now()
+	files := []MediaFile{
+		{Name: "zebra.jpg", Path: "zebra.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: now},
+		{Name: "apple.jpg", Path: "apple.jpg", ParentPath: "", Type: FileTypeImage, Size: 100, ModTime: now},
+	}
+	tx, _ := db.BeginBatch(ctx)
+	for i := range files {
+		_ = tx.UpsertFile(ctx, &files[i])
+	}
+	_ = db.EndBatch(tx, nil)
+
+	_, _ = db.GetOrCreateTag(ctx, "fallback-test")
+	for _, f := range files {
+		_ = db.AddTagToFile(ctx, f.Path, "fallback-test")
+	}
+
+	// Zero-value SortField ("") should default to name ascending
+	res, err := db.Search(ctx, SearchOptions{Query: "tag:fallback-test", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(res.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(res.Items))
+	}
+	if res.Items[0].Name != "apple.jpg" {
+		t.Errorf("default sort: first = %q, want apple.jpg", res.Items[0].Name)
+	}
+}
+
 // end of queries_integration_test.go additions

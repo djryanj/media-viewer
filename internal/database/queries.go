@@ -42,8 +42,12 @@ const (
 	SortByType SortField = "type"
 	// SortAsc sorts in ascending order.
 	SortAsc SortOrder = "asc"
+	// SortAscUpper is the uppercase for SortAsc; sorts in ascending order.
+	SortAscUpper = "ASC"
 	// SortDesc sorts in descending order.
 	SortDesc SortOrder = "desc"
+	// SortDescUpper us the uppercase for SortDesc; sorts in descending order.
+	SortDescUpper = "DESC"
 	// NameCollation is the SQL collation for case-insensitive name sorting.
 	NameCollation = "name COLLATE NOCASE"
 	// TagSuggestionType is the type identifier for tag suggestions.
@@ -68,6 +72,8 @@ const (
 	sortColumnType = "f.type"
 	// rootDirName is the display name used for the root media directory.
 	rootDirName = "Media"
+	// NameCollationStr is used for case-insensitive name field queries.
+	NameCollationStr = "f.name COLLATE NOCASE"
 )
 
 // ListOptions specifies options for listing directory contents.
@@ -91,6 +97,8 @@ type SearchOptions struct {
 	FilterType string
 	Page       int
 	PageSize   int
+	SortField  SortField
+	SortOrder  SortOrder
 }
 
 // TagFilter represents an included or excluded tag in a search query
@@ -115,9 +123,9 @@ func (d *Database) GetDirectorySummary(ctx context.Context, path string, sort So
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	orderDir := "ASC"
+	orderDir := SortAscUpper
 	if order == SortDesc {
-		orderDir = "DESC"
+		orderDir = SortDescUpper
 	}
 
 	// ORDER BY must match fetchDirectoryItems: folders first, then by sort field.
@@ -309,14 +317,6 @@ func normalizeListOptions(opts ListOptions) ListOptions {
 	return opts
 }
 
-// countDirectoryItems returns the total count of items in a directory.
-// Constants for query values
-const (
-	SortAscStr       = "ASC"
-	SortDescStr      = "DESC"
-	NameCollationStr = "f.name COLLATE NOCASE"
-)
-
 // countDirectoryItems uses prepared statements for the count query.
 func (d *Database) countDirectoryItems(ctx context.Context, opts ListOptions) (int, error) {
 	logging.Debug("ListDirectory: getting count...")
@@ -407,6 +407,51 @@ func (d *Database) fetchDirectoryItems(ctx context.Context, opts ListOptions) ([
 	}()
 
 	return d.scanDirectoryItems(rows)
+}
+
+// searchOrderByExpr returns an ORDER BY expression for the combined UNION
+// query in searchWithTagFilters, whose outer SELECT uses unqualified column
+// names (the union result aliases are plain "name", "size", "mod_time").
+func searchOrderByExpr(field SortField, order SortOrder) string {
+	dir := SortAscUpper
+	if order == SortDesc {
+		dir = SortDescUpper
+	}
+	switch field {
+	case SortByDate:
+		return "mod_time " + dir
+	case SortBySize:
+		return "size " + dir
+	case SortByName:
+		return "name COLLATE NOCASE " + dir
+	case SortByType:
+		return "type " + dir
+	default:
+		return "name COLLATE NOCASE " + dir
+	}
+}
+
+// searchJoinedOrderByExpr returns an ORDER BY expression for searchByTagFilters,
+// which JOINs the files table as "f" and also JOINs the tags table (which has
+// its own "name" column). Using the "f." qualifier avoids the ambiguous-column
+// error that SQLite raises when both f.name and t_inc_N.name are in scope.
+func searchJoinedOrderByExpr(field SortField, order SortOrder) string {
+	dir := SortAscUpper
+	if order == SortDesc {
+		dir = SortDescUpper
+	}
+	switch field {
+	case SortByDate:
+		return "f.mod_time " + dir
+	case SortBySize:
+		return "f.size " + dir
+	case SortByName:
+		return "f.name COLLATE NOCASE " + dir
+	case SortByType:
+		return "f.type " + dir
+	default:
+		return "f.name COLLATE NOCASE " + dir
+	}
 }
 
 // getSortColumn returns the SQL column for sorting.
@@ -674,8 +719,8 @@ func (d *Database) searchByTagFilters(ctx context.Context, opts SearchOptions, i
 		FROM files f
 		%s
 		%s
-		ORDER BY f.name COLLATE NOCASE LIMIT ? OFFSET ?
-	`, inclusionJoins, whereClause)
+		ORDER BY %s LIMIT ? OFFSET ?
+	`, inclusionJoins, whereClause, searchJoinedOrderByExpr(opts.SortField, opts.SortOrder))
 
 	selectArgs := make([]interface{}, len(args), len(args)+2)
 	copy(selectArgs, args)
@@ -831,8 +876,8 @@ func (d *Database) searchWithTagFilters(ctx context.Context, opts SearchOptions,
 			UNION
 			%s
 		) combined
-		ORDER BY name COLLATE NOCASE
-	`, ftsQuery, tagQuery)
+		ORDER BY %s
+	`, ftsQuery, tagQuery, searchOrderByExpr(opts.SortField, opts.SortOrder))
 
 	// Count query
 	ftsCountQuery := fmt.Sprintf(`
@@ -1309,9 +1354,9 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 	}
 
 	sortColumn := getSortColumn(sortField)
-	sortDir := SortAscStr
+	sortDir := SortAscUpper
 	if sortOrder == SortDesc {
-		sortDir = SortDescStr
+		sortDir = SortDescUpper
 	}
 
 	if sortColumn == NameCollation {
@@ -1328,14 +1373,14 @@ func (d *Database) GetMediaInDirectory(ctx context.Context, parentPath string, s
 		sortColumnType:    true,
 	}
 	allowedSortDirs := map[string]bool{
-		SortAscStr:  true,
-		SortDescStr: true,
+		SortAscUpper:  true,
+		SortDescUpper: true,
 	}
 	if !allowedColumns[sortColumn] {
 		sortColumn = NameCollationStr
 	}
 	if !allowedSortDirs[sortDir] {
-		sortDir = SortAscStr
+		sortDir = SortAscUpper
 	}
 
 	secondarySort := ""
@@ -1421,9 +1466,9 @@ func (d *Database) GetMediaInDirectoryPaged(ctx context.Context, parentPath stri
 	}
 
 	sortColumn := getSortColumn(sortField)
-	sortDir := SortAscStr
+	sortDir := SortAscUpper
 	if sortOrder == SortDesc {
-		sortDir = SortDescStr
+		sortDir = SortDescUpper
 	}
 
 	if sortColumn == NameCollation {
@@ -1438,12 +1483,12 @@ func (d *Database) GetMediaInDirectoryPaged(ctx context.Context, parentPath stri
 		sortColumnSize:    true,
 		sortColumnType:    true,
 	}
-	allowedSortDirs := map[string]bool{SortAscStr: true, SortDescStr: true}
+	allowedSortDirs := map[string]bool{SortAscUpper: true, SortDescUpper: true}
 	if !allowedColumns[sortColumn] {
 		sortColumn = NameCollationStr
 	}
 	if !allowedSortDirs[sortDir] {
-		sortDir = SortAscStr
+		sortDir = SortAscUpper
 	}
 
 	secondarySort := ""

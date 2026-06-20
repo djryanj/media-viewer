@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onDestroy } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { media } from '$lib/api/client';
@@ -24,21 +24,33 @@
     // and edit the full search string including tag filters added by the pill buttons.
     let editableQuery = $state('');
 
+    // Sync URL query param → currentQuery/editableQuery without triggering
+    // a search itself (the search effect below watches currentQuery separately).
     $effect(() => {
         const q = $page.url.searchParams.get('q') ?? '';
         if (q !== currentQuery) {
             currentQuery = q;
             editableQuery = q;
-            if (q) runSearch(q);
-            else {
-                items = [];
-                totalItems = 0;
-                hasMore = false;
-            }
         }
     });
 
-    async function runSearch(q: string) {
+    // Re-run the search whenever the query, sort field, or sort order changes.
+    $effect(() => {
+        const q = currentQuery;
+        const sort = galleryStore.sort;
+        const order = galleryStore.order;
+        if (q) {
+            runSearch(q, sort, order);
+        } else {
+            items = [];
+            totalItems = 0;
+            hasMore = false;
+            galleryStore.clearSelection();
+            galleryStore.setTotalItems(0);
+        }
+    });
+
+    async function runSearch(q: string, sort: string, order: string) {
         loading = true;
         error = '';
         currentPage = 1;
@@ -46,10 +58,11 @@
         hasMore = false;
         galleryStore.clearSelection();
         try {
-            const result = await media.search(q, 1, PAGE_SIZE);
+            const result = await media.search(q, 1, PAGE_SIZE, sort, order);
             items = result.items;
             totalItems = result.totalItems;
             hasMore = items.length < result.totalItems;
+            galleryStore.setTotalItems(result.totalItems);
         } catch {
             error = 'Search failed. Please try again.';
         } finally {
@@ -83,7 +96,13 @@
         loadingMore = true;
         const nextPage = currentPage + 1;
         try {
-            const result = await media.search(currentQuery, nextPage, PAGE_SIZE);
+            const result = await media.search(
+                currentQuery,
+                nextPage,
+                PAGE_SIZE,
+                galleryStore.sort,
+                galleryStore.order
+            );
             const newItems = result.items;
             items = [...items, ...newItems];
             currentPage = nextPage;
@@ -162,6 +181,14 @@
             { rootMargin: '0px 0px 600px 0px' }
         );
         observer.observe(sentinel);
+    });
+
+    // Prevent setSort from triggering a folder re-navigation while on the search
+    // page. Without this, if state.listing is non-null from a prior folder visit,
+    // changing sort calls navigate(state.path) which overwrites totalItems with
+    // the folder count, racing against the search's own setTotalItems call.
+    onMount(() => {
+        galleryStore.clearListing();
     });
 
     onDestroy(() => observer?.disconnect());

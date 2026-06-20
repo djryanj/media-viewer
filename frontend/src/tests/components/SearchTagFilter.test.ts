@@ -82,6 +82,8 @@ vi.mock('$lib/stores/gallery.svelte', () => ({
         clearSelection: vi.fn(),
         selectAll: vi.fn(),
         setItems: vi.fn(),
+        setTotalItems: vi.fn(),
+        clearListing: vi.fn(),
         getSelectedItems: vi.fn().mockReturnValue([]),
         setSort: vi.fn(),
         setTypeFilter: vi.fn(),
