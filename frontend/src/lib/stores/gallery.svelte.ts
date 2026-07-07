@@ -59,8 +59,7 @@ function loadFolderSort(path: string): { sort: SortField; order: SortOrder } | n
         if (raw) {
             const prefs = JSON.parse(raw) as Record<string, unknown>;
             const folderSorts = prefs.folderSorts as
-                | Record<string, { sort: SortField; order: SortOrder }>
-                | undefined;
+                Record<string, { sort: SortField; order: SortOrder }> | undefined;
             const entry = folderSorts?.[path];
             if (
                 entry &&
@@ -102,8 +101,7 @@ function clearFolderSort(path: string) {
         if (!raw) return;
         const prefs = JSON.parse(raw) as Record<string, unknown>;
         const folderSorts = prefs.folderSorts as
-            | Record<string, { sort: SortField; order: SortOrder }>
-            | undefined;
+            Record<string, { sort: SortField; order: SortOrder }> | undefined;
         if (folderSorts) {
             delete folderSorts[path];
             prefs.folderSorts = folderSorts;
