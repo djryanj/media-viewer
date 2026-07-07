@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.19.3] - Unreleased
 
+### Changed
+
+- chore(deps): update github actions ([#583](https://github.com/djryanj/media-viewer/pull/583))
+
+### Fixed
+
 - fix(ui): search results are now properly sortable and display the correct number of returned results in the footer. [#157](https://github.com/djryanj/media-viewer/issues/157)
 
 ## [0.19.2] - 06-18-2026
