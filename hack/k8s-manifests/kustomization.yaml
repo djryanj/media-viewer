@@ -12,4 +12,4 @@ resources:
 images:
 - name: ghcr.io/djryanj/media-viewer
   # newName: docker.io/bitnamilegacy/kubernetes-event-exporter
-  newTag: "v0.18.2"
+  newTag: "v0.19.2"
