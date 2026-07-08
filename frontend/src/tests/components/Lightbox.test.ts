@@ -368,4 +368,62 @@ describe('Lightbox — scroll to item on close', () => {
 
         el2.remove();
     });
+
+    it('resets scrollLeft to 0 on #main-content when the lightbox closes', async () => {
+        const mainContent = document.createElement('div');
+        mainContent.id = 'main-content';
+        mainContent.scrollLeft = 200;
+        document.body.appendChild(mainContent);
+
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+
+        lightboxStore.close();
+        await tick();
+
+        expect(mainContent.scrollLeft).toBe(0);
+        mainContent.remove();
+    });
+
+    it('does not throw when #main-content is absent on close', async () => {
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+        expect(() => lightboxStore.close()).not.toThrow();
+        await tick();
+    });
+});
+
+describe('Lightbox — touchmove prevents native scroll', () => {
+    beforeEach(() => {
+        lightboxStore.close();
+        vi.clearAllMocks();
+    });
+
+    it('calls e.preventDefault() on touchmove when the lightbox is open', async () => {
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+
+        const event = Object.assign(new Event('touchmove', { cancelable: true }), {
+            touches: []
+        });
+        const preventSpy = vi.spyOn(event, 'preventDefault');
+        window.dispatchEvent(event);
+
+        expect(preventSpy).toHaveBeenCalledOnce();
+    });
+
+    it('does not call e.preventDefault() on touchmove when the lightbox is closed', async () => {
+        render(Lightbox);
+
+        const event = Object.assign(new Event('touchmove', { cancelable: true }), {
+            touches: []
+        });
+        const preventSpy = vi.spyOn(event, 'preventDefault');
+        window.dispatchEvent(event);
+
+        expect(preventSpy).not.toHaveBeenCalled();
+    });
 });
