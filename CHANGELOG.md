@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update vite to v8, @sveltejs/vite-plugin-svelte to v7, and svelte minimum to v5.46.4 ([#599](https://github.com/djryanj/media-viewer/pull/599))
 - chore(deps): update node.js to v24.18.0 ([#586](https://github.com/djryanj/media-viewer/pull/586))
 - chore(deps): update all non-major dependencies ([#585](https://github.com/djryanj/media-viewer/pull/585))
 - chore(deps): update github actions ([#583](https://github.com/djryanj/media-viewer/pull/583))
 
 ### Fixed
 
+- fix(build): convert `manualChunks` in vite.config.ts from object to function form (rolldown/vite 8 breaking change) ([#599](https://github.com/djryanj/media-viewer/pull/599))
+- fix(ci): auto-changelog action now correctly targets the unreleased version block (`## [X.Y.Z] - Unreleased` format), creates one when none exists rather than appending to a released version, and no longer fails the workflow when PR comment permissions are denied ([#599](https://github.com/djryanj/media-viewer/pull/599))
 - fix(ui): search results are now properly sortable and display the correct number of returned results in the footer. [#157](https://github.com/djryanj/media-viewer/issues/157)
 
 ## [0.19.2] - 06-18-2026
@@ -33,7 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- chore(deps): update dependency vite to v8 ([#599](https://github.com/djryanj/media-viewer/pull/599))
 - build(deps): bump alpine from 3.23 to 3.24 ([#565](https://github.com/djryanj/media-viewer/pull/565))
 - chore(deps): update dependency eslint-plugin-jsdoc to v63 ([#553](https://github.com/djryanj/media-viewer/pull/553))
 - build(deps): bump mikepenz/release-changelog-builder-action from 6.2.1 to 6.2.2 ([#550](https://github.com/djryanj/media-viewer/pull/550))
