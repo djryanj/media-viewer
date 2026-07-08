@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import SearchPage from '../../routes/search/+page.svelte';
 import { galleryStore } from '$lib/stores/gallery.svelte';
 import { media } from '$lib/api/client';
+import type { SearchSuggestion } from '$lib/api/types';
 
 // ── SvelteKit stubs ────────────────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 // We do NOT mock '$lib/stores/gallery.svelte' — the real reactive store is
 // required so that $effect re-runs when galleryStore.sort/order change.
 
+const mediaSuggest = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+
 const mediaSearch = vi.hoisted(() =>
     vi.fn().mockResolvedValue({
         items: [],
@@ -41,6 +44,7 @@ const mediaSearch = vi.hoisted(() =>
 vi.mock('$lib/api/client', () => ({
     media: {
         search: mediaSearch,
+        suggest: mediaSuggest,
         list: vi.fn().mockResolvedValue({
             path: '/',
             name: 'root',
@@ -99,6 +103,8 @@ beforeEach(() => {
     galleryStore.setItems([]);
     galleryStore.clearSelection();
     mediaSearch.mockReset();
+    mediaSuggest.mockReset();
+    mediaSuggest.mockResolvedValue([]);
     mediaSearch.mockResolvedValue({
         items: [],
         totalItems: 0,
@@ -245,5 +251,113 @@ describe('SearchPage — status bar item count', () => {
         });
         render(SearchPage);
         await waitFor(() => expect(galleryStore.totalItems).toBe(1337));
+    });
+});
+
+// ── Suggestions ────────────────────────────────────────────────────────────────
+
+function makeSugg(
+    name: string,
+    type: SearchSuggestion['type'] = 'image',
+    path?: string
+): SearchSuggestion {
+    return { path: path ?? `/${name}.jpg`, name, type, highlight: name };
+}
+
+describe('SearchPage — suggestions', () => {
+    it('calls media.suggest after typing', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('sunset')]);
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i });
+        await fireEvent.input(input, { target: { value: 'sun' } });
+        await waitFor(() => expect(mediaSuggest).toHaveBeenCalledWith('sun'));
+    });
+
+    it('renders suggestion items returned by the API', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('sunset'), makeSugg('sunrise')]);
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i });
+        await fireEvent.input(input, { target: { value: 'sun' } });
+        await waitFor(() => expect(screen.getByText('sunset')).toBeTruthy());
+        expect(screen.getByText('sunrise')).toBeTruthy();
+    });
+
+    it('does not call media.suggest when the query is empty', async () => {
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i });
+        await fireEvent.input(input, { target: { value: '' } });
+        await new Promise((r) => setTimeout(r, 250));
+        expect(mediaSuggest).not.toHaveBeenCalled();
+    });
+
+    it('clicking a tag suggestion navigates to /search?q=<name>', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('vacation', 'tag', '/tags/vacation')]);
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i });
+        await fireEvent.input(input, { target: { value: 'vac' } });
+        await waitFor(() => expect(screen.getByText('vacation')).toBeTruthy());
+        await fireEvent.mouseDown(screen.getByText('vacation').closest('button')!);
+        expect(gotoMock).toHaveBeenCalledWith('/search?q=vacation');
+    });
+
+    it('clicking a folder suggestion navigates to /?path=<path>', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('trips', 'folder', '/photos/trips')]);
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i });
+        await fireEvent.input(input, { target: { value: 'tri' } });
+        await waitFor(() => expect(screen.getByText('trips')).toBeTruthy());
+        await fireEvent.mouseDown(screen.getByText('trips').closest('button')!);
+        expect(gotoMock).toHaveBeenCalledWith('/?path=%2Fphotos%2Ftrips');
+    });
+
+    it('clicking a playlist suggestion navigates to /playlists/<name>', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('summer', 'playlist', '/summer.m3u')]);
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i });
+        await fireEvent.input(input, { target: { value: 'sum' } });
+        await waitFor(() => expect(screen.getByText('summer')).toBeTruthy());
+        await fireEvent.mouseDown(screen.getByText('summer').closest('button')!);
+        expect(gotoMock).toHaveBeenCalledWith('/playlists/summer');
+    });
+
+    it('Escape dismisses suggestions without navigating', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('alpha')]);
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i });
+        await fireEvent.input(input, { target: { value: 'alp' } });
+        await waitFor(() => expect(screen.getByText('alpha')).toBeTruthy());
+        await fireEvent.keyDown(input, { key: 'Escape' });
+        expect(screen.queryByText('alpha')).toBeNull();
+        expect(gotoMock).not.toHaveBeenCalled();
+    });
+
+    it('ArrowDown highlights the first suggestion', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('alpha'), makeSugg('beta')]);
+        const { container } = render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i }) as HTMLInputElement;
+        await fireEvent.input(input, { target: { value: 'a' } });
+        await waitFor(() => expect(screen.getByText('alpha')).toBeTruthy());
+        await fireEvent.keyDown(input, { key: 'ArrowDown' });
+        expect(input.getAttribute('aria-activedescendant')).toBe('psug-0');
+        expect(container.querySelector('.page-sug-item.active')).toBeTruthy();
+    });
+
+    it('Enter with a highlighted suggestion navigates to that result', async () => {
+        mediaSuggest.mockResolvedValue([makeSugg('kitten')]);
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i }) as HTMLInputElement;
+        await fireEvent.input(input, { target: { value: 'kit' } });
+        await waitFor(() => expect(screen.getByText('kitten')).toBeTruthy());
+        await fireEvent.keyDown(input, { key: 'ArrowDown' });
+        await fireEvent.keyDown(input, { key: 'Enter' });
+        expect(gotoMock).toHaveBeenCalledWith('/search?q=kitten');
+    });
+
+    it('Enter with no highlighted suggestion submits the typed query', async () => {
+        render(SearchPage);
+        const input = screen.getByRole('combobox', { name: /search query/i }) as HTMLInputElement;
+        await fireEvent.input(input, { target: { value: 'beach sunset' } });
+        await fireEvent.keyDown(input, { key: 'Enter' });
+        expect(gotoMock).toHaveBeenCalledWith('/search?q=beach%20sunset');
     });
 });
