@@ -130,16 +130,21 @@
         }
     }
 
-    function handleSuggestInput() {
+    function handleSuggestInput(e: Event) {
+        // Read from the DOM element directly so the value is always current,
+        // regardless of whether bind:value has flushed editableQuery yet.
+        const input = e.currentTarget as HTMLInputElement;
         suggestionActiveIndex = -1;
         clearTimeout(suggestDebounce);
-        if (!editableQuery.trim()) {
+        if (!input.value.trim()) {
             suggestions = [];
             return;
         }
         suggestDebounce = setTimeout(async () => {
+            const q = input.value.trim();
+            if (!q) return;
             try {
-                suggestions = await media.suggest(editableQuery);
+                suggestions = await media.suggest(q);
             } catch {
                 suggestions = [];
             }

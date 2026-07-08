@@ -28,7 +28,9 @@ test('@smoke @search pressing "/" does not open search when an input is focused'
     // On the search page, the search input is already visible — pressing "/" inside
     // the focused input should type the character, not re-trigger openSearch.
     await page.goto('/search');
-    const searchInput = page.getByRole('combobox');
+    // Scope to the page's own search input — the header SearchBar is also a combobox
+    // on desktop widths, so a bare getByRole('combobox') would be ambiguous here.
+    const searchInput = page.getByRole('combobox', { name: 'Search query' });
     await searchInput.click({ force: true });
     await page.keyboard.press('/');
     // The slash should have been typed into the input, not swallowed

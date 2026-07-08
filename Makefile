@@ -758,7 +758,7 @@ frontend-test-e2e-runtime-smoke-auto:
 	@bash ./hack/run-with-docker-test-server.sh $(MAKE) frontend-test-e2e-runtime-smoke 2>&1 | tee e2e-runtime-smoke-auto.log
 
 # Run frontend E2E tests with an ephemeral test server
-frontend-test-e2e-auto:
+frontend-test-e2e-auto: svelte-build
 	@echo "Running frontend E2E tests with ephemeral test server..."
 	@echo "Logging to e2e-auto.log"
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e 2>&1 | tee e2e-auto.log
