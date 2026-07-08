@@ -67,7 +67,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.16.0'
+                  node-version: '24.17.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -124,7 +124,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.16.0'
+                  node-version: '24.17.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -195,7 +195,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.16.0'
+                  node-version: '24.17.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -324,7 +324,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.16.0'
+                  node-version: '24.17.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -404,7 +404,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.16.0'
+                  node-version: '24.17.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -502,7 +502,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.16.0'
+                  node-version: '24.17.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -586,7 +586,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
               with:
-                  node-version: '24.16.0'
+                  node-version: '24.17.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -889,14 +889,14 @@ jobs:
 
             - name: Generate changelog
               id: changelog
-              uses: mikepenz/release-changelog-builder-action@348e88fab4c37338b1e803ceb2d4a7a5db6c0833 # v6
+              uses: mikepenz/release-changelog-builder-action@c9bcd8238b6f41e05561348339429d360b1c0247 # v6
               with:
                   configuration: .github/changelog-config.json
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Create Release
-              uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
+              uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
               with:
                   body: |
                       ${{ steps.changelog.outputs.changelog }}

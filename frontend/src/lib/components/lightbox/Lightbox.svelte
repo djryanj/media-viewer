@@ -341,8 +341,16 @@
     function handleTouchMove(e: TouchEvent) {
         if (!lightboxStore.open) return;
 
+        // Always prevent default when the lightbox is open. Chrome makes
+        // window-level touchmove listeners passive by default (since v55), which
+        // silently ignores e.preventDefault() and lets the browser scroll
+        // .main-content — even with overflow-x: hidden, this sets scrollLeft > 0,
+        // which offsets the sticky toolbar and makes the filter chips appear
+        // one-per-line after the lightbox closes. This handler is registered
+        // non-passively via $effect below so the call is actually effective.
+        e.preventDefault();
+
         if (e.touches.length === 2 && isPinching) {
-            e.preventDefault();
             const newDist = touchDist(e.touches[0], e.touches[1]);
             const rawScale = pinchStartScale * (newDist / pinchStartDist);
             const newScale = Math.max(1, Math.min(5, rawScale));
@@ -359,7 +367,6 @@
             panX = cx;
             panY = cy;
         } else if (e.touches.length === 1 && zoom > 1 && !isPinching) {
-            e.preventDefault();
             const dx = e.touches[0].clientX - singlePanStartTouchX;
             const dy = e.touches[0].clientY - singlePanStartTouchY;
             const [cx, cy] = clampPan(zoom, singlePanStartX + dx, singlePanStartY + dy);
@@ -453,6 +460,14 @@
         });
     }
 
+    // ── Non-passive touchmove — must be registered via addEventListener so that
+    //    e.preventDefault() is effective. Chrome makes svelte:window touch
+    //    handlers passive by default, which silently ignores preventDefault. ────
+    $effect(() => {
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        return () => window.removeEventListener('touchmove', handleTouchMove);
+    });
+
     // ── Scroll-to-item on close ──────────────────────────────────────────────
     let lastViewedPath: string | null = null;
 
@@ -466,6 +481,11 @@
                 `[data-path="${CSS.escape(lastViewedPath)}"]`
             );
             el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            // Reset any horizontal scroll that accumulated during lightbox swiping.
+            // overflow-x: hidden allows programmatic scrollLeft changes even though
+            // they're invisible, which offsets the sticky toolbar layout.
+            const container = document.getElementById('main-content');
+            if (container) container.scrollLeft = 0;
         }
     });
 
@@ -657,7 +677,6 @@
     onkeydown={handleKeydown}
     onmousemove={showControls}
     ontouchstart={handleTouchStart}
-    ontouchmove={handleTouchMove}
     ontouchend={handleTouchEnd}
 />
 
