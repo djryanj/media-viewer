@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update dependency eslint to v10 ([#595](https://github.com/djryanj/media-viewer/pull/595))
 - chore(deps): update dependency globals to v17 ([#596](https://github.com/djryanj/media-viewer/pull/596))
 - chore(deps): update dependency prettier-plugin-svelte to v4 ([#597](https://github.com/djryanj/media-viewer/pull/597))
 - chore(deps): update vite to v8, @sveltejs/vite-plugin-svelte to v7, and svelte minimum to v5.46.4 ([#599](https://github.com/djryanj/media-viewer/pull/599))
