@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump golang.org/x/image from 0.43.0 to 0.44.0 ([#589](https://github.com/djryanj/media-viewer/pull/589))
 - build(deps): bump actions/checkout from 6.0.3 to 7.0.0 ([#590](https://github.com/djryanj/media-viewer/pull/590))
 - build(deps): bump renovatebot/github-action from 46.1.16 to 46.1.18 ([#593](https://github.com/djryanj/media-viewer/pull/593))
 - chore(deps): update dependency eslint to v10 ([#595](https://github.com/djryanj/media-viewer/pull/595))
