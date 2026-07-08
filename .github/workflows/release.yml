@@ -23,7 +23,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Restore sample media cache
               uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
@@ -62,7 +62,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -94,7 +94,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install libvips
               run: |
@@ -119,7 +119,7 @@ jobs:
         needs: prepare-frontend-deps
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -161,7 +161,7 @@ jobs:
         needs: lint
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install libvips
               run: |
@@ -190,7 +190,7 @@ jobs:
         needs: [lint-frontend, prepare-frontend-deps]
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Set up Node.js
               uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -232,7 +232,7 @@ jobs:
         needs: test-unit
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install system dependencies
               run: |
@@ -263,7 +263,7 @@ jobs:
         needs: test-unit
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install libvips and ffmpeg
               run: |
@@ -285,7 +285,7 @@ jobs:
         needs: lint
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install libvips
               run: |
@@ -314,7 +314,7 @@ jobs:
         needs: [test-frontend-unit, build-binary, prepare-sample-media, prepare-frontend-deps]
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install system dependencies
               run: |
@@ -394,7 +394,7 @@ jobs:
         needs: [test-frontend-unit, build-binary, prepare-sample-media, prepare-frontend-deps]
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install system dependencies
               run: |
@@ -489,7 +489,7 @@ jobs:
         needs: [lint, lint-frontend, prepare-sample-media, prepare-frontend-deps]
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install system dependencies
               run: |
@@ -573,7 +573,7 @@ jobs:
         needs: [lint, lint-frontend, prepare-sample-media, prepare-frontend-deps]
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
             - name: Install system dependencies
               run: |
@@ -672,7 +672,7 @@ jobs:
             version: ${{ steps.build-info.outputs.version }}
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
               with:
                   fetch-depth: 0
 
@@ -745,7 +745,7 @@ jobs:
             version: ${{ steps.build-info.outputs.version }}
         steps:
             - name: Checkout repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
               with:
                   fetch-depth: 0
 
@@ -871,7 +871,7 @@ jobs:
         needs: [docker, docker-nvidia, sbom, sbom-nvidia]
         steps:
             - name: Checkout code
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
               with:
                   fetch-depth: 0
 
