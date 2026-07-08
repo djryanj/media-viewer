@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update node.js to v24.18.0 ([#586](https://github.com/djryanj/media-viewer/pull/586))
 - chore(deps): update all non-major dependencies ([#585](https://github.com/djryanj/media-viewer/pull/585))
 - chore(deps): update github actions ([#583](https://github.com/djryanj/media-viewer/pull/583))
 
