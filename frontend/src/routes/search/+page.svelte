@@ -5,7 +5,7 @@
     import { media } from '$lib/api/client';
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import { galleryStore } from '$lib/stores/gallery.svelte';
-    import type { MediaFile } from '$lib/api/types';
+    import type { MediaFile, SearchSuggestion } from '$lib/api/types';
     import Gallery from '$lib/components/gallery/Gallery.svelte';
     import GalleryToolbar from '$lib/components/gallery/GalleryToolbar.svelte';
 
@@ -23,6 +23,17 @@
     // editableQuery reflects the URL; stays in sync so the user can see
     // and edit the full search string including tag filters added by the pill buttons.
     let editableQuery = $state('');
+
+    // Suggestions for the search page input (mirrors SearchBar.svelte logic)
+    let suggestions: SearchSuggestion[] = $state([]);
+    let suggestionActiveIndex = $state(-1);
+    let suggestionsEl: HTMLUListElement | undefined = $state();
+    let suggestDebounce: ReturnType<typeof setTimeout>;
+
+    $effect(() => {
+        suggestions;
+        suggestionActiveIndex = -1;
+    });
 
     // Sync URL query param → currentQuery/editableQuery without triggering
     // a search itself (the search effect below watches currentQuery separately).
@@ -119,6 +130,97 @@
         }
     }
 
+    function handleSuggestInput(e: Event) {
+        // Read from the DOM element directly so the value is always current,
+        // regardless of whether bind:value has flushed editableQuery yet.
+        const input = e.currentTarget as HTMLInputElement;
+        suggestionActiveIndex = -1;
+        clearTimeout(suggestDebounce);
+        if (!input.value.trim()) {
+            suggestions = [];
+            return;
+        }
+        suggestDebounce = setTimeout(async () => {
+            const q = input.value.trim();
+            if (!q) return;
+            try {
+                suggestions = await media.suggest(q);
+            } catch {
+                suggestions = [];
+            }
+        }, 200);
+    }
+
+    function handleSuggestion(s: SearchSuggestion) {
+        suggestions = [];
+        if (s.type === 'folder') {
+            goto(`/?path=${encodeURIComponent(s.path)}`);
+        } else if (s.type === 'playlist') {
+            goto(`/playlists/${encodeURIComponent(s.name)}`);
+        } else {
+            goto(`/search?q=${encodeURIComponent(s.name)}`);
+        }
+    }
+
+    function scrollSuggestionIntoView() {
+        if (!suggestionsEl || suggestionActiveIndex < 0) return;
+        (suggestionsEl.children[suggestionActiveIndex] as HTMLElement | undefined)?.scrollIntoView({
+            block: 'nearest'
+        });
+    }
+
+    function handleSuggestKeydown(e: KeyboardEvent) {
+        if (e.key === 'Escape') {
+            suggestions = [];
+            return;
+        }
+        if (e.key === 'Enter') {
+            if (suggestionActiveIndex >= 0 && suggestions[suggestionActiveIndex]) {
+                e.preventDefault();
+                handleSuggestion(suggestions[suggestionActiveIndex]);
+                return;
+            }
+            suggestions = [];
+            const val = editableQuery.trim();
+            if (val) goto(`/search?q=${encodeURIComponent(val)}`);
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!suggestions.length) return;
+            suggestionActiveIndex =
+                suggestionActiveIndex < 0 ? 0 : (suggestionActiveIndex + 1) % suggestions.length;
+            scrollSuggestionIntoView();
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!suggestions.length) return;
+            suggestionActiveIndex =
+                suggestionActiveIndex < 0
+                    ? suggestions.length - 1
+                    : (suggestionActiveIndex - 1 + suggestions.length) % suggestions.length;
+            scrollSuggestionIntoView();
+            return;
+        }
+    }
+
+    function encodedPath(path: string): string {
+        return path.split('/').map(encodeURIComponent).join('/');
+    }
+
+    function thumbUrl(s: SearchSuggestion): string | null {
+        if (s.type === 'image' || s.type === 'video' || s.type === 'playlist') {
+            return `/api/thumbnail/${encodedPath(s.path)}`;
+        }
+        return null;
+    }
+
+    function parentDir(path: string): string {
+        const idx = path.lastIndexOf('/');
+        return idx > 0 ? path.slice(0, idx) : '';
+    }
+
     // ── Tag filtering helpers ────────────────────────────────────────────────
     /** Unique tags across all result items, sorted by frequency. */
     const uniqueTags = $derived.by<string[]>(() => {
@@ -204,21 +306,105 @@
 
 <div class="page-header">
     <h2 class="page-title">Search</h2>
-    <input
-        class="search-query-input"
-        type="search"
-        enterkeyhint="search"
-        autocomplete="off"
-        bind:value={editableQuery}
-        placeholder="Search files and tags…"
-        aria-label="Search query"
-        onkeydown={(e) => {
-            if (e.key === 'Enter') {
-                const val = editableQuery.trim();
-                if (val) goto(`/search?q=${encodeURIComponent(val)}`);
-            }
-        }}
-    />
+    <div class="search-input-wrap">
+        <input
+            class="search-query-input"
+            type="search"
+            enterkeyhint="search"
+            autocomplete="off"
+            bind:value={editableQuery}
+            placeholder="Search files and tags…"
+            aria-label="Search query"
+            role="combobox"
+            aria-expanded={suggestions.length > 0}
+            aria-autocomplete="list"
+            aria-controls="page-search-suggestions"
+            aria-activedescendant={suggestionActiveIndex >= 0
+                ? `psug-${suggestionActiveIndex}`
+                : undefined}
+            oninput={handleSuggestInput}
+            onkeydown={handleSuggestKeydown}
+            onblur={() => setTimeout(() => (suggestions = []), 150)}
+        />
+        {#if suggestions.length > 0}
+            <ul
+                class="page-suggestions"
+                id="page-search-suggestions"
+                role="listbox"
+                bind:this={suggestionsEl}
+            >
+                {#each suggestions as s, i}
+                    <li id="psug-{i}" role="option" aria-selected={suggestionActiveIndex === i}>
+                        <button
+                            class="page-sug-item"
+                            class:active={suggestionActiveIndex === i}
+                            onmousedown={(e) => {
+                                e.preventDefault();
+                                handleSuggestion(s);
+                            }}
+                        >
+                            <div class="page-sug-thumb">
+                                {#if thumbUrl(s)}
+                                    <img
+                                        src={thumbUrl(s)}
+                                        alt=""
+                                        loading="lazy"
+                                        decoding="async"
+                                        class="page-sug-img"
+                                    />
+                                {:else if s.type === 'folder'}
+                                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <path
+                                            d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+                                        />
+                                    </svg>
+                                {:else if s.type === 'tag' || s.type === 'tag-exclude'}
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        aria-hidden="true"
+                                    >
+                                        <path
+                                            d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                                        />
+                                        <line x1="7" y1="7" x2="7.01" y2="7" />
+                                    </svg>
+                                {:else}
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        aria-hidden="true"
+                                    >
+                                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                                        <circle cx="8.5" cy="8.5" r="1.5" />
+                                        <polyline points="21 15 16 10 5 21" />
+                                    </svg>
+                                {/if}
+                            </div>
+                            <div class="page-sug-info">
+                                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                                <span class="page-sug-name">{@html s.highlight || s.name}</span>
+                                {#if s.type !== 'tag' && s.type !== 'tag-exclude' && parentDir(s.path)}
+                                    <span class="page-sug-path">{parentDir(s.path)}</span>
+                                {:else if s.type === 'folder' && s.itemCount}
+                                    <span class="page-sug-path">{s.itemCount} items</span>
+                                {/if}
+                            </div>
+                            {#if s.type === 'tag' || s.type === 'tag-exclude'}
+                                <span class="page-sug-badge"
+                                    >{s.type === 'tag-exclude' ? 'exclude' : 'tag'}</span
+                                >
+                            {/if}
+                        </button>
+                    </li>
+                {/each}
+            </ul>
+        {/if}
+    </div>
     {#if !loading && currentQuery}
         <span class="page-count">{totalItems} item(s)</span>
     {/if}
@@ -298,10 +484,15 @@
         flex-shrink: 0;
     }
 
-    .search-query-input {
+    .search-input-wrap {
+        position: relative;
         flex: 1;
         min-width: 180px;
         max-width: 480px;
+    }
+
+    .search-query-input {
+        width: 100%;
         background: var(--color-surface-2);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-full);
@@ -318,6 +509,108 @@
 
     .search-query-input::-webkit-search-cancel-button {
         -webkit-appearance: none;
+    }
+
+    .page-suggestions {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-lg);
+        list-style: none;
+        overflow: hidden;
+        z-index: 200;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .page-sug-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-3);
+        width: 100%;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: var(--spacing-2) var(--spacing-3);
+        text-align: left;
+        color: var(--color-text);
+        transition: background var(--transition-fast);
+    }
+
+    .page-sug-item:hover,
+    .page-sug-item.active {
+        background: var(--color-surface-2);
+    }
+
+    .page-sug-thumb {
+        flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        background: var(--color-surface-2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--color-text-muted);
+    }
+
+    .page-sug-thumb svg {
+        width: 18px;
+        height: 18px;
+        opacity: 0.6;
+    }
+
+    .page-sug-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .page-sug-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .page-sug-name {
+        font-size: var(--text-sm);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 1.3;
+    }
+
+    .page-sug-path {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 1.3;
+    }
+
+    .page-sug-badge {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        background: var(--color-surface-3);
+        padding: 1px 6px;
+        border-radius: var(--radius-sm);
+        flex-shrink: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    :global(.page-sug-name mark) {
+        background: transparent;
+        color: var(--color-primary);
+        font-weight: 600;
     }
 
     .page-count {

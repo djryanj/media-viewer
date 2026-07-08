@@ -564,7 +564,9 @@ test('@gallery MergeTagsModal opens and can be cancelled', async ({ page }) => {
     await page.getByRole('button', { name: /merge tags/i }).dispatchEvent('click');
     await expect(page.getByRole('dialog', { name: /merge tags/i })).toBeVisible({ timeout: 3000 });
 
-    // Cancel closes the modal
-    await page.getByRole('button', { name: /cancel/i }).dispatchEvent('click');
+    // Cancel closes the modal — scope to the dialog to avoid matching the toolbar's Cancel button
+    await page.getByRole('dialog', { name: /merge tags/i })
+        .getByRole('button', { name: /cancel/i })
+        .dispatchEvent('click');
     await expect(page.getByRole('dialog', { name: /merge tags/i })).not.toBeVisible({ timeout: 2000 });
 });

@@ -172,6 +172,50 @@ test('@smoke @search status bar shows correct item count from search results', a
     await expect(page.locator('.status-footer')).toContainText('42 items', { timeout: 5000 });
 });
 
+// ── Suggestions on search page (mobile) ───────────────────────────────────────
+
+const SUGGEST_ONE = JSON.stringify([
+    { path: '/nature.jpg', name: 'nature', type: 'image', highlight: 'nature' }
+]);
+
+test('@smoke @search mobile: search page shows suggestions while typing', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    // Use a regex to reliably match the URL including its query string
+    await page.route(/\/api\/search\/suggestions/, (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: SUGGEST_ONE })
+    );
+
+    await page.goto('/search');
+    await page.waitForLoadState('networkidle');
+
+    // At mobile widths the header SearchBar is hidden; only the page input is visible.
+    const input = page.locator('.search-query-input');
+    await expect(input).toBeVisible({ timeout: 5000 });
+    // pressSequentially dispatches real per-character input events, which Svelte's
+    // oninput handler picks up more reliably than fill()'s single synthetic event.
+    await input.pressSequentially('nat');
+
+    await expect(page.locator('.page-suggestions')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('.page-sug-name').first()).toContainText('nature');
+});
+
+test('@smoke @search mobile: clicking a suggestion navigates to the correct URL', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route(/\/api\/search\/suggestions/, (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: SUGGEST_ONE })
+    );
+
+    await page.goto('/search');
+    await page.waitForLoadState('networkidle');
+
+    const input = page.locator('.search-query-input');
+    await input.pressSequentially('nat');
+    await expect(page.locator('.page-suggestions')).toBeVisible({ timeout: 3000 });
+    await page.locator('.page-sug-item').first().click();
+
+    await expect(page).toHaveURL(/\/search\?q=nature/);
+});
+
 // ── GalleryToolbar ────────────────────────────────────────────────────────────
 
 test('@search GalleryToolbar renders on the search page when in selection mode', async ({ page }) => {

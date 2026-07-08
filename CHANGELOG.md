@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(build): convert `manualChunks` in vite.config.ts from object to function form (rolldown/vite 8 breaking change) ([#599](https://github.com/djryanj/media-viewer/pull/599))
 - fix(ci): auto-changelog action now correctly targets the unreleased version block (`## [X.Y.Z] - Unreleased` format), creates one when none exists rather than appending to a released version, and no longer fails the workflow when PR comment permissions are denied ([#599](https://github.com/djryanj/media-viewer/pull/599))
 - fix(ui): search results are now properly sortable and display the correct number of returned results in the footer. [#157](https://github.com/djryanj/media-viewer/issues/157)
+- fix(ui): search suggestions now appear while typing on the search page on mobile, where the header search bar is hidden. [#601](https://github.com/djryanj/media-viewer/issues/601)
 
 ## [0.19.2] - 06-18-2026
 
