@@ -55,8 +55,8 @@ export default defineConfig(({ mode }) => ({
         // Improve chunk splitting for better caching on mobile
         rollupOptions: {
             output: {
-                manualChunks: {
-                    vendor: ['svelte']
+                manualChunks: (id) => {
+                    if (id.includes('node_modules/svelte')) return 'vendor';
                 }
             }
         },
