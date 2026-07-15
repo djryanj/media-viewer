@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.4] - Unreleased
+
+### Changed
+
+- build(deps): bump golang.org/x/sys from 0.46.0 to 0.47.0 ([#614](https://github.com/djryanj/media-viewer/pull/614))
+
 ## [0.19.3] - 07-09-2026
 
 ### Changed
