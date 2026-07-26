@@ -15,7 +15,6 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
-	"media-viewer/internal/mediatypes"
 	"media-viewer/internal/metrics"
 )
 
@@ -83,6 +82,16 @@ type ParallelWalker struct {
 	filesProcessed   atomic.Int64
 	foldersProcessed atomic.Int64
 	errorsCount      atomic.Int64
+
+	// sniffCache lets workers skip re-opening unchanged files to content-sniff
+	// them.  Set before Walk() and only read afterwards, so it needs no lock.
+	sniffCache sniffCache
+}
+
+// SetSniffCache supplies the previous index run's content-sniff results.  Must be
+// called before Walk().
+func (pw *ParallelWalker) SetSniffCache(cache sniffCache) {
+	pw.sniffCache = cache
 }
 
 // NewParallelWalker creates a new parallel directory walker
@@ -305,24 +314,9 @@ func (pw *ParallelWalker) processFile(job fileJob) fileResult {
 		}
 	}
 
-	ext := strings.ToLower(filepath.Ext(job.info.Name()))
-	fileType := mediatypes.GetFileType(ext)
-
-	if fileType == mediatypes.FileTypeOther {
+	fileType, mimeType, ok := classifyFile(pw.mediaDir, job.relPath, job.info, pw.sniffCache)
+	if !ok {
 		return fileResult{}
-	}
-
-	mimeType := mediatypes.GetMimeType(ext)
-
-	// Content-sniff image files to catch misnamed media (e.g. an animated GIF
-	// saved with a .jpg extension).  Mirrors the same logic in createMediaFile.
-	if fileType == mediatypes.FileTypeImage {
-		if sniffedType, sniffedMime, ok := mediatypes.SniffFileType(filepath.Join(pw.mediaDir, job.relPath)); ok {
-			logging.Debug("parallel processFile: content sniff overrides type for %s: %s → %s",
-				job.relPath, fileType, sniffedType)
-			fileType = sniffedType
-			mimeType = sniffedMime
-		}
 	}
 
 	hashStart := time.Now()

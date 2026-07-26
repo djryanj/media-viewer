@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"crypto/md5" //nolint:gosec // MD5 used for cache key generation, not security
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +14,7 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
+	"media-viewer/internal/media"
 
 	"github.com/gorilla/mux"
 )
@@ -402,29 +405,23 @@ func (h *Handlers) validateThumbnailPath(w http.ResponseWriter, r *http.Request)
 	return filePath, fullPath, true
 }
 
-// validateThumbnailFileOnDisk checks that a non-folder file exists on disk and is not a directory.
-// Returns true if valid, or writes an HTTP error and returns false.
-func (h *Handlers) validateThumbnailFileOnDisk(w http.ResponseWriter, _, fullPath string) bool {
-	retryConfig := DefaultNFSRetryConfig()
-	fileInfo, err := StatWithRetry(fullPath, retryConfig)
-	if err != nil {
-		if os.IsNotExist(err) {
-			logging.Warn("Thumbnail: file not found: %s", fullPath)
-			http.Error(w, "File not found", http.StatusNotFound)
-		} else {
-			logging.Error("Thumbnail: failed to stat file %s: %v", fullPath, err)
-			http.Error(w, "Failed to access file", http.StatusInternalServerError)
-		}
-		return false
-	}
-
-	if fileInfo.IsDir() {
-		logging.Warn("Thumbnail: path is a directory but not marked as folder in DB: %s", fullPath)
+// writeThumbnailError maps a thumbnail generation failure onto an HTTP response.
+//
+// The generator inspects the source file itself on a cache miss, so the handler
+// no longer stats it up front — that stat was pure duplication on every request,
+// including the ones the local thumbnail cache could answer on its own.
+func writeThumbnailError(w http.ResponseWriter, filePath string, err error) {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		logging.Warn("Thumbnail: file not found: %s", filePath)
+		http.Error(w, "File not found", http.StatusNotFound)
+	case errors.Is(err, media.ErrNotAFile):
+		logging.Warn("Thumbnail: path is a directory but not marked as folder in DB: %s", filePath)
 		http.Error(w, "Invalid file type", http.StatusBadRequest)
-		return false
+	default:
+		logging.Error("Thumbnail: generation failed for %s: %v", filePath, err)
+		http.Error(w, fmt.Sprintf("Failed to generate thumbnail: %v", err), http.StatusInternalServerError)
 	}
-
-	return true
 }
 
 // isThumbnailSupported checks whether the given file type supports thumbnail generation.
@@ -595,22 +592,17 @@ func (h *Handlers) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate file exists on disk (skip for folders as they're handled differently)
-	if file.Type != database.FileTypeFolder {
-		if !h.validateThumbnailFileOnDisk(w, filePath, fullPath) {
-			return
-		}
-	}
-
 	if !isThumbnailSupported(w, filePath, file.Type) {
 		return
 	}
 
-	// Generate or retrieve cached thumbnail
+	// Generate or retrieve cached thumbnail. The generator reads its local cache
+	// before it touches the media volume, so a cached thumbnail costs no
+	// filesystem round-trip at all; existence of the source is validated there,
+	// on the cache-miss path where the file has to be read anyway.
 	thumb, err := h.thumbGen.GetThumbnail(ctx, fullPath, file.Type)
 	if err != nil {
-		logging.Error("Thumbnail: generation failed for %s: %v", filePath, err)
-		http.Error(w, fmt.Sprintf("Failed to generate thumbnail: %v", err), http.StatusInternalServerError)
+		writeThumbnailError(w, filePath, err)
 		return
 	}
 

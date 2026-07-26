@@ -15,7 +15,6 @@ import (
 
 	"media-viewer/internal/database"
 	"media-viewer/internal/logging"
-	"media-viewer/internal/mediatypes"
 	"media-viewer/internal/metrics"
 )
 
@@ -34,6 +33,15 @@ const (
 
 	// Default polling interval for change detection
 	defaultPollInterval = 30 * time.Second
+
+	// Maximum number of top-level directories a single change-detection poll
+	// will stat.  Polling runs every defaultPollInterval, so stat-ing every
+	// directory each time turns a large library into a permanent background
+	// load — 2,880 stats per directory per day, most of them on a network
+	// mount.  Each poll instead sweeps a bounded window and the next one
+	// resumes where it left off, so coverage is unchanged and only the rate
+	// drops.
+	maxSubdirStatsPerPoll = 64
 )
 
 // Indexer manages the indexing of media files in the media directory.
@@ -78,6 +86,14 @@ type Indexer struct {
 	lastRootModTime    time.Time
 	lastTopLevelCount  int
 	lastSubdirModTimes map[string]time.Time
+
+	// subdirScanCursor is where the next change-detection poll resumes its
+	// bounded sweep of top-level directories.  Guarded by stateMu.
+	subdirScanCursor int
+
+	// sniffCache carries the previous run's content-sniff results.  It is
+	// loaded once at the start of an index run and only read during the walk.
+	sniffCache sniffCache
 }
 
 // IndexProgress tracks the current indexing progress
@@ -345,35 +361,88 @@ func (idx *Indexer) detectChanges() (bool, error) {
 
 // checkSubdirectorySample checks modification times of a sample of subdirectories.
 // This catches changes in nested folders without walking the entire tree.
+//
+// Only maxSubdirStatsPerPoll directories are stat'd per call, starting where the
+// previous call stopped, so a library with thousands of top-level directories no
+// longer re-stats all of them every POLL_INTERVAL.  The full set is still covered,
+// just spread across consecutive polls.
 func (idx *Indexer) checkSubdirectorySample(entries []fs.DirEntry) bool {
 	idx.stateMu.RLock()
 	lastSubdirModTimes := idx.lastSubdirModTimes
 	idx.stateMu.RUnlock()
 
+	// Filter first so the rotating cursor indexes a stable list — entries also
+	// contains plain files and hidden directories, which are never stat'd.
+	dirs := make([]fs.DirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			dirs = append(dirs, entry)
+		}
+	}
+	if len(dirs) == 0 {
+		return false
+	}
+
+	start := idx.subdirScanStart(len(dirs))
+	budget := min(len(dirs), maxSubdirStatsPerPoll)
+
+	for i := 0; i < budget; i++ {
+		entry := dirs[(start+i)%len(dirs)]
+
+		lastMod, seen := lastSubdirModTimes[entry.Name()]
+		if !seen {
+			// A name we have never recorded is a change on its own, and costs no stat.
+			logging.Debug("New subdirectory detected: %s", entry.Name())
+			idx.advanceSubdirScan(start+i+1, len(dirs))
+			return true
 		}
 
 		path := filepath.Join(idx.mediaDir, entry.Name())
+		metrics.IndexerPollSubdirStats.Inc()
 		info, err := os.Stat(path)
 		if err != nil {
+			// A directory that has gone stale, been removed, or become unreadable
+			// fails here on every single poll, forever.  Skipping it silently hid a
+			// permanent, self-inflicted source of filesystem errors — especially on
+			// network mounts, where each failure is a wasted round-trip.
+			metrics.IndexerPollStatErrors.Inc()
+			logging.Warn("Change detection: failed to stat subdirectory %s: %v", path, err)
 			continue
 		}
 
-		if lastMod, exists := lastSubdirModTimes[entry.Name()]; exists {
-			if info.ModTime().After(lastMod) {
-				logging.Debug("Subdirectory %s modified: %v > %v", entry.Name(), info.ModTime(), lastMod)
-				return true
-			}
-		} else {
-			// New subdirectory
-			logging.Debug("New subdirectory detected: %s", entry.Name())
+		if info.ModTime().After(lastMod) {
+			logging.Debug("Subdirectory %s modified: %v > %v", entry.Name(), info.ModTime(), lastMod)
+			idx.advanceSubdirScan(start+i+1, len(dirs))
 			return true
 		}
 	}
 
+	idx.advanceSubdirScan(start+budget, len(dirs))
 	return false
+}
+
+// subdirScanStart returns the index the next poll window begins at, wrapping when
+// the directory count has shrunk since the cursor was last advanced.
+func (idx *Indexer) subdirScanStart(n int) int {
+	idx.stateMu.Lock()
+	defer idx.stateMu.Unlock()
+
+	if idx.subdirScanCursor >= n || idx.subdirScanCursor < 0 {
+		idx.subdirScanCursor = 0
+	}
+	return idx.subdirScanCursor
+}
+
+// advanceSubdirScan moves the rotating cursor to next, wrapped into [0, n).
+func (idx *Indexer) advanceSubdirScan(next, n int) {
+	idx.stateMu.Lock()
+	defer idx.stateMu.Unlock()
+
+	if n <= 0 {
+		idx.subdirScanCursor = 0
+		return
+	}
+	idx.subdirScanCursor = next % n
 }
 
 // updateLastKnownState updates the cached state after indexing.
@@ -496,6 +565,8 @@ func (idx *Indexer) Index() error {
 		logging.Debug("FTS triggers disabled for bulk index run")
 	}
 
+	idx.loadSniffCache(bulkCtx)
+
 	var result indexResult
 	var err error
 
@@ -551,11 +622,36 @@ func (idx *Indexer) Index() error {
 	return nil
 }
 
+// loadSniffCache primes the run's content-sniff cache from the index.  A failure
+// is non-fatal: the run simply falls back to sniffing every image, as it did
+// before the cache existed.
+func (idx *Indexer) loadSniffCache(ctx context.Context) {
+	if idx.db == nil {
+		return
+	}
+
+	cache, err := idx.db.GetSniffCache(ctx)
+	if err != nil {
+		logging.Warn("Failed to load content-sniff cache, every image will be re-opened this run: %v", err)
+		idx.setSniffCache(nil)
+		return
+	}
+
+	logging.Debug("Loaded content-sniff cache with %d entries", len(cache))
+	idx.setSniffCache(cache)
+}
+
+// setSniffCache installs the cache used for the current run.
+func (idx *Indexer) setSniffCache(cache sniffCache) {
+	idx.sniffCache = cache
+}
+
 // parallelWalkAndIndex uses parallel directory walking for faster indexing.
 func (idx *Indexer) parallelWalkAndIndex(startTime time.Time) (indexResult, error) {
 	logging.Info("Using parallel directory walking with %d workers", idx.parallelConfig.NumWorkers)
 	metrics.IndexerParallelWorkers.Set(float64(idx.parallelConfig.NumWorkers))
 	walker := NewParallelWalker(idx.mediaDir, idx.parallelConfig)
+	walker.SetSniffCache(idx.sniffCache)
 
 	defer walker.Stop()
 
@@ -784,27 +880,9 @@ func (idx *Indexer) createMediaFile(relPath string, info os.FileInfo) (database.
 		}, true
 	}
 
-	ext := strings.ToLower(filepath.Ext(info.Name()))
-	fileType := mediatypes.GetFileType(ext)
-
-	if fileType == mediatypes.FileTypeOther {
+	fileType, mimeType, ok := classifyFile(idx.mediaDir, relPath, info, idx.sniffCache)
+	if !ok {
 		return database.MediaFile{}, false
-	}
-
-	mimeType := mediatypes.GetMimeType(ext)
-
-	// Content-sniff image files to catch misnamed media (e.g. an animated GIF
-	// saved with a .jpg extension).  Only image files
-	// are probed; videos and playlists are already unambiguously identified by
-	// their extensions.  A failed sniff (I/O error or unrecognized content)
-	// silently keeps the extension-derived type.
-	if fileType == mediatypes.FileTypeImage {
-		if sniffedType, sniffedMime, ok := mediatypes.SniffFileType(filepath.Join(idx.mediaDir, relPath)); ok {
-			logging.Debug("createMediaFile: content sniff overrides type for %s: %s → %s",
-				relPath, fileType, sniffedType)
-			fileType = sniffedType
-			mimeType = sniffedMime
-		}
 	}
 
 	hashStart := time.Now()
