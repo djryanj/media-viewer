@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump actions/setup-python from 6.2.0 to 7.0.0 ([#617](https://github.com/djryanj/media-viewer/pull/617))
 - build(deps): bump actions/setup-go from 6.4.0 to 7.0.0 ([#618](https://github.com/djryanj/media-viewer/pull/618))
 - chore(deps): update ghcr.io/devcontainers/features/docker-in-docker docker tag to v4 ([#619](https://github.com/djryanj/media-viewer/pull/619))
 - build(deps): bump github.com/prometheus/client_golang from 1.23.2 to 1.24.1 ([#620](https://github.com/djryanj/media-viewer/pull/620))
