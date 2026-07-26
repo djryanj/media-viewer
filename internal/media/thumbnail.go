@@ -38,6 +38,11 @@ import (
 // Sentinel errors
 var (
 	errSkipped = errors.New("skipped: thumbnail already exists")
+
+	// ErrNotAFile reports a source path that exists but is a directory while the
+	// index claims it is a regular media file.  Kept distinct from a missing file
+	// so callers can tell a stale index apart from an inconsistent one.
+	ErrNotAFile = errors.New("path is not a regular file")
 )
 
 const (
@@ -198,6 +203,12 @@ func (t *ThumbnailGenerator) releaseLock(path string) {
 	t.fileLocks.Delete(path)
 }
 
+// CacheKey returns the cache filename the generator uses for a source path, so
+// callers can locate a thumbnail on disk without going through GetThumbnail.
+func (t *ThumbnailGenerator) CacheKey(filePath string, fileType database.FileType) string {
+	return t.getCacheKey(filePath, fileType)
+}
+
 // getCacheKey returns the cache filename for a given file path
 func (t *ThumbnailGenerator) getCacheKey(filePath string, fileType database.FileType) string {
 	hash := md5.Sum([]byte(filePath))
@@ -251,19 +262,13 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 	start := time.Now()
 	fileTypeStr := string(fileType)
 
-	// Folders don't need file existence check
-	if fileType != database.FileTypeFolder {
-		retryConfig := filesystem.DefaultRetryConfig()
-		if _, err := filesystem.StatWithRetry(filePath, retryConfig); err != nil {
-			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_not_found").Inc()
-			return nil, fmt.Errorf("file not accessible: %w", err)
-		}
-	}
-
 	cacheKey := t.getCacheKey(filePath, fileType)
 	cachePath := filepath.Join(t.cacheDir, cacheKey)
 
-	// Check cache first
+	// Check the local cache before touching the source at all.  A cached
+	// thumbnail is a complete answer, so verifying that the source still exists
+	// first only buys a round-trip to the media volume — one per request, on the
+	// hottest path in the application.
 	cacheReadStart := time.Now()
 	if data, err := os.ReadFile(cachePath); err == nil {
 		metrics.ThumbnailCacheReadLatency.Observe(time.Since(cacheReadStart).Seconds())
@@ -271,6 +276,22 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 		return data, nil
 	}
 	metrics.ThumbnailCacheMisses.Inc()
+
+	// Cache miss: the source has to be read anyway, so confirm it is there and
+	// is the kind of thing we were told it is.  Folders have no single source
+	// file — they are composed from their contents.
+	if fileType != database.FileTypeFolder {
+		retryConfig := filesystem.DefaultRetryConfig()
+		info, err := filesystem.StatWithRetry(filePath, retryConfig)
+		if err != nil {
+			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_not_found").Inc()
+			return nil, fmt.Errorf("file not accessible: %w", err)
+		}
+		if info.IsDir() {
+			metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_unsupported").Inc()
+			return nil, fmt.Errorf("%w: %s is a directory but indexed as %s", ErrNotAFile, filePath, fileType)
+		}
+	}
 
 	// Get per-file lock
 	fileLock := t.getLock(filePath)

@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"testing"
 
 	"media-viewer/internal/database"
+	"media-viewer/internal/media"
 
 	"github.com/gorilla/mux"
 )
@@ -1104,53 +1107,38 @@ func TestValidateThumbnailPath_ReturnValues(t *testing.T) {
 }
 
 // =============================================================================
-// validateThumbnailFileOnDisk Tests
+// writeThumbnailError Tests
 // =============================================================================
 
-func TestValidateThumbnailFileOnDisk(t *testing.T) {
+// TestWriteThumbnailError covers the status codes the thumbnail endpoint used to
+// derive from its own pre-flight stat, which now come from the generator's error.
+func TestWriteThumbnailError(t *testing.T) {
 	t.Parallel()
-
-	tempDir := t.TempDir()
-	h := newHandlersWithMediaDir(tempDir)
-
-	// Create a real file
-	testFilePath := filepath.Join(tempDir, "image.jpg")
-	if err := os.WriteFile(testFilePath, []byte("image data"), 0o644); err != nil {
-		t.Fatalf("failed to create test file: %v", err)
-	}
-
-	// Create a directory
-	testDirPath := filepath.Join(tempDir, "somedir")
-	if err := os.MkdirAll(testDirPath, 0o755); err != nil {
-		t.Fatalf("failed to create test dir: %v", err)
-	}
 
 	tests := []struct {
 		name           string
-		filePath       string
-		fullPath       string
-		expectedOK     bool
+		err            error
 		expectedStatus int
 	}{
 		{
-			name:       "Existing file",
-			filePath:   "image.jpg",
-			fullPath:   testFilePath,
-			expectedOK: true,
-		},
-		{
-			name:           "Non-existent file",
-			filePath:       "missing.jpg",
-			fullPath:       filepath.Join(tempDir, "missing.jpg"),
-			expectedOK:     false,
+			name:           "Missing source file",
+			err:            fmt.Errorf("file not accessible: %w", fs.ErrNotExist),
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:           "Path is a directory",
-			filePath:       "somedir",
-			fullPath:       testDirPath,
-			expectedOK:     false,
+			name:           "Source is a directory",
+			err:            fmt.Errorf("%w: /media/somedir is a directory but indexed as image", media.ErrNotAFile),
 			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Permission denied",
+			err:            fmt.Errorf("file not accessible: %w", fs.ErrPermission),
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name:           "Generation failure",
+			err:            errors.New("thumbnail generation failed: decode error"),
+			expectedStatus: http.StatusInternalServerError,
 		},
 	}
 
@@ -1158,54 +1146,12 @@ func TestValidateThumbnailFileOnDisk(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			w := httptest.NewRecorder()
-			result := h.validateThumbnailFileOnDisk(w, tt.filePath, tt.fullPath)
+			writeThumbnailError(w, "image.jpg", tt.err)
 
-			if result != tt.expectedOK {
-				t.Errorf("validateThumbnailFileOnDisk() = %v, want %v", result, tt.expectedOK)
-			}
-
-			if !tt.expectedOK && w.Code != tt.expectedStatus {
+			if w.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
 			}
 		})
-	}
-}
-
-func TestValidateThumbnailFileOnDisk_PermissionError(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("skipping permission test when running as root")
-	}
-	t.Parallel()
-
-	tempDir := t.TempDir()
-	h := newHandlersWithMediaDir(tempDir)
-
-	// Create a file then make the directory unreadable
-	restrictedDir := filepath.Join(tempDir, "restricted")
-	if err := os.MkdirAll(restrictedDir, 0o755); err != nil {
-		t.Fatalf("failed to create restricted dir: %v", err)
-	}
-	restrictedFile := filepath.Join(restrictedDir, "secret.jpg")
-	if err := os.WriteFile(restrictedFile, []byte("secret"), 0o644); err != nil {
-		t.Fatalf("failed to create file: %v", err)
-	}
-	if err := os.Chmod(restrictedDir, 0o000); err != nil {
-		t.Fatalf("failed to chmod: %v", err)
-	}
-	t.Cleanup(func() {
-		// Restore permissions so TempDir cleanup succeeds
-		_ = os.Chmod(restrictedDir, 0o755)
-	})
-
-	w := httptest.NewRecorder()
-	result := h.validateThumbnailFileOnDisk(w, "restricted/secret.jpg", restrictedFile)
-
-	if result {
-		t.Error("expected validation to fail for inaccessible file")
-	}
-
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected status 500 for permission error, got %d", w.Code)
 	}
 }
 

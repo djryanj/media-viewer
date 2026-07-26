@@ -2069,6 +2069,64 @@ func (d *Database) GetAllIndexedPaths(ctx context.Context) (map[string]struct{},
 	return paths, nil
 }
 
+// SniffedType is one indexed file's stored classification, keyed by the file
+// identity it was derived from.  The indexer uses it to decide whether a content
+// sniff — which has to open the file — can be skipped on the next run.
+type SniffedType struct {
+	Size     int64
+	ModTime  time.Time
+	Type     FileType
+	MimeType string
+}
+
+// GetSniffCache returns the stored classification of every indexed image and
+// video, keyed by path.  Folders and playlists are excluded: they are never
+// content-sniffed, so carrying them would only grow the map.
+func (d *Database) GetSniffCache(ctx context.Context) (map[string]SniffedType, error) {
+	done := d.observeQuery("get_sniff_cache")
+
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	rows, err := d.reader.QueryContext(ctx,
+		"SELECT path, size, mod_time, type, COALESCE(mime_type, '') FROM files WHERE type IN (?, ?)",
+		FileTypeImage, FileTypeVideo,
+	)
+	if err != nil {
+		done(err)
+		return nil, fmt.Errorf("failed to query sniff cache: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logging.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	cache := make(map[string]SniffedType, 50000)
+	for rows.Next() {
+		var (
+			path    string
+			entry   SniffedType
+			modTime int64
+		)
+		if err := rows.Scan(&path, &entry.Size, &modTime, &entry.Type, &entry.MimeType); err != nil {
+			logging.Warn("error scanning sniff cache row: %v", err)
+			continue
+		}
+		entry.ModTime = time.Unix(modTime, 0)
+		cache[path] = entry
+	}
+
+	if err := rows.Err(); err != nil {
+		done(err)
+		return nil, fmt.Errorf("error iterating sniff cache: %w", err)
+	}
+
+	logging.Debug("GetSniffCache: loaded %d entries", len(cache))
+	done(nil)
+	return cache, nil
+}
+
 // scanMediaFiles is a helper to scan rows into MediaFile slices.
 func (d *Database) scanMediaFiles(rows *sql.Rows) ([]MediaFile, error) {
 	files := make([]MediaFile, 0, 128)

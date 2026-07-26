@@ -523,6 +523,34 @@ var (
 			Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		},
 	)
+
+	IndexerPollSubdirStats = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_indexer_poll_subdir_stats_total",
+			Help: "Total number of subdirectory stat calls issued by change detection polling",
+		},
+	)
+
+	IndexerPollStatErrors = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_indexer_poll_stat_errors_total",
+			Help: "Total number of subdirectory stat failures during change detection polling",
+		},
+	)
+
+	IndexerSniffCacheHits = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_indexer_sniff_cache_hits_total",
+			Help: "Total number of content sniffs skipped because the file was unchanged since the last index run",
+		},
+	)
+
+	IndexerSniffOpens = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "media_viewer_indexer_sniff_opens_total",
+			Help: "Total number of files opened for content sniffing during indexing",
+		},
+	)
 )
 
 // Filesystem I/O metrics

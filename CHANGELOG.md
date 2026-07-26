@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.4] - Unreleased
+
+### Fixed
+
+- fix(indexer): change detection no longer stats every top-level directory on every poll. With `POLL_INTERVAL` at its 30s default that was 2,880 stat calls per directory per day — a permanent background load on large libraries, and pure round-trip cost on network mounts. Each poll now sweeps a bounded window of 64 directories and the next one resumes where it left off, so the whole tree is still covered at a fraction of the rate. A newly appeared directory is also detected from its name alone, with no stat at all. ([#621](https://github.com/djryanj/media-viewer/issues/621))
+- fix(indexer): a subdirectory that fails to stat during change detection is now logged and counted instead of being silently skipped. A dangling symlink, a removed directory, or a stale filehandle failed on every poll indefinitely with no trace in the logs or metrics, hiding a permanent source of filesystem errors. New counters: `media_viewer_indexer_poll_subdir_stats_total` and `media_viewer_indexer_poll_stat_errors_total`. ([#621](https://github.com/djryanj/media-viewer/issues/621))
+- fix(indexer): image files are no longer re-opened on every index run to content-sniff them. The GIF-in-a-.jpg check required an `open()`+`read()` of every image in the library every `INDEX_INTERVAL` (30m by default); the result is now reused when a file's size and modification time are unchanged since the previous run. Files that have changed on disk are still sniffed. New counters: `media_viewer_indexer_sniff_cache_hits_total` and `media_viewer_indexer_sniff_opens_total`. Note that extending the sniff to recognise a new format now requires an index rebuild to reclassify existing files. ([#621](https://github.com/djryanj/media-viewer/issues/621))
+- fix(thumbnails): serving a cached thumbnail no longer touches the media volume. Each request previously stat'd the source file twice — once in the HTTP handler and once inside the generator — both before the local cache was consulted, so a gallery of 100 cached thumbnails cost 200 filesystem round-trips. The cache is now read first and the source is validated only on a cache miss, where it has to be read anyway. Response codes are unchanged: missing files still return 404, and a path indexed as a file but present on disk as a directory still returns 400. ([#621](https://github.com/djryanj/media-viewer/issues/621))
+
 ## [0.19.3] - 07-09-2026
 
 ### Changed
