@@ -178,7 +178,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -212,7 +212,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev
             - name: Set up Go
-              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -286,7 +286,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -323,7 +323,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev
             - name: Set up Go
-              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -424,7 +424,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg libimage-exiftool-perl
             - name: Set up Go
-              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -472,7 +472,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y libvips-dev ffmpeg libimage-exiftool-perl
             - name: Set up Go
-              uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
               with:
                   go-version-file: go.mod
                   cache: true
