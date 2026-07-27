@@ -49,7 +49,7 @@ FORCE ?= 0
         test-clean \
 		pr-check pr-check-fix pr-check-all \
 		pr-check-backend pr-check-backend-fix pr-check-frontend \
-        frontend-install \
+        frontend-install frontend-sveltekit-sync \
         frontend-lint frontend-lint-js frontend-lint-css \
         frontend-lint-fix frontend-lint-css-fix \
         frontend-format frontend-format-check frontend-check \
@@ -608,6 +608,16 @@ frontend-install:
 	@echo "Installing frontend dependencies..."
 	cd $(FRONTEND_DIR) && npm install
 
+# Generate frontend/.svelte-kit/ (types + tsconfig) without a full build.
+# Playwright resolves frontend/tsconfig.json — which extends
+# ./.svelte-kit/tsconfig.json — before loading any spec, and errors out if that
+# file is missing. Normally `svelte-build` generates it as a side effect, but
+# targets that never build the frontend on the host (Docker-backed runs) or that
+# run against an already-started backend would otherwise fail on a fresh
+# checkout. Every Playwright target depends on this; it is cheap and idempotent.
+frontend-sveltekit-sync:
+	@cd $(FRONTEND_DIR) && npx svelte-kit sync
+
 # Lint all frontend code (JS + CSS)
 frontend-lint:
 	@echo "Linting frontend code..."
@@ -677,7 +687,7 @@ frontend-test-integration-auto: svelte-build
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-integration
 
 # Run frontend E2E tests (requires backend at TEST_BASE_URL or localhost:8080)
-frontend-test-e2e:
+frontend-test-e2e: frontend-sveltekit-sync
 	@echo "Running frontend E2E tests..."
 	@echo "Note: Performance specs and docs screenshot generation specs are excluded by default"
 	@echo "Note: Use 'make frontend-test-e2e-performance*' for performance lanes and 'make frontend-test-e2e-docs-screenshots' for docs image generation"
@@ -688,7 +698,7 @@ frontend-test-e2e:
 # Run frontend visual regression E2E tests against committed snapshot baselines.
 # Uses the chromium-visual Playwright project (headed + Xvfb) so that
 # toHaveScreenshot()/Page.captureScreenshot never hangs in this WSL2 environment.
-frontend-test-e2e-visual:
+frontend-test-e2e-visual: frontend-sveltekit-sync
 	@echo "Running frontend E2E visual regression suite..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-auto' for automatic server)"
 	@echo "Logging to ../e2e-visual.log"
@@ -711,7 +721,7 @@ frontend-test-e2e-visual-auto:
 # Generate/update visual regression snapshot baselines from the live UI state.
 # Uses the chromium-visual Playwright project (headed + Xvfb) — same reason as
 # frontend-test-e2e-visual: toHaveScreenshot hangs in headless Chrome.
-frontend-test-e2e-visual-baselines:
+frontend-test-e2e-visual-baselines: frontend-sveltekit-sync
 	@echo "Generating frontend visual regression snapshot baselines..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-visual-baselines-auto' for automatic server)"
 	@echo "Logging to ../e2e-visual-baselines.log"
@@ -732,7 +742,7 @@ frontend-test-e2e-visual-baselines-auto:
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-visual-baselines 2>&1 | tee e2e-visual-baselines-auto.log
 
 # Run the stable Chromium Playwright smoke suite (requires backend at TEST_BASE_URL or localhost:8080)
-frontend-test-e2e-smoke:
+frontend-test-e2e-smoke: frontend-sveltekit-sync
 	@echo "Running frontend E2E smoke suite..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-smoke-auto' for automatic server)"
 	@echo "Logging to ../e2e-smoke.log"
@@ -745,7 +755,10 @@ frontend-test-e2e-smoke-auto: svelte-build
 	@./hack/run-with-test-server.sh $(MAKE) frontend-test-e2e-smoke 2>&1 | tee e2e-smoke-auto.log
 
 # Run the Docker-backed runtime smoke suite (canonical smoke coverage plus real autotagger extraction)
-frontend-test-e2e-runtime-smoke:
+# Depends on frontend-sveltekit-sync: the server image is built by Docker, so
+# nothing generates frontend/.svelte-kit/ on the host before Playwright loads
+# tsconfig.json.
+frontend-test-e2e-runtime-smoke: frontend-sveltekit-sync
 	@echo "Running frontend Docker runtime smoke suite..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-runtime-smoke-auto' for automatic Docker server)"
 	@echo "Logging to ../e2e-runtime-smoke.log"
@@ -809,7 +822,7 @@ frontend-test-e2e-performance-soak-auto:
 # instantly.  We spin up an Xvfb virtual display for the duration of the run and
 # tear it down afterwards — no xauth needed because Xvfb started without -auth
 # accepts all local connections from the same user.
-frontend-test-e2e-docs-screenshots:
+frontend-test-e2e-docs-screenshots: frontend-sveltekit-sync
 	@echo "Generating documentation screenshots from Playwright..."
 	@echo "Note: Requires backend running (use 'make frontend-test-e2e-docs-screenshots-auto' for automatic server)"
 	@DISPLAY_NUM=99; \
@@ -909,7 +922,7 @@ frontend-test-file:
 #   make frontend-test-e2e-module search
 #   make frontend-test-e2e-module gallery settings
 #   make frontend-test-e2e-module @video
-frontend-test-e2e-module:
+frontend-test-e2e-module: frontend-sveltekit-sync
 	@goals="$(filter-out frontend-test-e2e-module,$(MAKECMDGOALS))"; \
 	modules="$${goals:-$(MODULE)}"; \
 	if [ -z "$$modules" ]; then \
@@ -940,7 +953,7 @@ frontend-test-e2e-module:
 # Examples:
 #   make frontend-test-e2e-category core
 #   make frontend-test-e2e-category features ui
-frontend-test-e2e-category:
+frontend-test-e2e-category: frontend-sveltekit-sync
 	@goals="$(filter-out frontend-test-e2e-category,$(MAKECMDGOALS))"; \
 	categories="$${goals:-$(CATEGORY)}"; \
 	if [ -z "$$categories" ]; then \
@@ -964,7 +977,7 @@ frontend-test-e2e-category:
 #   make frontend-test-e2e-file auth
 #   make frontend-test-e2e-file gallery search
 #   make frontend-test-e2e-file e2e/specs/core/auth.spec.js
-frontend-test-e2e-file:
+frontend-test-e2e-file: frontend-sveltekit-sync
 	@goals="$(filter-out frontend-test-e2e-file,$(MAKECMDGOALS))"; \
 	files="$${goals:-$(FILE)}"; \
 	if [ -z "$$files" ]; then \
@@ -1012,7 +1025,7 @@ frontend-test-e2e-file-auto:
 
 
 # Run E2E tests in headed mode (visible browser)
-frontend-test-e2e-headed:
+frontend-test-e2e-headed: frontend-sveltekit-sync
 	@echo "Running E2E tests in headed mode..."
 	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
 	@echo "Logging to ../e2e-headed.log"
@@ -1026,7 +1039,7 @@ frontend-test-e2e-ui:
 	cd $(FRONTEND_DIR) && npm run test:e2e:ui 2>&1 | tee ../e2e-ui.log
 
 # Run E2E tests in debug mode
-frontend-test-e2e-debug:
+frontend-test-e2e-debug: frontend-sveltekit-sync
 	@echo "Running E2E tests in debug mode..."
 	@echo "Note: Requires backend running at TEST_BASE_URL or http://localhost:8080"
 	@echo "Logging to ../e2e-debug.log"
@@ -1202,7 +1215,7 @@ svelte-test-unit-watch:
 	cd $(FRONTEND_DIR) && npm run test:unit:watch
 
 # Run SvelteKit Playwright E2E tests (requires Go backend at TEST_BASE_URL or localhost:8080)
-svelte-test-e2e:
+svelte-test-e2e: frontend-sveltekit-sync
 	@echo "Running SvelteKit E2E tests..."
 	@echo "Note: Requires backend running (use 'make svelte-test-e2e-auto' for automatic server)"
 	cd $(FRONTEND_DIR) && npm run test:e2e 2>&1 | tee ../e2e-svelte.log
