@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump actions/cache/restore from 5.1.0 to 6.1.0 ([#610](https://github.com/djryanj/media-viewer/pull/610))
 - chore(deps): update github actions ([#605](https://github.com/djryanj/media-viewer/pull/605))
 - chore(deps): update all non-major dependencies ([#606](https://github.com/djryanj/media-viewer/pull/606))
 - build(deps): bump github.com/mattn/go-sqlite3 from 1.14.47 to 1.14.48 ([#616](https://github.com/djryanj/media-viewer/pull/616))
