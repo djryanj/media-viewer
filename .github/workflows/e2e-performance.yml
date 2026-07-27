@@ -25,10 +25,10 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+              uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -60,7 +60,7 @@ jobs:
 
             - name: Save sample media cache
               if: steps.cache-check.outputs.populated != 'true'
-              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+              uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -70,7 +70,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Install libvips
               run: |
@@ -78,7 +78,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up Go
-              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+              uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
               with:
                   go-version-file: go.mod
                   cache: true
@@ -99,7 +99,7 @@ jobs:
         needs: [prepare-sample-media, build-binary]
         steps:
             - name: Checkout repository
-              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Install system dependencies
               run: |
@@ -107,9 +107,9 @@ jobs:
                   sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Node.js
-              uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+              uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
               with:
-                  node-version: '24.17.0'
+                  node-version: '24.18.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -131,7 +131,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+              uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
@@ -201,7 +201,7 @@ jobs:
             (github.event_name == 'workflow_dispatch' && inputs.run_soak)
         steps:
             - name: Checkout repository
-              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Install system dependencies
               run: |
@@ -209,9 +209,9 @@ jobs:
                   sudo apt-get install -y libvips-dev ffmpeg
 
             - name: Set up Node.js
-              uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+              uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
               with:
-                  node-version: '24.17.0'
+                  node-version: '24.18.0'
                   cache: 'npm'
                   cache-dependency-path: frontend/package-lock.json
 
@@ -233,7 +233,7 @@ jobs:
               run: chmod +x ./media-viewer
 
             - name: Restore sample media cache
-              uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+              uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
                   key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
