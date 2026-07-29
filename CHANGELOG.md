@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump docker/login-action from 4.5.1 to 4.5.2 ([#625](https://github.com/djryanj/media-viewer/pull/625))
 - chore(deps): update github actions to v7 ([#608](https://github.com/djryanj/media-viewer/pull/608))
 - build(deps): bump actions/cache/restore from 5.1.0 to 6.1.0 ([#610](https://github.com/djryanj/media-viewer/pull/610))
 - chore(deps): update github actions ([#605](https://github.com/djryanj/media-viewer/pull/605))
