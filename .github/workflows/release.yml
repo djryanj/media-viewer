@@ -683,7 +683,7 @@ jobs:
               uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
             - name: Log in to Container Registry
-              uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+              uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
               with:
                   registry: ${{ env.REGISTRY }}
                   username: ${{ github.actor }}
@@ -756,7 +756,7 @@ jobs:
               uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
             - name: Log in to Container Registry
-              uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+              uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
               with:
                   registry: ${{ env.REGISTRY }}
                   username: ${{ github.actor }}
@@ -815,7 +815,7 @@ jobs:
             sbom-file: ${{ steps.sbom.outputs.sbom-file }}
         steps:
             - name: Log in to Container Registry
-              uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+              uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
               with:
                   registry: ${{ env.REGISTRY }}
                   username: ${{ github.actor }}
@@ -844,7 +844,7 @@ jobs:
             sbom-file: ${{ steps.sbom.outputs.sbom-file }}
         steps:
             - name: Log in to Container Registry
-              uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+              uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
               with:
                   registry: ${{ env.REGISTRY }}
                   username: ${{ github.actor }}
