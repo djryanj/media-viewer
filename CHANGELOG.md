@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update node.js to v24.19.0 ([#627](https://github.com/djryanj/media-viewer/pull/627))
 - fix(deps): update module github.com/mattn/go-sqlite3 to v1.14.49 ([#628](https://github.com/djryanj/media-viewer/pull/628))
 - chore(deps): update github actions ([#629](https://github.com/djryanj/media-viewer/pull/629))
 - chore(deps): update mcr.microsoft.com/devcontainers/javascript-node docker tag to v26 ([#630](https://github.com/djryanj/media-viewer/pull/630))
