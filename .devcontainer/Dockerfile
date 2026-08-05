@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/javascript-node:24-trixie
+FROM mcr.microsoft.com/devcontainers/javascript-node:26-trixie
 
 ARG GO_VERSION=1.26.2
 
