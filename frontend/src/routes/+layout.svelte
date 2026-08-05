@@ -22,6 +22,10 @@
     // the popstate and require a second back press within 2 s to confirm logout.
 
     let inAppNavDepth = 0;
+    // True while a synthesised "up a level" navigation is running. A second back
+    // press landing mid-flight must not start another one — two of them would
+    // both replace the same history entry and leave inAppNavDepth too high.
+    let upNavInFlight = false;
 
     const handleBack = createBackButtonHandler({
         showToast: (msg) => toastStore.show(msg),
@@ -29,11 +33,38 @@
         navigate: (path) => goto(path)
     });
 
+    /**
+     * URL one level up from `url` within the app, or null when there is nowhere
+     * left to go (the root gallery). Used when the history stack has no in-app
+     * entry to pop to — e.g. after a reload or a PWA launch inside a subfolder.
+     */
+    function parentUrl(url: URL): string | null {
+        if (url.pathname !== '/') return '/';
+        const p = url.searchParams.get('path');
+        if (!p) return null;
+        const parent = p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+        return parent ? `/?path=${encodeURIComponent(parent)}` : '/';
+    }
+
+    /** Resolves once the history.go() that cancel() issues has landed. */
+    function historyRestored(): Promise<void> {
+        return new Promise((resolve) => {
+            let timer: ReturnType<typeof setTimeout>;
+            const done = () => {
+                clearTimeout(timer);
+                window.removeEventListener('popstate', done);
+                resolve();
+            };
+            timer = setTimeout(done, 100);
+            window.addEventListener('popstate', done);
+        });
+    }
+
     afterNavigate(({ from, type, to }) => {
         if (!from) return; // initial page load — depth starts at 0
-        if (type === 'popstate') {
-            inAppNavDepth = Math.max(0, inAppNavDepth - 1);
-        } else {
+        // Only forward navigations are counted here. popstate decrements happen
+        // in beforeNavigate — see the comment there.
+        if (type !== 'popstate') {
             inAppNavDepth++;
         }
         // Clear multi-select state when entering the collections area so selected
@@ -52,9 +83,45 @@
         // Allow normal in-app back navigation unless:
         //   (a) depth is 0: user is at the entry point of the session, or
         //   (b) target is /login: navigating there would redirect-loop back to /
-        if (inAppNavDepth > 0 && to?.url.pathname !== '/login') return;
+        if (inAppNavDepth > 0 && to?.url.pathname !== '/login') {
+            // Decrement here rather than in afterNavigate. A second back press can
+            // arrive while this navigation is still in flight; if the depth were
+            // still stale it would pass this guard too and traverse past the app's
+            // own entry, dropping the user out of the app entirely.
+            inAppNavDepth--;
+            return;
+        }
 
         cancel();
+
+        // The history stack has nothing useful to pop to, but the user may still
+        // be deep in the tree — a reload or PWA launch inside a subfolder starts
+        // at depth 0. Going up a level is what they asked for; only treat back as
+        // "leave the app" once there's genuinely nowhere left to go.
+        const up = parentUrl($page.url);
+        if (up) {
+            if (upNavInFlight) return;
+            upNavInFlight = true;
+            try {
+                // cancel() counteracts the popstate with history.go(), which lands
+                // asynchronously — wait for it before replacing the entry, or we'd
+                // rewrite the wrong one.
+                await historyRestored();
+                const depthBefore = inAppNavDepth;
+                // replaceState: this stands in for the back press, so it must not
+                // deepen the stack. SvelteKit runs afterNavigate synchronously
+                // before goto() resolves, so restoring the depth afterwards undoes
+                // the increment that handler just made.
+                await goto(up, { replaceState: true });
+                inAppNavDepth = depthBefore;
+            } catch {
+                // goto() rejects if another navigation supersedes it — nothing to do.
+            } finally {
+                upNavInFlight = false;
+            }
+            return;
+        }
+
         await handleBack();
     });
 

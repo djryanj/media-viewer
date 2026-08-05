@@ -211,7 +211,17 @@ test('@smoke @search mobile: clicking a suggestion navigates to the correct URL'
     const input = page.locator('.search-query-input');
     await input.pressSequentially('nat');
     await expect(page.locator('.page-suggestions')).toBeVisible({ timeout: 3000 });
-    await page.locator('.page-sug-item').first().click();
+    // force: true skips Playwright's actionability wait. Headless Chromium in
+    // WSL2/container environments stops committing compositor frames once the
+    // page goes idle — measured at 0 requestAnimationFrame callbacks in 2 s on
+    // this page, unchanged by --disable-gpu, --disable-frame-rate-limit,
+    // swiftshader or the renderer-backgrounding flags. Playwright's "stable"
+    // check needs two consecutive rAF callbacks, so it can never settle and the
+    // click hangs until the test times out. (Same root cause as the headed+Xvfb
+    // workaround the screenshot projects use in playwright.config.ts.) The
+    // element is asserted visible on the line above, and the assertion below is
+    // what this test actually covers.
+    await page.locator('.page-sug-item').first().click({ force: true });
 
     await expect(page).toHaveURL(/\/search\?q=nature/);
 });

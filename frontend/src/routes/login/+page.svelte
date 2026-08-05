@@ -56,13 +56,21 @@
 
     // ── WebAuthn ──────────────────────────────────────────────────────────────
     let conditionalUIAbort: AbortController | null = null;
+    // startConditionalUI() awaits two round-trips before it creates its
+    // AbortController, so the page can unmount mid-flight and onDestroy has
+    // nothing to abort. The request then starts on a dead component and stays
+    // pending forever — which leaves the platform autofill bar ("Saved
+    // passwords" on Android/Firefox) pinned over the app with no way to dismiss
+    // it. Bail out at every await point once destroyed.
+    let destroyed = false;
 
     async function autoLoginWithPasskey() {
-        if (!webauthnSupported) return;
+        if (!webauthnSupported || destroyed) return;
         error = '';
         passkeyLoading = true;
         try {
             const { options, sessionId } = await authApi.webauthnLoginBegin();
+            if (destroyed) return;
             const publicKey = prepareGetOptions(options.publicKey);
             conditionalUIAbort = new AbortController();
             const credential = (await navigator.credentials.get({
@@ -123,15 +131,16 @@
     }
 
     async function startConditionalUI() {
-        if (!webauthnSupported) return;
+        if (!webauthnSupported || destroyed) return;
         // Check if conditional mediation is supported
         const supported =
             typeof PublicKeyCredential.isConditionalMediationAvailable === 'function' &&
             (await PublicKeyCredential.isConditionalMediationAvailable().catch(() => false));
-        if (!supported || !passkeyAvailable) return;
+        if (!supported || !passkeyAvailable || destroyed) return;
 
         try {
             const { options, sessionId } = await authApi.webauthnLoginBegin();
+            if (destroyed) return;
             const publicKey = prepareGetOptions(options.publicKey);
             conditionalUIAbort = new AbortController();
             const credential = (await navigator.credentials.get({
@@ -164,8 +173,13 @@
     });
 
     onDestroy(() => {
+        destroyed = true;
         conditionalUIAbort?.abort();
         conditionalUIAbort = null;
+        // Drop focus from the password field as well — a still-focused credential
+        // input keeps the platform autofill bar on screen after we navigate away.
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) active.blur();
     });
 </script>
 

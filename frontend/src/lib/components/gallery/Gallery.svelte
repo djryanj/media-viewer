@@ -261,7 +261,13 @@
 <style>
     .gallery {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        /* `min(160px, calc(50% - 1px))` keeps auto-fill from collapsing to a
+         * single full-width column when the container is narrower than two
+         * 160px tracks — narrow viewports (small phones, or Firefox/Chrome page
+         * zoom, which shrinks the layout viewport) still get two columns.
+         * The 1px is half the 2px gap. Above ~322px the 160px minimum wins and
+         * behaviour is unchanged. */
+        grid-template-columns: repeat(auto-fill, minmax(min(160px, calc(50% - 1px)), 1fr));
         gap: 2px;
         padding: 2px;
         /* Contain stacking context so overlays don't bleed */

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.19.5] - Unreleased
 
+### Fixed
+
+- fix(ui): one giant thumbnail per row on firefox, stacked, untappable sort bar, and pressing back didn't go back in the listing (e.g., to the previous folder). Pressing back twice rapidly anywhere in the app now closes it.
+
 ### Changed
 
 - chore(deps): update github actions to v7 ([#608](https://github.com/djryanj/media-viewer/pull/608))
