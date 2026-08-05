@@ -459,14 +459,27 @@
         padding: var(--spacing-2) var(--spacing-4);
         gap: var(--spacing-3);
         min-height: 44px;
+        /* Drop the controls onto their own row rather than squeezing the chip
+         * strip down to its min-content width (one chip per line). */
+        flex-wrap: wrap;
     }
 
     .type-filters {
         display: flex;
         align-items: center;
         gap: var(--spacing-1);
-        flex-wrap: wrap;
-        flex: 1;
+        /* Single scrollable row — never a vertical stack. */
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+        flex: 1 1 180px;
+        min-width: 0;
+    }
+
+    .type-filters::-webkit-scrollbar {
+        display: none;
     }
 
     .filter-chip {
@@ -506,6 +519,29 @@
         display: flex;
         align-items: center;
         gap: var(--spacing-2);
+    }
+
+    .sel-actions {
+        /* Seven-plus buttons don't fit on one line on a phone — wrap rather
+         * than overflow the sticky bar. */
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        margin-left: auto;
+    }
+
+    .tb-right {
+        flex: 0 0 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        margin-left: auto;
+    }
+
+    /* Touch devices: chips need a real tap target (the 11px/2px default is ~19px tall). */
+    @media (pointer: coarse) {
+        .filter-chip {
+            min-height: 32px;
+            padding-inline: var(--spacing-3);
+        }
     }
 
     .tb-btn {
@@ -641,7 +677,11 @@
     .sort-menu {
         position: absolute;
         top: calc(100% + 4px);
-        left: 0;
+        /* Right-anchored: the button sits at the end of the toolbar, so a
+         * left-anchored menu overflows the viewport and gets clipped by
+         * .main-content's overflow-x: hidden. */
+        right: 0;
+        left: auto;
         z-index: 95;
         background: var(--color-surface);
         border: 1px solid var(--color-border);
@@ -649,7 +689,10 @@
         box-shadow: var(--shadow-md);
         list-style: none;
         min-width: 160px;
-        overflow: hidden;
+        max-width: calc(100vw - 2 * var(--spacing-4));
+        max-height: 60vh;
+        overflow-y: auto;
+        overflow-x: hidden;
     }
 
     .sort-option {

@@ -20,16 +20,18 @@
             const mainEl = document.getElementById('main-content');
             if (mainEl) galleryStore.saveScrollPosition(galleryStore.path, mainEl.scrollTop);
 
-            galleryStore.navigate(path).then((fromCache) => {
-                if (fromCache) {
-                    const scrollTop = galleryStore.getScrollPosition(path);
-                    if (scrollTop > 0) {
-                        tick().then(() => {
-                            const el = document.getElementById('main-content');
-                            if (el) el.scrollTop = scrollTop;
-                        });
-                    }
-                }
+            galleryStore.navigate(path).then(() => {
+                // Always reposition the scroll container on a path change.
+                // #main-content is the scroller (not the window), so nothing
+                // resets it for us — without this the offset from the folder we
+                // just left carries over, and going up a level looks like the
+                // listing merely jumped rather than navigated.
+                // Cached folders get their previous offset back; anything else
+                // starts at the top (getScrollPosition returns 0 when unknown).
+                tick().then(() => {
+                    const el = document.getElementById('main-content');
+                    if (el) el.scrollTop = galleryStore.getScrollPosition(path);
+                });
             });
         }
     });
