@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.6] - Unreleased
+
+### Changed
+
+- build(deps): bump golang.org/x/crypto from 0.54.0 to 0.55.0 ([#638](https://github.com/djryanj/media-viewer/pull/638))
+
 ## [0.19.5] - 08-05-2026
 
 ### Fixed
