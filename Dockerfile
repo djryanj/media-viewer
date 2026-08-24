@@ -12,7 +12,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Build stage
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 # Install xx for cross-compilation
 COPY --from=tonistiigi/xx:1.9.0 / /
