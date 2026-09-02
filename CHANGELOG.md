@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.6] - Unreleased
+
+### Changed
+
+- build(deps): bump mikepenz/release-changelog-builder-action from 6.2.3 to 6.3.0 ([#648](https://github.com/djryanj/media-viewer/pull/648))
+
 ## [0.19.5] - 08-05-2026
 
 ### Fixed
