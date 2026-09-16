@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump golang from 1.26-bookworm to 1.27-bookworm ([#646](https://github.com/djryanj/media-viewer/pull/646))
 - chore(deps): update vitest monorepo to v5 ([#650](https://github.com/djryanj/media-viewer/pull/650))
 
 ## [0.19.5] - 08-05-2026
