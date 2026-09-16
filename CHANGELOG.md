@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update all non-major dependencies ([#635](https://github.com/djryanj/media-viewer/pull/635))
 - fix(deps): update go modules ([#637](https://github.com/djryanj/media-viewer/pull/637))
 - build(deps): bump golang from 1.26-bookworm to 1.27-bookworm ([#646](https://github.com/djryanj/media-viewer/pull/646))
 - chore(deps): update github actions ([#634](https://github.com/djryanj/media-viewer/pull/634))
