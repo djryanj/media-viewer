@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - build(deps): bump anchore/sbom-action from 0.24.0 to 0.24.2 ([#649](https://github.com/djryanj/media-viewer/pull/649))
+- fix(deps): update go modules ([#637](https://github.com/djryanj/media-viewer/pull/637))
+- build(deps): bump golang from 1.26-bookworm to 1.27-bookworm ([#646](https://github.com/djryanj/media-viewer/pull/646))
+- chore(deps): update github actions ([#634](https://github.com/djryanj/media-viewer/pull/634))
+- chore(deps): update vitest monorepo to v5 ([#650](https://github.com/djryanj/media-viewer/pull/650))
 
 ## [0.19.5] - 08-05-2026
 
