@@ -36,6 +36,21 @@ func TestGetFileType(t *testing.T) {
 			want: FileTypeVideo,
 		},
 		{
+			name: "RealMedia video",
+			ext:  ".rm",
+			want: FileTypeVideo,
+		},
+		{
+			name: "RealMedia RAM video",
+			ext:  ".ram",
+			want: FileTypeVideo,
+		},
+		{
+			name: "RealMedia variable bitrate video",
+			ext:  ".rmvb",
+			want: FileTypeVideo,
+		},
+		{
 			name: "WPL playlist",
 			ext:  ".wpl",
 			want: FileTypePlaylist,
@@ -92,6 +107,21 @@ func TestGetMimeType(t *testing.T) {
 			name: "WebM mime type",
 			ext:  ".webm",
 			want: "video/webm",
+		},
+		{
+			name: "RealMedia mime type",
+			ext:  ".rm",
+			want: "application/vnd.rn-realmedia",
+		},
+		{
+			name: "RealMedia RAM mime type",
+			ext:  ".ram",
+			want: "application/vnd.rn-realmedia",
+		},
+		{
+			name: "RealMedia variable bitrate mime type",
+			ext:  ".rmvb",
+			want: "application/vnd.rn-realmedia-vbr",
 		},
 		{
 			name: "Unknown extension returns octet-stream",
@@ -170,7 +200,7 @@ func TestImageExtensions(t *testing.T) {
 
 func TestVideoExtensions(t *testing.T) {
 	// Test that common video extensions are present
-	commonVideos := []string{".mp4", ".mkv", ".avi", ".mov", ".webm"}
+	commonVideos := []string{".mp4", ".mkv", ".avi", ".mov", ".webm", ".rm", ".ram", ".rmvb"}
 	for _, ext := range commonVideos {
 		if !VideoExtensions[ext] {
 			t.Errorf("Expected %s to be in VideoExtensions", ext)

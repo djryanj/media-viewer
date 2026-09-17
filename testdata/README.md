@@ -8,6 +8,7 @@ This directory contains small media files used for integration testing.
 - `test.png` - Small PNG image for thumbnail generation tests
 - `test.mp4` - Short MP4 video for video streaming tests
 - `test.webm` - Short WebM (vp9/opus) video for direct-playback (no transcode) streaming tests
+- `test.rm` - Short RealMedia (rv20/ac3) video for legacy-format indexing/transcoding tests
 
 ## Source
 

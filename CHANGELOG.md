@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - fix(indexer): WebM videos are no longer silently skipped during indexing. A copy-paste bug in the video format table listed `.webp` (an image extension) where `.webm` was meant to be, so `.webm` files were classified as unsupported and never appeared in the library, despite the transcoder already treating WebM as a browser-compatible container needing no re-encode. ([#658](https://github.com/djryanj/media-viewer/issues/658))
+- fix(indexer): RealMedia files (`.rm`, `.ram`, `.rmvb`) are no longer silently skipped during indexing. The extension wasn't in the video format table, so the indexer classified them as unsupported and they never appeared in the library at all. The transcoder already re-encodes any codec/container it doesn't recognize as browser-compatible, so once indexed, RealVideo streams are transcoded to MP4 like any other legacy format. ([#652](https://github.com/djryanj/media-viewer/issues/652))
 - fix(deps): patch high-severity `brace-expansion` DoS vulnerability ([GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg), [GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895)) pulled in transitively via eslint's `minimatch` dependency. A low-severity `cookie` advisory pinned by `@sveltejs/kit` remains and is tracked in [#655](https://github.com/djryanj/media-viewer/issues/655). ([#656](https://github.com/djryanj/media-viewer/pull/656))
 
 ### Changed
