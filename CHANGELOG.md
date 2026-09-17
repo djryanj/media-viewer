@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- fix(deps): patch high-severity `brace-expansion` DoS vulnerability ([GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg), [GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895)) pulled in transitively via eslint's `minimatch` dependency. A low-severity `cookie` advisory pinned by `@sveltejs/kit` remains and is tracked in [#655](https://github.com/djryanj/media-viewer/issues/655).
+- fix(deps): patch high-severity `brace-expansion` DoS vulnerability ([GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg), [GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895)) pulled in transitively via eslint's `minimatch` dependency. A low-severity `cookie` advisory pinned by `@sveltejs/kit` remains and is tracked in [#655](https://github.com/djryanj/media-viewer/issues/655). ([#656](https://github.com/djryanj/media-viewer/pull/656))
 
 ### Changed
 
@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - build(deps): bump golang from 1.26-bookworm to 1.27-bookworm ([#646](https://github.com/djryanj/media-viewer/pull/646))
 - chore(deps): update github actions ([#634](https://github.com/djryanj/media-viewer/pull/634))
 - chore(deps): update vitest monorepo to v5 ([#650](https://github.com/djryanj/media-viewer/pull/650))
-- chore(devcontainer): bump `docker-in-docker` feature to v4 and add the `github-cli` feature
+- chore(devcontainer): bump `docker-in-docker` feature to v4 and add the `github-cli` feature ([#656](https://github.com/djryanj/media-viewer/pull/656))
 
 ## [0.19.5] - 08-05-2026
 
