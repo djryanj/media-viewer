@@ -1851,6 +1851,257 @@ func TestMergeExifTagsForFileNewTagCreatedWithExifSpellingIntegration(t *testing
 	}
 }
 
+// TestMergeExifTagsForFileDoesNotResurrectUserRemovedTagIntegration verifies
+// that once a user removes a tag the autotagger derived from a file's EXIF
+// metadata, a later autotagger pass over the same still-unchanged metadata
+// does not silently re-add it.
+func TestMergeExifTagsForFileDoesNotResurrectUserRemovedTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	path := "/media/photo.jpg"
+
+	// Autotagger derives "vacation" and "beach" from EXIF metadata.
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"vacation", "beach"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+
+	// User decides they don't want "beach".
+	if err := db.RemoveTagFromFile(ctx, path, "beach"); err != nil {
+		t.Fatalf("RemoveTagFromFile failed: %v", err)
+	}
+
+	// A later autotagger pass re-parses the same still-unchanged EXIF data.
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"vacation", "beach"}); err != nil {
+		t.Fatalf("second MergeExifTagsForFile failed: %v", err)
+	}
+
+	tags, err := db.GetFileTags(ctx, path)
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "vacation" {
+		t.Fatalf("expected only 'vacation' to remain (removed tag must not be resurrected), got %v", tags)
+	}
+}
+
+// TestMergeExifTagsForFileStillAddsOtherTagsWhenOneIsRemovedIntegration verifies
+// that suppressing a removed tag is scoped to that single tag, not the whole
+// file — a brand new EXIF-derived tag alongside a tombstoned one must still
+// be added normally.
+func TestMergeExifTagsForFileStillAddsOtherTagsWhenOneIsRemovedIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	path := "/media/photo.jpg"
+
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+	if err := db.RemoveTagFromFile(ctx, path, "beach"); err != nil {
+		t.Fatalf("RemoveTagFromFile failed: %v", err)
+	}
+
+	// EXIF now also carries a brand new tag alongside the still-tombstoned one.
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach", "sunset"}); err != nil {
+		t.Fatalf("second MergeExifTagsForFile failed: %v", err)
+	}
+
+	tags, err := db.GetFileTags(ctx, path)
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "sunset" {
+		t.Fatalf("expected only 'sunset' (new tag added, removed tag still suppressed), got %v", tags)
+	}
+}
+
+// TestUserCanReAddTagAfterAutotaggerRemovalIntegration verifies that a user
+// can manually re-add a tag they previously removed, and that a subsequent
+// autotagger pass does not silently strip it again.
+func TestUserCanReAddTagAfterAutotaggerRemovalIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	path := "/media/photo.jpg"
+
+	// Autotagger adds "beach", user removes it, and it stays removed.
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+	if err := db.RemoveTagFromFile(ctx, path, "beach"); err != nil {
+		t.Fatalf("RemoveTagFromFile failed: %v", err)
+	}
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile after removal failed: %v", err)
+	}
+	if tags, _ := db.GetFileTags(ctx, path); len(tags) != 0 {
+		t.Fatalf("expected 'beach' to stay removed, got %v", tags)
+	}
+
+	// User changes their mind and re-adds it manually.
+	if err := db.AddTagToFile(ctx, path, "beach"); err != nil {
+		t.Fatalf("AddTagToFile failed: %v", err)
+	}
+	if tags, _ := db.GetFileTags(ctx, path); len(tags) != 1 || tags[0] != "beach" {
+		t.Fatalf("expected 'beach' to be present after manual re-add, got %v", tags)
+	}
+
+	// A later autotagger pass must not silently remove the user's re-added tag.
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile after re-add failed: %v", err)
+	}
+	tags, err := db.GetFileTags(ctx, path)
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "beach" {
+		t.Fatalf("expected 'beach' to remain present after re-add + autotagger pass, got %v", tags)
+	}
+}
+
+// TestBulkRemoveTagsThenMergeDoesNotResurrectIntegration is the bulk-removal
+// equivalent of the single-file resurrection guard: GalleryToolbar's
+// "bulk remove tag" action must also tombstone the removal.
+func TestBulkRemoveTagsThenMergeDoesNotResurrectIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	paths := []string{"/media/a.jpg", "/media/b.jpg"}
+
+	for _, p := range paths {
+		if err := db.MergeExifTagsForFile(ctx, p, []string{"beach"}); err != nil {
+			t.Fatalf("MergeExifTagsForFile(%s) failed: %v", p, err)
+		}
+	}
+
+	if _, errs, err := db.BulkRemoveTagsFromFiles(ctx, paths, []string{"beach"}); err != nil || len(errs) != 0 {
+		t.Fatalf("BulkRemoveTagsFromFiles failed: err=%v errs=%v", err, errs)
+	}
+
+	for _, p := range paths {
+		if err := db.MergeExifTagsForFile(ctx, p, []string{"beach"}); err != nil {
+			t.Fatalf("second MergeExifTagsForFile(%s) failed: %v", p, err)
+		}
+	}
+
+	for _, p := range paths {
+		tags, err := db.GetFileTags(ctx, p)
+		if err != nil {
+			t.Fatalf("GetFileTags(%s) failed: %v", p, err)
+		}
+		if len(tags) != 0 {
+			t.Errorf("expected 'beach' to stay removed from %s, got %v", p, tags)
+		}
+	}
+}
+
+// TestBulkAddTagsClearsRemovalTombstoneIntegration is the bulk-add equivalent
+// of the manual re-add guard: GalleryToolbar's "bulk apply tag" action must
+// clear any removal tombstone so the tag isn't stripped again later.
+func TestBulkAddTagsClearsRemovalTombstoneIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	path := "/media/photo.jpg"
+
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+	if err := db.RemoveTagFromFile(ctx, path, "beach"); err != nil {
+		t.Fatalf("RemoveTagFromFile failed: %v", err)
+	}
+
+	if _, errs, err := db.BulkAddTagsToFiles(ctx, []string{path}, []string{"beach"}); err != nil || len(errs) != 0 {
+		t.Fatalf("BulkAddTagsToFiles failed: err=%v errs=%v", err, errs)
+	}
+
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile after bulk re-add failed: %v", err)
+	}
+
+	tags, err := db.GetFileTags(ctx, path)
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "beach" {
+		t.Fatalf("expected 'beach' to remain present after bulk re-add + autotagger pass, got %v", tags)
+	}
+}
+
+// TestSetFileTagsTombstonesDroppedTagsThenAllowsReAddIntegration covers the
+// SetFileTags "replace all tags" path: a tag dropped from the new list must
+// be tombstoned (not resurrected by a later autotagger pass), and re-including
+// it in a later SetFileTags call must clear that tombstone again.
+func TestSetFileTagsTombstonesDroppedTagsThenAllowsReAddIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _ := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	path := "/media/photo.jpg"
+
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach", "vacation"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile failed: %v", err)
+	}
+
+	// User uses the tag editor to keep only "vacation" (drops "beach").
+	if err := db.SetFileTags(ctx, path, []string{"vacation"}); err != nil {
+		t.Fatalf("SetFileTags failed: %v", err)
+	}
+
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach", "vacation"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile after SetFileTags failed: %v", err)
+	}
+	if tags, _ := db.GetFileTags(ctx, path); len(tags) != 1 || tags[0] != "vacation" {
+		t.Fatalf("expected only 'vacation' to remain (dropped tag must not be resurrected), got %v", tags)
+	}
+
+	// User changes their mind and re-includes "beach" via the tag editor.
+	if err := db.SetFileTags(ctx, path, []string{"vacation", "beach"}); err != nil {
+		t.Fatalf("second SetFileTags failed: %v", err)
+	}
+
+	// A later autotagger pass must not silently strip the re-added tag.
+	if err := db.MergeExifTagsForFile(ctx, path, []string{"beach", "vacation"}); err != nil {
+		t.Fatalf("MergeExifTagsForFile after re-add failed: %v", err)
+	}
+
+	tags, err := db.GetFileTags(ctx, path)
+	if err != nil {
+		t.Fatalf("GetFileTags failed: %v", err)
+	}
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+	if len(tags) != 2 || !tagSet["vacation"] || !tagSet["beach"] {
+		t.Fatalf("expected both 'vacation' and 'beach' present after re-add, got %v", tags)
+	}
+}
+
 // TestGetFilesByTagFavoriteIntegration tests that GetFilesByTag includes is_favorite flag.
 func TestGetFilesByTagFavoriteIntegration(t *testing.T) {
 	if testing.Short() {

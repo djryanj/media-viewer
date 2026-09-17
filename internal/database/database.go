@@ -586,6 +586,20 @@ func (d *Database) initialize(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_file_tags_path ON file_tags(file_path);
 	CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(tag_id);
 
+	-- Tombstones a (file, tag) pair a user explicitly removed, so the
+	-- autotagger's additive EXIF/XMP merge (MergeExifTagsForFile) does not
+	-- resurrect it on a later pass. Cleared whenever a user action re-adds
+	-- the same pair (AddTagToFile, BulkAddTagsToFiles, SetFileTags).
+	CREATE TABLE IF NOT EXISTS removed_tags (
+		file_path TEXT NOT NULL,
+		tag_id INTEGER NOT NULL,
+		removed_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+		PRIMARY KEY (file_path, tag_id),
+		FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_removed_tags_path ON removed_tags(file_path);
+
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		password_hash TEXT NOT NULL,

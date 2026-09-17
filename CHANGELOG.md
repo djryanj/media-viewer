@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.7] - Unreleased
+
+### Fixed
+
+- fix(tags): a tag manually removed from a file no longer reappears the next time the autotagger reprocesses it. Because the autotagger's EXIF/XMP tag merge is purely additive with no record of what a user had explicitly removed, a deleted `file_tags` row was indistinguishable from one that had simply never been created, so any full or manually-triggered autotagger pass would silently re-add it. Removals now record a tombstone that the autotagger's merge respects, and re-adding the same tag afterward (via single, bulk, or "set tags" actions) clears the tombstone again so it isn't stripped a second time. ([#661](https://github.com/djryanj/media-viewer/issues/661))
+
 ## [0.19.6] - 09-17-2026
 
 ### Fixed

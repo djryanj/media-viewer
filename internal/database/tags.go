@@ -102,6 +102,13 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 		return err
 	}
 
+	// A user explicitly (re-)adding a tag clears any earlier removal tombstone,
+	// so a later autotagger pass is free to keep it.
+	if err = clearRemovedTagTombstone(ctx, tx, filePath, tagID); err != nil {
+		done(err)
+		return err
+	}
+
 	if commitErr := tx.Commit(); commitErr != nil {
 		done(commitErr)
 		return commitErr
@@ -111,19 +118,82 @@ func (d *Database) AddTagToFile(ctx context.Context, filePath, tagName string) e
 	return nil
 }
 
-// RemoveTagFromFile removes a tag from a file.
+// RemoveTagFromFile removes a tag from a file. If the tag was actually
+// present, the removal is tombstoned in removed_tags so that a later
+// autotagger pass (MergeExifTagsForFile) does not resurrect it from the
+// file's still-unchanged EXIF/XMP metadata.
 func (d *Database) RemoveTagFromFile(ctx context.Context, filePath, tagName string) error {
 	done := d.observeQuery("remove_tag_from_file")
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := d.writer.ExecContext(ctx, `
-		DELETE FROM file_tags
-		WHERE file_path = ? AND tag_id = (SELECT id FROM tags WHERE name = ? COLLATE NOCASE)
-	`, filePath, tagName)
+	tx, err := d.writer.BeginTx(ctx, nil)
+	if err != nil {
+		done(err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
 
-	done(err)
+	var tagID int64
+	err = tx.QueryRowContext(ctx,
+		"SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+		tagName,
+	).Scan(&tagID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Tag doesn't exist at all — nothing to remove or tombstone.
+		done(nil)
+		return tx.Commit()
+	}
+	if err != nil {
+		done(err)
+		return err
+	}
+
+	result, err := tx.ExecContext(ctx,
+		"DELETE FROM file_tags WHERE file_path = ? AND tag_id = ?",
+		filePath, tagID,
+	)
+	if err != nil {
+		done(err)
+		return err
+	}
+
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		if err = tombstoneRemovedTag(ctx, tx, filePath, tagID); err != nil {
+			done(err)
+			return err
+		}
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		done(commitErr)
+		return commitErr
+	}
+
+	done(nil)
+	return nil
+}
+
+// tombstoneRemovedTag records that tagID was explicitly removed from filePath
+// by a user action, so MergeExifTagsForFile does not resurrect it later.
+func tombstoneRemovedTag(ctx context.Context, tx *sql.Tx, filePath string, tagID int64) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO removed_tags (file_path, tag_id, removed_at)
+		VALUES (?, ?, strftime('%s', 'now'))
+		ON CONFLICT(file_path, tag_id) DO UPDATE SET removed_at = excluded.removed_at
+	`, filePath, tagID)
+	return err
+}
+
+// clearRemovedTagTombstone removes any removal tombstone for (filePath, tagID).
+// Called whenever a user action explicitly (re-)adds the tag, so the pairing
+// is treated as intentional again.
+func clearRemovedTagTombstone(ctx context.Context, tx *sql.Tx, filePath string, tagID int64) error {
+	_, err := tx.ExecContext(ctx,
+		"DELETE FROM removed_tags WHERE file_path = ? AND tag_id = ?",
+		filePath, tagID,
+	)
 	return err
 }
 
@@ -181,12 +251,19 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 		}
 	}()
 
+	previousIDs, err := previousFileTagIDs(ctx, tx, filePath)
+	if err != nil {
+		done(err)
+		return err
+	}
+
 	_, err = tx.ExecContext(ctx, "DELETE FROM file_tags WHERE file_path = ?", filePath)
 	if err != nil {
 		done(err)
 		return err
 	}
 
+	newIDs := make(map[int64]bool)
 	for _, tagName := range tagNames {
 		tagName = strings.TrimSpace(tagName)
 		if tagName == "" {
@@ -204,6 +281,7 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 			}
 			tagID, _ = result.LastInsertId()
 		}
+		newIDs[tagID] = true
 
 		_, err = tx.ExecContext(ctx,
 			"INSERT OR IGNORE INTO file_tags (file_path, tag_id) VALUES (?, ?)",
@@ -215,12 +293,55 @@ func (d *Database) SetFileTags(ctx context.Context, filePath string, tagNames []
 		}
 	}
 
+	// Tags dropped from the new list are tombstoned so the autotagger does not
+	// resurrect them; tags kept or newly added have any earlier tombstone cleared.
+	if err = applyTagRemovalTombstones(ctx, tx, filePath, previousIDs, newIDs); err != nil {
+		done(err)
+		return err
+	}
+
 	if commitErr := tx.Commit(); commitErr != nil {
 		done(commitErr)
 		return commitErr
 	}
 	committed = true
 	done(nil)
+	return nil
+}
+
+// previousFileTagIDs returns the set of tag IDs currently linked to filePath.
+func previousFileTagIDs(ctx context.Context, tx *sql.Tx, filePath string) (map[int64]bool, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT tag_id FROM file_tags WHERE file_path = ?", filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		if scanErr := rows.Scan(&id); scanErr == nil {
+			ids[id] = true
+		}
+	}
+	return ids, rows.Err()
+}
+
+// applyTagRemovalTombstones tombstones tag IDs present in previousIDs but
+// absent from newIDs, and clears any tombstone for tag IDs present in newIDs.
+func applyTagRemovalTombstones(ctx context.Context, tx *sql.Tx, filePath string, previousIDs, newIDs map[int64]bool) error {
+	for id := range previousIDs {
+		if !newIDs[id] {
+			if err := tombstoneRemovedTag(ctx, tx, filePath, id); err != nil {
+				return err
+			}
+		}
+	}
+	for id := range newIDs {
+		if err := clearRemovedTagTombstone(ctx, tx, filePath, id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -726,6 +847,15 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames [
 	}
 	defer func() { _ = assocStmt.Close() }()
 
+	clearStmt, err := tx.PrepareContext(ctx,
+		"DELETE FROM removed_tags WHERE file_path = ? AND tag_id = ?",
+	)
+	if err != nil {
+		done(err)
+		return 0, nil, fmt.Errorf("failed to prepare tombstone clear: %w", err)
+	}
+	defer func() { _ = clearStmt.Close() }()
+
 	successCount := 0
 	var errs []error
 
@@ -737,6 +867,13 @@ func (d *Database) BulkAddTagsToFiles(ctx context.Context, filePaths, tagNames [
 		pathFailed := false
 		for _, tagID := range tagIDs {
 			if _, execErr := assocStmt.ExecContext(ctx, path, tagID); execErr != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", path, execErr))
+				pathFailed = true
+				continue
+			}
+			// A user explicitly (re-)adding a tag clears any earlier removal
+			// tombstone, so a later autotagger pass is free to keep it.
+			if _, execErr := clearStmt.ExecContext(ctx, path, tagID); execErr != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", path, execErr))
 				pathFailed = true
 			}
@@ -803,6 +940,17 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNa
 	}
 	defer func() { _ = deleteStmt.Close() }()
 
+	tombstoneStmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO removed_tags (file_path, tag_id, removed_at)
+		VALUES (?, ?, strftime('%s', 'now'))
+		ON CONFLICT(file_path, tag_id) DO UPDATE SET removed_at = excluded.removed_at
+	`)
+	if err != nil {
+		done(err)
+		return 0, nil, fmt.Errorf("failed to prepare tombstone insert: %w", err)
+	}
+	defer func() { _ = tombstoneStmt.Close() }()
+
 	successCount := 0
 	var errs []error
 
@@ -816,8 +964,15 @@ func (d *Database) BulkRemoveTagsFromFiles(ctx context.Context, filePaths, tagNa
 			result, execErr := deleteStmt.ExecContext(ctx, path, tagID)
 			if execErr != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", path, execErr))
-			} else if rows, _ := result.RowsAffected(); rows > 0 {
+				continue
+			}
+			if rows, _ := result.RowsAffected(); rows > 0 {
 				pathHadRemoval = true
+				// Tombstone the removal so a later autotagger pass does not
+				// resurrect it from the file's still-unchanged metadata.
+				if _, execErr := tombstoneStmt.ExecContext(ctx, path, tagID); execErr != nil {
+					errs = append(errs, fmt.Errorf("%s: %w", path, execErr))
+				}
 			}
 		}
 		if pathHadRemoval {
@@ -1087,8 +1242,11 @@ func buildPlaceholders(values []string) (clause string, args []interface{}) {
 //     used — the tag is never renamed.
 //   - If no match is found, a new tag is created with the rawTag spelling.
 //
-// In both cases an INSERT OR IGNORE into file_tags ensures the association
-// exists after the call.  All operations run in a single transaction.
+// A tag the user has explicitly removed from this file (tracked in
+// removed_tags) is skipped instead of being re-linked, so a later pass over
+// the file's still-unchanged metadata does not resurrect it. Otherwise, an
+// INSERT OR IGNORE into file_tags ensures the association exists after the
+// call.  All operations run in a single transaction.
 func (d *Database) MergeExifTagsForFile(ctx context.Context, filePath string, rawTags []string) error {
 	done := d.observeQuery("merge_exif_tags_for_file")
 
@@ -1136,6 +1294,21 @@ func (d *Database) MergeExifTagsForFile(ctx context.Context, filePath string, ra
 				return fmt.Errorf("failed to create tag %q: %w", name, createErr)
 			}
 			tagID, _ = result.LastInsertId()
+		}
+
+		// A user explicitly removed this tag from this file — respect that
+		// and do not resurrect it from EXIF/XMP metadata that hasn't changed.
+		var removed int
+		err = tx.QueryRowContext(ctx,
+			"SELECT 1 FROM removed_tags WHERE file_path = ? AND tag_id = ?",
+			filePath, tagID,
+		).Scan(&removed)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			done(err)
+			return fmt.Errorf("failed to check removed_tags for %q: %w", name, err)
 		}
 
 		// Link tag to file; ignore if the association already exists.
