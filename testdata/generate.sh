@@ -43,6 +43,18 @@ else
     echo "⚠ ffmpeg not found, skipping test.png"
 fi
 
+# Generate minimal WebM video (320x240, vp9/opus, ~20KB)
+if command -v ffmpeg &> /dev/null; then
+    echo "Creating test.webm with ffmpeg..."
+    ffmpeg -f lavfi -i testsrc=duration=1:size=320x240:rate=1 \
+           -f lavfi -i sine=frequency=1000:duration=1 \
+           -c:v libvpx-vp9 -c:a libopus \
+           -y test.webm 2>/dev/null
+    echo "✓ test.webm created ($(du -h test.webm | cut -f1))"
+else
+    echo "⚠ ffmpeg not found, skipping test.webm"
+fi
+
 # Generate minimal RealMedia video (320x240, rv20/ac3, ~20KB)
 if command -v ffmpeg &> /dev/null; then
     echo "Creating test.rm with ffmpeg..."
