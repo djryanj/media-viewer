@@ -227,6 +227,25 @@ func TestCreateMediaFileIgnoresCacheForNonImageExtensions(t *testing.T) {
 	}
 }
 
+func TestCreateMediaFileClassifiesRealMediaAsVideo(t *testing.T) {
+	dir := t.TempDir()
+	idx := New(&database.Database{}, dir, 5*time.Minute)
+
+	// .rm/.ram/.rmvb identify RealMedia unambiguously from the extension alone,
+	// just like .mp4 — no content sniff should be needed to index them as video.
+	for _, name := range []string{"movie.rm", "movie.ram", "movie.rmvb"} {
+		relPath, info := writeSniffFixture(t, dir, name, []byte("fake realmedia"))
+
+		file, ok := idx.createMediaFile(relPath, info)
+		if !ok {
+			t.Fatalf("expected %s to be indexed as media", name)
+		}
+		if file.Type != database.FileTypeVideo {
+			t.Errorf("%s: type = %s, want %s", name, file.Type, database.FileTypeVideo)
+		}
+	}
+}
+
 func TestParallelWalkerProcessFileSkipsSniffWhenCached(t *testing.T) {
 	dir := t.TempDir()
 	relPath, info := writeSniffFixture(t, dir, "clip.jpg", gifInJPEG())

@@ -43,6 +43,18 @@ else
     echo "⚠ ffmpeg not found, skipping test.png"
 fi
 
+# Generate minimal RealMedia video (320x240, rv20/ac3, ~20KB)
+if command -v ffmpeg &> /dev/null; then
+    echo "Creating test.rm with ffmpeg..."
+    ffmpeg -f lavfi -i testsrc=duration=1:size=320x240:rate=1 \
+           -f lavfi -i sine=frequency=1000:duration=1 \
+           -c:v rv20 -c:a ac3 \
+           -y test.rm 2>/dev/null
+    echo "✓ test.rm created ($(du -h test.rm | cut -f1))"
+else
+    echo "⚠ ffmpeg not found, skipping test.rm"
+fi
+
 echo ""
 echo "Test files generated in $(pwd)"
 ls -lh test.* 2>/dev/null || echo "No test files created - ffmpeg not available"

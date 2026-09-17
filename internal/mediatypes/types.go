@@ -50,6 +50,9 @@ const (
 	ExtAVI  = ".avi"
 	ExtMOV  = ".mov"
 	ExtWPL  = ".wpl"
+	ExtRM   = ".rm"
+	ExtRAM  = ".ram"
+	ExtRMVB = ".rmvb"
 
 	// Image-only extensions.
 	ExtBMP  = ".bmp"
@@ -70,9 +73,11 @@ const (
 
 // MIME type constants.
 const (
-	MimeJPEG        = "image/jpeg"
-	MimeVideoMP4    = "video/mp4"
-	MimeOctetStream = "application/octet-stream"
+	MimeJPEG         = "image/jpeg"
+	MimeVideoMP4     = "video/mp4"
+	MimeOctetStream  = "application/octet-stream"
+	MimeRealMedia    = "application/vnd.rn-realmedia"
+	MimeRealMediaVBR = "application/vnd.rn-realmedia-vbr"
 )
 
 // ImageExtensions maps supported image file extensions to a fast lookup set.
@@ -112,6 +117,9 @@ var VideoExtensions = map[string]bool{
 	".mpg":  true,
 	".3gp":  true,
 	".ts":   true,
+	ExtRM:   true,
+	ExtRAM:  true,
+	ExtRMVB: true,
 }
 
 // PlaylistExtensions maps file extensions to whether they are supported playlist formats.
@@ -148,6 +156,9 @@ var MimeTypes = map[string]string{
 	".mpg":  "video/mpeg",
 	".3gp":  "video/3gpp",
 	".ts":   "video/mp2t",
+	ExtRM:   MimeRealMedia,
+	ExtRAM:  MimeRealMedia,
+	ExtRMVB: MimeRealMediaVBR,
 
 	// Playlists
 	ExtWPL: "application/vnd.ms-wpl",

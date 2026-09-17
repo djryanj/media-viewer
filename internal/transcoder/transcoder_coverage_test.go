@@ -1062,6 +1062,72 @@ func getTestVideoPath(t *testing.T) string {
 	return ""
 }
 
+// getTestRealMediaPath returns the path to the RealMedia (.rm) test fixture.
+func getTestRealMediaPath(t *testing.T) string {
+	t.Helper()
+
+	testVideoPath := filepath.Join("..", "..", "testdata", "test.rm")
+	if _, err := os.Stat(testVideoPath); err == nil {
+		return testVideoPath
+	}
+
+	testVideoPath = filepath.Join("testdata", "test.rm")
+	if _, err := os.Stat(testVideoPath); err == nil {
+		return testVideoPath
+	}
+
+	t.Skip("Test video not found at testdata/test.rm")
+	return ""
+}
+
+// TestGetVideoInfoIntegration_RealMedia verifies ffprobe can read a legacy
+// RealMedia (.rm) file and that its rv20 codec/container are correctly flagged
+// as requiring transcoding, since browsers cannot play RealVideo natively.
+func TestGetVideoInfoIntegration_RealMedia(t *testing.T) {
+	checkFFmpegAvailable(t)
+	testVideo := getTestRealMediaPath(t)
+
+	trans := New("/tmp/cache", "", true, "none")
+	ctx := context.Background()
+
+	info, err := trans.GetVideoInfo(ctx, testVideo)
+	if err != nil {
+		t.Fatalf("GetVideoInfo() error: %v", err)
+	}
+
+	if info.Width <= 0 {
+		t.Errorf("Expected positive width, got %d", info.Width)
+	}
+	if info.Height <= 0 {
+		t.Errorf("Expected positive height, got %d", info.Height)
+	}
+	if !info.NeedsTranscode {
+		t.Error("RealMedia (.rm) must require transcoding for browser playback")
+	}
+}
+
+// TestStreamVideoIntegration_RealMediaTranscodes verifies that streaming a
+// RealMedia file goes through the transcode path (rather than a direct byte
+// copy of un-playable RealVideo) and produces non-empty transcoded output.
+func TestStreamVideoIntegration_RealMediaTranscodes(t *testing.T) {
+	checkFFmpegAvailable(t)
+	testVideo := getTestRealMediaPath(t)
+
+	tmpDir := t.TempDir()
+	trans := New(tmpDir, "", true, "none")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var buf bytes.Buffer
+	if err := trans.StreamVideo(ctx, testVideo, &buf, 0); err != nil {
+		t.Fatalf("StreamVideo() error: %v", err)
+	}
+
+	if buf.Len() == 0 {
+		t.Error("Expected transcoded video data, got empty buffer")
+	}
+}
+
 func TestGetVideoInfoIntegration_RealVideo(t *testing.T) {
 	checkFFmpegAvailable(t)
 	testVideo := getTestVideoPath(t)
