@@ -50,6 +50,7 @@ const (
 	ExtAVI  = ".avi"
 	ExtMOV  = ".mov"
 	ExtWPL  = ".wpl"
+	ExtWEBM = ".webm"
 
 	// Image-only extensions.
 	ExtBMP  = ".bmp"
@@ -106,7 +107,7 @@ var VideoExtensions = map[string]bool{
 	ExtMOV:  true,
 	".wmv":  true,
 	".flv":  true,
-	ExtWEBP: true,
+	ExtWEBM: true,
 	".m4v":  true,
 	".mpeg": true,
 	".mpg":  true,
@@ -142,7 +143,7 @@ var MimeTypes = map[string]string{
 	ExtMOV:  "video/quicktime",
 	".wmv":  "video/x-ms-wmv",
 	".flv":  "video/x-flv",
-	".webm": "video/webm",
+	ExtWEBM: "video/webm",
 	".m4v":  "video/x-m4v",
 	".mpeg": "video/mpeg",
 	".mpg":  "video/mpeg",

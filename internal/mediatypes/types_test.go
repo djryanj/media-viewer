@@ -31,6 +31,11 @@ func TestGetFileType(t *testing.T) {
 			want: FileTypeVideo,
 		},
 		{
+			name: "WebM video",
+			ext:  ".webm",
+			want: FileTypeVideo,
+		},
+		{
 			name: "WPL playlist",
 			ext:  ".wpl",
 			want: FileTypePlaylist,
@@ -82,6 +87,11 @@ func TestGetMimeType(t *testing.T) {
 			name: "WPL mime type",
 			ext:  ".wpl",
 			want: "application/vnd.ms-wpl",
+		},
+		{
+			name: "WebM mime type",
+			ext:  ".webm",
+			want: "video/webm",
 		},
 		{
 			name: "Unknown extension returns octet-stream",
@@ -160,11 +170,20 @@ func TestImageExtensions(t *testing.T) {
 
 func TestVideoExtensions(t *testing.T) {
 	// Test that common video extensions are present
-	commonVideos := []string{".mp4", ".mkv", ".avi", ".mov"}
+	commonVideos := []string{".mp4", ".mkv", ".avi", ".mov", ".webm"}
 	for _, ext := range commonVideos {
 		if !VideoExtensions[ext] {
 			t.Errorf("Expected %s to be in VideoExtensions", ext)
 		}
+	}
+}
+
+func TestVideoExtensionsExcludesImageFormats(t *testing.T) {
+	// Regression test: VideoExtensions previously contained a copy-paste entry
+	// for ExtWEBP (.webp, an image format) where ".webm" was meant to be, which
+	// left .webm entirely unclassifiable as video.
+	if VideoExtensions[ExtWEBP] {
+		t.Errorf("VideoExtensions must not contain %s — it is an image format", ExtWEBP)
 	}
 }
 

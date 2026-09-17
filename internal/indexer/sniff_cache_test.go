@@ -227,6 +227,24 @@ func TestCreateMediaFileIgnoresCacheForNonImageExtensions(t *testing.T) {
 	}
 }
 
+func TestCreateMediaFileClassifiesWebMAsVideo(t *testing.T) {
+	dir := t.TempDir()
+	idx := New(&database.Database{}, dir, 5*time.Minute)
+
+	// Regression test for a copy-paste bug where VideoExtensions held .webp
+	// (an image extension) where .webm was meant to be, leaving .webm files
+	// unclassifiable and silently skipped by the indexer.
+	relPath, info := writeSniffFixture(t, dir, "clip.webm", []byte("fake webm"))
+
+	file, ok := idx.createMediaFile(relPath, info)
+	if !ok {
+		t.Fatal("expected clip.webm to be indexed as media")
+	}
+	if file.Type != database.FileTypeVideo {
+		t.Errorf("type = %s, want %s", file.Type, database.FileTypeVideo)
+	}
+}
+
 func TestParallelWalkerProcessFileSkipsSniffWhenCached(t *testing.T) {
 	dir := t.TempDir()
 	relPath, info := writeSniffFixture(t, dir, "clip.jpg", gifInJPEG())

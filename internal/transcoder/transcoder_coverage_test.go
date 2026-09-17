@@ -1062,6 +1062,70 @@ func getTestVideoPath(t *testing.T) string {
 	return ""
 }
 
+// getTestWebMPath returns the path to the WebM (vp9/opus) test fixture.
+func getTestWebMPath(t *testing.T) string {
+	t.Helper()
+
+	testVideoPath := filepath.Join("..", "..", "testdata", "test.webm")
+	if _, err := os.Stat(testVideoPath); err == nil {
+		return testVideoPath
+	}
+
+	testVideoPath = filepath.Join("testdata", "test.webm")
+	if _, err := os.Stat(testVideoPath); err == nil {
+		return testVideoPath
+	}
+
+	t.Skip("Test video not found at testdata/test.webm")
+	return ""
+}
+
+// TestGetVideoInfoIntegration_WebM is a regression test for a copy-paste bug
+// in mediatypes.VideoExtensions that left .webm unclassifiable as video (it
+// held an .webp entry instead). This verifies ffprobe correctly identifies a
+// vp9/webm file as browser-compatible, needing no transcode.
+func TestGetVideoInfoIntegration_WebM(t *testing.T) {
+	checkFFmpegAvailable(t)
+	testVideo := getTestWebMPath(t)
+
+	trans := New("/tmp/cache", "", true, "none")
+	ctx := context.Background()
+
+	info, err := trans.GetVideoInfo(ctx, testVideo)
+	if err != nil {
+		t.Fatalf("GetVideoInfo() error: %v", err)
+	}
+
+	if info.Width <= 0 {
+		t.Errorf("Expected positive width, got %d", info.Width)
+	}
+	if info.Height <= 0 {
+		t.Errorf("Expected positive height, got %d", info.Height)
+	}
+	if info.NeedsTranscode {
+		t.Error("vp9 in webm is a browser-compatible codec/container and should not require transcoding")
+	}
+}
+
+// TestStreamVideoIntegration_WebMDirectStream verifies a WebM file is served
+// directly (no re-encode) once the indexer correctly classifies it as video.
+func TestStreamVideoIntegration_WebMDirectStream(t *testing.T) {
+	checkFFmpegAvailable(t)
+	testVideo := getTestWebMPath(t)
+
+	trans := New("/tmp/cache", "", true, "none")
+	ctx := context.Background()
+
+	var buf bytes.Buffer
+	if err := trans.StreamVideo(ctx, testVideo, &buf, 0); err != nil {
+		t.Fatalf("StreamVideo() error: %v", err)
+	}
+
+	if buf.Len() == 0 {
+		t.Error("Expected video data, got empty buffer")
+	}
+}
+
 func TestGetVideoInfoIntegration_RealVideo(t *testing.T) {
 	checkFFmpegAvailable(t)
 	testVideo := getTestVideoPath(t)
