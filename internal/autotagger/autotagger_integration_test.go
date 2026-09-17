@@ -612,6 +612,67 @@ func TestProcessFilesIdempotentIntegration(t *testing.T) {
 	}
 }
 
+// TestProcessFilesDoesNotResurrectUserRemovedTagIntegration exercises the
+// full autotagger pipeline (extraction + merge) end to end: a tag a user
+// removes must stay removed across a later pass over the same unchanged
+// file, but a subsequent manual re-add by the user must survive a pass
+// after that.
+func TestProcessFilesDoesNotResurrectUserRemovedTagIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	requireFFmpeg(t)
+
+	ctx := context.Background()
+	mediaDir := t.TempDir()
+
+	createMediaWithDescription(t, filepath.Join(mediaDir, "photo.mp4"), "tags:nature;")
+
+	files := []database.MediaFile{
+		{Name: "photo.mp4", Path: "photo.mp4", Type: database.FileTypeVideo, ModTime: time.Now(), MimeType: "video/mp4"},
+	}
+
+	db := setupAutoTaggerDB(t, files)
+	tagger := New(db, mediaDir, 24*time.Hour, true)
+
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles first run: %v", err)
+	}
+	if tags, _ := db.GetFileTags(ctx, "photo.mp4"); len(tags) != 1 || tags[0] != "nature" {
+		t.Fatalf("expected 'nature' after first pass, got %v", tags)
+	}
+
+	// User removes the auto-detected tag; the file's embedded metadata is untouched.
+	if err := db.RemoveTagFromFile(ctx, "photo.mp4", "nature"); err != nil {
+		t.Fatalf("RemoveTagFromFile: %v", err)
+	}
+
+	// A later autotagger pass re-parses the same still-unchanged metadata.
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles second run: %v", err)
+	}
+	if tags, _ := db.GetFileTags(ctx, "photo.mp4"); len(tags) != 0 {
+		t.Fatalf("expected 'nature' to stay removed, got %v", tags)
+	}
+
+	// User changes their mind and manually re-adds the tag.
+	if err := db.AddTagToFile(ctx, "photo.mp4", "nature"); err != nil {
+		t.Fatalf("AddTagToFile: %v", err)
+	}
+
+	// A further autotagger pass must not silently strip the re-added tag.
+	if _, _, err := tagger.processFiles(ctx, files); err != nil {
+		t.Fatalf("processFiles third run: %v", err)
+	}
+	tags, err := db.GetFileTags(ctx, "photo.mp4")
+	if err != nil {
+		t.Fatalf("GetFileTags: %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "nature" {
+		t.Fatalf("expected 'nature' to remain present after re-add + autotagger pass, got %v", tags)
+	}
+}
+
 // TestProcessFilesNoTagsFileIntegration verifies that a file with a
 // description but no tag-pattern results in zero tags added and zero failures.
 func TestProcessFilesNoTagsFileIntegration(t *testing.T) {
