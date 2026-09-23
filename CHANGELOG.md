@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.8] - Unreleased
+
+### Changed
+
+- build(deps): bump github.com/go-webauthn/webauthn from 0.18.1 to 0.18.2 ([#668](https://github.com/djryanj/media-viewer/pull/668))
+
 ## [0.19.7] - 09-17-2026
 
 ### Fixed
