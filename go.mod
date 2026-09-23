@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	github.com/davidbyttow/govips/v2 v2.18.0
 	github.com/disintegration/imaging v1.6.2
-	github.com/go-webauthn/webauthn v0.18.1
+	github.com/go-webauthn/webauthn v0.18.2
 	github.com/gorilla/mux v1.8.1
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/prometheus/client_golang v1.24.1
@@ -19,7 +19,7 @@ require (
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
