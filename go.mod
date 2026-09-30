@@ -3,7 +3,7 @@ module media-viewer
 go 1.26.2
 
 require (
-	github.com/davidbyttow/govips/v2 v2.18.0
+	github.com/davidbyttow/govips/v2 v2.19.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/gorilla/mux v1.8.1
