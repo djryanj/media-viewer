@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.8] - Unreleased
+
+### Changed
+
+- build(deps): bump github.com/prometheus/client_golang from 1.24.1 to 1.25.0 ([#678](https://github.com/djryanj/media-viewer/pull/678))
+
 ## [0.19.7] - 09-17-2026
 
 ### Fixed
