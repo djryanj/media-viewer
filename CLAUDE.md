@@ -131,6 +131,16 @@ Core tables: `files` (indexed media), `tags`, `file_tags`, `favorites`, `users`,
 
 **Test-driven development** — write the failing test first (and confirm it fails for the right reason), then make the minimal change to pass it. This applies to bug fixes and features, Go and frontend alike; for a bug, the test reproduces it before the fix.
 
+## Merging Dependency PRs (Dependabot / Renovate)
+
+Before a release, open bot PRs are worked through with these rules:
+
+1. **Changelog.** `.github/workflows/auto-changelog.yml` adds a `CHANGELOG.md` entry to bot PRs (on open/reopen, on a `/auto-changelog` comment, or via `workflow_dispatch` with the PR number). Because every PR edits the same lines, most bot PRs end up with merge conflicts or blocked merges from the changelog. Fix by recreating the PR (rule 2), then re-running auto-changelog if the entry is missing.
+2. **Recreate, don't rebase.** Ask the bot to *recreate* the PR (Dependabot: comment `@dependabot recreate`; Renovate: tick the rebase/retry box in the PR body or run the Renovate workflow) rather than rebasing by hand. A recreated PR is rebuilt from current `main`, so all changes (including the changelog) are in the branch, CI runs fresh, and version bumps released since the PR was opened are picked up.
+3. **Dedupe first.** Dependabot and Renovate often open PRs for the same dependency. List all open PRs before starting, compare the dependencies each one touches (`gh pr diff <n>`, including grouped PRs such as Renovate's "update go modules" / "all non-major"), keep one, and close the others with a comment saying which PR supersedes them.
+4. **Insufficient bot PRs.** A bot PR may bump only part of what a change needs (e.g. a major bump of `@sveltejs/kit` without the matching `adapter-static`, or a `package.json` bump with no lockfile update). Pick one of the related PRs, check out its branch, make all the required changes locally (install/bump every needed package, fix code), run the checks, push to that single PR, and close the rest (or let the bot recreate them and decide for itself).
+5. **CI failures.** If CI fails on a bot PR, check the branch out locally and fix whatever is needed rather than waiting on the bot.
+
 **Commit messages** must follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <subject>`. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`. Common scopes: `api`, `database`, `ui`, `thumbnails`, `transcoding`, `search`, `tags`, `favorites`.
 
 **Go version** is enforced — `make build` and `make lint` will fail if your local Go doesn't match `go.mod`. In the devcontainer, rebuild the container to fix mismatches.
