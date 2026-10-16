@@ -1,9 +1,8 @@
 <script lang="ts">
     import { tags as tagsApi } from '$lib/api/client';
     import type { MediaFile } from '$lib/api/types';
-    import TagEditor from '$lib/components/ui/TagEditor.svelte';
-    import { toastStore } from '$lib/stores/toast.svelte';
-    import { tagClipboard } from '$lib/stores/tagClipboard.svelte';
+    import TagPanel from '$lib/components/ui/TagPanel.svelte';
+    import { galleryStore } from '$lib/stores/gallery.svelte';
 
     let {
         item,
@@ -39,29 +38,9 @@
         }
     }
 
-    async function handleTagsChange(newTags: string[]) {
-        itemTags = newTags;
-        try {
-            await tagsApi.setForFile(item.path, newTags);
-        } catch {
-            toastStore.error('Failed to save tags');
-        }
-    }
-
-    function copyTags() {
-        tagClipboard.copy(itemTags);
-        toastStore.success(`Copied ${itemTags.length} tag${itemTags.length !== 1 ? 's' : ''}`);
-    }
-
-    async function pasteTags() {
-        const merged = tagClipboard.merge(itemTags);
-        const added = merged.length - itemTags.length;
-        await handleTagsChange(merged);
-        if (added > 0) {
-            toastStore.success(`Added ${added} tag${added !== 1 ? 's' : ''}`);
-        } else {
-            toastStore.success('Tags already up to date');
-        }
+    function handleTagsApplied(updates: Record<string, string[]>) {
+        itemTags = updates[item.path] ?? itemTags;
+        galleryStore.updateItem(item.path, { tags: itemTags });
     }
 
     // Per-segment URL encoding so path separators stay as /
@@ -112,57 +91,15 @@
                         </svg>
                         Back
                     </button>
-                    <div class="tag-clipboard-btns">
-                        {#if !tagsLoading && itemTags.length > 0}
-                            <button
-                                class="clip-btn"
-                                type="button"
-                                onclick={copyTags}
-                                title="Copy tags"
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    aria-hidden="true"
-                                >
-                                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                                    <path
-                                        d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-                                    />
-                                </svg>
-                                Copy
-                            </button>
-                        {/if}
-                        {#if !tagsLoading && tagClipboard.hasContent}
-                            <button
-                                class="clip-btn clip-paste"
-                                type="button"
-                                onclick={pasteTags}
-                                title="Paste tags"
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    aria-hidden="true"
-                                >
-                                    <path
-                                        d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
-                                    />
-                                    <rect x="8" y="2" width="8" height="4" rx="1" />
-                                </svg>
-                                Paste
-                            </button>
-                        {/if}
-                    </div>
                 </div>
                 {#if tagsLoading}
                     <p class="tag-loading">Loading tags…</p>
                 {:else}
-                    <TagEditor tags={itemTags} onchange={handleTagsChange} />
+                    <TagPanel
+                        items={[{ path: item.path, tags: itemTags }]}
+                        onapply={handleTagsApplied}
+                        onnavigate={onclose}
+                    />
                 {/if}
             </div>
         {:else}
@@ -402,43 +339,6 @@
     .back-btn svg {
         width: 18px;
         height: 18px;
-    }
-
-    .tag-clipboard-btns {
-        display: flex;
-        gap: 6px;
-    }
-
-    .clip-btn {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        background: var(--color-surface-3);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        color: var(--color-text-muted);
-        font-size: 0.8rem;
-        padding: 4px 8px;
-        cursor: pointer;
-        transition:
-            background var(--transition-fast),
-            color var(--transition-fast);
-    }
-
-    .clip-btn:hover {
-        background: var(--color-surface-2);
-        color: var(--color-text);
-    }
-
-    .clip-paste {
-        color: var(--color-primary);
-        border-color: var(--color-primary);
-    }
-
-    .clip-btn svg {
-        width: 14px;
-        height: 14px;
-        flex-shrink: 0;
     }
 
     .tag-loading {

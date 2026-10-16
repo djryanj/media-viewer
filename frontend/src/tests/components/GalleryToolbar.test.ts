@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import GalleryToolbar from '$lib/components/gallery/GalleryToolbar.svelte';
+import { tagClipboard } from '$lib/stores/tagClipboard.svelte';
 
 const mockStore = vi.hoisted(() => ({
     selectionMode: false,
@@ -12,8 +13,11 @@ const mockStore = vi.hoisted(() => ({
     setSort: vi.fn(),
     selectAll: vi.fn(),
     clearSelection: vi.fn(),
-    getSelectedItems: vi.fn().mockReturnValue([])
+    getSelectedItems: vi.fn().mockReturnValue([]),
+    updateItem: vi.fn()
 }));
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 vi.mock('$lib/stores/gallery.svelte', () => ({
     galleryStore: mockStore
@@ -21,7 +25,13 @@ vi.mock('$lib/stores/gallery.svelte', () => ({
 
 vi.mock('$lib/api/client', () => ({
     favorites: { bulkAdd: vi.fn(), bulkRemove: vi.fn() },
-    tags: { bulkAdd: vi.fn(), bulkRemove: vi.fn(), getBatch: vi.fn().mockResolvedValue({}) },
+    tags: {
+        bulkAdd: vi.fn().mockResolvedValue({ success: 2, failed: 0 }),
+        bulkRemove: vi.fn().mockResolvedValue({ success: 2, failed: 0 }),
+        getBatch: vi.fn().mockResolvedValue({}),
+        related: vi.fn().mockResolvedValue([]),
+        list: vi.fn().mockResolvedValue([])
+    },
     collections: { list: vi.fn().mockResolvedValue([]), memberships: vi.fn().mockResolvedValue({}) }
 }));
 
@@ -271,5 +281,71 @@ describe('GalleryToolbar — Merge Tags button visibility', () => {
         ]);
         render(GalleryToolbar);
         expect(screen.getByRole('button', { name: /merge tags/i })).toBeTruthy();
+    });
+});
+
+describe('GalleryToolbar — bulk tagging', () => {
+    const file = (path: string, tags: string[]) => ({
+        path,
+        name: path,
+        type: 'image',
+        id: 1,
+        parentPath: '',
+        size: 0,
+        modTime: '',
+        tags
+    });
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        const { tags } = await import('$lib/api/client');
+        vi.mocked(tags.bulkAdd).mockResolvedValue({ success: 2, failed: 0 });
+        vi.mocked(tags.bulkRemove).mockResolvedValue({ success: 2, failed: 0 });
+        mockStore.selectionMode = true;
+        mockStore.selectedCount = 2;
+        mockStore.getSelectedItems.mockReturnValue([
+            file('/a.jpg', ['x', 'both']),
+            file('/b.jpg', ['both'])
+        ]);
+        tagClipboard.clear();
+    });
+
+    async function openTagPanel() {
+        render(GalleryToolbar);
+        await fireEvent.click(screen.getByRole('button', { name: 'Tag selected' }));
+    }
+
+    it('distinguishes tags on every selected item from tags on only some', async () => {
+        await openTagPanel();
+        expect(screen.getByText('both')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'x, on 1 of 2 items' })).toBeTruthy();
+    });
+
+    it('adds a tag to every selected item in one bulk call', async () => {
+        const { tags } = await import('$lib/api/client');
+        await openTagPanel();
+        const input = screen.getByRole('combobox', { name: 'Tag input' });
+        await fireEvent.input(input, { target: { value: 'new' } });
+        await fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() =>
+            expect(tags.bulkAdd).toHaveBeenCalledWith({
+                paths: ['/a.jpg', '/b.jpg'],
+                tags: ['new']
+            })
+        );
+        expect(mockStore.updateItem).toHaveBeenCalledWith('/b.jpg', { tags: ['both', 'new'] });
+    });
+
+    it('the quick paste button adds the clipboard tags in one bulk call', async () => {
+        const { tags } = await import('$lib/api/client');
+        tagClipboard.copy(['p', 'both']);
+        render(GalleryToolbar);
+        await fireEvent.click(screen.getByRole('button', { name: 'Paste tags to selected' }));
+        await waitFor(() =>
+            expect(tags.bulkAdd).toHaveBeenCalledWith({
+                paths: ['/a.jpg', '/b.jpg'],
+                tags: ['p', 'both']
+            })
+        );
     });
 });

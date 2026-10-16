@@ -4,7 +4,7 @@
     import { favorites, tags } from '$lib/api/client';
     import { toastStore } from '$lib/stores/toast.svelte';
     import { tagClipboard } from '$lib/stores/tagClipboard.svelte';
-    import TagEditor from '$lib/components/ui/TagEditor.svelte';
+    import TagPanel from '$lib/components/ui/TagPanel.svelte';
     import CollectionsPanel from '$lib/components/lightbox/CollectionsPanel.svelte';
     import MergeTagsModal from '$lib/components/gallery/MergeTagsModal.svelte';
 
@@ -26,7 +26,9 @@
     const nonFolderCount = $derived(
         galleryStore.getSelectedItems().filter((i) => i.type !== 'folder').length
     );
-    let bulkTagValue: string[] = $state([]);
+    const selectedTagItems = $derived(
+        galleryStore.getSelectedItems().map((i) => ({ path: i.path, tags: i.tags ?? [] }))
+    );
 
     const sortOptions = [
         { field: 'name' as const, order: 'asc' as const, label: 'Name (A–Z)' },
@@ -43,51 +45,15 @@
     );
 
     async function openTagModal() {
-        // Pre-populate with union of all selected items' existing tags
-        const selected = galleryStore.getSelectedItems();
-        const union = [...new Set(selected.flatMap((i) => i.tags ?? []))];
-        bulkTagValue = union;
         tagPanelOpen = true;
         await tick();
         tagEditorRef?.focus();
     }
 
-    async function bulkApplyTag(tag: string) {
-        const paths = galleryStore.getSelectedItems().map((i) => i.path);
-        if (!paths.length) return;
-        try {
-            await tags.bulkAdd({ paths, tag });
-            galleryStore.getSelectedItems().forEach((item) => {
-                const existing = item.tags ?? [];
-                if (!existing.includes(tag)) {
-                    galleryStore.updateItem(item.path, { tags: [...existing, tag] });
-                }
-            });
-        } catch {
-            toastStore.error(`Failed to apply tag "${tag}"`);
+    function handleTagsApplied(updates: Record<string, string[]>) {
+        for (const [path, newTags] of Object.entries(updates)) {
+            galleryStore.updateItem(path, { tags: newTags });
         }
-    }
-
-    async function bulkRemoveTag(tag: string) {
-        const paths = galleryStore.getSelectedItems().map((i) => i.path);
-        if (!paths.length) return;
-        try {
-            await tags.bulkRemove({ paths, tag });
-            galleryStore.getSelectedItems().forEach((item) => {
-                const existing = item.tags ?? [];
-                galleryStore.updateItem(item.path, { tags: existing.filter((t) => t !== tag) });
-            });
-        } catch {
-            toastStore.error(`Failed to remove tag "${tag}"`);
-        }
-    }
-
-    async function handleBulkTagChange(next: string[]) {
-        const added = next.filter((t) => !bulkTagValue.includes(t));
-        const removed = bulkTagValue.filter((t) => !next.includes(t));
-        bulkTagValue = next;
-        for (const tag of added) await bulkApplyTag(tag);
-        for (const tag of removed) await bulkRemoveTag(tag);
     }
 
     // Capture-phase listener fires before +page.svelte's bubble-phase svelte:window handler.
@@ -126,29 +92,17 @@
     async function bulkPasteTags() {
         const items = galleryStore.getSelectedItems();
         if (!items.length || !tagClipboard.hasContent) return;
-        let totalAdded = 0;
-        const errors: string[] = [];
-        await Promise.all(
-            items.map(async (item) => {
-                const merged = tagClipboard.merge(item.tags ?? []);
-                const added = merged.length - (item.tags?.length ?? 0);
-                if (added === 0) return;
-                try {
-                    await tags.setForFile(item.path, merged);
-                    galleryStore.updateItem(item.path, { tags: merged });
-                    totalAdded += added;
-                } catch {
-                    errors.push(item.name);
-                }
-            })
-        );
-        if (errors.length) {
-            toastStore.error(`Failed to paste tags to: ${errors.slice(0, 2).join(', ')}`);
-        } else if (totalAdded > 0) {
-            toastStore.success(`Pasted tags to ${items.length} item(s)`);
-        } else {
-            toastStore.success('Tags already up to date');
+        const clipboard = [...tagClipboard.tags];
+        try {
+            await tags.bulkAdd({ paths: items.map((i) => i.path), tags: clipboard });
+        } catch {
+            toastStore.error('Failed to paste tags');
+            return;
         }
+        for (const item of items) {
+            galleryStore.updateItem(item.path, { tags: tagClipboard.merge(item.tags ?? []) });
+        }
+        toastStore.success(`Pasted tags to ${items.length} item(s)`);
     }
 
     async function bulkFavorite() {
@@ -426,10 +380,14 @@
             </button>
         </div>
         <div class="tag-modal-body">
-            <TagEditor
+            <TagPanel
                 bind:this={tagEditorRef}
-                tags={bulkTagValue}
-                onchange={handleBulkTagChange}
+                items={selectedTagItems}
+                onapply={handleTagsApplied}
+                onnavigate={() => {
+                    tagPanelOpen = false;
+                    galleryStore.clearSelection();
+                }}
             />
         </div>
     </div>
