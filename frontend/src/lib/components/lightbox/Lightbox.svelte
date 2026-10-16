@@ -201,6 +201,9 @@
                 lightboxStore.next();
                 break;
             case 'Escape':
+                // Mark handled so page-level Escape handlers (go up a folder)
+                // don't also fire for the same keypress.
+                e.preventDefault();
                 if (tagsOpen) {
                     tagsOpen = false;
                 } else {

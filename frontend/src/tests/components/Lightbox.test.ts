@@ -101,6 +101,14 @@ describe('Lightbox — basic rendering', () => {
         expect(lightboxStore.open).toBe(false);
     });
 
+    it('Escape is marked handled so page-level Escape handlers do not also navigate up', async () => {
+        render(Lightbox);
+        lightboxStore.show(img1, twoItems);
+        await waitFor(() => screen.getByRole('dialog'));
+        const notCancelled = await fireEvent.keyDown(window, { key: 'Escape' });
+        expect(notCancelled).toBe(false); // false => preventDefault() was called
+    });
+
     it('Escape key closes the lightbox', async () => {
         render(Lightbox);
         lightboxStore.show(img1, twoItems);
