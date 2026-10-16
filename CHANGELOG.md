@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(tags): tapping a tag chip opens an action menu (Search for tag, Exclude from search, Remove) instead of immediately leaving the lightbox for a search. The search page's tag-filter pills are now tappable as a whole: tap cycles include → exclude → off.
 - feat(ui): tagging is usable on touch devices. On coarse-pointer devices chips, remove buttons, suggestion rows, clipboard buttons and the search-filter pills are 44px targets; the tag input takes its own row with suggestions listed beneath it in flow (so they can't be hidden by the on-screen keyboard); and the search filter bar scrolls horizontally rather than wrapping into a wall of tiny pills. Desktop layout is unchanged.
 - refactor(tags): the gallery context menu no longer has its own duplicate Copy/Paste tag buttons (the editor's built-in ones are used), and the toolbar's "Paste tags to selected" now applies in a single request.
+- chore(deps): update all non-major dependencies ([#664](https://github.com/djryanj/media-viewer/pull/664))
+- chore(deps): update node.js to v24.22.0 ([#665](https://github.com/djryanj/media-viewer/pull/665))
+- fix(deps): update go modules (govips 2.19, go-webauthn 0.18.2, prometheus client_golang 1.25, `golang.org/x/{crypto,image,sys,term}`) ([#666](https://github.com/djryanj/media-viewer/pull/666))
+- chore(deps): update module github.com/golangci/golangci-lint to v2.14.0, and satisfy its `exhaustive` check on the `FileType` switches in the media handlers and thumbnailer ([#669](https://github.com/djryanj/media-viewer/pull/669))
+- chore(deps): update dependency happy-dom to v21 ([#675](https://github.com/djryanj/media-viewer/pull/675))
+- build(deps): bump anchore/sbom-action from 0.24.0 to 0.24.3 ([#649](https://github.com/djryanj/media-viewer/pull/649))
+- build(deps): bump renovatebot/github-action from 46.3.1 to 46.3.8 ([#671](https://github.com/djryanj/media-viewer/pull/671))
+- build(deps): bump mikepenz/release-changelog-builder-action from 6.3.0 to 6.4.0 ([#674](https://github.com/djryanj/media-viewer/pull/674))
+- build(deps): bump actions/download-artifact from 8.0.1 to 8.0.2 ([#676](https://github.com/djryanj/media-viewer/pull/676))
+- build(deps): bump actions/setup-node from 7.0.0 to 7.1.0 ([#680](https://github.com/djryanj/media-viewer/pull/680))
 
 ## [0.19.7] - 09-17-2026
 
