@@ -4,14 +4,7 @@ import { render } from '@testing-library/svelte';
 // ── Header nav ────────────────────────────────────────────────────────────────
 const { pageMock } = vi.hoisted(() => ({ pageMock: { url: { pathname: '/' } } }));
 
-vi.mock('$app/stores', () => ({
-    page: {
-        subscribe: (fn: (v: unknown) => void) => {
-            fn(pageMock);
-            return () => {};
-        }
-    }
-}));
+vi.mock('$app/state', () => ({ page: pageMock }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/stores/gallery.svelte', () => ({
     galleryStore: { path: '/', navigate: vi.fn(), sort: 'name', order: 'asc', favorites: [] }

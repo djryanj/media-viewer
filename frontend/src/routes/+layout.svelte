@@ -2,7 +2,7 @@
     import '../app.css';
     import { onMount, onDestroy } from 'svelte';
     import { goto, beforeNavigate, afterNavigate } from '$app/navigation';
-    import { page } from '$app/stores';
+    import { page } from '$app/state';
     import { authStore } from '$lib/stores/auth.svelte';
     import { sessionStore } from '$lib/stores/session.svelte';
     import { connectivityStore } from '$lib/stores/connectivity.svelte';
@@ -39,7 +39,10 @@
      * left to go (the root gallery). Used when the history stack has no in-app
      * entry to pop to — e.g. after a reload or a PWA launch inside a subfolder.
      */
-    function parentUrl(url: URL): string | null {
+    function parentUrl(url: {
+        pathname: string;
+        searchParams: { get(name: string): string | null };
+    }): string | null {
         if (url.pathname !== '/') return '/';
         const p = url.searchParams.get('path');
         if (!p) return null;
@@ -106,7 +109,7 @@
         // be deep in the tree — a reload or PWA launch inside a subfolder starts
         // at depth 0. Going up a level is what they asked for; only treat back as
         // "leave the app" once there's genuinely nowhere left to go.
-        const up = parentUrl($page.url);
+        const up = parentUrl(page.url);
         if (up) {
             if (upNavInFlight) return;
             upNavInFlight = true;
@@ -139,7 +142,7 @@
         await authStore.check();
         if (
             (!authStore.authenticated || authStore.setupRequired) &&
-            $page.url.pathname !== '/login'
+            page.url.pathname !== '/login'
         ) {
             goto('/login');
         }
@@ -154,7 +157,7 @@
 
     // Redirect to home once logged in
     $effect(() => {
-        if (authStore.checked && authStore.authenticated && $page.url.pathname === '/login') {
+        if (authStore.checked && authStore.authenticated && page.url.pathname === '/login') {
             goto('/');
         }
     });
@@ -165,7 +168,7 @@
     <div class="splash" role="status" aria-label="Loading">
         <img src="/icons/icon.svg" alt="Media Viewer" class="splash-logo" />
     </div>
-{:else if authStore.authenticated || $page.url.pathname === '/login'}
+{:else if authStore.authenticated || page.url.pathname === '/login'}
     <AppShell>
         {@render children()}
     </AppShell>

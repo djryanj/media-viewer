@@ -7,15 +7,8 @@ const { gotoMock, mockSearchParams } = vi.hoisted(() => ({
     mockSearchParams: new URLSearchParams()
 }));
 
-// Mock SvelteKit $app/stores (page store)
-vi.mock('$app/stores', () => ({
-    page: {
-        subscribe: (fn: (v: { url: URL }) => void) => {
-            fn({ url: { searchParams: mockSearchParams } as URL });
-            return () => {};
-        }
-    }
-}));
+// Mock SvelteKit $app/state (page store)
+vi.mock('$app/state', () => ({ page: { url: { searchParams: mockSearchParams } as URL } }));
 
 // mock goto
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));

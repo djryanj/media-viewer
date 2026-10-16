@@ -1,6 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { page } from '$app/stores';
+    import { page } from '$app/state';
     import { galleryStore } from '$lib/stores/gallery.svelte';
     import { authStore } from '$lib/stores/auth.svelte';
     import { settingsStore } from '$lib/stores/settings.svelte';
@@ -53,13 +53,13 @@
         <nav class="desktop-nav" aria-label="Main navigation">
             <button
                 class="nav-link"
-                class:active={$page.url.pathname === '/'}
+                class:active={page.url.pathname === '/'}
                 onclick={handleLogo}
                 aria-label="Library">Library</button
             >
             <button
                 class="nav-link"
-                class:active={$page.url.pathname.startsWith('/collections')}
+                class:active={page.url.pathname.startsWith('/collections')}
                 onclick={() => goto('/collections')}
                 aria-label="Collections">Collections</button
             >

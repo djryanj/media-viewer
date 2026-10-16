@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { page } from '$app/stores';
+    import { page } from '$app/state';
     import { onMount, onDestroy, tick } from 'svelte';
     import { goto } from '$app/navigation';
     import { galleryStore } from '$lib/stores/gallery.svelte';
@@ -15,7 +15,7 @@
 
     // Navigate whenever the ?path= query param changes; save + restore scroll.
     $effect(() => {
-        const path = $page.url.searchParams.get('path') ?? '';
+        const path = page.url.searchParams.get('path') ?? '';
         if (path !== galleryStore.path) {
             const mainEl = document.getElementById('main-content');
             if (mainEl) galleryStore.saveScrollPosition(galleryStore.path, mainEl.scrollTop);
@@ -69,7 +69,7 @@
     const PTR_RESISTANCE = 0.45;
 
     onMount(() => {
-        const path = $page.url.searchParams.get('path') ?? '';
+        const path = page.url.searchParams.get('path') ?? '';
         galleryStore.navigate(path);
 
         window.addEventListener('connectivity:restored', handleConnectivityRestored);

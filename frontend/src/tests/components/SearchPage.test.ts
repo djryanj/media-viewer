@@ -12,14 +12,7 @@ const { gotoMock, mockSearchParams } = vi.hoisted(() => ({
     mockSearchParams: new URLSearchParams()
 }));
 
-vi.mock('$app/stores', () => ({
-    page: {
-        subscribe: (fn: (v: { url: URL }) => void) => {
-            fn({ url: { searchParams: mockSearchParams } as URL });
-            return () => {};
-        }
-    }
-}));
+vi.mock('$app/state', () => ({ page: { url: { searchParams: mockSearchParams } as URL } }));
 
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 

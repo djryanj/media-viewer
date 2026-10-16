@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { page } from '$app/stores';
+    import { page } from '$app/state';
     import Header from './Header.svelte';
     import BottomNav from './BottomNav.svelte';
     import StatusFooter from './StatusFooter.svelte';
@@ -8,7 +8,7 @@
     let { children } = $props();
 
     // Hide the bottom nav in the lightbox (full-screen) context
-    const isLogin = $derived($page.url.pathname === '/login');
+    const isLogin = $derived(page.url.pathname === '/login');
 </script>
 
 <div class="app-shell" class:login={isLogin}>
