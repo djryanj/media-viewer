@@ -129,7 +129,7 @@ jobs:
                   cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: release-frontend-deps
                   path: ./artifacts/release-frontend-deps
@@ -200,7 +200,7 @@ jobs:
                   cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: release-frontend-deps
                   path: ./artifacts/release-frontend-deps
@@ -329,7 +329,7 @@ jobs:
                   cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: release-frontend-deps
                   path: ./artifacts/release-frontend-deps
@@ -340,7 +340,7 @@ jobs:
                   tar -xzf ./artifacts/release-frontend-deps/release-frontend-deps.tgz -C ./frontend
 
             - name: Download backend binary
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: media-viewer-binary
                   path: .
@@ -409,7 +409,7 @@ jobs:
                   cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: release-frontend-deps
                   path: ./artifacts/release-frontend-deps
@@ -424,7 +424,7 @@ jobs:
               run: npx playwright install --with-deps chromium
 
             - name: Download backend binary
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: media-viewer-binary
                   path: .
@@ -507,7 +507,7 @@ jobs:
                   cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: release-frontend-deps
                   path: ./artifacts/release-frontend-deps
@@ -591,7 +591,7 @@ jobs:
                   cache-dependency-path: frontend/package-lock.json
 
             - name: Download frontend dependency artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: release-frontend-deps
                   path: ./artifacts/release-frontend-deps
@@ -876,13 +876,13 @@ jobs:
                   fetch-depth: 0
 
             - name: Download SBOM artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: sbom
                   path: ./artifacts
 
             - name: Download NVIDIA SBOM artifact
-              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
               with:
                   name: sbom-nvidia
                   path: ./artifacts
