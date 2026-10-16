@@ -9,6 +9,7 @@
     import { toastStore } from '$lib/stores/toast.svelte';
     import { galleryStore } from '$lib/stores/gallery.svelte';
     import { createBackButtonHandler } from '$lib/utils/backButton';
+    import { closeOverlayOnBack } from '$lib/utils/overlayBack';
     import AppShell from '$lib/components/layout/AppShell.svelte';
     import Lightbox from '$lib/components/lightbox/Lightbox.svelte';
     import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
@@ -79,6 +80,13 @@
         // Skip when willUnload is true — cancel() is a no-op in that case and
         // the browser will navigate away regardless.
         if (type !== 'popstate' || !authStore.authenticated || willUnload) return;
+
+        // Back with the lightbox open only dismisses the lightbox; it must not
+        // also navigate up a level. cancel() restores the history entry.
+        if (closeOverlayOnBack()) {
+            cancel();
+            return;
+        }
 
         // Allow normal in-app back navigation unless:
         //   (a) depth is 0: user is at the entry point of the session, or

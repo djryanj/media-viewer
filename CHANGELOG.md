@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - Unreleased
+
+### Fixed
+
+- fix(ui): closing the lightbox with Escape (desktop) or the back button/gesture (mobile) no longer also navigates up a level. The lightbox's Escape handler now marks the keypress as handled so the gallery's "go to parent folder" shortcut ignores it, and a back press while the lightbox is open now only dismisses the lightbox instead of also popping the history entry. ([#681](https://github.com/djryanj/media-viewer/issues/681))
+
 ## [0.19.7] - 09-17-2026
 
 ### Fixed

@@ -165,7 +165,7 @@
             return;
         }
 
-        if (e.key !== 'Escape') return;
+        if (e.key !== 'Escape' || e.defaultPrevented) return;
         if (lightboxStore.open || settingsStore.open) return;
         // Escape in selection mode clears selection rather than navigating up
         if (galleryStore.selectionMode) {

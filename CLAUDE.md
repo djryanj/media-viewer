@@ -129,6 +129,8 @@ Core tables: `files` (indexed media), `tags`, `file_tags`, `favorites`, `users`,
 
 ## Important Conventions
 
+**Test-driven development** — write the failing test first (and confirm it fails for the right reason), then make the minimal change to pass it. This applies to bug fixes and features, Go and frontend alike; for a bug, the test reproduces it before the fix.
+
 **Commit messages** must follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <subject>`. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`. Common scopes: `api`, `database`, `ui`, `thumbnails`, `transcoding`, `search`, `tags`, `favorites`.
 
 **Go version** is enforced — `make build` and `make lint` will fail if your local Go doesn't match `go.mod`. In the devcontainer, rebuild the container to fix mismatches.
