@@ -430,11 +430,12 @@ func isThumbnailSupported(w http.ResponseWriter, filePath string, fileType datab
 	switch fileType {
 	case database.FileTypeImage, database.FileTypeVideo, database.FileTypeFolder:
 		return true
-	default:
-		logging.Warn("Thumbnail: unsupported file type %s for %s", fileType, filePath)
-		http.Error(w, "Unsupported file type", http.StatusBadRequest)
-		return false
+	case database.FileTypePlaylist, database.FileTypeOther:
+		// no thumbnail source
 	}
+	logging.Warn("Thumbnail: unsupported file type %s for %s", fileType, filePath)
+	http.Error(w, "Unsupported file type", http.StatusBadRequest)
+	return false
 }
 
 // writeThumbnailResponse sets caching headers, handles conditional requests, validates
