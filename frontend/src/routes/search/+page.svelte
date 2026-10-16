@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onDestroy, onMount } from 'svelte';
-    import { page } from '$app/stores';
+    import { page } from '$app/state';
     import { goto } from '$app/navigation';
     import { media } from '$lib/api/client';
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
@@ -38,7 +38,7 @@
     // Sync URL query param → currentQuery/editableQuery without triggering
     // a search itself (the search effect below watches currentQuery separately).
     $effect(() => {
-        const q = $page.url.searchParams.get('q') ?? '';
+        const q = page.url.searchParams.get('q') ?? '';
         if (q !== currentQuery) {
             currentQuery = q;
             editableQuery = q;

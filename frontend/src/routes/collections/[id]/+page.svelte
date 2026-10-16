@@ -1,12 +1,12 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { page } from '$app/stores';
+    import { page } from '$app/state';
     import { collections as collectionsApi } from '$lib/api/client';
     import type { CollectionDetail, MediaFile } from '$lib/api/types';
     import Gallery from '$lib/components/gallery/Gallery.svelte';
     import { toastStore } from '$lib/stores/toast.svelte';
 
-    const id = $derived(Number($page.params.id));
+    const id = $derived(Number(page.params.id));
     let detail = $state<CollectionDetail | null>(null);
     let loading = $state(true);
     let error = $state('');

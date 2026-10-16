@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { page } from '$app/stores';
+    import { page } from '$app/state';
     import { goto } from '$app/navigation';
     import { playlists as playlistsApi } from '$lib/api/client';
     import type { Playlist, PlaylistItem } from '$lib/api/types';
@@ -21,7 +21,7 @@
         isFullscreen = !!document.fullscreenElement;
     }
 
-    const playlistName = $derived($page.params.name ?? '');
+    const playlistName = $derived(page.params.name ?? '');
     const currentItem = $derived(playlist?.items[currentIndex] ?? null);
 
     async function load() {

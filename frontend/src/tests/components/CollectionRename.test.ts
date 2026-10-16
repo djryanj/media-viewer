@@ -6,14 +6,7 @@ const { renameMock } = vi.hoisted(() => ({
     renameMock: vi.fn().mockResolvedValue({})
 }));
 
-vi.mock('$app/stores', () => ({
-    page: {
-        subscribe: (fn: (v: { params: { id: string } }) => void) => {
-            fn({ params: { id: '1' } });
-            return () => {};
-        }
-    }
-}));
+vi.mock('$app/state', () => ({ page: { params: { id: '1' } } }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
