@@ -329,7 +329,7 @@ func (t *ThumbnailGenerator) GetThumbnail(ctx context.Context, filePath string, 
 		img, err = t.generateVideoThumbnail(genCtx, filePath)
 	case database.FileTypeFolder:
 		img, err = t.generateFolderThumbnail(genCtx, filePath)
-	default:
+	case database.FileTypePlaylist, database.FileTypeOther:
 		logging.Error("Thumbnail generation failed for %s: unsupported file type %s", filePath, fileType)
 		metrics.ThumbnailGenerationsTotal.WithLabelValues(fileTypeStr, "error_unsupported").Inc()
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
@@ -772,6 +772,8 @@ func (t *ThumbnailGenerator) findImagesForFolder(ctx context.Context, relativePa
 			imageFiles = append(imageFiles, f)
 		case database.FileTypeVideo:
 			videoFiles = append(videoFiles, f)
+		case database.FileTypeFolder, database.FileTypePlaylist, database.FileTypeOther:
+			// not a folder-thumbnail source
 		}
 	}
 
@@ -818,7 +820,7 @@ func (t *ThumbnailGenerator) findImagesForFolder(ctx context.Context, relativePa
 			img, err = t.generateImageThumbnail(ctx, fullPath)
 		case database.FileTypeVideo:
 			img, err = t.generateVideoThumbnail(ctx, fullPath)
-		default:
+		case database.FileTypeFolder, database.FileTypePlaylist, database.FileTypeOther:
 			continue
 		}
 
@@ -877,6 +879,8 @@ func (t *ThumbnailGenerator) findMediaInSubdirectories(ctx context.Context, pare
 				images = append(images, f)
 			case database.FileTypeVideo:
 				videos = append(videos, f)
+			case database.FileTypeFolder, database.FileTypePlaylist, database.FileTypeOther:
+				// not a folder-thumbnail source
 			}
 		}
 
