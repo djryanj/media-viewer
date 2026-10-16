@@ -17,6 +17,10 @@
     onchange   — called with the new complete list on every mutation
     compact    — denser dark layout for the lightbox info bar
     allTags    — optional pre-loaded Tag[] list; omit to fetch on mount
+    partialTags — tags present on only some of a multi-item selection; shown as
+                  dimmed "n/m" chips. They stay suggestible so adding one
+                  promotes it to every item.
+    ontagclick — called when a chip (full or partial) is tapped
 -->
 <script lang="ts">
     import { onMount } from 'svelte';
@@ -29,6 +33,7 @@
         onchange,
         compact = false,
         allTags: allTagsProp = undefined,
+        partialTags = [],
         ontagclick = undefined,
         onpaste: onpasteOverride = undefined
     }: {
@@ -36,6 +41,7 @@
         onchange: (tags: string[]) => void;
         compact?: boolean;
         allTags?: Tag[];
+        partialTags?: Array<{ name: string; count: number; total: number }>;
         ontagclick?: (tag: string) => void;
         onpaste?: (clipboardTags: string[]) => void;
     } = $props();
@@ -387,6 +393,21 @@
         </span>
     {/each}
 
+    {#each partialTags as p (p.name)}
+        <button
+            class="chip partial"
+            type="button"
+            aria-label="{p.name}, on {p.count} of {p.total} items"
+            onclick={(e) => {
+                e.stopPropagation();
+                ontagclick?.(p.name);
+            }}
+        >
+            {p.name}
+            <span class="partial-count">{p.count}/{p.total}</span>
+        </button>
+    {/each}
+
     <div class="input-wrap">
         <input
             bind:this={inputEl}
@@ -586,6 +607,23 @@
         opacity: 0.8;
     }
 
+    .chip.partial {
+        border: 1px dashed currentColor;
+        background: transparent;
+        color: var(--color-text-muted);
+        cursor: pointer;
+        font-family: inherit;
+    }
+
+    .compact .chip.partial {
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .partial-count {
+        font-size: 10px;
+        opacity: 0.8;
+    }
+
     .compact .chip {
         font-size: 11px;
         padding: 0 5px 0 7px;
@@ -774,5 +812,73 @@
     .action-btn svg {
         width: 14px;
         height: 14px;
+    }
+
+    /* ── Touch: finger-sized targets, and suggestions in flow ──
+       Chips, remove buttons and suggestion rows reach 44px; the input takes its
+       own full-width row and the suggestion list opens beneath it in the normal
+       flow, so it can't be clipped or hidden behind the on-screen keyboard. */
+    @media (pointer: coarse) {
+        .tag-editor,
+        .tag-editor.compact {
+            gap: var(--spacing-2);
+            padding: var(--spacing-2);
+            min-height: 52px;
+        }
+
+        .chip,
+        .compact .chip {
+            min-height: 40px;
+            padding: 0 4px 0 14px;
+            font-size: var(--text-sm);
+            gap: var(--spacing-2);
+        }
+
+        .chip.partial,
+        .compact .chip.partial {
+            padding-right: 14px;
+        }
+
+        .chip-remove {
+            width: 36px;
+            height: 36px;
+            font-size: 20px;
+        }
+
+        .input-wrap {
+            flex: 1 1 100%;
+            order: -1;
+            position: static;
+        }
+
+        .tag-input,
+        .compact .tag-input {
+            min-height: 44px;
+            font-size: 16px; /* stops iOS zooming the page on focus */
+        }
+
+        .suggestions,
+        .compact .suggestions {
+            position: static;
+            width: 100%;
+            max-height: 40vh;
+            margin-top: var(--spacing-2);
+            box-shadow: none;
+        }
+
+        .suggestion {
+            min-height: 44px;
+            padding: 0 var(--spacing-3);
+        }
+
+        .action-btn {
+            width: 44px;
+            height: 44px;
+        }
+
+        .action-btn svg {
+            width: 20px;
+            height: 20px;
+        }
     }
 </style>

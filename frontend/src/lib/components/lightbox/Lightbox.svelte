@@ -1,12 +1,12 @@
 <script lang="ts">
     import { onDestroy } from 'svelte';
-    import { beforeNavigate, goto } from '$app/navigation';
+    import { beforeNavigate } from '$app/navigation';
     import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import { favorites, tags } from '$lib/api/client';
     import { galleryStore } from '$lib/stores/gallery.svelte';
     import { toastStore } from '$lib/stores/toast.svelte';
     import { formatBytes, formatDate } from '$lib/utils/format';
-    import TagEditor from '$lib/components/ui/TagEditor.svelte';
+    import TagPanel from '$lib/components/ui/TagPanel.svelte';
     import VideoPlayer from '$lib/components/lightbox/VideoPlayer.svelte';
     import CollectionsPanel from '$lib/components/lightbox/CollectionsPanel.svelte';
 
@@ -561,51 +561,34 @@
     }
 
     // ── Tag editing ──────────────────────────────────────────────────────────
-    async function handleTagsChange(newTags: string[]) {
-        const current = lightboxStore.item;
-        if (!current) return;
+    // TagPanel saves; we only mirror the result into the open item and gallery.
+    function handleTagsApplied(updates: Record<string, string[]>) {
+        for (const [path, newTags] of Object.entries(updates)) {
+            if (path === lightboxStore.item?.path) lightboxStore.updateCurrent({ tags: newTags });
+            galleryStore.updateItem(path, { tags: newTags });
+        }
+    }
+
+    /**
+     * Ctrl/Cmd+V with several gallery items selected tags all of them, not just
+     * the open one. With one (or none) selected TagPanel's own paste applies.
+     */
+    async function pasteToSelected(clipboardTags: string[]) {
+        const paths = [...galleryStore.selected];
         try {
-            await tags.setForFile(current.path, newTags);
-            const updated = { tags: newTags };
-            lightboxStore.updateCurrent(updated);
-            galleryStore.updateItem(current.path, updated);
+            await tags.bulkAdd({ paths, tags: clipboardTags });
         } catch {
             toastStore.error('Failed to update tags');
-        }
-    }
-
-    function handleTagClick(tag: string) {
-        lightboxStore.close();
-        goto(`/search?q=${encodeURIComponent(`tag:${tag}`)}`);
-    }
-
-    async function handlePasteToSelected(clipboardTags: string[]) {
-        const selected = [...galleryStore.selected];
-        if (selected.length <= 1) {
-            // Single item — standard merge into the current lightbox item
-            const merged = [...new Set([...itemTags, ...clipboardTags])];
-            await handleTagsChange(merged);
             return;
         }
-        // Multi-item: apply clipboard to every selected item
         const allItems = galleryStore.items;
-        await Promise.all(
-            selected.map(async (path) => {
-                const file = allItems.find((i) => i.path === path);
-                const existing = file?.tags ?? [];
-                const merged = [...new Set([...existing, ...clipboardTags])];
-                try {
-                    await tags.setForFile(path, merged);
-                    galleryStore.updateItem(path, { tags: merged });
-                } catch {
-                    /* individual failures are silent; a toast would flood */
-                }
-            })
-        );
-        // Reflect the change on the currently-open lightbox item too
-        const merged = [...new Set([...itemTags, ...clipboardTags])];
-        lightboxStore.updateCurrent({ tags: merged });
-        toastStore.show(`Tags applied to ${selected.length} items`);
+        for (const path of paths) {
+            const existing = allItems.find((i) => i.path === path)?.tags ?? [];
+            galleryStore.updateItem(path, { tags: [...new Set([...existing, ...clipboardTags])] });
+        }
+        // The open item may not be among the selection.
+        lightboxStore.updateCurrent({ tags: [...new Set([...itemTags, ...clipboardTags])] });
+        toastStore.show(`Tags applied to ${paths.length} items`);
     }
 
     const item = $derived(lightboxStore.item);
@@ -966,13 +949,13 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         {#if tagsOpen}
             <div class="lb-tag-panel" onclick={(e) => e.stopPropagation()}>
-                <TagEditor
-                    tags={itemTags}
-                    onchange={handleTagsChange}
+                <TagPanel
+                    items={[{ path: item.path, tags: itemTags }]}
                     compact
                     bind:this={tagEditorRef}
-                    ontagclick={handleTagClick}
-                    onpaste={handlePasteToSelected}
+                    onapply={handleTagsApplied}
+                    onnavigate={() => lightboxStore.close()}
+                    onpaste={galleryStore.selected.size > 1 ? pasteToSelected : undefined}
                 />
             </div>
         {/if}
@@ -1191,5 +1174,15 @@
         -webkit-backdrop-filter: blur(12px);
         z-index: 305;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Touch: suggestions render in flow (see TagEditor), so the panel itself
+       scrolls instead of letting a long list push past the top of the screen.
+       Desktop keeps overflow visible for the upward-opening popover. */
+    @media (pointer: coarse) {
+        .lb-tag-panel {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
     }
 </style>

@@ -269,6 +269,14 @@
         goto(`/search?q=${encodeURIComponent(q)}`);
     }
 
+    /** Pill tap: off → include → exclude → off. */
+    function cycleTagFilter(tag: string) {
+        const lc = tag.toLowerCase();
+        const included = [...tagFilters.included].some((t) => t.toLowerCase() === lc);
+        const excluded = [...tagFilters.excluded].some((t) => t.toLowerCase() === lc);
+        applyTagFilter(tag, included ? 'exclude' : excluded ? 'remove' : 'include');
+    }
+
     // Bottom sentinel for infinite scroll
     let sentinel: HTMLDivElement | undefined = $state();
     let observer: IntersectionObserver | null = null;
@@ -417,7 +425,17 @@
             {@const isIncluded = tagFilters.included.has(tag)}
             {@const isExcluded = tagFilters.excluded.has(tag)}
             <div class="tag-pill" class:included={isIncluded} class:excluded={isExcluded}>
-                <span class="tag-pill-name">{tag}</span>
+                <button
+                    class="tag-pill-name"
+                    type="button"
+                    aria-label="Filter by {tag}"
+                    title={isIncluded
+                        ? 'Included — tap to exclude'
+                        : isExcluded
+                          ? 'Excluded — tap to clear'
+                          : 'Tap to show only items with this tag'}
+                    onclick={() => cycleTagFilter(tag)}>{tag}</button
+                >
                 {#if isIncluded || isExcluded}
                     <button
                         class="tag-pill-action remove"
@@ -657,9 +675,34 @@
     }
 
     .tag-pill-name {
-        padding: 2px var(--spacing-2) 2px var(--spacing-2);
+        padding: 2px var(--spacing-2);
+        border: none;
+        background: none;
+        font: inherit;
         color: var(--color-text);
-        pointer-events: none;
+        cursor: pointer;
+    }
+
+    /* Touch: 44px targets, and one scrolling row instead of a wall of pills. */
+    @media (pointer: coarse) {
+        .tag-filter-bar {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .tag-pill {
+            flex-shrink: 0;
+            font-size: var(--text-sm);
+        }
+        .tag-pill-name {
+            min-height: 44px;
+            padding: 0 var(--spacing-3);
+        }
+        .tag-pill-action {
+            width: 44px;
+            height: 44px;
+            font-size: 16px;
+        }
     }
 
     .tag-pill-action {

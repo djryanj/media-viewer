@@ -125,6 +125,33 @@ describe('Search page — tag filtering UI', () => {
         expect(gotoMock).toHaveBeenCalledWith(expect.stringContaining('-tag%3Anature'));
     });
 
+    it('tapping a pill name includes the tag (large primary tap target)', async () => {
+        render(SearchPage);
+        await waitFor(() => screen.getByRole('button', { name: 'Filter by nature' }));
+        await fireEvent.click(screen.getByRole('button', { name: 'Filter by nature' }));
+        expect(gotoMock).toHaveBeenCalledWith(
+            `/search?q=${encodeURIComponent('nature tag:nature')}`
+        );
+    });
+
+    it('tapping an included pill name switches it to exclude', async () => {
+        mockSearchParams.set('q', 'nature tag:nature');
+        render(SearchPage);
+        await waitFor(() => screen.getByRole('button', { name: 'Filter by nature' }));
+        await fireEvent.click(screen.getByRole('button', { name: 'Filter by nature' }));
+        expect(gotoMock).toHaveBeenCalledWith(
+            `/search?q=${encodeURIComponent('nature -tag:nature')}`
+        );
+    });
+
+    it('tapping an excluded pill name removes the filter', async () => {
+        mockSearchParams.set('q', 'nature -tag:nature');
+        render(SearchPage);
+        await waitFor(() => screen.getByRole('button', { name: 'Filter by nature' }));
+        await fireEvent.click(screen.getByRole('button', { name: 'Filter by nature' }));
+        expect(gotoMock).toHaveBeenCalledWith(`/search?q=${encodeURIComponent('nature')}`);
+    });
+
     it('shows no filter bar when there are no results', async () => {
         const { media } = await import('$lib/api/client');
         (media.search as ReturnType<typeof vi.fn>).mockResolvedValueOnce({

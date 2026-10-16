@@ -5,9 +5,12 @@ import Lightbox from '$lib/components/lightbox/Lightbox.svelte';
 import { lightboxStore } from '$lib/stores/lightbox.svelte';
 import type { MediaFile } from '$lib/api/types';
 
+const nav = vi.hoisted(() => ({ goto: vi.fn() }));
+const tagApi = vi.hoisted(() => ({ add: vi.fn(), remove: vi.fn(), setForFile: vi.fn() }));
+
 vi.mock('$app/navigation', () => ({
     beforeNavigate: vi.fn(),
-    goto: vi.fn()
+    goto: nav.goto
 }));
 
 vi.mock('hls.js', () => ({
@@ -22,7 +25,7 @@ vi.mock('hls.js', () => ({
 vi.mock('$lib/api/client', () => ({
     favorites: { add: vi.fn(), remove: vi.fn() },
     tags: {
-        setForFile: vi.fn(),
+        ...tagApi,
         list: vi.fn().mockResolvedValue([]),
         related: vi.fn().mockResolvedValue([])
     },
@@ -34,6 +37,8 @@ vi.mock('$lib/api/client', () => ({
 
 vi.mock('$lib/stores/gallery.svelte', () => ({
     galleryStore: {
+        selected: new Set<string>(),
+        items: [],
         updateItem: vi.fn(),
         addFavorite: vi.fn(),
         removeFavorite: vi.fn()
@@ -433,5 +438,43 @@ describe('Lightbox — touchmove prevents native scroll', () => {
         window.dispatchEvent(event);
 
         expect(preventSpy).not.toHaveBeenCalled();
+    });
+});
+
+describe('Lightbox — tag panel', () => {
+    const tagged = { ...makeImage(3, '/tagged.jpg'), tags: ['red'] };
+
+    beforeEach(() => {
+        lightboxStore.close();
+        vi.clearAllMocks();
+        tagApi.add.mockResolvedValue(undefined);
+        tagApi.remove.mockResolvedValue(undefined);
+    });
+
+    async function openTags() {
+        render(Lightbox);
+        lightboxStore.show(tagged, [tagged]);
+        await waitFor(() => screen.getByRole('button', { name: 'Edit tags' }));
+        await fireEvent.click(screen.getByRole('button', { name: 'Edit tags' }));
+    }
+
+    it('adds a tag through the per-tag endpoint and updates the open item', async () => {
+        await openTags();
+        const input = screen.getByRole('combobox', { name: 'Tag input' });
+        await fireEvent.input(input, { target: { value: 'blue' } });
+        await fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() =>
+            expect(tagApi.add).toHaveBeenCalledWith({ path: '/tagged.jpg', tag: 'blue' })
+        );
+        expect(tagApi.setForFile).not.toHaveBeenCalled();
+        await waitFor(() => expect(lightboxStore.item?.tags).toEqual(['red', 'blue']));
+    });
+
+    it('tapping a tag offers actions; Search closes the lightbox and searches the tag', async () => {
+        await openTags();
+        await fireEvent.click(screen.getByText('red'));
+        await fireEvent.click(screen.getByRole('button', { name: 'Search for tag' }));
+        expect(lightboxStore.open).toBe(false);
+        expect(nav.goto).toHaveBeenCalledWith('/search?q=tag%3Ared');
     });
 });

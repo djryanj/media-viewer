@@ -6,6 +6,8 @@ import type { MediaFile } from '$lib/api/types';
 const mocks = vi.hoisted(() => ({
     getForFile: vi.fn(),
     setForFile: vi.fn(),
+    add: vi.fn(),
+    remove: vi.fn(),
     toastError: vi.fn()
 }));
 
@@ -13,11 +15,15 @@ vi.mock('$lib/api/client', () => ({
     tags: {
         getForFile: mocks.getForFile,
         setForFile: mocks.setForFile,
+        add: mocks.add,
+        remove: mocks.remove,
         // TagEditor calls related() in a $effect to fetch suggestions
         related: vi.fn().mockResolvedValue([]),
         list: vi.fn().mockResolvedValue([])
     }
 }));
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 vi.mock('$lib/stores/toast.svelte', () => ({
     toastStore: { error: mocks.toastError }
@@ -279,5 +285,23 @@ describe('GalleryContextMenu', () => {
         });
         await fireEvent.click(screen.getByText('Tags'));
         await waitFor(() => expect(mocks.getForFile).toHaveBeenCalledWith('/albums/photo.jpg'));
+    });
+    it('adds a tag through the per-tag endpoint, not a whole-list overwrite', async () => {
+        mocks.getForFile.mockResolvedValue(['nature']);
+        mocks.add.mockResolvedValue(undefined);
+        render(GalleryContextMenu, {
+            item: makeItem({ path: '/albums/photo.jpg' }),
+            onclose: vi.fn(),
+            ontogglefavorite: vi.fn(),
+            onselect: vi.fn()
+        });
+        await fireEvent.click(screen.getByText('Tags'));
+        const input = await screen.findByRole('combobox', { name: 'Tag input' });
+        await fireEvent.input(input, { target: { value: 'sunset' } });
+        await fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() =>
+            expect(mocks.add).toHaveBeenCalledWith({ path: '/albums/photo.jpg', tag: 'sunset' })
+        );
+        expect(mocks.setForFile).not.toHaveBeenCalled();
     });
 });
