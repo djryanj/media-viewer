@@ -845,9 +845,9 @@
             font-size: 20px;
         }
 
+        /* Tags first, then the add field on its own row, suggestions beneath. */
         .input-wrap {
             flex: 1 1 100%;
-            order: -1;
             position: static;
         }
 
@@ -861,7 +861,8 @@
         .compact .suggestions {
             position: static;
             width: 100%;
-            max-height: 40vh;
+            max-height: 35vh;
+            max-height: 35dvh;
             margin-top: var(--spacing-2);
             box-shadow: none;
         }

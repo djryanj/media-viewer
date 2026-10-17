@@ -478,3 +478,121 @@ describe('Lightbox — tag panel', () => {
         expect(nav.goto).toHaveBeenCalledWith('/search?q=tag%3Ared');
     });
 });
+
+describe('Lightbox — tag panel on touch devices', () => {
+    const tagged = { ...makeImage(4, '/touch.jpg'), tags: ['red', 'blue'] };
+    const realMatchMedia = window.matchMedia;
+
+    function stubPointer(coarse: boolean) {
+        window.matchMedia = ((query: string) => ({
+            matches: query.includes('pointer: coarse') ? coarse : false,
+            media: query,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            onchange: null,
+            dispatchEvent: vi.fn()
+        })) as unknown as typeof window.matchMedia;
+    }
+
+    async function openTags() {
+        render(Lightbox);
+        lightboxStore.show(tagged, [tagged, img2]);
+        await waitFor(() => screen.getByRole('button', { name: 'Edit tags' }));
+        await fireEvent.click(screen.getByRole('button', { name: 'Edit tags' }));
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        await tick();
+    }
+
+    beforeEach(() => {
+        lightboxStore.close();
+        vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        window.matchMedia = realMatchMedia;
+    });
+
+    it('does not focus the tag input (and raise the keyboard) when opened by touch', async () => {
+        stubPointer(true);
+        await openTags();
+        const input = screen.getByRole('combobox', { name: 'Tag input' });
+        expect(document.activeElement).not.toBe(input);
+        expect(screen.queryByRole('listbox')).toBeNull();
+    });
+
+    it('still focuses the tag input when opened with a mouse', async () => {
+        stubPointer(false);
+        await openTags();
+        expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Tag input' }));
+    });
+
+    it('offers a Done button on touch that closes the panel', async () => {
+        stubPointer(true);
+        await openTags();
+        await fireEvent.click(screen.getByRole('button', { name: 'Done editing tags' }));
+        expect(screen.queryByRole('combobox', { name: 'Tag input' })).toBeNull();
+    });
+
+    it('has no Done button with a mouse', async () => {
+        stubPointer(false);
+        await openTags();
+        expect(screen.queryByRole('button', { name: 'Done editing tags' })).toBeNull();
+    });
+
+    it('lets touch scrolling happen inside the tag panel (no preventDefault)', async () => {
+        stubPointer(true);
+        await openTags();
+        const panel = document.querySelector('.lb-tag-panel') as HTMLElement;
+        const move = new Event('touchmove', { bubbles: true, cancelable: true });
+        Object.assign(move, { touches: [{ clientX: 10, clientY: 10 }] });
+        panel.dispatchEvent(move);
+        expect(move.defaultPrevented).toBe(false);
+    });
+
+    it('still blocks touch scrolling over the rest of the lightbox', async () => {
+        stubPointer(true);
+        await openTags();
+        const dialog = screen.getByRole('dialog');
+        const move = new Event('touchmove', { bubbles: true, cancelable: true });
+        Object.assign(move, { touches: [{ clientX: 10, clientY: 10 }] });
+        dialog.dispatchEvent(move);
+        expect(move.defaultPrevented).toBe(true);
+    });
+
+    function swipe(target: Element, from: [number, number], to: [number, number]) {
+        const mk = (type: string, [x, y]: [number, number]) => {
+            const e = new Event(type, { bubbles: true, cancelable: true });
+            const t = [{ clientX: x, clientY: y }];
+            Object.assign(e, {
+                touches: type === 'touchend' ? [] : t,
+                changedTouches: t
+            });
+            return e;
+        };
+        target.dispatchEvent(mk('touchstart', from));
+        target.dispatchEvent(mk('touchend', to));
+    }
+
+    it('a downward drag inside the tag panel does not close the lightbox', async () => {
+        stubPointer(true);
+        await openTags();
+        swipe(document.querySelector('.lb-tag-panel') as Element, [100, 100], [100, 300]);
+        expect(lightboxStore.open).toBe(true);
+    });
+
+    it('a sideways drag inside the tag panel does not change the item', async () => {
+        stubPointer(true);
+        await openTags();
+        swipe(document.querySelector('.lb-tag-panel') as Element, [300, 100], [50, 100]);
+        expect(lightboxStore.item?.path).toBe('/touch.jpg');
+    });
+
+    it('a downward swipe elsewhere still closes the lightbox', async () => {
+        stubPointer(true);
+        await openTags();
+        swipe(screen.getByRole('dialog'), [100, 100], [100, 300]);
+        expect(lightboxStore.open).toBe(false);
+    });
+});

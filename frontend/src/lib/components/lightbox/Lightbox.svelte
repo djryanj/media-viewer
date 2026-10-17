@@ -301,6 +301,21 @@
     }
 
     // ── Touch/swipe — window-level so works from anywhere on screen ──────────
+    /** True for a touch-first device (no hover/precise pointer). */
+    function isTouchDevice(): boolean {
+        return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+    }
+
+    /**
+     * The tag panel is a scrollable control surface. Its touches must reach the
+     * browser untouched: no preventDefault (which kills native scrolling), and
+     * no swipe-to-close / swipe-to-navigate / double-tap-zoom from a drag.
+     */
+    function inTagPanel(e: TouchEvent): boolean {
+        const target = e.target;
+        return target instanceof Element && target.closest('.lb-tag-panel') !== null;
+    }
+
     let touchStartX = 0;
     let touchStartY = 0;
     let swipeHandled = false;
@@ -309,7 +324,7 @@
     let lastTapY = 0;
 
     function handleTouchStart(e: TouchEvent) {
-        if (!lightboxStore.open) return;
+        if (!lightboxStore.open || inTagPanel(e)) return;
 
         if (e.touches.length === 2) {
             showControls(); // pinch is a deliberate interaction — show controls
@@ -342,7 +357,7 @@
     }
 
     function handleTouchMove(e: TouchEvent) {
-        if (!lightboxStore.open) return;
+        if (!lightboxStore.open || inTagPanel(e)) return;
 
         // Always prevent default when the lightbox is open. Chrome makes
         // window-level touchmove listeners passive by default (since v55), which
@@ -379,7 +394,7 @@
     }
 
     function handleTouchEnd(e: TouchEvent) {
-        if (!lightboxStore.open) return;
+        if (!lightboxStore.open || inTagPanel(e)) return;
 
         if (isPinching) {
             // Snap back to 1× if barely zoomed
@@ -815,7 +830,11 @@
                     class:active={tagsOpen}
                     onclick={() => {
                         tagsOpen = !tagsOpen;
-                        if (tagsOpen) requestAnimationFrame(() => tagEditorRef?.focus());
+                        // Focus-to-type suits a keyboard; on touch it would raise the
+                        // on-screen keyboard over the very tags being reviewed.
+                        if (tagsOpen && !isTouchDevice()) {
+                            requestAnimationFrame(() => tagEditorRef?.focus());
+                        }
                     }}
                     aria-label={tagsOpen ? 'Close tag editor' : 'Edit tags'}
                     aria-pressed={tagsOpen}
@@ -949,6 +968,16 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         {#if tagsOpen}
             <div class="lb-tag-panel" onclick={(e) => e.stopPropagation()}>
+                {#if isTouchDevice()}
+                    <div class="lb-tag-panel-head">
+                        <button
+                            type="button"
+                            class="lb-tag-done"
+                            aria-label="Done editing tags"
+                            onclick={() => (tagsOpen = false)}>Done</button
+                        >
+                    </div>
+                {/if}
                 <TagPanel
                     items={[{ path: item.path, tags: itemTags }]}
                     compact
@@ -1182,7 +1211,28 @@
     @media (pointer: coarse) {
         .lb-tag-panel {
             max-height: 70vh;
+            max-height: 70dvh; /* follows the visible area while the keyboard is up */
             overflow-y: auto;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
+        }
+
+        .lb-tag-panel-head {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: var(--spacing-2);
+        }
+
+        .lb-tag-done {
+            min-height: 44px;
+            padding: 0 var(--spacing-4);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: var(--radius-full);
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+            font-size: var(--text-sm);
+            font-weight: 600;
+            cursor: pointer;
         }
     }
 </style>
