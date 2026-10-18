@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.1] - Unreleased
+
+### Fixed
+
+- fix(tags): the lightbox tag panel is usable on phones. Opening it no longer focuses the tag field, so the on-screen keyboard and the auto-suggestion list no longer appear over (and hide) the item's tags; on touch the panel lists tags first, then the add field, with suggestions capped beneath it and a "Done" button to close it. The panel also scrolls now: the lightbox's page-level touch handling was cancelling native scrolling and treating drags inside the panel as swipe-to-close / swipe-to-navigate, so touches inside the panel are now left to the browser. Follow-up to #682. ([#682](https://github.com/djryanj/media-viewer/issues/682))
+
 ## [0.20.0] - 10-16-2026
 
 ### Fixed
