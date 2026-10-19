@@ -8,6 +8,7 @@
     import { formatBytes, formatDate } from '$lib/utils/format';
     import TagPanel from '$lib/components/ui/TagPanel.svelte';
     import VideoPlayer from '$lib/components/lightbox/VideoPlayer.svelte';
+    import { controlsStore } from '$lib/stores/controls.svelte';
     import CollectionsPanel from '$lib/components/lightbox/CollectionsPanel.svelte';
 
     // ── Back-button: cancel any navigation while lightbox is open ────────────
@@ -72,6 +73,9 @@
     const IDLE_TIMEOUT = 3500;
     let controlsVisible = $state(true);
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    // What is actually shown: the idle fade AND a user's tap-to-dismiss both hide
+    // the chrome, but only a dismissal survives swiping to another item.
+    const chromeVisible = $derived(controlsVisible && !controlsStore.dismissed);
 
     function showControls() {
         controlsVisible = true;
@@ -94,7 +98,14 @@
         else {
             clearIdleTimer();
             controlsVisible = true;
+            controlsStore.reset();
         }
+    });
+
+    // Bringing the controls back (e.g. a tap on the video player) must also wake
+    // the lightbox chrome, which may have idle-faded in the meantime.
+    $effect(() => {
+        if (!controlsStore.dismissed && lightboxStore.open) showControls();
     });
 
     // Reset on item change
@@ -436,16 +447,25 @@
             lastTapX = tapX;
             lastTapY = tapY;
 
-            // Single tap — show controls if hidden. Use swipeHandled to suppress
-            // the synthetic onclick that fires after touchend, which would otherwise
-            // close the lightbox (the backdrop sees controlsVisible=true by then).
-            if (!controlsVisible) {
+            // Single tap. A tap on the video player belongs to the player. A tap
+            // on the image toggles the controls; a tap elsewhere only reveals
+            // hidden controls. Use swipeHandled to suppress the synthetic onclick
+            // that fires after touchend, which would otherwise close the lightbox.
+            const target = e.target instanceof Element ? e.target : null;
+            if (target?.closest('.vp')) return;
+            const onImage = !!target?.classList.contains('lb-image');
+            if (onImage && chromeVisible) {
+                controlsStore.dismiss();
+            } else if (!chromeVisible) {
+                controlsStore.restore();
                 showControls();
-                swipeHandled = true;
-                requestAnimationFrame(() => {
-                    swipeHandled = false;
-                });
+            } else {
+                return;
             }
+            swipeHandled = true;
+            requestAnimationFrame(() => {
+                swipeHandled = false;
+            });
             return;
         }
 
@@ -688,7 +708,8 @@
     <div
         class="lightbox-backdrop"
         onclick={() => {
-            if (!controlsVisible) {
+            if (!chromeVisible) {
+                controlsStore.restore();
                 showControls();
                 return;
             }
@@ -699,7 +720,7 @@
 
     <div
         class="lightbox"
-        class:controls-hidden={!controlsVisible}
+        class:controls-hidden={!chromeVisible}
         class:clock-always-visible={clockEnabled && clockAlwaysVisible}
         role="dialog"
         aria-modal="true"

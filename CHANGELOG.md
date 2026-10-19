@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.2] - Unreleased
+
+### Fixed
+
+- fix(ui): the media controls can now be dismissed with a tap, in the lightbox and on playlist pages, and stay dismissed. On touch, tapping a video toggles the player controls (play/pause stays on the centre button; mouse clicks still play/pause), and tapping an image toggles the lightbox toolbar and arrows. Previously a tap only ever showed the controls, and a paused video forced them to stay up. The dismissal is remembered while swiping or stepping to the next/previous item — it no longer re-appears on each new video — and resets when the lightbox is closed or the playlist is left. ([#695](https://github.com/djryanj/media-viewer/issues/695))
+
 ## [0.20.1] - 10-18-2026
 
 ### Fixed
