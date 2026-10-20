@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onDestroy } from 'svelte';
     import Hls from 'hls.js';
+    import { controlsStore } from '$lib/stores/controls.svelte';
 
     interface Props {
         path: string;
@@ -40,6 +41,9 @@
     let duration = $state(0);
     let currentTime = $state(0);
     let controlsVisible = $state(true);
+    // A user dismissal (tap) overrides auto-show, pause and playback events, and
+    // survives the player being remounted for the next/previous video.
+    const shown = $derived(!controlsStore.dismissed && (controlsVisible || paused));
     let isDragging = $state(false);
     let isInteractingWithBar = $state(false);
     let hasError = $state(false);
@@ -404,6 +408,38 @@
         }
     }
 
+    function isTouchTap(e: MouseEvent): boolean {
+        const pointerType = (e as PointerEvent).pointerType;
+        if (pointerType) return pointerType === 'touch' || pointerType === 'pen';
+        return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+    }
+
+    /**
+     * Click on the video surface (the video itself or the empty part of the
+     * controls overlay — buttons and the bottom bar handle their own clicks).
+     * Touch: a tap toggles the controls, play/pause lives on the centre button.
+     * Mouse: a click plays/pauses, as on any desktop player.
+     */
+    function handleSurfaceClick(e: MouseEvent) {
+        const target = e.target as Element | null;
+        const onSurface =
+            target === e.currentTarget ||
+            !!target?.classList.contains('vp-video') ||
+            !!target?.classList.contains('vp-controls');
+        if (!onSurface) return;
+        if (isTouchTap(e)) {
+            if (shown) {
+                controlsStore.dismiss();
+            } else {
+                controlsStore.restore();
+                showControls();
+            }
+        } else {
+            controlsStore.restore();
+            togglePlay();
+        }
+    }
+
     function togglePlay() {
         if (!videoEl) return;
         if (videoEl.paused) videoEl.play().catch(() => {});
@@ -533,15 +569,19 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
     class="vp"
-    class:controls-hidden={!controlsVisible && !paused}
+    class:controls-hidden={!shown}
     bind:this={containerEl}
     onmousemove={showControls}
     onmouseleave={() => {
         if (!paused) scheduleHide();
     }}
-    ontouchstart={showControls}
+    ontouchstart={() => {
+        // Keep visible controls alive while touched; never revive dismissed ones.
+        if (shown) showControls();
+    }}
     onclick={(e) => {
         onclick?.(e);
+        handleSurfaceClick(e);
     }}
     onkeydown={handleKey}
     role="application"
@@ -560,10 +600,6 @@
         ondurationchange={onDurationChange}
         onerror={onError}
         onended={onEndedHandler}
-        onclick={(e) => {
-            e.stopPropagation();
-            togglePlay();
-        }}
     ></video>
 
     {#if hasError}
@@ -591,7 +627,7 @@
     {/if}
 
     <!-- Controls overlay -->
-    <div class="vp-controls" class:visible={controlsVisible || paused}>
+    <div class="vp-controls" class:visible={shown}>
         <!-- Center play/pause -->
         <button
             class="vp-center-btn"

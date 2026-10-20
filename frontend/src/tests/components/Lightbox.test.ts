@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import Lightbox from '$lib/components/lightbox/Lightbox.svelte';
 import { lightboxStore } from '$lib/stores/lightbox.svelte';
+import { controlsStore } from '$lib/stores/controls.svelte';
 import type { MediaFile } from '$lib/api/types';
 
 const nav = vi.hoisted(() => ({ goto: vi.fn() }));
@@ -594,5 +595,93 @@ describe('Lightbox — tag panel on touch devices', () => {
         await openTags();
         swipe(screen.getByRole('dialog'), [100, 100], [100, 300]);
         expect(lightboxStore.open).toBe(false);
+    });
+});
+
+describe('Lightbox — dismissing the controls', () => {
+    const imgA = makeImage(10, '/a.jpg');
+    const imgB = makeImage(11, '/b.jpg');
+
+    beforeEach(() => {
+        lightboxStore.close();
+        controlsStore.reset();
+        vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    async function open() {
+        render(Lightbox);
+        lightboxStore.show(imgA, [imgA, imgB]);
+        await waitFor(() => screen.getByRole('dialog'));
+        await tick();
+    }
+
+    const dialogEl = () => screen.getByRole('dialog');
+
+    function tap(target: Element) {
+        const mk = (type: string) => {
+            const e = new Event(type, { bubbles: true, cancelable: true });
+            const t = [{ clientX: 200, clientY: 200 }];
+            Object.assign(e, { touches: type === 'touchend' ? [] : t, changedTouches: t });
+            return e;
+        };
+        target.dispatchEvent(mk('touchstart'));
+        target.dispatchEvent(mk('touchend'));
+    }
+
+    let clock = 1_000_000;
+    function nextTapTime() {
+        clock += 5000; // well clear of the double-tap window
+        vi.spyOn(Date, 'now').mockReturnValue(clock);
+    }
+
+    it('a tap on the image hides the controls', async () => {
+        await open();
+        expect(dialogEl().classList.contains('controls-hidden')).toBe(false);
+        nextTapTime();
+        tap(document.querySelector('.lb-image') as Element);
+        await tick();
+        expect(dialogEl().classList.contains('controls-hidden')).toBe(true);
+        expect(controlsStore.dismissed).toBe(true);
+    });
+
+    it('tapping the image again brings the controls back', async () => {
+        await open();
+        const image = document.querySelector('.lb-image') as Element;
+        nextTapTime();
+        tap(image);
+        nextTapTime();
+        tap(image);
+        await tick();
+        expect(dialogEl().classList.contains('controls-hidden')).toBe(false);
+        expect(controlsStore.dismissed).toBe(false);
+    });
+
+    it('stays dismissed after navigating to the next item', async () => {
+        await open();
+        controlsStore.dismiss();
+        lightboxStore.next();
+        await tick();
+        await tick();
+        expect(lightboxStore.item?.path).toBe('/b.jpg');
+        expect(dialogEl().classList.contains('controls-hidden')).toBe(true);
+    });
+
+    it('a tap on a toolbar button does not dismiss the controls', async () => {
+        await open();
+        nextTapTime();
+        tap(screen.getByRole('button', { name: 'Close' }));
+        expect(controlsStore.dismissed).toBe(false);
+    });
+
+    it('forgets the dismissal when the lightbox closes', async () => {
+        await open();
+        controlsStore.dismiss();
+        lightboxStore.close();
+        await tick();
+        expect(controlsStore.dismissed).toBe(false);
     });
 });

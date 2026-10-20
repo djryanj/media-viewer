@@ -5,6 +5,7 @@
     import { playlists as playlistsApi } from '$lib/api/client';
     import type { Playlist, PlaylistItem } from '$lib/api/types';
     import VideoPlayer from '$lib/components/lightbox/VideoPlayer.svelte';
+    import { controlsStore } from '$lib/stores/controls.svelte';
     import { toastStore } from '$lib/stores/toast.svelte';
 
     let playlist = $state<Playlist | null>(null);
@@ -116,6 +117,8 @@
 
         return () => {
             if (mainEl) mainEl.style.overflow = prevOverflow;
+            // A tap-to-dismiss on the controls only lasts for this playlist visit.
+            controlsStore.reset();
         };
     });
 
