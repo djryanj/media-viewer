@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.3] - Unreleased
+
+### Changed
+
+- build(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2 ([#698](https://github.com/djryanj/media-viewer/pull/698))
+
 ## [0.20.2] - 10-20-2026
 
 ### Fixed

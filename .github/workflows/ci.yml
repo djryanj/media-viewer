@@ -154,7 +154,7 @@ jobs:
               run: tar -czf frontend-deps.tgz -C frontend node_modules
 
             - name: Upload frontend dependency artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: frontend-deps
                   path: frontend-deps.tgz
@@ -188,7 +188,7 @@ jobs:
                   make build
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -300,7 +300,7 @@ jobs:
                   make resetpw
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -341,7 +341,7 @@ jobs:
                   echo '```' >> $GITHUB_STEP_SUMMARY
             - name: Upload test results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: unit-test-results
                   path: |
@@ -397,7 +397,7 @@ jobs:
                   fi
             - name: Upload frontend unit coverage
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: frontend-unit-test-results
                   path: frontend/coverage/
@@ -449,7 +449,7 @@ jobs:
                   echo '```' >> $GITHUB_STEP_SUMMARY
             - name: Upload coverage
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: integration-test-results
                   path: |
@@ -565,7 +565,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: backend-server-logs
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -573,7 +573,7 @@ jobs:
 
             - name: Upload frontend integration results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: frontend-integration-test-results
                   path: frontend/test-results/vitest-results.json
@@ -669,7 +669,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: backend-server-logs-e2e-smoke
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -677,14 +677,14 @@ jobs:
 
             - name: Upload Playwright smoke results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: frontend-e2e-smoke-results
                   path: frontend/e2e/test-results/
 
             - name: Upload Playwright smoke report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: playwright-smoke-report
                   path: frontend/e2e/playwright-report/
@@ -771,7 +771,7 @@ jobs:
 
             - name: Upload Docker runtime Playwright results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: docker-runtime-playwright-results
                   path: |
@@ -780,7 +780,7 @@ jobs:
 
             - name: Upload Docker runtime Playwright report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: docker-runtime-playwright-report
                   path: frontend/e2e/playwright-report/
@@ -867,7 +867,7 @@ jobs:
 
             - name: Upload NVIDIA Docker runtime Playwright results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: docker-runtime-playwright-results-nvidia
                   path: |
@@ -876,7 +876,7 @@ jobs:
 
             - name: Upload NVIDIA Docker runtime Playwright report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: docker-runtime-playwright-report-nvidia
                   path: frontend/e2e/playwright-report/

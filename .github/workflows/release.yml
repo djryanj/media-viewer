@@ -79,7 +79,7 @@ jobs:
               run: tar -czf release-frontend-deps.tgz -C frontend node_modules
 
             - name: Upload frontend dependency artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-frontend-deps
                   path: release-frontend-deps.tgz
@@ -179,7 +179,7 @@ jobs:
 
             - name: Upload coverage
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-unit-coverage
                   path: coverage-unit.out
@@ -216,7 +216,7 @@ jobs:
 
             - name: Upload frontend unit coverage
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-frontend-unit-coverage
                   path: frontend/coverage/
@@ -252,7 +252,7 @@ jobs:
 
             - name: Upload coverage
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-integration-coverage
                   path: coverage-integration.out
@@ -302,7 +302,7 @@ jobs:
               run: make build
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -375,7 +375,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure() && env.TEST_SERVER_LOG != ''
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: backend-server-logs
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -383,7 +383,7 @@ jobs:
 
             - name: Upload frontend integration results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-frontend-integration-test-results
                   path: frontend/test-results/vitest-results.json
@@ -460,7 +460,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-backend-server-logs-e2e-smoke
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -468,7 +468,7 @@ jobs:
 
             - name: Upload Playwright smoke results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-frontend-e2e-smoke-results
                   path: |
@@ -477,7 +477,7 @@ jobs:
 
             - name: Upload Playwright smoke report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-playwright-smoke-report
                   path: frontend/e2e/playwright-report/
@@ -552,7 +552,7 @@ jobs:
 
             - name: Upload Docker runtime Playwright results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-docker-runtime-playwright-results
                   path: |
@@ -561,7 +561,7 @@ jobs:
 
             - name: Upload Docker runtime Playwright report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-docker-runtime-playwright-report
                   path: frontend/e2e/playwright-report/
@@ -636,7 +636,7 @@ jobs:
 
             - name: Upload NVIDIA Docker runtime Playwright results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-docker-runtime-playwright-results-nvidia
                   path: |
@@ -645,7 +645,7 @@ jobs:
 
             - name: Upload NVIDIA Docker runtime Playwright report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: release-docker-runtime-playwright-report-nvidia
                   path: frontend/e2e/playwright-report/
@@ -830,7 +830,7 @@ jobs:
                   output-file: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
 
             - name: Upload SBOM as artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: sbom
                   path: ${{ github.event.repository.name }}-${{ needs.docker.outputs.version }}-sbom.spdx.json
@@ -859,7 +859,7 @@ jobs:
                   output-file: ${{ github.event.repository.name }}-${{ needs.docker-nvidia.outputs.version }}-nvidia-sbom.spdx.json
 
             - name: Upload SBOM as artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: sbom-nvidia
                   path: ${{ github.event.repository.name }}-${{ needs.docker-nvidia.outputs.version }}-nvidia-sbom.spdx.json
