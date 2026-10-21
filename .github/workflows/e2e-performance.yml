@@ -87,7 +87,7 @@ jobs:
               run: make build
 
             - name: Upload binary artifact
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: media-viewer-binary
                   path: media-viewer
@@ -169,7 +169,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: performance-backend-server-logs-smoke
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -177,7 +177,7 @@ jobs:
 
             - name: Upload performance smoke results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: frontend-e2e-performance-smoke-results
                   path: |
@@ -186,7 +186,7 @@ jobs:
 
             - name: Upload performance smoke report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: playwright-performance-smoke-report
                   path: frontend/e2e/playwright-report/
@@ -271,7 +271,7 @@ jobs:
 
             - name: Upload backend logs on failure
               if: failure()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: performance-backend-server-logs-soak
                   path: ${{ env.TEST_SERVER_LOG }}
@@ -279,7 +279,7 @@ jobs:
 
             - name: Upload soak results
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: frontend-e2e-performance-soak-results
                   path: |
@@ -288,7 +288,7 @@ jobs:
 
             - name: Upload soak report
               if: always()
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: playwright-performance-soak-report
                   path: frontend/e2e/playwright-report/
