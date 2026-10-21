@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.3] - Unreleased
+
+### Changed
+
+- build(deps): bump github.com/davidbyttow/govips/v2 from 2.19.0 to 2.20.0 ([#699](https://github.com/djryanj/media-viewer/pull/699))
+
 ## [0.20.2] - 10-20-2026
 
 ### Fixed
