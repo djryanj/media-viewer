@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { page } from '$app/state';
+    import { goto } from '$app/navigation';
     import { collections as collectionsApi } from '$lib/api/client';
     import type { CollectionDetail, MediaFile } from '$lib/api/types';
     import Gallery from '$lib/components/gallery/Gallery.svelte';
@@ -30,6 +31,22 @@
             renaming = false;
         } catch {
             toastStore.error('Failed to rename collection');
+        }
+    }
+
+    let deleting = $state(false);
+
+    async function deleteCollection() {
+        if (!detail || deleting) return;
+        if (!confirm(`Delete collection "${detail.name}"? The files themselves are not deleted.`))
+            return;
+        deleting = true;
+        try {
+            await collectionsApi.delete(id);
+            await goto('/collections', { replaceState: true });
+        } catch {
+            toastStore.error('Failed to delete collection');
+            deleting = false;
         }
     }
 
@@ -78,6 +95,10 @@
         } finally {
             savingOrder = false;
         }
+    }
+
+    function reverseOrder() {
+        reorderedItems = [...reorderedItems].reverse();
     }
 
     function moveItem(fromIdx: number, toIdx: number) {
@@ -182,6 +203,28 @@
                 {#if detail.items.length > 1}
                     <button class="action-btn" onclick={enterReorder}>Reorder</button>
                 {/if}
+                <button
+                    class="action-btn icon-btn icon-btn--danger"
+                    onclick={deleteCollection}
+                    disabled={deleting}
+                    aria-label="Delete collection"
+                    title="Delete collection"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6M14 11v6" />
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                </button>
             {:else}
                 <button
                     class="action-btn action-btn--cancel"
@@ -207,6 +250,28 @@
 {:else if detail?.items.length === 0}
     <div class="state-msg">This album is empty.</div>
 {:else if reorderMode}
+    <div class="reorder-toolbar">
+        <button
+            class="action-btn reverse-btn"
+            onclick={reverseOrder}
+            disabled={savingOrder}
+            aria-label="Reverse order"
+            title="Reverse the order of all items"
+        >
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M7 4v16M7 20l-4-4M7 20l4-4M17 20V4M17 4l-4 4M17 4l4 4" />
+            </svg>
+            Reverse order
+        </button>
+    </div>
     <ul class="reorder-list" role="listbox" aria-label="Drag to reorder items">
         {#each reorderedItems as item, idx}
             <li
@@ -378,6 +443,22 @@
         height: 15px;
     }
 
+    .icon-btn--danger:hover:not(:disabled) {
+        color: var(--color-danger);
+        border-color: var(--color-danger);
+    }
+
+    @media (pointer: coarse) {
+        .icon-btn {
+            width: 40px;
+            height: 40px;
+        }
+        .move-btn {
+            width: 40px;
+            height: 32px;
+        }
+    }
+
     .action-btn:hover:not(:disabled) {
         background: var(--color-surface-3);
     }
@@ -399,6 +480,28 @@
 
     .action-btn--cancel {
         color: var(--color-text-muted);
+    }
+
+    .reorder-toolbar {
+        padding: var(--spacing-2) var(--spacing-4) 0;
+        max-width: 640px;
+    }
+
+    .reverse-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-2);
+    }
+
+    .reverse-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    @media (pointer: coarse) {
+        .reverse-btn {
+            min-height: 44px;
+        }
     }
 
     /* Reorder list */

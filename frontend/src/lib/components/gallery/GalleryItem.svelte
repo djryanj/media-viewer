@@ -268,6 +268,7 @@
                 onpointerdown={handleCollectionsPointerDown}
                 onclick={handleCollectionsClick}
                 aria-label="Add to collection"
+                title="Add to collection"
                 tabindex="-1"
             >
                 <svg

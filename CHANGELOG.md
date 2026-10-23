@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.3] - 10-22-2026
+
+### Added
+
+- feat(ui): a collection can now be deleted from its page (trash button in the header, with a confirmation; the files themselves are untouched) and you are returned to the collections list. ([#700](https://github.com/djryanj/media-viewer/issues/700))
+- feat(ui): the collections menu (library item button, multi-select toolbar, lightbox) now has an "Open collection" link beside each collection, so you can jump to a collection straight from the menu. It closes the lightbox/menu first, and is a 44px touch target on phones. ([#700](https://github.com/djryanj/media-viewer/issues/700))
+- feat(ui): the reorder view has a one-click "Reverse order" button (applied on Save like any other reorder). ([#700](https://github.com/djryanj/media-viewer/issues/700))
+
+### Fixed
+
+- fix(ui): the collection button on a library item now shows an "Add to collection" tooltip on hover. ([#700](https://github.com/djryanj/media-viewer/issues/700))
+- fix(ui): on touch devices the collection page's header buttons and the reorder up/down buttons are larger touch targets. ([#700](https://github.com/djryanj/media-viewer/issues/700))
+
 ## [0.20.2] - 10-20-2026
 
 ### Fixed

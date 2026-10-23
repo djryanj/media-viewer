@@ -1,6 +1,8 @@
 <script lang="ts">
     import { collections as collectionsApi, ApiError } from '$lib/api/client';
+    import { goto } from '$app/navigation';
     import { toastStore } from '$lib/stores/toast.svelte';
+    import { lightboxStore } from '$lib/stores/lightbox.svelte';
     import type { Collection } from '$lib/api/types';
 
     interface Props {
@@ -156,6 +158,16 @@
         )
     );
 
+    // Open the collection's page. The lightbox cancels any navigation while it is open,
+    // so close it (and this panel) first, then navigate.
+    function openCollection(e: MouseEvent, col: Collection) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        onclose();
+        lightboxStore.close();
+        goto(`/collections/${col.id}`);
+    }
+
     const isBulk = $derived(itemPaths.length > 1);
     const title = $derived(isBulk ? `Collections — ${itemPaths.length} items` : 'Collections');
 </script>
@@ -195,7 +207,7 @@
                     {@const isFull = fullMemberIds.has(col.id)}
                     {@const isPartial = partialMemberIds.has(col.id)}
                     {@const isToggling = toggling.has(col.id)}
-                    <li>
+                    <li class="cp-row">
                         <button
                             class="cp-item"
                             class:member={isFull}
@@ -231,6 +243,29 @@
                             <span class="cp-name">{col.name}</span>
                             <span class="cp-count">{col.itemCount}</span>
                         </button>
+                        <a
+                            class="cp-open"
+                            href="/collections/{col.id}"
+                            onclick={(e) => openCollection(e, col)}
+                            aria-label="Open {col.name}"
+                            title="Open collection"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+                                />
+                                <polyline points="15 3 21 3 21 9" />
+                                <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                        </a>
                     </li>
                 {/each}
             </ul>
@@ -333,11 +368,46 @@
         padding: var(--spacing-1);
     }
 
+    .cp-row {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+    }
+
+    .cp-open {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 32px;
+        height: 32px;
+        border-radius: var(--radius-md);
+        color: var(--color-text-muted);
+    }
+
+    .cp-open:hover {
+        background: var(--color-surface-2);
+        color: var(--color-primary);
+    }
+
+    .cp-open svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    @media (pointer: coarse) {
+        .cp-open {
+            width: 44px;
+            height: 44px;
+        }
+    }
+
     .cp-item {
         display: flex;
         align-items: center;
         gap: var(--spacing-2);
-        width: 100%;
+        flex: 1;
+        min-width: 0;
         background: none;
         border: none;
         cursor: pointer;
