@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.4] - Unreleased
+
+### Changed
+
+- chore(deps): bump go to v1.27.3.
+
 ## [0.20.3] - 10-22-2026
 
 ### Added
@@ -40,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - chore(deps): update SvelteKit to v3 together with `@sveltejs/adapter-static` v4, `svelte` 5.57, `vite` 8.3 and `typescript` 6 (SvelteKit 3's peer requirements). Migrated to the v3 APIs: configuration moved from `svelte.config.js` into the `sveltekit()` Vite plugin (now flat, with an explicit `$lib` alias), `$app/stores` replaced by `$app/state`, and `tsconfig.json` extends `$app/tsconfig`. ([#673](https://github.com/djryanj/media-viewer/pull/673))
 - feat(tags): one tagging experience everywhere. The lightbox, the gallery context menu and the multi-select "Tag" panel now share a single `TagPanel` component instead of three separate implementations. Edits save through the per-tag add/remove endpoints (bulk endpoints for a selection) rather than overwriting a file's whole tag list, so a panel left open can no longer wipe tags added elsewhere (e.g. by the autotagger). Failed saves revert the display and show an error. ([#682](https://github.com/djryanj/media-viewer/issues/682))
-- feat(tags): tagging several items now shows which tags are on *every* selected item (solid chips) and which are on only some (dimmed chips with an `n/m` count). Tapping a partial tag offers "Add to all" or "Remove from all"; previously a union of all tags was shown as if every item had them, and removing one removed it from everything.
+- feat(tags): tagging several items now shows which tags are on _every_ selected item (solid chips) and which are on only some (dimmed chips with an `n/m` count). Tapping a partial tag offers "Add to all" or "Remove from all"; previously a union of all tags was shown as if every item had them, and removing one removed it from everything.
 - feat(tags): tapping a tag chip opens an action menu (Search for tag, Exclude from search, Remove) instead of immediately leaving the lightbox for a search. The search page's tag-filter pills are now tappable as a whole: tap cycles include → exclude → off.
 - feat(ui): tagging is usable on touch devices. On coarse-pointer devices chips, remove buttons, suggestion rows, clipboard buttons and the search-filter pills are 44px targets; the tag input takes its own row with suggestions listed beneath it in flow (so they can't be hidden by the on-screen keyboard); and the search filter bar scrolls horizontally rather than wrapping into a wall of tiny pills. Desktop layout is unchanged.
 - refactor(tags): the gallery context menu no longer has its own duplicate Copy/Paste tag buttons (the editor's built-in ones are used), and the toolbar's "Paste tags to selected" now applies in a single request.
