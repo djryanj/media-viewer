@@ -15,7 +15,7 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 # Install xx for cross-compilation
-COPY --from=tonistiigi/xx:1.9.0 / /
+COPY --from=tonistiigi/xx:1.10.0 / /
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update tonistiigi/xx docker tag to v1.10.0 ([#693](https://github.com/djryanj/media-viewer/pull/693))
 - build(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2 ([#698](https://github.com/djryanj/media-viewer/pull/698))
 - build(deps): bump github.com/davidbyttow/govips/v2 from 2.19.0 to 2.20.0 ([#699](https://github.com/djryanj/media-viewer/pull/699))
 - chore(deps): bump go to v1.27.3.
