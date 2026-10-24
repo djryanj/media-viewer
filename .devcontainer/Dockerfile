@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/devcontainers/javascript-node:26-trixie
 
-ARG GO_VERSION=1.26.2
+ARG GO_VERSION=1.27.3
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
