@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump github.com/davidbyttow/govips/v2 from 2.19.0 to 2.20.0 ([#699](https://github.com/djryanj/media-viewer/pull/699))
 - chore(deps): bump go to v1.27.3.
 
 ## [0.20.3] - 10-22-2026
