@@ -1292,80 +1292,16 @@ func (t *ThumbnailGenerator) runGeneration(incremental bool) {
 	t.generationMu.Unlock()
 
 	var folders []database.MediaFile
+	var ok bool
 
 	if incremental {
-		var files []database.MediaFile
-		now := time.Now()
-		logging.Info("Running incremental thumbnail generation (changes since %v)", lastRun.Format(time.RFC3339))
-		logging.Debug("Incremental generation: lastRun=%v, age=%v, now=%v",
-			lastRun.Format(time.RFC3339), now.Sub(lastRun), now.Format(time.RFC3339))
-
-		files, err = t.db.GetFilesUpdatedSince(ctx, lastRun)
-		if err != nil {
-			logging.Error("Failed to get updated files: %v", err)
-			t.finishGeneration(startTime)
-			return
-		}
-
-		folders, err = t.db.GetFoldersWithUpdatedContents(ctx, lastRun)
-		if err != nil {
-			logging.Error("Failed to get folders with updated contents: %v", err)
-		}
-
-		logging.Info("Found %d updated files and %d folders needing thumbnail updates", len(files), len(folders))
-
-		t.generationMu.Lock()
-		t.generationStats.TotalFiles = len(files) + len(folders)
-		t.generationMu.Unlock()
-
-		if len(files) > 0 {
-			t.processFilesForGeneration(ctx, files, true)
-		}
+		folders, ok = t.runIncrementalGeneration(ctx, lastRun)
 	} else {
-		// thumbnailFetchPageSize controls how many DB rows are loaded per round-trip
-		// during a full generation run. Large enough to amortize query overhead;
-		// small enough that peak heap stays bounded even for very large libraries.
-		const thumbnailFetchPageSize = 500
-
-		totalFiles, countErr := t.db.CountMediaFilesForThumbnails(ctx)
-		if countErr != nil {
-			logging.Warn("Failed to count media files for thumbnail generation, progress denominator will be unknown: %v", countErr)
-		} else {
-			t.generationMu.Lock()
-			t.generationStats.TotalFiles = totalFiles
-			t.generationMu.Unlock()
-		}
-
-		logging.Info("Running full thumbnail generation (streaming %d files per page)", thumbnailFetchPageSize)
-
-		var offset int
-		for {
-			select {
-			case <-t.stopChan:
-				t.finishGeneration(startTime)
-				return
-			default:
-			}
-
-			page, fetchErr := t.db.GetMediaFilesForThumbnailsPaged(ctx, offset, thumbnailFetchPageSize)
-			if fetchErr != nil {
-				logging.Error("Failed to get files for thumbnail generation: %v", fetchErr)
-				t.finishGeneration(startTime)
-				return
-			}
-			if len(page) == 0 {
-				break
-			}
-
-			t.processFilesForGeneration(ctx, page, false)
-			offset += len(page)
-
-			if len(page) < thumbnailFetchPageSize {
-				break
-			}
-		}
-
-		logging.Info("Full thumbnail generation complete: fetched and processed %d files", offset)
+		ok = t.runFullGeneration(ctx)
+	}
+	if !ok {
+		t.finishGeneration(startTime)
+		return
 	}
 
 	// Process folders with updated contents (incremental path only)
@@ -1386,6 +1322,85 @@ func (t *ThumbnailGenerator) runGeneration(incremental bool) {
 	}
 
 	t.finishGeneration(startTime)
+}
+
+// runIncrementalGeneration processes files changed since lastRun and returns
+// the folders whose contents changed. ok is false if generation must abort.
+func (t *ThumbnailGenerator) runIncrementalGeneration(ctx context.Context, lastRun time.Time) (folders []database.MediaFile, ok bool) {
+	now := time.Now()
+	logging.Info("Running incremental thumbnail generation (changes since %v)", lastRun.Format(time.RFC3339))
+	logging.Debug("Incremental generation: lastRun=%v, age=%v, now=%v",
+		lastRun.Format(time.RFC3339), now.Sub(lastRun), now.Format(time.RFC3339))
+
+	files, err := t.db.GetFilesUpdatedSince(ctx, lastRun)
+	if err != nil {
+		logging.Error("Failed to get updated files: %v", err)
+		return nil, false
+	}
+
+	folders, err = t.db.GetFoldersWithUpdatedContents(ctx, lastRun)
+	if err != nil {
+		logging.Error("Failed to get folders with updated contents: %v", err)
+	}
+
+	logging.Info("Found %d updated files and %d folders needing thumbnail updates", len(files), len(folders))
+
+	t.generationMu.Lock()
+	t.generationStats.TotalFiles = len(files) + len(folders)
+	t.generationMu.Unlock()
+
+	if len(files) > 0 {
+		t.processFilesForGeneration(ctx, files, true)
+	}
+	return folders, true
+}
+
+// runFullGeneration streams all media files page by page and processes them.
+// ok is false if generation must abort (stop requested or fetch failure).
+func (t *ThumbnailGenerator) runFullGeneration(ctx context.Context) (ok bool) {
+	// thumbnailFetchPageSize controls how many DB rows are loaded per round-trip
+	// during a full generation run. Large enough to amortize query overhead;
+	// small enough that peak heap stays bounded even for very large libraries.
+	const thumbnailFetchPageSize = 500
+
+	totalFiles, countErr := t.db.CountMediaFilesForThumbnails(ctx)
+	if countErr != nil {
+		logging.Warn("Failed to count media files for thumbnail generation, progress denominator will be unknown: %v", countErr)
+	} else {
+		t.generationMu.Lock()
+		t.generationStats.TotalFiles = totalFiles
+		t.generationMu.Unlock()
+	}
+
+	logging.Info("Running full thumbnail generation (streaming %d files per page)", thumbnailFetchPageSize)
+
+	var offset int
+	for {
+		select {
+		case <-t.stopChan:
+			return false
+		default:
+		}
+
+		page, fetchErr := t.db.GetMediaFilesForThumbnailsPaged(ctx, offset, thumbnailFetchPageSize)
+		if fetchErr != nil {
+			logging.Error("Failed to get files for thumbnail generation: %v", fetchErr)
+			return false
+		}
+		if len(page) == 0 {
+			break
+		}
+
+		t.processFilesForGeneration(ctx, page, false)
+		offset += len(page)
+
+		if len(page) < thumbnailFetchPageSize {
+			break
+		}
+	}
+
+	logging.Info("Full thumbnail generation complete: fetched and processed %d files", offset)
+	return true
 }
 
 // processFilesForGeneration processes files for thumbnail generation

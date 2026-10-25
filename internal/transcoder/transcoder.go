@@ -1105,38 +1105,7 @@ func (t *Transcoder) buildFFmpegArgsWithOptions(inputPath, outputPath string, ta
 		logging.Info("Using stream copy (no re-encoding needed)")
 		args = append(args, "-c:v", "copy")
 	} else {
-		// Re-encode with h264 - use GPU if available and not forced to CPU, otherwise CPU
-		if !forceCPU && t.gpuAvailable && t.gpuEncoder != "" {
-			// Build a description of the encoding configuration
-			var filterDesc string
-			if t.gpuInitFilter != "" {
-				filterDesc = fmt.Sprintf(" with filters: %s", t.gpuInitFilter)
-			}
-			if needsScaling {
-				if filterDesc != "" {
-					filterDesc += fmt.Sprintf(", scale=%dx-2", targetWidth)
-				} else {
-					filterDesc = fmt.Sprintf(" with scale=%dx-2", targetWidth)
-				}
-			}
-			logging.Info("Using GPU encoder: %s (%s)%s", t.gpuEncoder, t.gpuAccel, filterDesc)
-			logging.Debug("GPU encoder details: encoder=%s, accel=%s, initFilter=%q, scaling=%v",
-				t.gpuEncoder, t.gpuAccel, t.gpuInitFilter, needsScaling)
-			args = t.addGPUEncoderArgs(args, targetWidth, info, needsScaling)
-		} else {
-			if forceCPU && t.gpuAvailable {
-				logging.Info("Falling back to CPU encoder after GPU failure")
-			}
-			var scaleDesc string
-			if needsScaling {
-				scaleDesc = fmt.Sprintf(" with scale=%dx-2", targetWidth)
-			} else {
-				scaleDesc = " (maintaining dimensions)"
-			}
-			logging.Info("Using CPU encoder: libx264%s", scaleDesc)
-			logging.Debug("CPU encoder details: preset=fast, crf=23, scaling=%v", needsScaling)
-			args = t.addCPUEncoderArgs(args, targetWidth, info, needsScaling)
-		}
+		args = t.addEncoderArgs(args, targetWidth, info, needsScaling, forceCPU)
 	}
 
 	// Always re-encode audio to AAC for web compatibility
@@ -1154,6 +1123,43 @@ func (t *Transcoder) buildFFmpegArgsWithOptions(inputPath, outputPath string, ta
 	}
 
 	args = append(args, "-f", containerMP4, outputPath)
+	return args
+}
+
+// addEncoderArgs appends re-encode arguments, using the GPU encoder when
+// available and not forced to CPU, otherwise the CPU encoder.
+func (t *Transcoder) addEncoderArgs(args []string, targetWidth int, info *VideoInfo, needsScaling, forceCPU bool) []string {
+	if !forceCPU && t.gpuAvailable && t.gpuEncoder != "" {
+		// Build a description of the encoding configuration
+		var filterDesc string
+		if t.gpuInitFilter != "" {
+			filterDesc = fmt.Sprintf(" with filters: %s", t.gpuInitFilter)
+		}
+		if needsScaling {
+			if filterDesc != "" {
+				filterDesc += fmt.Sprintf(", scale=%dx-2", targetWidth)
+			} else {
+				filterDesc = fmt.Sprintf(" with scale=%dx-2", targetWidth)
+			}
+		}
+		logging.Info("Using GPU encoder: %s (%s)%s", t.gpuEncoder, t.gpuAccel, filterDesc)
+		logging.Debug("GPU encoder details: encoder=%s, accel=%s, initFilter=%q, scaling=%v",
+			t.gpuEncoder, t.gpuAccel, t.gpuInitFilter, needsScaling)
+		args = t.addGPUEncoderArgs(args, targetWidth, info, needsScaling)
+	} else {
+		if forceCPU && t.gpuAvailable {
+			logging.Info("Falling back to CPU encoder after GPU failure")
+		}
+		var scaleDesc string
+		if needsScaling {
+			scaleDesc = fmt.Sprintf(" with scale=%dx-2", targetWidth)
+		} else {
+			scaleDesc = " (maintaining dimensions)"
+		}
+		logging.Info("Using CPU encoder: libx264%s", scaleDesc)
+		logging.Debug("CPU encoder details: preset=fast, crf=23, scaling=%v", needsScaling)
+		args = t.addCPUEncoderArgs(args, targetWidth, info, needsScaling)
+	}
 	return args
 }
 
