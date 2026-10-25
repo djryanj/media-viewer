@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- chore(deps): update all non-major dependencies ([#691](https://github.com/djryanj/media-viewer/pull/691))
 - chore(deps): update module github.com/golangci/golangci-lint to v2.15.0 ([#692](https://github.com/djryanj/media-viewer/pull/692))
 - chore(deps): update tonistiigi/xx docker tag to v1.10.0 ([#693](https://github.com/djryanj/media-viewer/pull/693))
 - build(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2 ([#698](https://github.com/djryanj/media-viewer/pull/698))
