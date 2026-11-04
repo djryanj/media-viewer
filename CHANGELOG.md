@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump mikepenz/release-changelog-builder-action from 6.4.0 to 6.5.0 ([#711](https://github.com/djryanj/media-viewer/pull/711))
 - chore(deps): update node.js to v24.22.1 ([#704](https://github.com/djryanj/media-viewer/pull/704))
 - chore(deps): update all non-major dependencies ([#691](https://github.com/djryanj/media-viewer/pull/691))
 - chore(deps): update module github.com/golangci/golangci-lint to v2.15.0 ([#692](https://github.com/djryanj/media-viewer/pull/692))
