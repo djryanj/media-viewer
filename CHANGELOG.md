@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump docker/login-action from 4.7.0 to 4.8.0 ([#715](https://github.com/djryanj/media-viewer/pull/715))
 - chore(deps): update all non-major dependencies ([#707](https://github.com/djryanj/media-viewer/pull/707))
 - chore(deps): update node.js to v26 ([#710](https://github.com/djryanj/media-viewer/pull/710))
 - chore(deps): update node.js to v24.22.1 ([#704](https://github.com/djryanj/media-viewer/pull/704))
