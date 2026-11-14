@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- build(deps): bump softprops/action-gh-release from 3.0.3 to 3.0.4 ([#714](https://github.com/djryanj/media-viewer/pull/714))
 - build(deps): bump docker/login-action from 4.7.0 to 4.8.0 ([#715](https://github.com/djryanj/media-viewer/pull/715))
 - chore(deps): update all non-major dependencies ([#707](https://github.com/djryanj/media-viewer/pull/707))
 - chore(deps): update node.js to v26 ([#710](https://github.com/djryanj/media-viewer/pull/710))
