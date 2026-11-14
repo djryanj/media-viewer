@@ -20,11 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - build(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2 ([#698](https://github.com/djryanj/media-viewer/pull/698))
 - build(deps): bump github.com/davidbyttow/govips/v2 from 2.19.0 to 2.20.0 ([#699](https://github.com/djryanj/media-viewer/pull/699))
 - chore(deps): bump go to v1.27.3.
-- build(ci): ffmpeg is installed as a static build (`FedericoCarboni/setup-ffmpeg`) instead of through apt in every CI/release job that needs it, avoiding apt's large dependency tree. ([#716](https://github.com/djryanj/media-viewer/issues/716))
+- build(ci): ffmpeg is installed as a pinned static build (new local action `.github/actions/setup-ffmpeg`: SHA-256 verified, cached, download retried) instead of through apt in every CI/release job that needs it, avoiding apt's large dependency tree. ([#716](https://github.com/djryanj/media-viewer/issues/716))
 - test(ci): the sample media cache is now keyed only on the generator script (no `restore-keys` fallback), so an old cache can no longer mask a changed generator, and `download-sample-media` is renamed `generate-sample-media` (the Make target remains as an alias). ([#716](https://github.com/djryanj/media-viewer/issues/716))
 
 ### Fixed
 
+- test(transcoder): the HLS session integration tests now wait for their (asynchronous) mock ffmpeg process to exit before the temp directory is removed, fixing an intermittent `TempDir RemoveAll cleanup: directory not empty` failure under the race detector. ([#716](https://github.com/djryanj/media-viewer/issues/716))
 - fix(ci): the "Prepare Sample Media" job ran until the 360-minute limit when picsum.photos stopped returning images (every download retried and failed), and 5 of the 7 default videos had started returning HTTP 403. Sample media is now generated locally with ffmpeg: no network, deterministic, and about a minute instead of 15. ([#716](https://github.com/djryanj/media-viewer/issues/716))
 - test(ci): the generated library is deliberately varied instead of uniform: images from 32px to 10000x6000 (panoramas, tall strips, jpg/png/webp/gif/bmp/tiff, an animated gif, EXIF orientation) and videos from 160x120 to 4K, 1s to 2min, 10-60fps, portrait and landscape, with and without audio, in h264/HEVC/VP9/MPEG-4 across mp4/webm/mov/avi/mkv. The generator has its own test (`make test-sample-media`), which now runs in CI. ([#716](https://github.com/djryanj/media-viewer/issues/716))
 

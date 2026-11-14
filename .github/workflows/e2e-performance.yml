@@ -50,7 +50,7 @@ jobs:
 
             - name: Set up ffmpeg (static build)
               if: steps.cache-check.outputs.populated != 'true'
-              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
+              uses: ./.github/actions/setup-ffmpeg
 
             - name: Generate sample media
               if: steps.cache-check.outputs.populated != 'true'
@@ -109,7 +109,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up ffmpeg (static build)
-              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
+              uses: ./.github/actions/setup-ffmpeg
 
             - name: Set up Node.js
               uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -214,7 +214,7 @@ jobs:
                   sudo apt-get install -y libvips-dev
 
             - name: Set up ffmpeg (static build)
-              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
+              uses: ./.github/actions/setup-ffmpeg
 
             - name: Set up Node.js
               uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7

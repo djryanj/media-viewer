@@ -141,7 +141,7 @@ For CI/CD pipelines that need sample data:
 
 ```yaml
 - name: Set up ffmpeg
-  uses: FedericoCarboni/setup-ffmpeg@v3.1 # pin to a commit SHA in real workflows
+  uses: ./.github/actions/setup-ffmpeg # pinned, checksum-verified static ffmpeg
 
 - name: Generate sample media
   run: |
