@@ -64,6 +64,27 @@ func patchPATH(t *testing.T, binDir string) {
 	t.Cleanup(func() { _ = os.Setenv("PATH", old) })
 }
 
+// waitHLSSessionDone registers a cleanup that waits for the session's ffmpeg
+// process to exit. GetOrCreateHLSSession starts ffmpeg asynchronously, so
+// without this the t.TempDir cleanup can delete the session directory while the
+// process is still starting or writing segments ("directory not empty"), and
+// the late process fails against a directory that no longer exists.
+// Cleanups run last-in first-out, so this runs before the TempDir removal.
+func waitHLSSessionDone(t *testing.T, s *HLSSession) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		if s == nil || s.done == nil {
+			return
+		}
+		select {
+		case <-s.done:
+		case <-time.After(10 * time.Second):
+			t.Errorf("HLS session %s did not finish within 10s", s.ID)
+		}
+	})
+}
+
 // =============================================================================
 // GetOrCreateHLSSession integration tests
 // =============================================================================
@@ -104,6 +125,8 @@ func TestGetOrCreateHLSSession_CreatesSessionDirIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOrCreateHLSSession: %v", err)
 	}
+
+	waitHLSSessionDone(t, session)
 
 	if session.ID == "" {
 		t.Error("expected non-empty session ID")
@@ -150,10 +173,12 @@ func TestGetOrCreateHLSSession_ReturnsExistingSessionIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first GetOrCreateHLSSession: %v", err)
 	}
+	waitHLSSessionDone(t, s1)
 	s2, err := trans.GetOrCreateHLSSession(context.Background(), srcPath, 0, info)
 	if err != nil {
 		t.Fatalf("second GetOrCreateHLSSession: %v", err)
 	}
+	waitHLSSessionDone(t, s2)
 
 	if s1 != s2 {
 		t.Error("expected the same session to be returned on the second call")
@@ -191,6 +216,8 @@ func TestGetOrCreateHLSSession_InvalidatesStaleSessionIntegration(t *testing.T) 
 		t.Fatalf("first GetOrCreateHLSSession: %v", err)
 	}
 
+	waitHLSSessionDone(t, s1)
+
 	// Advance the source file mtime so the session becomes stale.
 	time.Sleep(10 * time.Millisecond) // ensure mtime differs
 	if err := os.WriteFile(srcPath, []byte("v2 data"), 0o644); err != nil {
@@ -201,6 +228,8 @@ func TestGetOrCreateHLSSession_InvalidatesStaleSessionIntegration(t *testing.T) 
 	if err != nil {
 		t.Fatalf("second GetOrCreateHLSSession: %v", err)
 	}
+
+	waitHLSSessionDone(t, s2)
 
 	if s1 == s2 {
 		t.Error("expected a new session after source mtime advanced")
@@ -246,6 +275,7 @@ func TestWaitForPlaylist_AfterMockFFmpegIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOrCreateHLSSession: %v", err)
 	}
+	waitHLSSessionDone(t, session)
 
 	// WaitForPlaylist polls until the mock ffmpeg writes the playlist (or timeout).
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -286,6 +316,7 @@ func TestWaitForSegment_AfterMockFFmpegIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOrCreateHLSSession: %v", err)
 	}
+	waitHLSSessionDone(t, session)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

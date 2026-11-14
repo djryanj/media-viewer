@@ -23,90 +23,63 @@ sample-media/
 
 The application automatically indexes all media files recursively within the `sample-media` directory.
 
-## Downloading Sample Media
+## Generating Sample Media
 
-A convenience script is provided to download free, open-source, royalty-free sample media:
+A script generates a varied synthetic library locally with `ffmpeg`. It needs no network access, so it behaves the same on a laptop, in the devcontainer and in CI, and it produces the same files every run.
 
 ```bash
-make download-sample-media
+make generate-sample-media
 ```
 
 Or run directly:
 
 ```bash
-./hack/download-sample-media.sh
+./hack/generate-sample-media.sh
 ```
 
-### What Gets Downloaded
+Requirements: `ffmpeg` and `ffprobe` (required) and `exiftool` (optional; used for the metadata fixtures).
 
-By default, the script downloads:
+### What Gets Generated
 
-- **250 images** from Unsplash Source and Picsum (random, diverse content)
-- **16+ videos** from Google's sample video collection and other free sources
+By default, the script generates (about 400 MB, around 40 seconds on a 16-core machine):
 
-All content is:
+- **250 images** with deliberately varied properties:
+    - sizes from 32×32 up to 10000×6000 (60 MP), including panoramas (10:1) and tall strips (1:10)
+    - `.jpg`, `.png`, `.webp`, `.gif` (one animated), `.bmp` and `.tiff`
+    - different content and colour (gradients, fractals, noise, cellular automata, test patterns)
+    - EXIF orientation fixtures (`sample_image_027.jpg`, `sample_image_029.jpg`)
+- **11 videos** (`sample_video_01.mp4` ... `sample_video_11.mp4`): portrait and landscape, 160×120 up to 4K, 1 second up to 2 minutes, 10 to 60 fps, with and without audio
+- **5 videos in other codecs and containers**: HEVC `.mp4`, VP9 `.webm`, `.mov`, legacy MPEG-4 `.avi`, and an `.mkv` with two audio tracks. A transcode test video (`sample_transcode_test.mkv`) is also created.
+- Nested folders, files with special characters in their names, a sample playlist, and embedded EXIF/XMP metadata for the auto-tagger tests
 
-- ✅ **Free to use** - No licensing restrictions
-- ✅ **Royalty-free** - No attribution required
-- ✅ **Open source** - From public domain or creative commons sources
+`sample_image_001.jpg` ... `sample_image_011.jpg` carry the auto-tagger fixtures and are always plain JPEGs. The first 30 images cover every extreme (large, tiny, panorama, tall, every format), so a small `NUM_IMAGES` still exercises them.
 
-### Customizing Downloads
-
-You can customize the number of files downloaded:
+### Customizing
 
 ```bash
-# Download more images
-NUM_IMAGES=500 ./hack/download-sample-media.sh
+# More images
+NUM_IMAGES=500 ./hack/generate-sample-media.sh
 
-# Download fewer videos
-NUM_VIDEOS=10 ./hack/download-sample-media.sh
+# Fewer videos (other-format variants are always generated unless NUM_VIDEOS=0)
+NUM_VIDEOS=5 ./hack/generate-sample-media.sh
 
-# Combine options
-NUM_IMAGES=300 NUM_VIDEOS=25 ./hack/download-sample-media.sh
+# Combine options, and limit parallelism
+NUM_IMAGES=300 NUM_VIDEOS=25 GENERATE_JOBS=2 ./hack/generate-sample-media.sh
 ```
-
-### Using Pexels API (Optional)
-
-For additional video content, you can use the [Pexels API](https://www.pexels.com/api/) (free tier available):
-
-1. Sign up at [pexels.com/api](https://www.pexels.com/api/)
-2. Get your API key
-3. Run with the API key:
-
-```bash
-PEXELS_API_KEY='your-api-key' ./hack/download-sample-media.sh
-```
-
-This enables downloading additional high-quality stock videos beyond the default sources.
 
 ## Script Behavior
 
-The download script:
+The generator:
 
-- **Preserves existing files**: Already downloaded files are skipped (no re-downloading)
-- **Creates directory**: Automatically creates `sample-media/` if it doesn't exist
-- **Random content**: Uses randomization to get diverse images on each run
-- **Progress indicators**: Shows download progress with ✅/❌ status for each file
-- **Rate limiting**: Includes delays between requests to be respectful to free APIs
+- **Preserves existing files**: valid files are skipped, invalid ones are regenerated
+- **Creates the directory**: `sample-media/` is created if it doesn't exist
+- **Is deterministic**: file names, sizes and content depend only on the file's index
+- **Runs in parallel**: one ffmpeg job per CPU (set `GENERATE_JOBS` to change)
+- **Fails loudly**: it exits non-zero if any file can't be generated
 
-## Sample Media Sources
+To test the generator itself, run `make test-sample-media`.
 
-### Images
-
-- **[Picsum Photos](https://picsum.photos/)** - Lorem Ipsum for photos, free placeholder images
-- **[Unsplash Source](https://source.unsplash.com/)** - Random photos from Unsplash's API
-
-### Videos
-
-- **[Google Sample Videos](https://goo.gle/sample-videos)** - High-quality creative commons videos
-    - Big Buck Bunny
-    - Sintel
-    - Tears of Steel
-    - ElephantsDream
-    - Various short test clips
-- **[Pexels Videos](https://www.pexels.com/videos/)** - Stock video library (requires API key)
-
-## Manual Downloads
+## Adding Your Own Media
 
 If you prefer to add your own media:
 
@@ -125,8 +98,8 @@ The indexer will automatically discover new files on the next scan cycle.
 Test performance with large media libraries:
 
 ```bash
-# Download a large collection
-NUM_IMAGES=1000 NUM_VIDEOS=50 ./hack/download-sample-media.sh
+# Generate a large collection
+NUM_IMAGES=1000 NUM_VIDEOS=50 ./hack/generate-sample-media.sh
 ```
 
 ### Nested Directories
@@ -152,13 +125,12 @@ Test handling of various filename patterns:
 To start fresh:
 
 ```bash
-# Remove all downloaded sample media
+# Remove all generated sample media
 rm -rf sample-media/*
 
 # Keep specific files/folders
-rm sample-media/unsplash_*.jpg
-rm sample-media/picsum_*.jpg
-rm sample-media/sample_video_*.mp4
+rm sample-media/sample_image_*
+rm sample-media/sample_video_*
 ```
 
 ## CI/CD Integration
@@ -168,33 +140,31 @@ The sample media directory is typically excluded from version control (via `.git
 For CI/CD pipelines that need sample data:
 
 ```yaml
-- name: Download sample media
+- name: Set up ffmpeg
+  uses: ./.github/actions/setup-ffmpeg # pinned, checksum-verified static ffmpeg
+
+- name: Generate sample media
   run: |
-      NUM_IMAGES=50 NUM_VIDEOS=5 ./hack/download-sample-media.sh
+      NUM_IMAGES=50 NUM_VIDEOS=5 ./hack/generate-sample-media.sh
 ```
 
 This provides a small test dataset for automated testing without bloating the repository.
 
 ## Troubleshooting
 
-### Download Failures
+### Generation Failures
 
-If downloads fail:
+If generation fails:
 
-1. **Check internet connection**: Ensure you can reach external APIs
-2. **Check rate limits**: Wait a few minutes and retry
-3. **Manual retry**: Delete failed files and re-run (script skips existing files)
-4. **Try fewer files**: Reduce `NUM_IMAGES` or `NUM_VIDEOS`
+1. **Check ffmpeg**: `ffmpeg -version` and `ffprobe -version` must both work
+2. **Check codecs**: the script needs `libx264`, `libx265`, `libvpx-vp9`, `libopus` and `libwebp` (any standard ffmpeg build has them). Check with `ffmpeg -encoders`.
+3. **Read the log**: failed files are reported as `[ERROR] Failed to generate ...`
+4. **Retry**: delete failed files and re-run (valid files are skipped)
+5. **Try fewer files**: reduce `NUM_IMAGES` or `NUM_VIDEOS`
 
 ### Disk Space
 
-The default download (~250 images + 16 videos) requires approximately:
-
-- **Images**: ~50-150 MB (varies by resolution)
-- **Videos**: ~100-500 MB (depends on video quality/length)
-- **Total**: ~200-650 MB
-
-Ensure adequate disk space before downloading large collections.
+The default library requires approximately 400 MB (about 300 MB of images and 50 MB of videos, plus copies in the subfolders). Ensure adequate disk space before generating large collections.
 
 ### Indexing Performance
 
@@ -211,7 +181,6 @@ If indexing is slow with large collections:
 - **Test incrementally**: Add more content as needed for specific testing
 - **Clean periodically**: Remove unused sample files to save disk space
 - **Document custom datasets**: If using specialized test media, document the purpose
-- **Respect APIs**: Don't abuse free APIs with excessive requests
 
 ## Related Documentation
 

@@ -31,9 +31,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
-                  restore-keys: |
-                      sample-media-
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Check if sample media cache is populated
               id: cache-check
@@ -48,13 +46,17 @@ jobs:
               if: steps.cache-check.outputs.populated != 'true'
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl
+                  sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
 
-            - name: Download sample media
+            - name: Set up ffmpeg (static build)
+              if: steps.cache-check.outputs.populated != 'true'
+              uses: ./.github/actions/setup-ffmpeg
+
+            - name: Generate sample media
               if: steps.cache-check.outputs.populated != 'true'
               run: |
-                  chmod +x ./hack/download-sample-media.sh
-                  ./hack/download-sample-media.sh
+                  chmod +x ./hack/generate-sample-media.sh
+                  ./hack/generate-sample-media.sh
               env:
                   MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
 
@@ -63,7 +65,7 @@ jobs:
               uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
     build-binary:
         name: Build Binary
@@ -104,7 +106,10 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up ffmpeg (static build)
+              uses: ./.github/actions/setup-ffmpeg
 
             - name: Set up Node.js
               uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -134,7 +139,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Copy sample media to runtime location
               run: |
@@ -206,7 +211,10 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up ffmpeg (static build)
+              uses: ./.github/actions/setup-ffmpeg
 
             - name: Set up Node.js
               uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -236,7 +244,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Copy sample media to runtime location
               run: |

@@ -74,7 +74,7 @@ FORCE ?= 0
         clean clean-all \
 		docker-build docker-build-dev docker-run \
         icons docs-serve docs-build docs-deploy \
-        download-sample-media \
+        generate-sample-media download-sample-media test-sample-media \
         setup help
 
 # Default target
@@ -1140,10 +1140,18 @@ docs-deploy:
 # Sample Media
 # =============================================================================
 
-download-sample-media:
-	@echo "Downloading sample media files..."
-	@chmod +x ./hack/download-sample-media.sh
-	@./hack/download-sample-media.sh
+generate-sample-media:
+	@echo "Generating sample media files..."
+	@chmod +x ./hack/generate-sample-media.sh
+	@./hack/generate-sample-media.sh
+
+# Deprecated alias: sample media is generated locally now, not downloaded.
+download-sample-media: generate-sample-media
+
+# Test the sample media generator (needs ffmpeg and ffprobe)
+test-sample-media:
+	@chmod +x ./hack/test-generate-sample-media.sh
+	@./hack/test-generate-sample-media.sh
 
 # =============================================================================
 # Setup
@@ -1421,7 +1429,8 @@ help:
 	@echo "  docs-serve         Serve documentation locally (port 8000)"
 	@echo "  docs-build         Build documentation site"
 	@echo "  docs-deploy        Deploy documentation to GitHub Pages"
-	@echo "  download-sample-media  Download free sample media for testing"
+	@echo "  generate-sample-media  Generate varied sample media for testing (offline)"
+	@echo "  test-sample-media      Test the sample media generator"
 	@echo "  setup              Install all development dependencies"
 	@echo "  help               Show this help message"
 

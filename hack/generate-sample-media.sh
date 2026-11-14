@@ -1,9 +1,26 @@
 #!/bin/bash
-# Don't exit on errors - we want to continue downloading even if some fail
+# Don't exit on errors - we want to continue generating even if some files fail
 set +e
 
-# Download free, open-source, royalty-free sample media
-# Uses multiple sources to get a diverse collection
+# Generate a varied, synthetic sample media library for development and CI.
+#
+# Everything is produced locally with ffmpeg (no network), so the library is
+# identical on every run and CI no longer depends on third-party hosts.
+# Content is deliberately varied so tests exercise more than one code path:
+#
+#   images: many dimensions (16px .. 10000px wide), panoramas and tall strips,
+#           jpg / png / webp / gif (incl. animated) / bmp / tiff, differing
+#           pixel content and colour
+#   videos: portrait and landscape, 160x120 .. 4K, 1s .. 2min, 10 .. 60fps,
+#           with and without audio, h264 / hevc / vp9 / mpeg4, in
+#           mp4 / webm / mov / avi / mkv containers
+#
+# Environment:
+#   MEDIA_DIR          target directory (default: ../sample-media)
+#   NUM_IMAGES         number of images (default 250)
+#   NUM_VIDEOS         number of sample_video_NN.mp4 files (default 11); the
+#                      other-format videos are always generated when > 0
+#   GENERATE_JOBS      parallel ffmpeg jobs (default: number of CPUs)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MEDIA_DIR="${MEDIA_DIR:-${SCRIPT_DIR}/../sample-media}"
@@ -11,8 +28,8 @@ ENSURE_TEST_PLAYLIST_SCRIPT="${SCRIPT_DIR}/ensure-test-playlist.sh"
 
 # Configuration
 NUM_IMAGES=${NUM_IMAGES:-250}
-NUM_VIDEOS=${NUM_VIDEOS:-7}
-PEXELS_API_KEY="${PEXELS_API_KEY:-}"
+NUM_VIDEOS=${NUM_VIDEOS:-11}
+GENERATE_JOBS=${GENERATE_JOBS:-$(nproc 2>/dev/null || echo 2)}
 
 # Path to the sample.wpl file (same directory as this script)
 SAMPLE_WPL="${SCRIPT_DIR}/sample.wpl"
@@ -25,381 +42,339 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}Sample Media Downloader${NC}"
+echo -e "${BLUE}Sample Media Generator${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo "Target: $MEDIA_DIR"
-echo "Images to download: $NUM_IMAGES"
-echo "Videos to download: $NUM_VIDEOS"
+echo "Images to generate: $NUM_IMAGES"
+echo "Videos to generate: $NUM_VIDEOS (plus other-format variants)"
+echo "Parallel jobs: $GENERATE_JOBS"
 echo ""
 
-# Check if sample-media directory exists, create if not
-if [ ! -d "$MEDIA_DIR" ]; then
-    echo -e "${YELLOW}[INFO] Creating sample-media directory...${NC}"
-    mkdir -p "$MEDIA_DIR"
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}[ERROR] Failed to create sample-media directory${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}[OK] Created: $MEDIA_DIR${NC}"
-    echo ""
+if ! command -v ffmpeg &>/dev/null || ! command -v ffprobe &>/dev/null; then
+    echo -e "${RED}[ERROR] ffmpeg and ffprobe are required to generate sample media${NC}"
+    exit 1
 fi
+
+mkdir -p "$MEDIA_DIR" || {
+    echo -e "${RED}[ERROR] Failed to create $MEDIA_DIR${NC}"
+    exit 1
+}
 
 # Count existing files
 existing_count=$(find "$MEDIA_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" \) | wc -l)
-echo -e "${GREEN}Existing files in sample-media: $existing_count (will be preserved)${NC}"
+echo -e "${GREEN}Existing files in sample-media: $existing_count (valid ones will be preserved)${NC}"
 echo ""
 
-# Function to validate image file
-validate_image() {
-    local filepath=$1
-    local verbose=${2:-false}
+FAIL_DIR="$(mktemp -d)"
+trap 'rm -rf "$FAIL_DIR"' EXIT
 
-    # Check if file command is available
-    if command -v file &> /dev/null; then
-        file_type=$(file -b --mime-type "$filepath" 2>/dev/null)
-        if $verbose; then
-            echo "  [DEBUG] File type detected: $file_type" >&2
-        fi
-        if [[ "$file_type" =~ ^image/ ]]; then
-            return 0
-        fi
-    fi
-    # Fallback: check file size (images should be at least a few KB)
-    local size=$(stat -f%z "$filepath" 2>/dev/null || stat -c%s "$filepath" 2>/dev/null)
-    if $verbose; then
-        echo "  [DEBUG] File size: $size bytes" >&2
-    fi
-    if [ -f "$filepath" ] && [ $size -gt 5000 ]; then
-        return 0
-    fi
-    return 1
+# A media file is valid when ffprobe can read a video stream (images included).
+validate_media() {
+    local out
+    out=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+        -of csv=p=0 "$1" 2>/dev/null)
+    [ -n "$out" ]
 }
 
-# Function to validate video file
-validate_video() {
-    local filepath=$1
-    local verbose=${2:-false}
-
-    # Check if ffprobe is available (best validation)
-    if command -v ffprobe &> /dev/null; then
-        if ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" &>/dev/null; then
-            return 0
-        fi
-        if $verbose; then
-            echo "  [DEBUG] ffprobe validation failed" >&2
-        fi
-        return 1
-    fi
-    # Fallback: use file command
-    if command -v file &> /dev/null; then
-        file_type=$(file -b --mime-type "$filepath" 2>/dev/null)
-        if $verbose; then
-            echo "  [DEBUG] File type detected: $file_type" >&2
-        fi
-        if [[ "$file_type" =~ ^video/ ]]; then
-            return 0
-        fi
-    fi
-    # Fallback: check file size (videos should be at least 100 KB)
-    local size=$(stat -f%z "$filepath" 2>/dev/null || stat -c%s "$filepath" 2>/dev/null)
-    if $verbose; then
-        echo "  [DEBUG] File size: $size bytes" >&2
-    fi
-    if [ -f "$filepath" ] && [ $size -gt 100000 ]; then
-        return 0
-    fi
-    return 1
-}
-
-# Function to download images from Picsum (Lorem Ipsum for photos)
-download_picsum_images() {
-    local count=$1
-    echo -e "${YELLOW}[INFO] Downloading $count images from Picsum...${NC}"
-
-    local downloaded=0
-    local attempt=0
-    local max_attempts=$((count * 3))  # Allow up to 3x attempts to get desired count
-
-    while [ $downloaded -lt $count ] && [ $attempt -lt $max_attempts ]; do
-        ((attempt++))
-        filename="picsum_$(printf "%03d" $((downloaded + 1))).jpg"
-        filepath="$MEDIA_DIR/$filename"
-
-        # Check if file exists and is valid
-        if [ -f "$filepath" ]; then
-            if validate_image "$filepath"; then
-                echo "  [SKIP] $filename (already exists and valid)"
-                ((downloaded++))
-                continue
-            else
-                echo "  [RETRY] Re-downloading $filename (invalid file detected)"
-                rm -f "$filepath"
-            fi
-        fi
-
-        # Random size and ID
-        width=$((800 + RANDOM % 1120))
-        height=$((600 + RANDOM % 480))
-        image_id=$((1 + RANDOM % 1000))
-
-        # Try up to 3 times to get a valid image
-        local retry=0
-        local success=false
-
-        while [ $retry -lt 3 ] && [ "$success" = false ]; do
-            if [ $retry -gt 0 ]; then
-                echo "  [RETRY] Attempt $retry/3 for $filename..."
-            fi
-
-            curl -L -s "https://picsum.photos/id/$image_id/${width}/${height}" -o "$filepath" 2>/dev/null
-
-            if [ $? -eq 0 ] && [ -s "$filepath" ]; then
-                # Validate downloaded file
-                if validate_image "$filepath"; then
-                    echo "  [OK] Downloaded: $filename (${width}x${height})"
-                    ((downloaded++))
-                    success=true
-                else
-                    echo "  [WARN] Invalid image on attempt $((retry + 1))"
-                    rm -f "$filepath"
-                    # Try a different image ID on retry
-                    image_id=$((1 + RANDOM % 1000))
-                fi
-            else
-                echo "  [WARN] Download failed on attempt $((retry + 1))"
-                rm -f "$filepath"
-            fi
-
-            ((retry++))
-            if [ "$success" = false ] && [ $retry -lt 3 ]; then
-                sleep 0.5
-            fi
-        done
-
-        if [ "$success" = false ]; then
-            echo "  [ERROR] Failed after 3 attempts: $filename"
-        fi
-
-        sleep 0.3
+# Run "$@" in the background, keeping at most GENERATE_JOBS in flight.
+run_job() {
+    while [ "$(jobs -rp | wc -l)" -ge "$GENERATE_JOBS" ]; do
+        wait -n
     done
-
-    if [ $downloaded -lt $count ]; then
-        echo "  [WARN] Only downloaded $downloaded/$count images after $attempt attempts"
-    else
-        echo "  [OK] Successfully downloaded $downloaded images"
-    fi
-}
-
-# Function to download sample videos
-download_sample_videos() {
-    local count=$1
-    echo -e "${YELLOW}[INFO] Downloading $count sample videos...${NC}"
-
-    # ── Tier 1: Google TV sample CDN (CC, previously public; may return 403) ──
-    local primary_urls=(
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"     # large
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"   # large
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
-        # "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"           # large
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
-    )
-
-    # ── Tier 2: Intel open-source sample videos (Apache-2.0) ──────────────────
-    # Hosted on GitHub raw CDN — very stable, small files (~1-4 MB each).
-    # Source: https://github.com/intel-iot-devkit/sample-videos
-    local alt_urls=(
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/bolt-detection.mp4"
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/head-pose-face-detection-male-and-female.mp4"
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/worker-zone-detection.mp4"
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/people-detection.mp4"
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/face-demographics-walking-and-pause.mp4"
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/car-detection.mp4"
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/face-demographics-walking.mp4"
-    )
-
-    # Combine tiers; record split point so we can log when tier 1 is exhausted
-    local num_primary=${#primary_urls[@]}
-    local video_urls=("${primary_urls[@]}" "${alt_urls[@]}")
-
-    local downloaded=0
-    local failed=0
-    local url_idx
-
-    for url_idx in "${!video_urls[@]}"; do
-        if [ $downloaded -ge $count ]; then
-            break
-        fi
-
-        # Log once when all tier-1 URLs have been tried without success
-        if [ $url_idx -eq $num_primary ] && [ $downloaded -eq 0 ]; then
-            echo -e "${YELLOW}  [WARN] All primary (GCS) sources failed, trying alternative sources...${NC}"
-        fi
-
-        local url="${video_urls[$url_idx]}"
-        # Name files sequentially by successful-download count, not by URL index.
-        # This prevents gaps (e.g. sample_video_07.mp4) when early URLs fail.
-        local filename="sample_video_$(printf "%02d" $((downloaded + 1))).mp4"
-        local filepath="$MEDIA_DIR/$filename"
-
-        # Skip files that already exist and are valid
-        if [ -f "$filepath" ]; then
-            if validate_video "$filepath"; then
-                echo "  [SKIP] $filename (already exists and valid)"
-                ((downloaded++))
-                continue
-            else
-                echo "  [RETRY] Re-downloading $filename (invalid file detected)"
-                rm -f "$filepath"
-            fi
-        fi
-
-        echo "  [DOWNLOAD] Downloading: $filename..."
-        echo "  [DEBUG] URL: $url" >&2
-        curl_output=$(curl -L -w "\n%{http_code}" --max-time 90 "$url" -o "$filepath" 2>&1)
-        curl_exit=$?
-        http_code=$(echo "$curl_output" | tail -n1)
-
-        echo "  [DEBUG] Curl exit code: $curl_exit, HTTP: $http_code" >&2
-
-        # Reject non-2xx HTTP responses immediately (e.g. 403 Forbidden)
-        if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
-            echo "  [ERROR] Failed: $filename (HTTP $http_code)"
-            rm -f "$filepath"
-            ((failed++))
-            sleep 0.5
-            continue
-        fi
-
-        if [ $curl_exit -eq 0 ] && [ -s "$filepath" ]; then
-            # Validate downloaded file
-            echo "  [DEBUG] Validating downloaded file..." >&2
-            if validate_video "$filepath" true; then
-                size=$(du -h "$filepath" | cut -f1)
-                echo "  [OK] Downloaded: $filename ($size, HTTP $http_code)"
-                ((downloaded++))
-            else
-                echo "  [ERROR] Failed: $filename (invalid video, HTTP $http_code)"
-                rm -f "$filepath"
-                ((failed++))
-            fi
-        else
-            echo "  [ERROR] Failed: $filename (curl exit code: $curl_exit)"
-            if [ $curl_exit -eq 7 ]; then
-                echo "  [DEBUG] Error 7: Failed to connect to host. Check network/firewall." >&2
-            fi
-            rm -f "$filepath"
-            ((failed++))
-        fi
-
-        sleep 0.5
-    done
-
-    echo "  [INFO] Downloaded $downloaded videos"
-
-    # ── Tier 3: ffmpeg synthetic fallback ──────────────────────────────────────
-    # If every real download failed, generate minimal valid videos so downstream
-    # tests can still run.  ffmpeg is installed in the CI prepare-sample-media job.
-    if [ $downloaded -eq 0 ] && [ $failed -gt 0 ]; then
-        if command -v ffmpeg &>/dev/null; then
-            echo -e "${YELLOW}  [FALLBACK] All $failed download(s) failed. Generating $count synthetic test video(s) with ffmpeg...${NC}"
-            local gen_count=0
-            for gen_idx in $(seq 1 $count); do
-                local gen_file="$MEDIA_DIR/sample_video_$(printf "%02d" $gen_idx).mp4"
-                if ffmpeg -y -f lavfi \
-                          -i "testsrc=duration=5:size=320x240:rate=24" \
-                          -f lavfi -i "sine=frequency=440:duration=5" \
-                          -c:v libx264 -c:a aac -pix_fmt yuv420p \
-                          -shortest "$gen_file" &>/dev/null; then
-                    echo "  [OK] Generated: sample_video_$(printf "%02d" $gen_idx).mp4 (synthetic fallback)"
-                    ((downloaded++))
-                    ((gen_count++))
-                fi
-            done
-            if [ $gen_count -gt 0 ]; then
-                echo -e "${YELLOW}  [WARN] $failed download(s) failed; generated $gen_count synthetic video(s) as fallback${NC}"
-            fi
-        else
-            echo -e "${RED}  [ERROR] Downloads failed and ffmpeg is not available for fallback generation${NC}"
-        fi
-    fi
-
-    if [ $downloaded -eq 0 ]; then
-        echo -e "${RED}  [ERROR] No valid videos obtained (all downloads failed, fallback also failed)${NC}"
-        return 1
-    fi
-    return 0
-}
-
-# Function to download from Pexels API (requires API key)
-download_pexels_videos() {
-    if [ -z "$PEXELS_API_KEY" ]; then
-        echo -e "${YELLOW}[WARN] Skipping Pexels videos (no API key set)${NC}"
-        echo "   To enable: export PEXELS_API_KEY='your-api-key'"
-        echo "   Get free API key at: https://www.pexels.com/api/"
-        return
-    fi
-
-    local count=$1
-    echo -e "${YELLOW}[INFO] Downloading $count videos from Pexels...${NC}"
-
-    # Search for various topics to get diverse content
-    local topics=("nature" "city" "ocean" "sunset" "people" "technology" "food" "animals")
-
-    for i in $(seq 1 $count); do
-        filename="pexels_video_$(printf "%03d" $i).mp4"
-        filepath="$MEDIA_DIR/$filename"
-
-        # Check if file exists and is valid
-        if [ -f "$filepath" ]; then
-            if validate_video "$filepath"; then
-                echo "  [SKIP] $filename (already exists and valid)"
-                continue
-            else
-                echo "  [RETRY] Re-downloading $filename (invalid file detected)"
-                rm -f "$filepath"
-            fi
-        fi
-
-        topic="${topics[$((RANDOM % ${#topics[@]}))]}"
-        page=$((1 + RANDOM % 10))
-
-        # Get video URL from API
-        video_url=$(curl -s -H "Authorization: $PEXELS_API_KEY" \
-            "https://api.pexels.com/videos/search?query=$topic&per_page=1&page=$page" | \
-            jq -r '.videos[0].video_files[] | select(.quality == "sd" or .quality == "hd") | .link' | head -1)
-
-        if [ -n "$video_url" ] && [ "$video_url" != "null" ]; then
-            curl -L -s --max-time 60 "$video_url" -o "$filepath" 2>/dev/null
-
-            if [ $? -eq 0 ] && [ -s "$filepath" ]; then
-                # Validate downloaded file
-                if validate_video "$filepath"; then
-                    size=$(du -h "$filepath" | cut -f1)
-                    echo "  [OK] Downloaded: $filename ($topic, $size)"
-                else
-                    echo "  [ERROR] Failed: $filename (invalid video)"
-                    rm -f "$filepath"
-                fi
-            else
-                echo "  [ERROR] Failed: $filename"
-                rm -f "$filepath"
-            fi
-        else
-            echo "  [ERROR] Failed to get video URL for $filename"
-        fi
-
-        sleep 1
-    done
+    "$@" &
 }
 
 # ============================================================
+# Images
+# ============================================================
+
+# Profiles cycle every 30 images: "WIDTHxHEIGHT:extension[:animated]".
+# Images 1-11 are plain jpgs: the auto-tagger fixtures embed metadata in
+# sample_image_001..011.jpg. The extremes (large, panorama, tall, tiny) are all
+# in the first cycle, so even a small NUM_IMAGES exercises them.
+IMAGE_PROFILES=(
+    1920x1080:jpg 1600x1200:jpg 1280x720:jpg 1080x1080:jpg 800x600:jpg
+    2400x1600:jpg 1024x1536:jpg 1500x1000:jpg 3000x2000:jpg 1200x800:jpg
+    2048x1365:jpg
+    # 12-30: extremes and other formats
+    8000x5333:jpg    # large (~43MP)
+    8000x800:jpg     # panorama 10:1
+    800x8000:jpg     # tall strip 1:10
+    32x32:png        # tiny
+    64x48:gif        # tiny gif
+    48x64:webp       # tiny portrait webp
+    4000x3000:png    # large png
+    3840x2160:webp   # 4K webp
+    1920x1080:bmp
+    1024x768:tiff
+    320x240:gif:animated
+    500x500:png
+    2560x1440:webp
+    6000x4000:jpg    # large (24MP)
+    1200x1200:png
+    300x900:jpg      # narrow portrait (gets an EXIF rotation)
+    10000x6000:jpg   # huge (60MP)
+    200x200:jpg      # (gets an EXIF rotation)
+    1600x900:png
+)
+
+# generate_image <index>
+generate_image() {
+    local idx=$1
+    local name="sample_image_$(printf "%03d" "$idx")"
+    local profile="${IMAGE_PROFILES[$(((idx - 1) % ${#IMAGE_PROFILES[@]}))]}"
+    local size="${profile%%:*}"
+    local rest="${profile#*:}"
+    local ext="${rest%%:*}"
+    local animated=false
+    [[ "$rest" == *:animated ]] && animated=true
+
+    local w=${size%x*}
+    local h=${size#*x}
+
+    # Later cycles reuse the profile table: shrink the very large images so a
+    # big library stays quick to generate, and nudge ordinary sizes so repeats
+    # are not identical.
+    if [ "$idx" -gt "${#IMAGE_PROFILES[@]}" ]; then
+        if [ "$w" -ge 6000 ] || [ $((w * h)) -ge 8000000 ]; then
+            w=$((w / 3))
+            h=$((h / 3))
+        elif [ "$w" -gt 64 ] && [ "$w" -le 3000 ] && [ "$h" -gt 64 ] && [ "$h" -le 3000 ]; then
+            w=$((w + (idx * 37) % 200))
+            h=$((h + (idx * 53) % 160))
+        fi
+    fi
+    # Even dimensions keep every encoder happy (e.g. yuv420p).
+    w=$((w / 2 * 2))
+    h=$((h / 2 * 2))
+    [ "$w" -lt 2 ] && w=2
+    [ "$h" -lt 2 ] && h=2
+
+    local filepath="$MEDIA_DIR/$name.$ext"
+    if [ -f "$filepath" ] && validate_media "$filepath"; then
+        echo "  [SKIP] $name.$ext (already exists and valid)"
+        return 0
+    fi
+    rm -f "$filepath"
+
+    # Pick a content source. The costlier sources are only used on small
+    # canvases; big and tiny images use cheap gradients. Only use sources that
+# exist in older ffmpeg builds: CI's static build is 7.0.x and has no perlin.
+    local pixels=$((w * h))
+    local src
+    local kind=$((idx % 7))
+    if [ "$pixels" -gt 4000000 ] || [ "$w" -lt 64 ] || [ "$h" -lt 64 ]; then
+        kind=0
+    fi
+    case $kind in
+        0) src="gradients=s=${w}x${h}:seed=${idx}:n=$((3 + idx % 3)):speed=0.01" ;;
+        1) src="mandelbrot=s=${w}x${h}:start_x=-0.74:start_y=0.$((idx % 9 + 1)):start_scale=0.0$((idx % 8 + 1)):end_scale=0.01" ;;
+        2) src="sierpinski=s=${w}x${h}" ;;
+        3) src="cellauto=s=${w}x${h}:seed=${idx}:rule=$((30 + idx % 60)):random_fill_ratio=0.2" ;;
+        4) src="rgbtestsrc=s=${w}x${h}" ;;
+        5) src="testsrc2=s=${w}x${h}" ;;
+        *) src="life=s=${w}x${h}:seed=${idx}:mold=10:ratio=0.1:life_color=#00ff88:death_color=#bb2255" ;;
+    esac
+
+    # Shift hues so same-source images differ, and add grain to mid-size
+    # images so they compress like photographs instead of flat gradients.
+    # trim ends the endless lavfi stream after one frame: palettegen (gif) reads
+    # its whole input before emitting anything.
+    local vf="trim=end_frame=1,format=rgb24,hue=h=$(((idx * 47) % 360))"
+    # (Not on big pngs: lossless grain would make them tens of megabytes.)
+    local grain_limit=12000000
+    [ "$ext" = "png" ] && grain_limit=2000000
+    if [ "$pixels" -le "$grain_limit" ] && [ "$w" -ge 64 ] && [ "$h" -ge 64 ]; then
+        vf="$vf,noise=alls=$((8 + idx % 20)):allf=t"
+    fi
+
+    local -a enc
+    case $ext in
+        jpg)
+            if [ "$pixels" -gt 12000000 ]; then
+                enc=(-q:v 2 -pix_fmt yuvj420p)
+            else
+                enc=(-q:v $((2 + idx % 5)) -pix_fmt yuvj420p)
+            fi
+            ;;
+        png) enc=(-compression_level 3 -pix_fmt rgb24) ;;
+        webp) enc=(-c:v libwebp -quality 70) ;;
+        bmp) enc=(-pix_fmt bgr24) ;;
+        tiff) enc=(-c:v tiff -pix_fmt rgb24) ;;
+        gif)
+            vf="$vf,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+            enc=()
+            ;;
+    esac
+
+    local -a inopts=()
+    if $animated; then
+        # A short animated gif: ten frames of a zooming fractal.
+        src="mandelbrot=s=${w}x${h}:start_scale=0.5:end_scale=0.05:start_x=-0.74:start_y=0.1"
+        inopts=(-t 1)
+        vf="fps=10,format=rgb24,hue=h=$(((idx * 47) % 360)),split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+    fi
+
+    if ffmpeg -nostdin -loglevel error -y -f lavfi "${inopts[@]}" -i "$src" -vf "$vf" "${enc[@]}" "$filepath" 2>/dev/null &&
+        validate_media "$filepath"; then
+        echo "  [OK] Generated: $name.$ext (${w}x${h})"
+    else
+        rm -f "$filepath"
+        echo -e "${RED}  [ERROR] Failed to generate $name.$ext (${w}x${h})${NC}"
+        touch "$FAIL_DIR/image_$idx"
+    fi
+}
+
+generate_images() {
+    local count=$1
+    echo -e "${YELLOW}[INFO] Generating $count images...${NC}"
+    local i
+    for i in $(seq 1 "$count"); do
+        run_job generate_image "$i"
+    done
+    wait
+    local failed
+    failed=$(find "$FAIL_DIR" -name 'image_*' | wc -l)
+    if [ "$failed" -gt 0 ]; then
+        echo -e "${RED}  [ERROR] $failed image(s) failed to generate${NC}"
+        return 1
+    fi
+    echo "  [OK] Generated $count images"
+}
+
+# ============================================================
+# Videos
+# ============================================================
+
+# Profiles for sample_video_01..11.mp4 (h264/aac unless noted):
+# "WIDTHxHEIGHT:seconds:fps:source:audio". Videos 1-4 are used by the playlist
+# fixture and the metadata tests, so they stay ordinary landscape videos.
+VIDEO_PROFILES=(
+    640x360:5:24:testsrc2:audio
+    1280x720:10:30:mandelbrot:audio
+    320x240:3:15:life:audio
+    1920x1080:8:30:gradients:audio
+    720x1280:5:30:cellauto:audio       # portrait
+    1280x720:5:60:testsrc2:audio       # 60fps
+    640x360:5:24:sierpinski:silent     # no audio track
+    3840x2160:2:24:gradients:audio     # 4K
+    320x180:120:24:gradients:audio     # two minutes, for seeking
+    854x480:5:25:life:audio
+    160x120:1:10:testsrc2:silent       # tiny and one second long
+)
+
+# video_source <name> <WxH> <fps> <seed>
+video_source() {
+    local s=$1 size=$2 fps=$3 seed=$4
+    case $s in
+        testsrc2) echo "testsrc2=s=${size}:r=${fps}" ;;
+        mandelbrot) echo "mandelbrot=s=${size}:r=${fps}:start_scale=0.3:end_scale=0.002:start_x=-0.74:start_y=0.1" ;;
+        gradients) echo "gradients=s=${size}:r=${fps}:seed=${seed}:n=4:speed=0.05" ;;
+        life) echo "life=s=${size}:r=${fps}:seed=${seed}:mold=10:ratio=0.1:life_color=#00ff88:death_color=#bb2255" ;;
+        cellauto) echo "cellauto=s=${size}:r=${fps}:seed=${seed}:rule=110:random_fill_ratio=0.3" ;;
+        *) echo "sierpinski=s=${size}:r=${fps}" ;;
+    esac
+}
+
+# generate_video <dest> <WxH> <seconds> <fps> <source> <audio|silent> <seed> [extra ffmpeg output args...]
+generate_video() {
+    local dest=$1 size=$2 dur=$3 fps=$4 source=$5 audio=$6 seed=$7
+    shift 7
+
+    if [ -f "$dest" ] && validate_media "$dest"; then
+        echo "  [SKIP] $(basename "$dest") (already exists and valid)"
+        return 0
+    fi
+    rm -f "$dest"
+
+    local -a inputs=(-f lavfi -t "$dur" -i "$(video_source "$source" "$size" "$fps" "$seed")")
+    if [ "$audio" = "audio" ]; then
+        inputs+=(-f lavfi -t "$dur" -i "sine=frequency=$((220 + seed * 40 % 660)):sample_rate=44100")
+    fi
+
+    # Default encoder settings; callers override codec/container via extra args.
+    local -a codec=(-c:v libx264 -preset ultrafast -pix_fmt yuv420p)
+    [ "$audio" = "audio" ] && codec+=(-c:a aac -b:a 96k)
+    [ $# -gt 0 ] && codec=("$@")
+
+    if ffmpeg -nostdin -loglevel error -y "${inputs[@]}" "${codec[@]}" -shortest "$dest" 2>/dev/null &&
+        validate_media "$dest"; then
+        echo "  [OK] Generated: $(basename "$dest") ($size, ${dur}s, ${fps}fps, $source, $audio)"
+    else
+        rm -f "$dest"
+        echo -e "${RED}  [ERROR] Failed to generate $(basename "$dest")${NC}"
+        touch "$FAIL_DIR/video_$(basename "$dest")"
+    fi
+}
+
+generate_sample_videos() {
+    local count=$1
+    echo -e "${YELLOW}[INFO] Generating $count sample videos...${NC}"
+    local n profile size dur fps source audio
+    for n in $(seq 1 "$count"); do
+        profile="${VIDEO_PROFILES[$(((n - 1) % ${#VIDEO_PROFILES[@]}))]}"
+        IFS=: read -r size dur fps source audio <<<"$profile"
+        # Later cycles shrink the expensive profiles.
+        if [ "$n" -gt "${#VIDEO_PROFILES[@]}" ]; then
+            [ "${size%x*}" -ge 3840 ] && size=1280x720
+            [ "$dur" -gt 30 ] && dur=20
+        fi
+        run_job generate_video "$MEDIA_DIR/sample_video_$(printf "%02d" "$n").mp4" \
+            "$size" "$dur" "$fps" "$source" "$audio" "$n"
+    done
+    wait
+}
+
+# Videos in other codecs and containers, so playback, thumbnailing and the
+# transcode decision are exercised for more than h264-in-mp4.
+# Named sample_variant_* so they sort after sample_transcode_test.mkv, keeping
+# the first video in name order (which the e2e tests open) unchanged.
+generate_format_variant_videos() {
+    echo -e "${YELLOW}[INFO] Generating videos in other codecs and containers...${NC}"
+
+    run_job generate_video "$MEDIA_DIR/sample_variant_hevc.mp4" 1280x720 4 24 mandelbrot audio 21 \
+        -c:v libx265 -preset ultrafast -pix_fmt yuv420p -tag:v hvc1 -x265-params log-level=error -c:a aac
+    run_job generate_video "$MEDIA_DIR/sample_variant_vp9.webm" 854x480 4 24 life audio 22 \
+        -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -b:v 1M -pix_fmt yuv420p -c:a libopus
+    run_job generate_video "$MEDIA_DIR/sample_variant_quicktime.mov" 640x360 4 30 gradients audio 23 \
+        -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac
+    run_job generate_video "$MEDIA_DIR/sample_variant_legacy.avi" 480x360 4 25 testsrc2 audio 24 \
+        -c:v mpeg4 -q:v 5 -pix_fmt yuv420p -c:a ac3
+    run_job generate_multi_audio_video "$MEDIA_DIR/sample_variant_multiaudio.mkv"
+    wait
+
+    local failed
+    failed=$(find "$FAIL_DIR" -name 'video_*' | wc -l)
+    if [ "$failed" -gt 0 ]; then
+        echo -e "${RED}  [ERROR] $failed video(s) failed to generate${NC}"
+        return 1
+    fi
+}
+
+# An mkv with two audio tracks (440Hz and 880Hz).
+generate_multi_audio_video() {
+    local dest=$1
+    if [ -f "$dest" ] && validate_media "$dest"; then
+        echo "  [SKIP] $(basename "$dest") (already exists and valid)"
+        return 0
+    fi
+    rm -f "$dest"
+    if ffmpeg -nostdin -loglevel error -y \
+        -f lavfi -t 4 -i "cellauto=s=640x360:r=24:seed=25:rule=30:random_fill_ratio=0.3" \
+        -f lavfi -t 4 -i "sine=frequency=440" -f lavfi -t 4 -i "sine=frequency=880" \
+        -map 0:v -map 1:a -map 2:a -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac \
+        -shortest "$dest" 2>/dev/null && validate_media "$dest"; then
+        echo "  [OK] Generated: $(basename "$dest") (640x360, 4s, two audio tracks)"
+    else
+        rm -f "$dest"
+        echo -e "${RED}  [ERROR] Failed to generate $(basename "$dest")${NC}"
+        touch "$FAIL_DIR/video_$(basename "$dest")"
+    fi
+}
+
 # Function to create subfolders and populate them with copies
-# of downloaded media and the sample.wpl playlist file.
+# of generated media and the sample.wpl playlist file.
 # ============================================================
 create_subfolders_and_copy() {
     echo -e "${YELLOW}[INFO] Creating subfolders and copying sample files...${NC}"
@@ -416,24 +391,24 @@ create_subfolders_and_copy() {
     echo "  [OK] Created: folder1/ and folder2/"
 
     # --- Copy images into each folder ---
-    # folder1 gets the first 5 picsum images
+    # folder1 gets the first 5 sample images
     local copied_f1=0
     for i in $(seq 1 5); do
-        src="$MEDIA_DIR/picsum_$(printf "%03d" $i).jpg"
+        src="$MEDIA_DIR/sample_image_$(printf "%03d" $i).jpg"
         if [ -f "$src" ]; then
             cp -n "$src" "$folder1/"
-            echo "  [COPY] picsum_$(printf "%03d" $i).jpg -> folder1/"
+            echo "  [COPY] sample_image_$(printf "%03d" $i).jpg -> folder1/"
             ((copied_f1++))
         fi
     done
 
-    # folder2 gets the next 5 picsum images (006-010)
+    # folder2 gets the next 5 sample images (006-010)
     local copied_f2=0
     for i in $(seq 6 10); do
-        src="$MEDIA_DIR/picsum_$(printf "%03d" $i).jpg"
+        src="$MEDIA_DIR/sample_image_$(printf "%03d" $i).jpg"
         if [ -f "$src" ]; then
             cp -n "$src" "$folder2/"
-            echo "  [COPY] picsum_$(printf "%03d" $i).jpg -> folder2/"
+            echo "  [COPY] sample_image_$(printf "%03d" $i).jpg -> folder2/"
             ((copied_f2++))
         fi
     done
@@ -470,7 +445,7 @@ create_special_filename_files() {
     echo -e "${YELLOW}[INFO] Creating files with special filenames for path-encoding tests...${NC}"
 
     # Find a source image and video to copy from
-    local src_image=$(find "$MEDIA_DIR" -maxdepth 1 -name "picsum_001.jpg" -type f | head -1)
+    local src_image=$(find "$MEDIA_DIR" -maxdepth 1 -name "sample_image_001.jpg" -type f | head -1)
     local src_video=$(find "$MEDIA_DIR" -maxdepth 1 -name "sample_video_01.mp4" -type f | head -1)
 
     if [ -z "$src_image" ]; then
@@ -698,7 +673,7 @@ create_special_filename_files() {
 
 # ============================================================
 # Function to embed EXIF/XMP description metadata into a
-# selection of the downloaded Picsum images so that the EXIF
+# selection of the generated images so that the EXIF
 # auto-tagger has realistic, varied fixtures to process.
 #
 # Embedding tool priority: exiftool (preferred, widely
@@ -706,21 +681,21 @@ create_special_filename_files() {
 # Skipped gracefully if neither is found.
 #
 # Patterns covered — explicit tags: format:
-#   picsum_001 – basic lowercase "tags:…;", two tags
-#   picsum_002 – mixed-case tag names
-#   picsum_003 – title-case "Tags:" prefix + surrounding text
-#   picsum_004 – plain description with NO tags: pattern (negative)
-#   picsum_005 – single tag; semicolon terminates mid-sentence
-#   picsum_006 – single tag; no semicolon
-#   picsum_007 – tags at end of sentence; no semicolon
+#   sample_image_001 – basic lowercase "tags:…;", two tags
+#   sample_image_002 – mixed-case tag names
+#   sample_image_003 – title-case "Tags:" prefix + surrounding text
+#   sample_image_004 – plain description with NO tags: pattern (negative)
+#   sample_image_005 – single tag; semicolon terminates mid-sentence
+#   sample_image_006 – single tag; no semicolon
+#   sample_image_007 – tags at end of sentence; no semicolon
 #
 # Patterns covered — extended IPTC/XMP keyword detection:
-#   picsum_008 – plain comma-separated keywords via Description
+#   sample_image_008 – plain comma-separated keywords via Description
 #                (simulates XMP Subject / Lightroom export)
-#   picsum_009 – plain comma-separated multi-word keywords
-#   picsum_010 – prose with commas but sentence punctuation (negative:
+#   sample_image_009 – plain comma-separated multi-word keywords
+#   sample_image_010 – prose with commas but sentence punctuation (negative:
 #                extended path must NOT fire)
-#   picsum_011 – IPTC Keywords written via standard -IPTC:Keywords
+#   sample_image_011 – IPTC Keywords written via standard -IPTC:Keywords
 #                field (simulates digiKam / Apple Photos tagging)
 # ============================================================
 embed_exif_tags_in_sample_media() {
@@ -802,53 +777,53 @@ embed_exif_tags_in_sample_media() {
 
     local embedded=0
 
-    # --- picsum_001: basic lowercase tags, two values ---
-    local f="$MEDIA_DIR/picsum_001.jpg"
+    # --- sample_image_001: basic lowercase tags, two values ---
+    local f="$MEDIA_DIR/sample_image_001.jpg"
     if embed_description "$f" "tags:landscape, nature;"; then
-        echo "  [OK] picsum_001.jpg — 'tags:landscape, nature;'"
+        echo "  [OK] sample_image_001.jpg — 'tags:landscape, nature;'"
         ((embedded++))
     fi
 
-    # --- picsum_002: mixed-case tag names ---
-    f="$MEDIA_DIR/picsum_002.jpg"
+    # --- sample_image_002: mixed-case tag names ---
+    f="$MEDIA_DIR/sample_image_002.jpg"
     if embed_description "$f" "tags:Portrait, Indoor;"; then
-        echo "  [OK] picsum_002.jpg — 'tags:Portrait, Indoor;'"
+        echo "  [OK] sample_image_002.jpg — 'tags:Portrait, Indoor;'"
         ((embedded++))
     fi
 
-    # --- picsum_003: title-case prefix + extra surrounding text ---
-    f="$MEDIA_DIR/picsum_003.jpg"
+    # --- sample_image_003: title-case prefix + extra surrounding text ---
+    f="$MEDIA_DIR/sample_image_003.jpg"
     if embed_description "$f" "A beautiful walk in the park. Tags:Black & White, Street Photography; Shot in 2024."; then
-        echo "  [OK] picsum_003.jpg — 'Tags:Black & White, Street Photography;' (with surrounding text)"
+        echo "  [OK] sample_image_003.jpg — 'Tags:Black & White, Street Photography;' (with surrounding text)"
         ((embedded++))
     fi
 
-    # --- picsum_004: plain description without any tag pattern ---
+    # --- sample_image_004: plain description without any tag pattern ---
     #     This file should NOT receive any auto-tags (negative fixture).
-    f="$MEDIA_DIR/picsum_004.jpg"
+    f="$MEDIA_DIR/sample_image_004.jpg"
     if embed_description "$f" "No tag markers here — just a plain photo description."; then
-        echo "  [OK] picsum_004.jpg — no-tags description (negative fixture)"
+        echo "  [OK] sample_image_004.jpg — no-tags description (negative fixture)"
         ((embedded++))
     fi
 
-    # --- picsum_005: single tag; semicolon mid-sentence ---------------
-    f="$MEDIA_DIR/picsum_005.jpg"
+    # --- sample_image_005: single tag; semicolon mid-sentence ---------------
+    f="$MEDIA_DIR/sample_image_005.jpg"
     if embed_description "$f" "tags:architecture; taken downtown with a 35mm lens"; then
-        echo "  [OK] picsum_005.jpg — 'tags:architecture;' (semicolon mid-sentence)"
+        echo "  [OK] sample_image_005.jpg — 'tags:architecture;' (semicolon mid-sentence)"
         ((embedded++))
     fi
 
-    # --- picsum_006: single tag; no semicolon ---------------
-    f="$MEDIA_DIR/picsum_006.jpg"
+    # --- sample_image_006: single tag; no semicolon ---------------
+    f="$MEDIA_DIR/sample_image_006.jpg"
     if embed_description "$f" "tags:architecture"; then
-        echo "  [OK] picsum_006.jpg — 'tags:architecture' (no semicolon)"
+        echo "  [OK] sample_image_006.jpg — 'tags:architecture' (no semicolon)"
         ((embedded++))
     fi
 
-    # --- picsum_007: tags at end of sentence; no semicolon ---------------
-    f="$MEDIA_DIR/picsum_007.jpg"
+    # --- sample_image_007: tags at end of sentence; no semicolon ---------------
+    f="$MEDIA_DIR/sample_image_007.jpg"
     if embed_description "$f" "Fancy architecture; tags:architecture, fancy, beautiful"; then
-        echo "  [OK] picsum_007.jpg — 'Fancy architecture; tags:architecture, fancy, beautiful' (no semicolon)"
+        echo "  [OK] sample_image_007.jpg — 'Fancy architecture; tags:architecture, fancy, beautiful' (no semicolon)"
         ((embedded++))
     fi
 
@@ -856,40 +831,53 @@ embed_exif_tags_in_sample_media() {
     # Extended detection — plain keyword list (IPTC/XMP style)
     # -----------------------------------------------------------------------
 
-    # --- picsum_008: plain comma-separated keywords in Description field ---
+    # --- sample_image_008: plain comma-separated keywords in Description field ---
     #     Simulates XMP Subject / Lightroom export with no tags: prefix.
     #     Extended path should detect and import these as tags.
-    f="$MEDIA_DIR/picsum_008.jpg"
+    f="$MEDIA_DIR/sample_image_008.jpg"
     if embed_description "$f" "urban, city lights, night photography"; then
-        echo "  [OK] picsum_008.jpg — plain keywords 'urban, city lights, night photography' (extended path)"
+        echo "  [OK] sample_image_008.jpg — plain keywords 'urban, city lights, night photography' (extended path)"
         ((embedded++))
     fi
 
-    # --- picsum_009: multi-word keywords, no tags: prefix ---------------
+    # --- sample_image_009: multi-word keywords, no tags: prefix ---------------
     #     Verifies extended path handles multi-word tokens correctly.
-    f="$MEDIA_DIR/picsum_009.jpg"
+    f="$MEDIA_DIR/sample_image_009.jpg"
     if embed_description "$f" "Black & White, Street Photography, Golden Hour"; then
-        echo "  [OK] picsum_009.jpg — 'Black & White, Street Photography, Golden Hour' (extended multi-word)"
+        echo "  [OK] sample_image_009.jpg — 'Black & White, Street Photography, Golden Hour' (extended multi-word)"
         ((embedded++))
     fi
 
-    # --- picsum_010: prose with commas but sentence punctuation ----------
+    # --- sample_image_010: prose with commas but sentence punctuation ----------
     #     Extended path must NOT fire because of the period.
     #     This is a negative fixture: no auto-tags should be applied.
-    f="$MEDIA_DIR/picsum_010.jpg"
+    f="$MEDIA_DIR/sample_image_010.jpg"
     if embed_description "$f" "A walk through the city, late in the evening. Shot handheld."; then
-        echo "  [OK] picsum_010.jpg — prose with period (negative fixture, extended path blocked)"
+        echo "  [OK] sample_image_010.jpg — prose with period (negative fixture, extended path blocked)"
         ((embedded++))
     fi
 
-    # --- picsum_011: IPTC Keywords via standard field --------------------
+    # --- sample_image_011: IPTC Keywords via standard field --------------------
     #     Simulates digiKam, Apple Photos, or any IPTC-aware editor.
     #     The keywords arrive as "comment" in ffprobe and as a plain
     #     comma-separated list — the extended path picks them up.
-    f="$MEDIA_DIR/picsum_011.jpg"
+    f="$MEDIA_DIR/sample_image_011.jpg"
     if embed_iptc_keywords "$f" "travel" "mountains" "landscape"; then
-        echo "  [OK] picsum_011.jpg — IPTC Keywords: travel, mountains, landscape (standard field)"
+        echo "  [OK] sample_image_011.jpg — IPTC Keywords: travel, mountains, landscape (standard field)"
         ((embedded++))
+    fi
+
+    # --- EXIF orientation: files stored rotated, displayed upright ---------
+    #     sample_image_027 (300x900) and sample_image_029 (200x200) carry
+    #     Orientation=6 (90° CW) and 3 (180°), which thumbnailing and the
+    #     lightbox must honour. Needs exiftool; skipped otherwise.
+    if [ "$embed_tool" = "exiftool" ]; then
+        for pair in "027:6" "029:3"; do
+            f="$MEDIA_DIR/sample_image_${pair%%:*}.jpg"
+            if [ -f "$f" ] && exiftool -quiet -n -Orientation="${pair##*:}" -overwrite_original "$f" 2>/dev/null; then
+                echo "  [OK] sample_image_${pair%%:*}.jpg — EXIF Orientation=${pair##*:}"
+            fi
+        done
     fi
 
     # -----------------------------------------------------------------------
@@ -1028,30 +1016,27 @@ generate_transcode_test_video() {
     fi
 }
 
-
-# Main download process
-echo -e "${BLUE}[INFO] Starting downloads...${NC}"
+# Main generation process
+echo -e "${BLUE}[INFO] Starting generation...${NC}"
 echo ""
 
-# Download all images from Picsum (reliable source)
-download_picsum_images $NUM_IMAGES
+if ! generate_images "$NUM_IMAGES"; then
+    echo -e "${RED}[ERROR] Failed to generate images. Exiting.${NC}"
+    exit 1
+fi
 echo ""
 
-# Download videos
-if [ $NUM_VIDEOS -gt 0 ]; then
-    # Try sample videos first (no API key needed)
-    if ! download_sample_videos $((NUM_VIDEOS < 16 ? NUM_VIDEOS : 16)); then
-        echo -e "${RED}[ERROR] Failed to obtain any video files. Exiting.${NC}"
+if [ "$NUM_VIDEOS" -gt 0 ]; then
+    generate_sample_videos "$NUM_VIDEOS"
+    if ! generate_format_variant_videos; then
+        echo -e "${RED}[ERROR] Failed to generate videos. Exiting.${NC}"
+        exit 1
+    fi
+    if [ "$(find "$FAIL_DIR" -name 'video_*' | wc -l)" -gt 0 ]; then
+        echo -e "${RED}[ERROR] Failed to generate videos. Exiting.${NC}"
         exit 1
     fi
     echo ""
-
-    # If we want more than 16 videos and have API key, use Pexels
-    remaining_videos=$((NUM_VIDEOS - 16))
-    if [ $remaining_videos -gt 0 ]; then
-        download_pexels_videos $remaining_videos
-        echo ""
-    fi
 fi
 
 # Create subfolders and copy files into them
@@ -1081,10 +1066,10 @@ echo ""
 
 # Summary
 echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}Download Complete!${NC}"
+echo -e "${GREEN}Generation Complete!${NC}"
 echo -e "${BLUE}========================================${NC}"
 
-new_files=$(find "$MEDIA_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.mp4" -o -name "*.webm" -o -name "*.wpl" \) | wc -l)
+new_files=$(find "$MEDIA_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.gif" -o -name "*.bmp" -o -name "*.tiff" -o -name "*.mp4" -o -name "*.webm" -o -name "*.mov" -o -name "*.avi" -o -name "*.mkv" -o -name "*.wpl" \) | wc -l)
 total_size=$(du -sh "$MEDIA_DIR" 2>/dev/null | cut -f1)
 
 echo ""
@@ -1096,5 +1081,5 @@ echo "  Subfolders: folder1/, folder2/"
 echo ""
 echo -e "${GREEN}[OK] Sample media ready for testing!${NC}"
 echo ""
-echo "Note: Existing files were preserved (skipped if already present)."
-echo "To re-download, delete specific files or the entire folder."
+echo "Note: Existing valid files were preserved (skipped if already present)."
+echo "To regenerate, delete specific files or the entire folder."
