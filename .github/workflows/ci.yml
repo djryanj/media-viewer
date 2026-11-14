@@ -24,6 +24,7 @@ jobs:
             docker: ${{ steps.filter.outputs.docker }}
             docker_related: ${{ steps.filter.outputs.docker_related }}
             ci_config: ${{ steps.filter.outputs.ci_config }}
+            sample_media: ${{ steps.filter.outputs.sample_media }}
         steps:
             - name: Checkout repository
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,13 +58,18 @@ jobs:
                         - 'Dockerfile.nvidia'
                         - '.dockerignore'
                         - '.github/workflows/*.yml'
+                      sample_media:
+                        - 'hack/generate-sample-media.sh'
+                        - 'hack/test-generate-sample-media.sh'
+                        - 'hack/ensure-test-playlist.sh'
+                        - 'hack/sample.wpl'
                       ci_config:
                         - '.github/workflows/ci.yml'
                         - '.golangci.yml'
                         - '.devcontainer/**'
     # ──────────────────────────────────────────────
     # STAGE 0: Prepare sample media (runs early,
-    #          can take ~10 min on cold cache)
+    #          generated locally with ffmpeg, ~1-3 min on cold cache)
     # ──────────────────────────────────────────────
 
     prepare-sample-media:
@@ -85,12 +91,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
-                  # Fall back to any previous version of the cache.
-                  # Files are preserved/skipped by the download script,
-                  # so a stale cache just means fewer downloads.
-                  restore-keys: |
-                      sample-media-
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Check if sample media cache is populated
               id: cache-check
@@ -102,15 +103,20 @@ jobs:
                   fi
 
             - name: Install media tools
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl
-
-            - name: Download sample media
               if: steps.cache-check.outputs.populated != 'true'
               run: |
-                  chmod +x ./hack/download-sample-media.sh
-                  ./hack/download-sample-media.sh
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+
+            - name: Set up ffmpeg (static build)
+              if: steps.cache-check.outputs.populated != 'true'
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
+
+            - name: Generate sample media
+              if: steps.cache-check.outputs.populated != 'true'
+              run: |
+                  chmod +x ./hack/generate-sample-media.sh
+                  ./hack/generate-sample-media.sh
               env:
                   MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
 
@@ -119,7 +125,27 @@ jobs:
               uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
+
+    test-sample-media:
+        name: Sample Media Generator Tests
+        runs-on: ubuntu-latest
+        needs: changes
+        if: needs.changes.outputs.sample_media == 'true' || needs.changes.outputs.ci_config == 'true'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Install media tools
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+
+            - name: Set up ffmpeg (static build)
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
+
+            - name: Test sample media generator
+              run: make test-sample-media
 
     prepare-frontend-deps:
         name: Prepare Frontend Dependencies
@@ -422,7 +448,10 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg libimage-exiftool-perl
+                  sudo apt-get install -y libvips-dev libimage-exiftool-perl
+
+            - name: Set up ffmpeg (static build)
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
             - name: Set up Go
               uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
               with:
@@ -470,7 +499,10 @@ jobs:
             - name: Install libvips, ffmpeg, and exiftool
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg libimage-exiftool-perl
+                  sudo apt-get install -y libvips-dev libimage-exiftool-perl
+
+            - name: Set up ffmpeg (static build)
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
             - name: Set up Go
               uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
               with:
@@ -490,6 +522,7 @@ jobs:
                 build-binary-check,
                 test-frontend-unit,
                 prepare-sample-media,
+                test-sample-media,
                 prepare-frontend-deps,
             ]
         if: |
@@ -509,7 +542,10 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up ffmpeg (static build)
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
             - name: Set up Node.js
               uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
               with:
@@ -541,7 +577,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Copy sample media to runtime location
               run: |
@@ -607,7 +643,10 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libvips-dev ffmpeg
+                  sudo apt-get install -y libvips-dev
+
+            - name: Set up ffmpeg (static build)
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
 
             - name: Set up Node.js
               uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -644,7 +683,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Copy sample media to runtime location
               run: |
@@ -713,7 +752,10 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y ffmpeg libimage-exiftool-perl
+                  sudo apt-get install -y libimage-exiftool-perl
+
+            - name: Set up ffmpeg (static build)
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -744,7 +786,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Build Docker image for smoke tests
               uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -809,7 +851,10 @@ jobs:
             - name: Install system dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y ffmpeg libimage-exiftool-perl
+                  sudo apt-get install -y libimage-exiftool-perl
+
+            - name: Set up ffmpeg (static build)
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -840,7 +885,7 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
 
             - name: Build NVIDIA Docker image for smoke tests
               uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -1006,6 +1051,10 @@ jobs:
                   fi
                   if [[ "${{ needs.test-unit.result }}" == "failure" ]]; then
                     echo "Unit tests failed"
+                    exit 1
+                  fi
+                  if [[ "${{ needs.test-sample-media.result }}" == "failure" ]]; then
+                    echo "Sample media generator tests failed"
                     exit 1
                   fi
                   if [[ "${{ needs.test-frontend-unit.result }}" == "failure" ]]; then

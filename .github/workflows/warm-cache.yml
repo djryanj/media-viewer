@@ -4,7 +4,7 @@ on:
     push:
         branches: [main]
         paths:
-            - 'hack/download-sample-media.sh'
+            - 'hack/generate-sample-media.sh'
     schedule:
         # Run weekly to prevent 7-day eviction
         - cron: '0 6 * * 1'
@@ -22,14 +22,24 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
                   lookup-only: true
 
-            - name: Download sample media
+            - name: Install media tools
               if: steps.cache-check.outputs.cache-hit != 'true'
               run: |
-                  chmod +x ./hack/download-sample-media.sh
-                  ./hack/download-sample-media.sh
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+
+            - name: Set up ffmpeg (static build)
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
+
+            - name: Generate sample media
+              if: steps.cache-check.outputs.cache-hit != 'true'
+              run: |
+                  chmod +x ./hack/generate-sample-media.sh
+                  ./hack/generate-sample-media.sh
               env:
                   MEDIA_DIR: ${{ github.workspace }}/.sample-media-cache
 
@@ -38,4 +48,4 @@ jobs:
               uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.sample-media-cache
-                  key: sample-media-${{ hashFiles('hack/download-sample-media.sh') }}
+                  key: sample-media-${{ hashFiles('hack/generate-sample-media.sh') }}
