@@ -159,7 +159,8 @@ generate_image() {
     rm -f "$filepath"
 
     # Pick a content source. The costlier sources are only used on small
-    # canvases; big and tiny images use cheap gradients.
+    # canvases; big and tiny images use cheap gradients. Only use sources that
+# exist in older ffmpeg builds: CI's static build is 7.0.x and has no perlin.
     local pixels=$((w * h))
     local src
     local kind=$((idx % 7))
@@ -171,7 +172,7 @@ generate_image() {
         1) src="mandelbrot=s=${w}x${h}:start_x=-0.74:start_y=0.$((idx % 9 + 1)):start_scale=0.0$((idx % 8 + 1)):end_scale=0.01" ;;
         2) src="sierpinski=s=${w}x${h}" ;;
         3) src="cellauto=s=${w}x${h}:seed=${idx}:rule=$((30 + idx % 60)):random_fill_ratio=0.2" ;;
-        4) src="perlin=s=${w}x${h}:octaves=$((2 + idx % 5)):persistence=0.$((4 + idx % 5))" ;;
+        4) src="rgbtestsrc=s=${w}x${h}" ;;
         5) src="testsrc2=s=${w}x${h}" ;;
         *) src="life=s=${w}x${h}:seed=${idx}:mold=10:ratio=0.1:life_color=#00ff88:death_color=#bb2255" ;;
     esac

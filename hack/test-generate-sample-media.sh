@@ -36,9 +36,25 @@ EOF
     chmod +x "$WORK/bin/$tool"
 done
 
+# CI uses a static ffmpeg build (johnvansickle, 7.0.x) that lacks filters added
+# in newer releases: its "perlin" source does not exist, which made two images
+# fail and the generator abort before any video. Emulate that: the shim rejects
+# the filters newer than the oldest ffmpeg we support.
+REAL_FFMPEG="$(command -v ffmpeg)"
+cat >"$WORK/bin/ffmpeg" <<EOF
+#!/bin/sh
+case "\$*" in
+    *perlin*) echo "No such filter: 'perlin'" >&2; exit 1 ;;
+esac
+exec "$REAL_FFMPEG" "\$@"
+EOF
+chmod +x "$WORK/bin/ffmpeg"
+
+generate_rc=0
 generate() { # generate <dir>
     PATH="$WORK/bin:$PATH" MEDIA_DIR="$1" NUM_IMAGES=30 NUM_VIDEOS=11 \
         bash "$GENERATOR" >"$1.log" 2>&1
+    generate_rc=$?
 }
 
 probe() { # probe <file> <entries>  -> csv of the first video stream
@@ -57,7 +73,7 @@ if [ ! -f "$GENERATOR" ]; then
 fi
 
 generate "$dir_a"
-check "generator exits successfully" test -d "$dir_a"
+check "generator exits successfully (exit $generate_rc)" test "$generate_rc" -eq 0
 check "generator made no network calls" test ! -e "$WORK/network-calls"
 
 # ── Images ────────────────────────────────────────────────────────────────────
